@@ -4,7 +4,6 @@ import { Search } from "lucide-react";
 import { fsListFiles } from "./lib/fsBridge";
 import { fuzzyRank } from "./lib/fuzzy";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useUiStore } from "@/stores/uiStore";
 
 interface FileFinderProps {
   root: string;
@@ -21,7 +20,6 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
   const [files, setFiles] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const openFile = useWorkspaceStore((s) => s.openFile);
-  const setActiveView = useUiStore((s) => s.setActiveView);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -42,7 +40,6 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
 
   function open(path: string) {
     openFile(path);
-    setActiveView("editor");
     onClose();
   }
 

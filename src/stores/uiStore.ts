@@ -1,26 +1,45 @@
 import { create } from "zustand";
 
-export type ViewId =
-  | "terminal"
-  | "explorer"
-  | "editor"
-  | "sourceControl"
-  | "ai"
-  | "settings";
+export type SidebarView = "explorer" | "sourceControl" | "ai";
 
 interface UiState {
-  activeView: ViewId;
+  sidebarView: SidebarView;
+  sidebarVisible: boolean;
+  settingsOpen: boolean;
+  terminalOpen: boolean;
   fileFinderOpen: boolean;
-  setActiveView: (view: ViewId) => void;
+  /** Select a sidebar panel; clicking the active one toggles the sidebar. */
+  selectSidebar: (view: SidebarView) => void;
+  toggleSidebar: () => void;
+  setSettingsOpen: (open: boolean) => void;
+  setTerminalOpen: (open: boolean) => void;
+  toggleTerminal: () => void;
   setFileFinderOpen: (open: boolean) => void;
-  /** Jump to the explorer and open the fuzzy file finder (Cmd/Ctrl+P). */
+  /** Reveal the explorer and open the fuzzy file finder (Cmd/Ctrl+P). */
   openFileFinder: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  activeView: "terminal",
+  sidebarView: "explorer",
+  sidebarVisible: true,
+  settingsOpen: false,
+  terminalOpen: true,
   fileFinderOpen: false,
-  setActiveView: (activeView) => set({ activeView }),
+
+  selectSidebar: (view) =>
+    set((state) => {
+      if (state.sidebarView === view && state.sidebarVisible) {
+        return { sidebarVisible: false };
+      }
+      return { sidebarView: view, sidebarVisible: true };
+    }),
+
+  toggleSidebar: () => set((state) => ({ sidebarVisible: !state.sidebarVisible })),
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
+  toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
   setFileFinderOpen: (fileFinderOpen) => set({ fileFinderOpen }),
-  openFileFinder: () => set({ activeView: "explorer", fileFinderOpen: true }),
+
+  openFileFinder: () =>
+    set({ sidebarView: "explorer", sidebarVisible: true, fileFinderOpen: true }),
 }));

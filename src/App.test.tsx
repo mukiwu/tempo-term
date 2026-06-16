@@ -8,23 +8,27 @@ import { useUiStore } from "@/stores/uiStore";
 describe("App shell", () => {
   beforeEach(() => {
     useSettingsStore.setState({ language: "en", themeId: "vitesse-dark" });
-    useUiStore.setState({ activeView: "settings" });
+    // Open the settings modal so the language picker is on screen; keep the
+    // sidebar and terminal closed to keep this render light in jsdom.
+    useUiStore.setState({
+      sidebarVisible: false,
+      terminalOpen: false,
+      settingsOpen: true,
+      sidebarView: "explorer",
+      fileFinderOpen: false,
+    });
   });
 
-  it("renders navigation labels in English by default", () => {
+  it("renders activity rail and settings labels in English by default", () => {
     render(<App />);
-    expect(screen.getByLabelText("Terminal")).toBeInTheDocument();
+    expect(screen.getByLabelText("Explorer")).toBeInTheDocument();
     expect(screen.getByText("Display language")).toBeInTheDocument();
   });
 
   it("switches the whole UI to Traditional Chinese when the language changes", async () => {
     render(<App />);
-
     fireEvent.click(screen.getByRole("button", { name: "正體中文" }));
-
-    // Activity bar (common namespace) and settings panel (settings namespace)
-    // both follow the new language.
-    expect(await screen.findByLabelText("終端機")).toBeInTheDocument();
+    expect(await screen.findByLabelText("檔案總管")).toBeInTheDocument();
     expect(screen.getByText("顯示語言")).toBeInTheDocument();
   });
 });

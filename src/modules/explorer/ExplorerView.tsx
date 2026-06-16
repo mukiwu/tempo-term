@@ -3,28 +3,19 @@ import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
 import { FileTree } from "./FileTree";
 import { FileFinder } from "./FileFinder";
-import { fsHomeDir, fsReadDir, type DirEntry } from "./lib/fsBridge";
+import { fsReadDir, type DirEntry } from "./lib/fsBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useUiStore } from "@/stores/uiStore";
 
 export function ExplorerView() {
   const { t } = useTranslation("explorer");
   const rootPath = useWorkspaceStore((s) => s.rootPath);
-  const setRoot = useWorkspaceStore((s) => s.setRoot);
   const finderOpen = useUiStore((s) => s.fileFinderOpen);
   const setFinderOpen = useUiStore((s) => s.setFileFinderOpen);
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Default the workspace root to the home directory the first time we show.
-  useEffect(() => {
-    if (!rootPath) {
-      fsHomeDir()
-        .then(setRoot)
-        .catch(() => {});
-    }
-  }, [rootPath, setRoot]);
-
+  // The root follows the active workspace tab; no folder open means empty.
   useEffect(() => {
     if (!rootPath) {
       return;

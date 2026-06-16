@@ -28,5 +28,14 @@
     "comingSoon": "Coming soon",
     "terminalArea": "Terminal sessions will appear here",
     "search": "Search files, commands and settings"
+  },
+  "workspace": {
+    "openFolder": "Open Folder",
+    "noWorkspaceTitle": "No folder open",
+    "noWorkspaceHint": "Open a folder to start working",
+    "closeWorkspace": "Close workspace",
+    "toggleTerminal": "Toggle terminal",
+    "toggleSidebar": "Toggle sidebar",
+    "terminal": "Terminal"
   }
 }

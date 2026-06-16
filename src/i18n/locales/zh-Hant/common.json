@@ -28,5 +28,14 @@
     "comingSoon": "即將推出",
     "terminalArea": "終端機工作階段會顯示在這裡",
     "search": "搜尋檔案、指令與設定"
+  },
+  "workspace": {
+    "openFolder": "開啟資料夾",
+    "noWorkspaceTitle": "尚未開啟資料夾",
+    "noWorkspaceHint": "開啟一個資料夾開始工作",
+    "closeWorkspace": "關閉工作區",
+    "toggleTerminal": "切換終端機",
+    "toggleSidebar": "切換側邊欄",
+    "terminal": "終端機"
   }
 }

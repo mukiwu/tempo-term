@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { fsReadDir, type DirEntry } from "./lib/fsBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useUiStore } from "@/stores/uiStore";
 
 interface TreeNodeProps {
   entry: DirEntry;
@@ -20,13 +19,11 @@ function TreeNode({ entry, depth }: TreeNodeProps) {
   const [children, setChildren] = useState<DirEntry[] | null>(null);
   const openFile = useWorkspaceStore((s) => s.openFile);
   const activeFile = useWorkspaceStore((s) => s.activeFile);
-  const setActiveView = useUiStore((s) => s.setActiveView);
   const isActive = !entry.is_dir && activeFile === entry.path;
 
   async function toggle() {
     if (!entry.is_dir) {
       openFile(entry.path);
-      setActiveView("editor");
       return;
     }
     const next = !expanded;
