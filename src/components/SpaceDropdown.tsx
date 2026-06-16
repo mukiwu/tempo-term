@@ -3,8 +3,10 @@ import { useTranslation } from "react-i18next";
 import {
   ChevronRight,
   FileCode,
+  Pencil,
   Plus,
   SquareTerminal,
+  Trash2,
 } from "lucide-react";
 import { useTabsStore, type Tab } from "@/stores/tabsStore";
 
@@ -29,9 +31,24 @@ export function SpaceDropdown() {
   const setActiveSpace = useTabsStore((s) => s.setActiveSpace);
   const setActive = useTabsStore((s) => s.setActive);
   const newSpace = useTabsStore((s) => s.newSpace);
+  const renameSpace = useTabsStore((s) => s.renameSpace);
+  const deleteSpace = useTabsStore((s) => s.deleteSpace);
 
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+
+  function startRename(id: string, name: string) {
+    setEditingId(id);
+    setDraft(name);
+  }
+  function commitRename() {
+    if (editingId && draft.trim()) {
+      renameSpace(editingId, draft.trim());
+    }
+    setEditingId(null);
+  }
 
   useEffect(() => {
     if (!open) {
@@ -69,22 +86,56 @@ export function SpaceDropdown() {
           {spaces.map((space) => {
             const spaceTabs = tabs.filter((tb) => tb.spaceId === space.id);
             return (
-              <div key={space.id} className="mb-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveSpace(space.id);
-                  }}
-                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
-                    space.id === activeSpaceId ? "text-fg" : "text-fg-muted hover:text-fg"
+              <div key={space.id} className="group/space mb-1">
+                <div
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 ${
+                    space.id === activeSpaceId ? "text-fg" : "text-fg-muted"
                   }`}
                 >
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-accent/20 text-[11px] font-bold text-accent">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-accent/20 text-[11px] font-bold text-accent">
                     {space.name.charAt(0).toUpperCase()}
                   </span>
-                  <span className="flex-1 truncate text-sm font-medium">{space.name}</span>
+                  {editingId === space.id ? (
+                    <input
+                      autoFocus
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename();
+                        if (e.key === "Escape") setEditingId(null);
+                      }}
+                      className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 py-0.5 text-sm text-fg outline-none"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSpace(space.id)}
+                      className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:text-fg"
+                    >
+                      {space.name}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={t("workspace.renameSpace")}
+                    title={t("workspace.renameSpace")}
+                    onClick={() => startRename(space.id, space.name)}
+                    className="rounded p-0.5 text-fg-subtle opacity-0 hover:text-fg group-hover/space:opacity-100"
+                  >
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t("workspace.deleteSpace")}
+                    title={t("workspace.deleteSpace")}
+                    onClick={() => deleteSpace(space.id)}
+                    className="rounded p-0.5 text-fg-subtle opacity-0 hover:text-danger group-hover/space:opacity-100"
+                  >
+                    <Trash2 size={12} />
+                  </button>
                   <span className="text-xs text-fg-subtle">{spaceTabs.length}</span>
-                </button>
+                </div>
                 <ul className="ml-2">
                   {spaceTabs.map((tb) => {
                     const Icon = tb.kind === "terminal" ? SquareTerminal : FileCode;

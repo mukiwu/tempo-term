@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { uid } from "@/lib/id";
 
 /**
  * A global, persistent notes library (Warp Drive's notebooks, simplified): the
@@ -31,12 +32,6 @@ interface NotesState {
   noteById: (id: string) => Note | undefined;
 }
 
-let counter = 0;
-function nextId(prefix: string): string {
-  counter += 1;
-  return `${prefix}-${counter}`;
-}
-
 function now(): number {
   // App runtime only (not a workflow script), so Date is available.
   return Date.now();
@@ -51,7 +46,7 @@ export const useNotesStore = create<NotesState>()(
       notes: [],
 
       createFolder: (name) => {
-        const id = nextId("folder");
+        const id = uid("folder");
         set((state) => ({
           folders: [
             ...state.folders,
@@ -73,7 +68,7 @@ export const useNotesStore = create<NotesState>()(
         })),
 
       createNote: (folderId = null) => {
-        const id = nextId("note");
+        const id = uid("note");
         const note: Note = {
           id,
           folderId,

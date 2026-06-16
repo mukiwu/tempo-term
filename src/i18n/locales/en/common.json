@@ -46,6 +46,8 @@
     "closePane": "Close pane",
     "spaces": "Spaces",
     "newSpace": "New space",
+    "renameSpace": "Rename space",
+    "deleteSpace": "Delete space",
     "addTab": "Add tab"
   }
 }

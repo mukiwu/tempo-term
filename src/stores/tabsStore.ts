@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { uid } from "@/lib/id";
 import {
   firstLeafId,
   leaf,
@@ -62,6 +64,8 @@ interface TabsState {
   ensureSpace: () => string;
   newSpace: (name?: string) => string;
   setActiveSpace: (id: string) => void;
+  renameSpace: (id: string, name: string) => void;
+  deleteSpace: (id: string) => void;
   newTerminalTab: (cwd?: string) => string;
   openEditorTab: (path: string) => string;
   openNoteTab: (noteId: string, title: string) => string;
@@ -75,21 +79,9 @@ interface TabsState {
   closePane: (tabId: string, leafId: string) => void;
 }
 
-let tabCounter = 0;
-let paneCounter = 0;
-let spaceCounter = 0;
-function nextTabId(): string {
-  tabCounter += 1;
-  return `tab-${tabCounter}`;
-}
-function nextPaneId(): string {
-  paneCounter += 1;
-  return `pane-${paneCounter}`;
-}
-function nextSpaceId(): string {
-  spaceCounter += 1;
-  return `space-${spaceCounter}`;
-}
+const nextTabId = () => uid("tab");
+const nextPaneId = () => uid("pane");
+const nextSpaceId = () => uid("space");
 
 function basename(path: string): string {
   const seg = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
@@ -100,7 +92,11 @@ function neighbourId(tabs: Tab[], index: number): string | null {
   return tabs[index - 1]?.id ?? tabs[index]?.id ?? null;
 }
 
-export const useTabsStore = create<TabsState>((set, get) => ({
+export const TABS_STORAGE_KEY = "tempoterm-tabs";
+
+export const useTabsStore = create<TabsState>()(
+  persist(
+    (set, get) => ({
   spaces: [],
   activeSpaceId: null,
   tabs: [],
@@ -131,6 +127,23 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     set((state) => {
       const firstTab = state.tabs.find((t) => t.spaceId === id);
       return { activeSpaceId: id, activeId: firstTab ? firstTab.id : null };
+    }),
+
+  renameSpace: (id, name) =>
+    set((state) => ({
+      spaces: state.spaces.map((s) => (s.id === id ? { ...s, name } : s)),
+    })),
+
+  deleteSpace: (id) =>
+    set((state) => {
+      const spaces = state.spaces.filter((s) => s.id !== id);
+      const tabs = state.tabs.filter((t) => t.spaceId !== id);
+      let { activeSpaceId, activeId } = state;
+      if (activeSpaceId === id) {
+        activeSpaceId = spaces[0]?.id ?? null;
+        activeId = tabs.find((t) => t.spaceId === activeSpaceId)?.id ?? null;
+      }
+      return { spaces, tabs, activeSpaceId, activeId };
     }),
 
   newTerminalTab: (cwd) => {
@@ -286,4 +299,15 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         ),
       };
     }),
-}));
+    }),
+    {
+      name: TABS_STORAGE_KEY,
+      partialize: (state) => ({
+        spaces: state.spaces,
+        activeSpaceId: state.activeSpaceId,
+        tabs: state.tabs,
+        activeId: state.activeId,
+      }),
+    },
+  ),
+);

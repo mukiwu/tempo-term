@@ -107,4 +107,24 @@ describe("tabsStore", () => {
     useTabsStore.getState().setActive(first);
     expect(useTabsStore.getState().activeSpaceId).toBe(firstSpace);
   });
+
+  it("renames a space", () => {
+    useTabsStore.getState().newTerminalTab();
+    const space = useTabsStore.getState().activeSpaceId!;
+    useTabsStore.getState().renameSpace(space, "Project A");
+    expect(useTabsStore.getState().spaces.find((s) => s.id === space)?.name).toBe(
+      "Project A",
+    );
+  });
+
+  it("deletes a space with its tabs and falls back to another space", () => {
+    useTabsStore.getState().newTerminalTab();
+    const first = useTabsStore.getState().activeSpaceId!;
+    const second = useTabsStore.getState().newSpace();
+    useTabsStore.getState().newTerminalTab();
+    useTabsStore.getState().deleteSpace(second);
+    expect(useTabsStore.getState().spaces.find((s) => s.id === second)).toBeUndefined();
+    expect(useTabsStore.getState().tabs.every((t) => t.spaceId !== second)).toBe(true);
+    expect(useTabsStore.getState().activeSpaceId).toBe(first);
+  });
 });
