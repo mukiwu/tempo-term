@@ -34,5 +34,22 @@
     "detectedUsing": "目前使用",
     "loading": "正在掃描已安裝的字體⋯",
     "noCjkInChain": "沒有正體中文後備字體時，部分文字可能會顯示成空白方塊"
+  },
+  "aiKeys": {
+    "title": "API 金鑰",
+    "description": "金鑰存在你的系統 keychain，只由後端讀取，不會回傳到 app 視窗",
+    "set": "已設定",
+    "notSet": "尚未設定",
+    "placeholder": "貼上 API 金鑰",
+    "save": "儲存",
+    "remove": "移除",
+    "localNoKey": "本機執行，不需金鑰"
+  },
+  "shortcutsList": {
+    "description": "常用鍵盤快捷鍵",
+    "newTab": "新增終端機分頁",
+    "findFiles": "尋找檔案",
+    "saveFile": "儲存檔案",
+    "sendMessage": "送出 AI 訊息（Enter）"
   }
 }

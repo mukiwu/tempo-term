@@ -3,10 +3,12 @@ import { useTranslation } from "react-i18next";
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/i18n/config";
 import { useSettingsStore, type Theme } from "@/stores/settingsStore";
 import { FontsSettingsSection } from "./FontsSettingsSection";
+import { AiSettingsSection } from "./AiSettingsSection";
+import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 
 const THEMES: Theme[] = ["dark", "light"];
-type SectionId = "appearance" | "fonts";
-const SECTIONS: SectionId[] = ["appearance", "fonts"];
+type SectionId = "appearance" | "fonts" | "ai" | "shortcuts";
+const SECTIONS: SectionId[] = ["appearance", "fonts", "ai", "shortcuts"];
 
 function AppearanceSection() {
   const { t } = useTranslation("settings");
@@ -103,7 +105,10 @@ export function SettingsView() {
 
       <div className="min-w-0 flex-1 overflow-y-auto px-8 py-8">
         <div className="mx-auto max-w-2xl">
-          {section === "appearance" ? <AppearanceSection /> : <FontsSettingsSection />}
+          {section === "appearance" && <AppearanceSection />}
+          {section === "fonts" && <FontsSettingsSection />}
+          {section === "ai" && <AiSettingsSection />}
+          {section === "shortcuts" && <ShortcutsSettingsSection />}
         </div>
       </div>
     </div>

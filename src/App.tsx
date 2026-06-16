@@ -11,6 +11,7 @@ import { AIView } from "@/modules/ai/AIView";
 import { useUiStore, type ViewId } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFontStore } from "@/stores/fontStore";
+import { useTerminalTabsStore } from "@/modules/terminal/store/terminalTabsStore";
 
 function ActiveView({ view }: { view: ViewId }) {
   switch (view) {
@@ -45,6 +46,26 @@ function App() {
   useEffect(() => {
     void loadFontReport();
   }, [loadFontReport]);
+
+  // Global keyboard shortcuts.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey)) {
+        return;
+      }
+      const key = e.key.toLowerCase();
+      if (key === "t") {
+        e.preventDefault();
+        useTerminalTabsStore.getState().addTab();
+        useUiStore.getState().setActiveView("terminal");
+      } else if (key === "p") {
+        e.preventDefault();
+        useUiStore.getState().openFileFinder();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[--color-bg] text-[--color-fg]">
