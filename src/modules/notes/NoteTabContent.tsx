@@ -5,13 +5,17 @@ import remarkGfm from "remark-gfm";
 import { Check, Copy, Eye, Pencil, SquareTerminal } from "lucide-react";
 import { useNotesStore } from "@/stores/notesStore";
 import { useTabsStore } from "@/stores/tabsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { getTheme } from "@/themes/themes";
 import { runCommandInTerminal } from "@/modules/terminal/lib/terminalBus";
+import { CodeHighlight } from "./CodeHighlight";
 
 const SHELL_LANGS = new Set(["", "sh", "bash", "zsh", "shell", "console", "terminal"]);
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const { t } = useTranslation("notes");
   const [copied, setCopied] = useState(false);
+  const dark = useSettingsStore((s) => getTheme(s.themeId).appearance === "dark");
   const runnable = SHELL_LANGS.has(lang.toLowerCase());
 
   async function copy() {
@@ -26,9 +30,9 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 
   return (
     <div className="my-3 overflow-hidden rounded-lg border border-border bg-bg-inset">
-      <pre className="overflow-x-auto px-4 py-3 font-mono text-[13px] leading-relaxed text-fg">
-        <code>{code}</code>
-      </pre>
+      <div className="overflow-x-auto">
+        <CodeHighlight lang={lang} code={code} dark={dark} />
+      </div>
       <div className="flex items-center justify-between border-t border-border/60 px-3 py-1.5">
         <span className="font-mono text-[11px] uppercase tracking-wider text-fg-subtle">
           {lang || "text"}
