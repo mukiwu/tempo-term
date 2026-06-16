@@ -1,14 +1,13 @@
 import { useEffect } from "react";
-import { Bot } from "lucide-react";
 import { ActivityBar } from "@/components/ActivityBar";
 import { TitleBar } from "@/components/TitleBar";
 import { StatusBar } from "@/components/StatusBar";
-import { Placeholder } from "@/components/Placeholder";
 import { SettingsView } from "@/modules/settings/SettingsView";
 import { TerminalWorkspace } from "@/modules/terminal/TerminalWorkspace";
 import { ExplorerView } from "@/modules/explorer/ExplorerView";
 import { EditorView } from "@/modules/editor/EditorView";
 import { SourceControlView } from "@/modules/source-control/SourceControlView";
+import { AIView } from "@/modules/ai/AIView";
 import { useUiStore, type ViewId } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFontStore } from "@/stores/fontStore";
@@ -24,7 +23,7 @@ function ActiveView({ view }: { view: ViewId }) {
     case "sourceControl":
       return <SourceControlView />;
     case "ai":
-      return <Placeholder icon={Bot} titleKey="nav.ai" />;
+      return <AIView />;
     case "terminal":
     default:
       return <TerminalWorkspace />;

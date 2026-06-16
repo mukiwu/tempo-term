@@ -1,0 +1,20 @@
+{
+  "title": "AI Assistant",
+  "provider": "Provider",
+  "model": "Model",
+  "send": "Send",
+  "clear": "Clear",
+  "placeholder": "Ask anything about your project",
+  "thinking": "Thinking…",
+  "emptyTitle": "Bring your own key",
+  "emptyHint": "Pick a provider, add your API key and start chatting",
+  "setKey": "Set API key",
+  "keyPlaceholder": "Paste API key (stored in the OS keychain)",
+  "saveKey": "Save",
+  "removeKey": "Remove key",
+  "keyMissing": "Add an API key for this provider to start",
+  "keySaved": "API key saved",
+  "you": "You",
+  "assistant": "Assistant",
+  "contextHint": "The assistant sees your current folder and open file as context"
+}

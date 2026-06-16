@@ -4,9 +4,11 @@ use modules::fonts::fonts_report;
 use modules::fs::{
     fs_grep, fs_home_dir, fs_list_files, fs_read_dir, fs_read_file, fs_write_file,
 };
+use modules::ai::ai_chat;
 use modules::git::{
     git_commit, git_log, git_resolve_repo, git_stage, git_status, git_unstage,
 };
+use modules::secrets::{secrets_delete_key, secrets_has_key, secrets_set_key};
 use modules::pty::{
     pty_close, pty_close_all, pty_open, pty_resize, pty_shell_name, pty_write, PtyState,
 };
@@ -35,7 +37,11 @@ pub fn run() {
             git_stage,
             git_unstage,
             git_commit,
-            git_log
+            git_log,
+            secrets_set_key,
+            secrets_delete_key,
+            secrets_has_key,
+            ai_chat
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

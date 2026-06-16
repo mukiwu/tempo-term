@@ -3,11 +3,13 @@ import enSettings from "./locales/en/settings.json";
 import enExplorer from "./locales/en/explorer.json";
 import enEditor from "./locales/en/editor.json";
 import enSourceControl from "./locales/en/sourceControl.json";
+import enAi from "./locales/en/ai.json";
 import zhHantCommon from "./locales/zh-Hant/common.json";
 import zhHantSettings from "./locales/zh-Hant/settings.json";
 import zhHantExplorer from "./locales/zh-Hant/explorer.json";
 import zhHantEditor from "./locales/zh-Hant/editor.json";
 import zhHantSourceControl from "./locales/zh-Hant/sourceControl.json";
+import zhHantAi from "./locales/zh-Hant/ai.json";
 
 export const SUPPORTED_LANGUAGES = ["en", "zh-Hant"] as const;
 
@@ -21,6 +23,7 @@ export const NAMESPACES = [
   "explorer",
   "editor",
   "sourceControl",
+  "ai",
 ] as const;
 
 export const DEFAULT_NAMESPACE = "common";
@@ -32,6 +35,7 @@ export const resources = {
     explorer: enExplorer,
     editor: enEditor,
     sourceControl: enSourceControl,
+    ai: enAi,
   },
   "zh-Hant": {
     common: zhHantCommon,
@@ -39,6 +43,7 @@ export const resources = {
     explorer: zhHantExplorer,
     editor: zhHantEditor,
     sourceControl: zhHantSourceControl,
+    ai: zhHantAi,
   },
 } as const;
 

@@ -1,0 +1,20 @@
+{
+  "title": "AI 助手",
+  "provider": "供應商",
+  "model": "模型",
+  "send": "送出",
+  "clear": "清除",
+  "placeholder": "問任何關於你專案的問題",
+  "thinking": "思考中⋯",
+  "emptyTitle": "自帶金鑰",
+  "emptyHint": "選一個供應商、填入 API 金鑰，就能開始對話",
+  "setKey": "設定 API 金鑰",
+  "keyPlaceholder": "貼上 API 金鑰（存在系統 keychain）",
+  "saveKey": "儲存",
+  "removeKey": "移除金鑰",
+  "keyMissing": "請先為這個供應商加入 API 金鑰",
+  "keySaved": "已儲存 API 金鑰",
+  "you": "你",
+  "assistant": "助手",
+  "contextHint": "助手會把你目前的資料夾與開啟的檔案當作情境"
+}
