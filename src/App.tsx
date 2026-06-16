@@ -68,7 +68,7 @@ function App() {
   }, []);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[--color-bg] text-[--color-fg]">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-fg">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
         <ActivityBar />

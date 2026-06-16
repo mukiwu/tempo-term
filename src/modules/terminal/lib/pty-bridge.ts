@@ -16,13 +16,40 @@ export interface OpenPtyOptions {
 }
 
 /**
+ * Normalise whatever shape the channel delivers (ArrayBuffer, a typed array,
+ * or a plain number array) into a Uint8Array, so terminal output renders
+ * regardless of how Tauri serialises the binary payload.
+ */
+function toBytes(message: unknown): Uint8Array {
+  if (message instanceof Uint8Array) {
+    return message;
+  }
+  if (message instanceof ArrayBuffer) {
+    return new Uint8Array(message);
+  }
+  if (Array.isArray(message)) {
+    return Uint8Array.from(message as number[]);
+  }
+  if (message && typeof message === "object" && "data" in message) {
+    const data = (message as { data: unknown }).data;
+    if (Array.isArray(data)) {
+      return Uint8Array.from(data as number[]);
+    }
+    if (data instanceof ArrayBuffer) {
+      return new Uint8Array(data);
+    }
+  }
+  return new Uint8Array();
+}
+
+/**
  * Open a PTY in the Rust backend and wire its binary output stream to the
- * caller. Output arrives over a Tauri Channel as raw ArrayBuffers; input,
- * resize and close go back through ordinary invoke calls.
+ * caller. Output arrives over a Tauri Channel; input, resize and close go back
+ * through ordinary invoke calls.
  */
 export async function openPty(opts: OpenPtyOptions): Promise<PtySession> {
-  const onData = new Channel<ArrayBuffer>();
-  onData.onmessage = (message) => opts.onData(new Uint8Array(message));
+  const onData = new Channel<unknown>();
+  onData.onmessage = (message) => opts.onData(toBytes(message));
 
   const onExit = new Channel<number>();
   onExit.onmessage = (code) => opts.onExit(code);

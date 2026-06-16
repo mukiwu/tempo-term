@@ -15,20 +15,20 @@ export function ShortcutsSettingsSection() {
   const { t } = useTranslation("settings");
   return (
     <section>
-      <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-[--color-fg-subtle]">
+      <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-fg-subtle">
         {t("sections.shortcuts")}
       </h2>
-      <p className="mb-4 text-xs text-[--color-fg-muted]">
+      <p className="mb-4 text-xs text-fg-muted">
         {t("shortcutsList.description")}
       </p>
-      <ul className="divide-y divide-[--color-border]">
+      <ul className="divide-y divide-border">
         {SHORTCUTS.map((shortcut) => (
           <li
             key={shortcut.labelKey}
             className="flex items-center justify-between py-2.5 text-sm"
           >
-            <span className="text-[--color-fg-muted]">{t(shortcut.labelKey)}</span>
-            <kbd className="rounded border border-[--color-border-strong] bg-[--color-bg-inset] px-2 py-0.5 font-mono text-xs text-[--color-fg]">
+            <span className="text-fg-muted">{t(shortcut.labelKey)}</span>
+            <kbd className="rounded border border-border-strong bg-bg-inset px-2 py-0.5 font-mono text-xs text-fg">
               {shortcut.keys}
             </kbd>
           </li>

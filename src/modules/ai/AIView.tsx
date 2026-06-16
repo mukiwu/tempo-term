@@ -24,7 +24,7 @@ function KeyForm({ providerId, onSaved }: { providerId: string; onSaved: () => v
   const [value, setValue] = useState("");
   return (
     <form
-      className="flex items-center gap-2 border-b border-[--color-border] bg-[--color-bg-inset] px-3 py-2"
+      className="flex items-center gap-2 border-b border-border bg-bg-inset px-3 py-2"
       onSubmit={async (e) => {
         e.preventDefault();
         if (!value.trim()) {
@@ -35,18 +35,18 @@ function KeyForm({ providerId, onSaved }: { providerId: string; onSaved: () => v
         onSaved();
       }}
     >
-      <KeyRound size={14} className="shrink-0 text-[--color-fg-subtle]" />
+      <KeyRound size={14} className="shrink-0 text-fg-subtle" />
       <input
         type="password"
         value={value}
         placeholder={t("keyPlaceholder")}
         aria-label={t("setKey")}
         onChange={(e) => setValue(e.target.value)}
-        className="w-full bg-transparent text-sm text-[--color-fg] outline-none placeholder:text-[--color-fg-subtle]"
+        className="w-full bg-transparent text-sm text-fg outline-none placeholder:text-fg-subtle"
       />
       <button
         type="submit"
-        className="shrink-0 rounded-md bg-[--color-accent] px-3 py-1 text-xs font-medium text-white"
+        className="shrink-0 rounded-md bg-accent px-3 py-1 text-xs font-medium text-white"
       >
         {t("saveKey")}
       </button>
@@ -98,15 +98,15 @@ export function AIView() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-[--color-bg]">
+    <div className="flex h-full flex-col bg-bg">
       {/* Header: provider + model + clear */}
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[--color-border] bg-[--color-bg-inset] px-3">
-        <Bot size={16} className="text-[--color-accent]" />
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-bg-inset px-3">
+        <Bot size={16} className="text-accent" />
         <select
           value={providerId}
           aria-label={t("provider")}
           onChange={(e) => setProvider(e.target.value)}
-          className="rounded-md border border-[--color-border] bg-[--color-bg] px-2 py-1 text-xs text-[--color-fg] outline-none"
+          className="rounded-md border border-border bg-bg px-2 py-1 text-xs text-fg outline-none"
         >
           {PROVIDERS.map((p) => (
             <option key={p.id} value={p.id}>
@@ -118,7 +118,7 @@ export function AIView() {
           value={model}
           aria-label={t("model")}
           onChange={(e) => setModel(e.target.value)}
-          className="rounded-md border border-[--color-border] bg-[--color-bg] px-2 py-1 text-xs text-[--color-fg] outline-none"
+          className="rounded-md border border-border bg-bg px-2 py-1 text-xs text-fg outline-none"
         >
           {provider.models.map((m) => (
             <option key={m} value={m}>
@@ -131,7 +131,7 @@ export function AIView() {
           aria-label={t("clear")}
           title={t("clear")}
           onClick={clear}
-          className="ml-auto rounded p-1 text-[--color-fg-muted] hover:bg-[--color-bg-elevated] hover:text-[--color-fg]"
+          className="ml-auto rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
         >
           <Trash2 size={15} />
         </button>
@@ -144,9 +144,9 @@ export function AIView() {
       {/* Messages */}
       <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-[--color-fg-subtle]">
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-fg-subtle">
             <Bot size={40} strokeWidth={1} />
-            <p className="text-sm font-medium text-[--color-fg-muted]">{t("emptyTitle")}</p>
+            <p className="text-sm font-medium text-fg-muted">{t("emptyTitle")}</p>
             <p className="text-xs">{t("emptyHint")}</p>
             <p className="mt-2 max-w-xs text-[11px]">{t("contextHint")}</p>
           </div>
@@ -159,8 +159,8 @@ export function AIView() {
               <div
                 className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
                   message.role === "user"
-                    ? "bg-[--color-accent] text-white"
-                    : "bg-[--color-bg-elevated] text-[--color-fg]"
+                    ? "bg-accent text-white"
+                    : "bg-bg-elevated text-fg"
                 }`}
               >
                 {message.content}
@@ -170,20 +170,20 @@ export function AIView() {
         )}
         {sending && (
           <div className="flex justify-start">
-            <div className="rounded-lg bg-[--color-bg-elevated] px-3 py-2 text-sm text-[--color-fg-muted]">
+            <div className="rounded-lg bg-bg-elevated px-3 py-2 text-sm text-fg-muted">
               {t("thinking")}
             </div>
           </div>
         )}
         {error && (
-          <div className="rounded-lg border border-[--color-danger]/40 bg-[--color-danger]/10 px-3 py-2 text-xs text-[--color-danger]">
+          <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
             {error}
           </div>
         )}
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-[--color-border] bg-[--color-bg-inset] p-3">
+      <div className="shrink-0 border-t border-border bg-bg-inset p-3">
         <div className="flex items-end gap-2">
           <textarea
             value={input}
@@ -196,14 +196,14 @@ export function AIView() {
                 submit();
               }
             }}
-            className="min-h-0 w-full resize-none rounded-md border border-[--color-border] bg-[--color-bg] px-3 py-2 text-sm text-[--color-fg] outline-none focus:border-[--color-accent]"
+            className="min-h-0 w-full resize-none rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
           />
           <button
             type="button"
             aria-label={t("send")}
             disabled={sending || !input.trim()}
             onClick={submit}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[--color-accent] text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
           >
             <SendHorizontal size={16} />
           </button>

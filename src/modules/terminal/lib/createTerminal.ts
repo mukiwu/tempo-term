@@ -2,22 +2,16 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { buildTerminalFontFamily } from "@/modules/fonts/lib/fontChain";
 import "@xterm/xterm/css/xterm.css";
 
 /**
- * Default monospace stack with Traditional Chinese fallbacks baked in, so CJK
- * glyphs render even before the user customises fonts in settings (phase 2
- * makes this configurable).
+ * Default monospace stack: Latin monospace anchors first, then Traditional
+ * Chinese fallbacks, so CJK glyphs render while ASCII stays fixed-width even
+ * before the user customises fonts in settings. Single source of truth is the
+ * font-chain builder.
  */
-export const DEFAULT_TERMINAL_FONT_FAMILY = [
-  '"JetBrains Mono"',
-  '"Sarasa Mono TC"',
-  '"Noto Sans Mono CJK TC"',
-  '"PingFang TC"',
-  '"Microsoft JhengHei"',
-  "ui-monospace",
-  "monospace",
-].join(", ");
+export const DEFAULT_TERMINAL_FONT_FAMILY = buildTerminalFontFamily({});
 
 const DARK_THEME: ITheme = {
   background: "#0a0d12",
@@ -57,7 +51,8 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
   const term = new Terminal({
     fontFamily: options.fontFamily ?? DEFAULT_TERMINAL_FONT_FAMILY,
     fontSize: options.fontSize ?? 13,
-    lineHeight: 1.2,
+    // Keep the default line height (1.0). A larger value spreads the rows
+    // apart and the text looks scattered.
     cursorBlink: true,
     allowProposedApi: true,
     theme: DARK_THEME,

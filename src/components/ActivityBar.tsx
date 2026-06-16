@@ -42,8 +42,8 @@ export function ActivityBar() {
         onClick={() => setActiveView(id)}
         className={`flex h-11 w-11 items-center justify-center rounded-lg transition-colors ${
           active
-            ? "bg-[--color-bg-elevated] text-[--color-accent]"
-            : "text-[--color-fg-subtle] hover:text-[--color-fg] hover:bg-[--color-bg-elevated]"
+            ? "bg-bg-elevated text-accent"
+            : "text-fg-subtle hover:text-fg hover:bg-bg-elevated"
         }`}
       >
         <Icon size={20} strokeWidth={1.75} />
@@ -52,7 +52,7 @@ export function ActivityBar() {
   }
 
   return (
-    <nav className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-[--color-border] bg-[--color-bg-inset] py-2">
+    <nav className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-border bg-bg-inset py-2">
       {PRIMARY_ITEMS.map(renderButton)}
       <div className="mt-auto">
         {renderButton({ id: "settings", icon: Settings, labelKey: "nav.settings" })}

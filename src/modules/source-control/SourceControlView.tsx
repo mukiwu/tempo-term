@@ -15,11 +15,11 @@ import {
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const STATUS_COLOR: Record<string, string> = {
-  M: "text-[--color-warning]",
-  A: "text-[--color-success]",
-  D: "text-[--color-danger]",
-  "?": "text-[--color-fg-subtle]",
-  R: "text-[--color-accent]",
+  M: "text-warning",
+  A: "text-success",
+  D: "text-danger",
+  "?": "text-fg-subtle",
+  R: "text-accent",
 };
 
 function StatusRow({
@@ -34,15 +34,15 @@ function StatusRow({
   onAction: (path: string) => void;
 }) {
   return (
-    <li className="group flex items-center gap-2 px-3 py-1 text-sm hover:bg-[--color-bg-elevated]/60">
+    <li className="group flex items-center gap-2 px-3 py-1 text-sm hover:bg-bg-elevated/60">
       <span
         className={`w-3 shrink-0 text-center font-mono text-xs ${
-          STATUS_COLOR[file.status] ?? "text-[--color-fg-muted]"
+          STATUS_COLOR[file.status] ?? "text-fg-muted"
         }`}
       >
         {file.status}
       </span>
-      <span className="flex-1 truncate text-[--color-fg-muted]" title={file.path}>
+      <span className="flex-1 truncate text-fg-muted" title={file.path}>
         {file.path}
       </span>
       <button
@@ -50,7 +50,7 @@ function StatusRow({
         aria-label={actionLabel}
         title={actionLabel}
         onClick={() => onAction(file.path)}
-        className="rounded p-0.5 text-[--color-fg-subtle] opacity-0 hover:bg-[--color-border-strong] hover:text-[--color-fg] group-hover:opacity-100"
+        className="rounded p-0.5 text-fg-subtle opacity-0 hover:bg-border-strong hover:text-fg group-hover:opacity-100"
       >
         <ActionIcon size={14} />
       </button>
@@ -97,7 +97,7 @@ export function SourceControlView() {
 
   if (resolved && !repoPath) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 text-[--color-fg-subtle]">
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-fg-subtle">
         <GitBranch size={48} strokeWidth={1} />
         <p className="text-sm">{t("noRepo")}</p>
       </div>
@@ -115,9 +115,9 @@ export function SourceControlView() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-[--color-bg-inset]">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[--color-border] px-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-[--color-fg-subtle]">
+    <div className="flex h-full flex-col bg-bg-inset">
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
+        <span className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
           {t("title")}
         </span>
         <button
@@ -125,15 +125,15 @@ export function SourceControlView() {
           aria-label={t("refresh")}
           title={t("refresh")}
           onClick={() => void refresh()}
-          className="rounded p-1 text-[--color-fg-muted] hover:bg-[--color-bg-elevated] hover:text-[--color-fg]"
+          className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
         >
           <RefreshCw size={14} />
         </button>
       </div>
 
       {status?.branch && (
-        <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-[--color-fg-muted]">
-          <GitBranch size={13} className="text-[--color-accent]" />
+        <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-fg-muted">
+          <GitBranch size={13} className="text-accent" />
           {status.branch}
         </div>
       )}
@@ -144,7 +144,7 @@ export function SourceControlView() {
           onChange={(e) => setMessage(e.target.value)}
           placeholder={t("commitPlaceholder")}
           rows={2}
-          className="w-full resize-none rounded-md border border-[--color-border] bg-[--color-bg] px-2 py-1.5 text-sm text-[--color-fg] outline-none focus:border-[--color-accent]"
+          className="w-full resize-none rounded-md border border-border bg-bg px-2 py-1.5 text-sm text-fg outline-none focus:border-accent"
         />
         <button
           type="button"
@@ -155,7 +155,7 @@ export function SourceControlView() {
               setMessage("");
             })
           }
-          className="mt-2 w-full rounded-md bg-[--color-accent] px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          className="mt-2 w-full rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
           {t("commit")}
         </button>
@@ -164,7 +164,7 @@ export function SourceControlView() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {(status?.staged.length ?? 0) > 0 && (
           <section className="mb-2">
-            <h3 className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[--color-fg-subtle]">
+            <h3 className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
               {t("stagedChanges")}
             </h3>
             <ul>
@@ -183,7 +183,7 @@ export function SourceControlView() {
 
         <section className="mb-2">
           <div className="flex items-center justify-between px-3 py-1">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-[--color-fg-subtle]">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
               {t("changes")}
             </h3>
             {(status?.unstaged.length ?? 0) > 0 && (
@@ -196,14 +196,14 @@ export function SourceControlView() {
                     }
                   })
                 }
-                className="text-[11px] text-[--color-accent] hover:underline"
+                className="text-[11px] text-accent hover:underline"
               >
                 {t("stageAll")}
               </button>
             )}
           </div>
           {(status?.unstaged.length ?? 0) === 0 ? (
-            <p className="px-3 py-1 text-xs text-[--color-fg-subtle]">{t("noChanges")}</p>
+            <p className="px-3 py-1 text-xs text-fg-subtle">{t("noChanges")}</p>
           ) : (
             <ul>
               {status!.unstaged.map((file) => (
@@ -221,14 +221,14 @@ export function SourceControlView() {
 
         {history.length > 0 && (
           <section>
-            <h3 className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[--color-fg-subtle]">
+            <h3 className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
               {t("history")}
             </h3>
             <ul className="px-3">
               {history.map((commit) => (
                 <li key={commit.id} className="py-1 text-xs">
-                  <span className="font-mono text-[--color-fg-subtle]">{commit.id}</span>
-                  <span className="ml-2 text-[--color-fg-muted]">{commit.summary}</span>
+                  <span className="font-mono text-fg-subtle">{commit.id}</span>
+                  <span className="ml-2 text-fg-muted">{commit.summary}</span>
                 </li>
               ))}
             </ul>

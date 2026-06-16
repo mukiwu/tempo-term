@@ -49,11 +49,11 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
   return (
     <div className="absolute inset-0 z-20 flex justify-center bg-black/40 pt-16">
       <div
-        className="h-fit w-[90%] max-w-lg overflow-hidden rounded-lg border border-[--color-border-strong] bg-[--color-bg-elevated] shadow-xl"
+        className="h-fit w-[90%] max-w-lg overflow-hidden rounded-lg border border-border-strong bg-bg-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-[--color-border] px-3 py-2">
-          <Search size={15} className="text-[--color-fg-subtle]" />
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <Search size={15} className="text-fg-subtle" />
           <input
             ref={inputRef}
             value={query}
@@ -67,12 +67,12 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
                 open(results[0]);
               }
             }}
-            className="w-full bg-transparent text-sm text-[--color-fg] outline-none placeholder:text-[--color-fg-subtle]"
+            className="w-full bg-transparent text-sm text-fg outline-none placeholder:text-fg-subtle"
           />
         </div>
         <ul className="max-h-80 overflow-y-auto py-1">
           {results.length === 0 ? (
-            <li className="px-3 py-2 text-xs text-[--color-fg-subtle]">
+            <li className="px-3 py-2 text-xs text-fg-subtle">
               {t("noResults")}
             </li>
           ) : (
@@ -81,7 +81,7 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
                 <button
                   type="button"
                   onClick={() => open(path)}
-                  className="block w-full truncate px-3 py-1.5 text-left text-sm text-[--color-fg-muted] hover:bg-[--color-bg] hover:text-[--color-fg]"
+                  className="block w-full truncate px-3 py-1.5 text-left text-sm text-fg-muted hover:bg-bg hover:text-fg"
                 >
                   {relativePath(path, root)}
                 </button>

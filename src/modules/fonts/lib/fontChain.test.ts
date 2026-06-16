@@ -18,20 +18,14 @@ describe("quoteFamily", () => {
 });
 
 describe("buildTerminalFontFamily", () => {
-  it("orders primary, then CJK fallback, then base fallbacks ending in monospace", () => {
-    const chain = buildTerminalFontFamily({
-      primary: "JetBrains Mono",
-      cjkFallback: "Sarasa Mono TC",
-    });
-    const parts = chain.split(", ");
+  it("puts the primary font first and ends with generic monospace", () => {
+    const parts = buildTerminalFontFamily({ primary: "JetBrains Mono" }).split(", ");
     expect(parts[0]).toBe('"JetBrains Mono"');
-    expect(parts[1]).toBe('"Sarasa Mono TC"');
     expect(parts[parts.length - 1]).toBe("monospace");
   });
 
   it("always terminates with the generic monospace family", () => {
-    const chain = buildTerminalFontFamily({});
-    expect(chain.endsWith("monospace")).toBe(true);
+    expect(buildTerminalFontFamily({}).endsWith("monospace")).toBe(true);
   });
 
   it("skips empty primary or CJK fallback without leaving blanks", () => {
@@ -41,48 +35,60 @@ describe("buildTerminalFontFamily", () => {
     expect(chain.endsWith("monospace")).toBe(true);
   });
 
-  it("does not duplicate a family that already appears in the base fallbacks", () => {
+  it("does not duplicate a family that already appears in the anchors", () => {
     const chain = buildTerminalFontFamily({ primary: "Menlo" });
     const occurrences = chain.split(", ").filter((p) => p === '"Menlo"' || p === "Menlo");
     expect(occurrences).toHaveLength(1);
   });
 
-  it("keeps the CJK fallback ahead of the base fallbacks so Chinese renders", () => {
-    const chain = buildTerminalFontFamily({
+  it("keeps a Latin monospace anchor BEFORE the CJK fallback so ASCII stays fixed-width", () => {
+    const parts = buildTerminalFontFamily({
       primary: "JetBrains Mono",
-      cjkFallback: "Noto Sans Mono CJK TC",
-    });
-    const parts = chain.split(", ");
+      cjkFallback: "PingFang TC",
+    }).split(", ");
+    const anchorIndex = parts.indexOf("ui-monospace");
+    const cjkIndex = parts.indexOf('"PingFang TC"');
+    expect(anchorIndex).toBeGreaterThanOrEqual(0);
+    expect(cjkIndex).toBeGreaterThan(anchorIndex);
+  });
+
+  it("places the CJK fallback before the generic monospace keyword", () => {
+    const parts = buildTerminalFontFamily({ cjkFallback: "Noto Sans Mono CJK TC" }).split(", ");
     const cjkIndex = parts.indexOf('"Noto Sans Mono CJK TC"');
-    const monoIndex = parts.indexOf("ui-monospace");
+    const genericIndex = parts.indexOf("monospace");
     expect(cjkIndex).toBeGreaterThanOrEqual(0);
-    expect(cjkIndex).toBeLessThan(monoIndex);
+    expect(cjkIndex).toBeLessThan(genericIndex);
   });
 });
 
 describe("terminalFontFamilyFor", () => {
   it("prefers the user's explicit CJK fallback over the system suggestion", () => {
-    const chain = terminalFontFamilyFor(
+    const parts = terminalFontFamilyFor(
       "JetBrains Mono",
       "Noto Sans Mono CJK TC",
       "Sarasa Mono TC",
-    );
-    const parts = chain.split(", ");
-    // The chosen fallback sits in the priority slot (right after the primary),
-    // ahead of any occurrence of the suggestion in the base safety net.
-    expect(parts[1]).toBe('"Noto Sans Mono CJK TC"');
+    ).split(", ");
     const notoIndex = parts.indexOf('"Noto Sans Mono CJK TC"');
     const sarasaIndex = parts.indexOf('"Sarasa Mono TC"');
+    // The chosen fallback sits ahead of the suggestion in the safety net.
+    expect(notoIndex).toBeGreaterThanOrEqual(0);
     expect(notoIndex).toBeLessThan(sarasaIndex);
   });
 
   it("uses the system suggestion when the user has not chosen a fallback", () => {
-    const chain = terminalFontFamilyFor("JetBrains Mono", "", "Sarasa Mono TC");
-    expect(chain).toContain('"Sarasa Mono TC"');
+    expect(terminalFontFamilyFor("JetBrains Mono", "", "Sarasa Mono TC")).toContain(
+      '"Sarasa Mono TC"',
+    );
   });
 
   it("still produces a valid chain when nothing is configured or detected", () => {
-    const chain = terminalFontFamilyFor("", "", null);
-    expect(chain.endsWith("monospace")).toBe(true);
+    expect(terminalFontFamilyFor("", "", null).endsWith("monospace")).toBe(true);
+  });
+
+  it("keeps ASCII on a monospace anchor even when only a proportional CJK font is detected", () => {
+    const parts = terminalFontFamilyFor("", "", "PingFang TC").split(", ");
+    // No primary, so the first family must be a Latin monospace anchor, not PingFang.
+    expect(parts[0]).toBe("ui-monospace");
+    expect(parts.indexOf("ui-monospace")).toBeLessThan(parts.indexOf('"PingFang TC"'));
   });
 });

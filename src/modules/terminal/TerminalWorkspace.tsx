@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { TerminalTabBar } from "./TerminalTabBar";
 import { TerminalView } from "./TerminalView";
 import { useTerminalTabsStore } from "./store/terminalTabsStore";
@@ -8,16 +8,20 @@ export function TerminalWorkspace() {
   const activeTabId = useTerminalTabsStore((s) => s.activeTabId);
   const addTab = useTerminalTabsStore((s) => s.addTab);
   const closeTab = useTerminalTabsStore((s) => s.closeTab);
+  const initialized = useRef(false);
 
-  // Always keep one terminal open when this view is shown.
+  // Open one terminal the first time the workspace shows. The ref guard keeps
+  // React StrictMode's double-mount (dev) from creating two tabs. Afterwards
+  // the user manages tabs with the + button.
   useEffect(() => {
-    if (tabs.length === 0) {
+    if (!initialized.current && useTerminalTabsStore.getState().tabs.length === 0) {
+      initialized.current = true;
       addTab();
     }
-  }, [tabs.length, addTab]);
+  }, [addTab]);
 
   return (
-    <div className="flex h-full flex-col bg-[--color-bg-inset]">
+    <div className="flex h-full flex-col bg-bg-inset">
       <TerminalTabBar />
       <div className="relative min-h-0 flex-1">
         {tabs.map((tab) => {
