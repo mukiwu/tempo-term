@@ -2,6 +2,9 @@ import { useTranslation } from "react-i18next";
 import { FilePlus, FolderOpen, SquareTerminal } from "lucide-react";
 import { TerminalTabContent } from "@/modules/terminal/TerminalTabContent";
 import { EditorTabContent } from "@/modules/editor/EditorTabContent";
+import { NoteTabContent } from "@/modules/notes/NoteTabContent";
+import { PreviewTabContent } from "@/modules/preview/PreviewTabContent";
+import { GitGraphTabContent } from "@/modules/git-graph/GitGraphTabContent";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -74,11 +77,11 @@ export function TabsArea() {
           key={tab.id}
           className={`absolute inset-0 ${tab.id === activeId ? "" : "hidden"}`}
         >
-          {tab.kind === "terminal" ? (
-            <TerminalTabContent tab={tab} />
-          ) : (
-            <EditorTabContent path={tab.path} />
-          )}
+          {tab.kind === "terminal" && <TerminalTabContent tab={tab} />}
+          {tab.kind === "editor" && <EditorTabContent path={tab.path} />}
+          {tab.kind === "note" && <NoteTabContent noteId={tab.noteId} tabId={tab.id} />}
+          {tab.kind === "preview" && <PreviewTabContent url={tab.url} />}
+          {tab.kind === "git-graph" && <GitGraphTabContent />}
         </div>
       ))}
     </div>

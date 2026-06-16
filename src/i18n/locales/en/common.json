@@ -7,6 +7,7 @@
     "editor": "Editor",
     "sourceControl": "Source Control",
     "ai": "AI Assistant",
+    "notes": "Notes",
     "settings": "Settings"
   },
   "statusBar": {

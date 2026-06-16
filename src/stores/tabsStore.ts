@@ -38,7 +38,21 @@ export interface EditorTab extends TabBase {
   path: string;
 }
 
-export type Tab = TerminalTab | EditorTab;
+export interface NoteTab extends TabBase {
+  kind: "note";
+  noteId: string;
+}
+
+export interface PreviewTab extends TabBase {
+  kind: "preview";
+  url: string;
+}
+
+export interface GitGraphTab extends TabBase {
+  kind: "git-graph";
+}
+
+export type Tab = TerminalTab | EditorTab | NoteTab | PreviewTab | GitGraphTab;
 
 interface TabsState {
   spaces: Space[];
@@ -50,6 +64,10 @@ interface TabsState {
   setActiveSpace: (id: string) => void;
   newTerminalTab: (cwd?: string) => string;
   openEditorTab: (path: string) => string;
+  openNoteTab: (noteId: string, title: string) => string;
+  openPreviewTab: (url: string) => string;
+  openGitGraphTab: () => string;
+  setTabTitle: (id: string, title: string) => void;
   closeTab: (id: string) => void;
   setActive: (id: string) => void;
   splitActivePane: (direction: SplitDirection) => void;
@@ -147,6 +165,55 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
   },
+
+  openNoteTab: (noteId, title) => {
+    const spaceId = get().ensureSpace();
+    const existing = get().tabs.find(
+      (t) => t.kind === "note" && t.noteId === noteId && t.spaceId === spaceId,
+    );
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
+    const id = nextTabId();
+    const tab: NoteTab = { id, spaceId, kind: "note", title: title || "Untitled", noteId };
+    set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+    return id;
+  },
+
+  openPreviewTab: (url) => {
+    const spaceId = get().ensureSpace();
+    const id = nextTabId();
+    let host = url;
+    try {
+      host = new URL(url).host || url;
+    } catch {
+      host = url;
+    }
+    const tab: PreviewTab = { id, spaceId, kind: "preview", title: host, url };
+    set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+    return id;
+  },
+
+  openGitGraphTab: () => {
+    const spaceId = get().ensureSpace();
+    const existing = get().tabs.find(
+      (t) => t.kind === "git-graph" && t.spaceId === spaceId,
+    );
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
+    const id = nextTabId();
+    const tab: GitGraphTab = { id, spaceId, kind: "git-graph", title: "Git Graph" };
+    set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+    return id;
+  },
+
+  setTabTitle: (id, title) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === id ? { ...t, title } : t)),
+    })),
 
   closeTab: (id) =>
     set((state) => {

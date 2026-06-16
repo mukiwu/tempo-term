@@ -1,12 +1,41 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileCode, FilePlus, FolderOpen, Plus, SquareTerminal, X } from "lucide-react";
-import { useTabsStore } from "@/stores/tabsStore";
+import {
+  FileCode,
+  FilePlus,
+  FileText,
+  FolderOpen,
+  GitBranch,
+  Globe,
+  Plus,
+  SquareTerminal,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { useTabsStore, type Tab } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
+import { useNotesStore } from "@/stores/notesStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useUiStore } from "@/stores/uiStore";
 import { pickFile, pickFolder } from "@/lib/dialog";
 import { SpaceDropdown } from "./SpaceDropdown";
+
+const DEFAULT_PREVIEW_URL = "http://localhost:3000";
+
+function tabIcon(kind: Tab["kind"]): LucideIcon {
+  switch (kind) {
+    case "terminal":
+      return SquareTerminal;
+    case "editor":
+      return FileCode;
+    case "note":
+      return FileText;
+    case "preview":
+      return Globe;
+    case "git-graph":
+      return GitBranch;
+  }
+}
 
 function TabItem({ id }: { id: string }) {
   const { t } = useTranslation();
@@ -23,7 +52,7 @@ function TabItem({ id }: { id: string }) {
     return null;
   }
   const active = tab.id === activeId;
-  const Icon = tab.kind === "terminal" ? SquareTerminal : FileCode;
+  const Icon = tabIcon(tab.kind);
   return (
     <div
       role="tab"
@@ -59,6 +88,10 @@ export function TabBar() {
   const visibleTabs = tabs.filter((tab) => tab.spaceId === activeSpaceId);
   const newTerminalTab = useTabsStore((s) => s.newTerminalTab);
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
+  const openNoteTab = useTabsStore((s) => s.openNoteTab);
+  const openPreviewTab = useTabsStore((s) => s.openPreviewTab);
+  const openGitGraphTab = useTabsStore((s) => s.openGitGraphTab);
+  const createNote = useNotesStore((s) => s.createNote);
   const setRoot = useWorkspaceStore((s) => s.setRoot);
   const selectSidebar = useUiStore((s) => s.selectSidebar);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -67,6 +100,22 @@ export function TabBar() {
   function addTerminal() {
     setMenuOpen(false);
     newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
+  }
+
+  function addNote() {
+    setMenuOpen(false);
+    const id = createNote(null);
+    openNoteTab(id, "Untitled");
+  }
+
+  function addPreview() {
+    setMenuOpen(false);
+    openPreviewTab(DEFAULT_PREVIEW_URL);
+  }
+
+  function addGitGraph() {
+    setMenuOpen(false);
+    openGitGraphTab();
   }
 
   async function openFolder() {
@@ -147,6 +196,31 @@ export function TabBar() {
             >
               <FilePlus size={15} />
               <span className="flex-1">{t("workspace.openFile")}</span>
+            </button>
+            <div className="my-1 border-t border-border" />
+            <button
+              type="button"
+              onClick={addNote}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-fg-muted hover:bg-bg hover:text-fg"
+            >
+              <FileText size={15} />
+              <span className="flex-1">{t("nav.notes")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={addPreview}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-fg-muted hover:bg-bg hover:text-fg"
+            >
+              <Globe size={15} />
+              <span className="flex-1">{t("preview:title")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={addGitGraph}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-fg-muted hover:bg-bg hover:text-fg"
+            >
+              <GitBranch size={15} />
+              <span className="flex-1">{t("gitGraph:title")}</span>
             </button>
           </div>
         )}

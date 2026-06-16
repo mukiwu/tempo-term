@@ -9,7 +9,16 @@ import {
 import { useTabsStore, type Tab } from "@/stores/tabsStore";
 
 function tabSubtitle(tab: Tab): string {
-  return tab.kind === "terminal" ? (tab.cwd ?? "") : tab.path;
+  switch (tab.kind) {
+    case "terminal":
+      return tab.cwd ?? "";
+    case "editor":
+      return tab.path;
+    case "preview":
+      return tab.url;
+    default:
+      return "";
+  }
 }
 
 export function SpaceDropdown() {

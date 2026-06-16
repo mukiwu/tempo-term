@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type SidebarView = "explorer" | "sourceControl" | "ai";
+export type SidebarView = "explorer" | "sourceControl" | "ai" | "notes";
 
 interface UiState {
   sidebarView: SidebarView;

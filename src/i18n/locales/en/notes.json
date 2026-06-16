@@ -1,0 +1,11 @@
+{
+  "title": "Notes",
+  "newNote": "New note",
+  "newFolder": "New folder",
+  "deleteNote": "Delete note",
+  "deleteFolder": "Delete folder",
+  "empty": "No notes yet. Jot something down anytime.",
+  "notFound": "This note no longer exists",
+  "titlePlaceholder": "Note title",
+  "contentPlaceholder": "Write anything — commands, snippets, ideas…"
+}

@@ -1,0 +1,11 @@
+{
+  "title": "筆記",
+  "newNote": "新增筆記",
+  "newFolder": "新增資料夾",
+  "deleteNote": "刪除筆記",
+  "deleteFolder": "刪除資料夾",
+  "empty": "還沒有筆記,隨時都能記點東西",
+  "notFound": "這則筆記已經不存在",
+  "titlePlaceholder": "筆記標題",
+  "contentPlaceholder": "寫任何東西,指令、片段、想法都行⋯"
+}
