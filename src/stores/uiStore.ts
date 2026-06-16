@@ -8,7 +8,7 @@ interface UiState {
   settingsOpen: boolean;
   terminalOpen: boolean;
   fileFinderOpen: boolean;
-  /** Select a sidebar panel; clicking the active one toggles the sidebar. */
+  /** Select a sidebar panel and make sure the sidebar is shown. */
   selectSidebar: (view: SidebarView) => void;
   toggleSidebar: () => void;
   setSettingsOpen: (open: boolean) => void;
@@ -26,13 +26,7 @@ export const useUiStore = create<UiState>((set) => ({
   terminalOpen: true,
   fileFinderOpen: false,
 
-  selectSidebar: (view) =>
-    set((state) => {
-      if (state.sidebarView === view && state.sidebarVisible) {
-        return { sidebarVisible: false };
-      }
-      return { sidebarView: view, sidebarVisible: true };
-    }),
+  selectSidebar: (view) => set({ sidebarView: view, sidebarVisible: true }),
 
   toggleSidebar: () => set((state) => ({ sidebarVisible: !state.sidebarVisible })),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),

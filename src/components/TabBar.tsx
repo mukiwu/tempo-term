@@ -7,6 +7,7 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
+  PanelLeft,
   Plus,
   SquareTerminal,
   X,
@@ -91,6 +92,8 @@ export function TabBar() {
   const openGitGraphTab = useTabsStore((s) => s.openGitGraphTab);
   const setRoot = useWorkspaceStore((s) => s.setRoot);
   const selectSidebar = useUiStore((s) => s.selectSidebar);
+  const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -144,6 +147,18 @@ export function TabBar() {
       data-tauri-drag-region
       className="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-bg-inset pl-20 pr-2"
     >
+      <button
+        type="button"
+        aria-label={t("workspace.toggleSidebar")}
+        title={t("workspace.toggleSidebar")}
+        aria-pressed={sidebarVisible}
+        onClick={toggleSidebar}
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-bg-elevated ${
+          sidebarVisible ? "text-fg" : "text-fg-subtle hover:text-fg"
+        }`}
+      >
+        <PanelLeft size={16} />
+      </button>
       <SpaceDropdown />
       <div className="mx-1 h-4 w-px shrink-0 bg-border" />
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
