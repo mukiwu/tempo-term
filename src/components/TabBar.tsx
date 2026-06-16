@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileCode, FilePlus, Plus, SquareTerminal, X } from "lucide-react";
+import { FileCode, FilePlus, FolderOpen, Plus, SquareTerminal, X } from "lucide-react";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
-import { pickFile } from "@/lib/dialog";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useUiStore } from "@/stores/uiStore";
+import { pickFile, pickFolder } from "@/lib/dialog";
 
 function TabItem({ id }: { id: string }) {
   const { t } = useTranslation();
@@ -54,8 +56,24 @@ export function TabBar() {
   const tabs = useTabsStore((s) => s.tabs);
   const newTerminalTab = useTabsStore((s) => s.newTerminalTab);
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
+  const setRoot = useWorkspaceStore((s) => s.setRoot);
+  const selectSidebar = useUiStore((s) => s.selectSidebar);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  function addTerminal() {
+    setMenuOpen(false);
+    newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
+  }
+
+  async function openFolder() {
+    setMenuOpen(false);
+    const folder = await pickFolder();
+    if (folder) {
+      setRoot(folder);
+      selectSidebar("explorer");
+    }
+  }
 
   useEffect(() => {
     if (!menuOpen) {
@@ -102,10 +120,7 @@ export function TabBar() {
           <div className="absolute right-0 top-8 z-50 w-48 overflow-hidden rounded-lg border border-border-strong bg-bg-elevated py-1 shadow-xl">
             <button
               type="button"
-              onClick={() => {
-                setMenuOpen(false);
-                newTerminalTab();
-              }}
+              onClick={addTerminal}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-fg-muted hover:bg-bg hover:text-fg"
             >
               <SquareTerminal size={15} />
@@ -114,12 +129,19 @@ export function TabBar() {
             </button>
             <button
               type="button"
+              onClick={() => void openFolder()}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-fg-muted hover:bg-bg hover:text-fg"
+            >
+              <FolderOpen size={15} />
+              <span className="flex-1">{t("workspace.openFolder")}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => void openFile()}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-fg-muted hover:bg-bg hover:text-fg"
             >
               <FilePlus size={15} />
               <span className="flex-1">{t("workspace.openFile")}</span>
-              <kbd className="text-[10px] text-fg-subtle">⌘O</kbd>
             </button>
           </div>
         )}

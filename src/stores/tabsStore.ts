@@ -19,6 +19,8 @@ export interface TerminalTab {
   title: string;
   paneTree: LayoutNode;
   activeLeafId: string;
+  /** Directory new panes in this tab start in (the work-tree root at creation). */
+  cwd?: string;
 }
 
 export interface EditorTab {
@@ -33,7 +35,7 @@ export type Tab = TerminalTab | EditorTab;
 interface TabsState {
   tabs: Tab[];
   activeId: string | null;
-  newTerminalTab: () => string;
+  newTerminalTab: (cwd?: string) => string;
   openEditorTab: (path: string) => string;
   closeTab: (id: string) => void;
   setActive: (id: string) => void;
@@ -66,7 +68,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   tabs: [],
   activeId: null,
 
-  newTerminalTab: () => {
+  newTerminalTab: (cwd) => {
     const id = nextTabId();
     const paneId = nextPaneId();
     const count = get().tabs.filter((t) => t.kind === "terminal").length + 1;
@@ -76,6 +78,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       title: `Terminal ${count}`,
       paneTree: leaf(paneId),
       activeLeafId: paneId,
+      cwd,
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;

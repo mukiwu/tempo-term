@@ -81,6 +81,7 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
               <TerminalView
                 active={active}
                 cwdTracking={active && isActiveTab}
+                cwd={tab.cwd}
                 onExit={() => closePane(tab.id, pane.id)}
               />
             </div>

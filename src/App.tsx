@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { TabBar } from "@/components/TabBar";
-import { ActivityRail } from "@/components/ActivityRail";
 import { Sidebar } from "@/components/Sidebar";
 import { Resizer } from "@/components/Resizer";
 import { StatusBar } from "@/components/StatusBar";
@@ -10,6 +9,7 @@ import { useUiStore } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFontStore } from "@/stores/fontStore";
 import { useTabsStore } from "@/stores/tabsStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { applyTheme, getTheme } from "@/themes/themes";
 
 const MIN_SIDEBAR = 180;
@@ -43,7 +43,9 @@ function App() {
       const key = e.key.toLowerCase();
       if (key === "t") {
         e.preventDefault();
-        useTabsStore.getState().newTerminalTab();
+        useTabsStore
+          .getState()
+          .newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
       } else if (key === "p") {
         e.preventDefault();
         useUiStore.getState().openFileFinder();
@@ -61,8 +63,6 @@ function App() {
       <TabBar />
 
       <div className="flex min-h-0 flex-1">
-        <ActivityRail />
-
         {sidebarVisible && (
           <>
             <div style={{ width: sidebarWidth }} className="h-full shrink-0">

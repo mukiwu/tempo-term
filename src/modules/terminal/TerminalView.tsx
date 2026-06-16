@@ -10,10 +10,14 @@ interface TerminalViewProps {
   active: boolean;
   /** When true, this pane drives the file explorer root from its shell CWD. */
   cwdTracking?: boolean;
+  /** Directory the shell starts in. */
+  cwd?: string;
   onExit?: () => void;
 }
 
-export function TerminalView({ active, cwdTracking = false, onExit }: TerminalViewProps) {
+export function TerminalView({ active, cwdTracking = false, cwd, onExit }: TerminalViewProps) {
+  const cwdRef = useRef(cwd);
+  cwdRef.current = cwd;
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<TerminalHandle | null>(null);
   const sessionRef = useRef<PtySession | null>(null);
@@ -68,6 +72,7 @@ export function TerminalView({ active, cwdTracking = false, onExit }: TerminalVi
     void openPty({
       cols: term.cols,
       rows: term.rows,
+      cwd: cwdRef.current,
       onData: (bytes) => term.write(bytes),
       // Only treat an exit as user-facing when we did not tear the session
       // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
