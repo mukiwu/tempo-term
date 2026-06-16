@@ -121,20 +121,20 @@ export function SpaceDropdown() {
                     aria-label={t("workspace.renameSpace")}
                     title={t("workspace.renameSpace")}
                     onClick={() => startRename(space.id, space.name)}
-                    className="rounded p-0.5 text-fg-subtle opacity-0 hover:text-fg group-hover/space:opacity-100"
+                    className="rounded p-1 text-fg-subtle hover:bg-bg hover:text-fg"
                   >
-                    <Pencil size={12} />
+                    <Pencil size={13} />
                   </button>
                   <button
                     type="button"
                     aria-label={t("workspace.deleteSpace")}
                     title={t("workspace.deleteSpace")}
                     onClick={() => deleteSpace(space.id)}
-                    className="rounded p-0.5 text-fg-subtle opacity-0 hover:text-danger group-hover/space:opacity-100"
+                    className="rounded p-1 text-fg-subtle hover:bg-bg hover:text-danger"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={13} />
                   </button>
-                  <span className="text-xs text-fg-subtle">{spaceTabs.length}</span>
+                  <span className="ml-0.5 text-xs text-fg-subtle">{spaceTabs.length}</span>
                 </div>
                 <ul className="ml-2">
                   {spaceTabs.map((tb) => {

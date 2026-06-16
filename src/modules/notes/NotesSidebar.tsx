@@ -31,9 +31,9 @@ function NoteRow({ note, depth }: { note: Note; depth: number }) {
         type="button"
         aria-label={t("deleteNote")}
         onClick={() => deleteNote(note.id)}
-        className="mr-2 rounded p-0.5 text-fg-subtle opacity-0 hover:bg-border-strong hover:text-danger group-hover:opacity-100"
+        className="mr-2 rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-danger"
       >
-        <Trash2 size={12} />
+        <Trash2 size={13} />
       </button>
     </li>
   );
@@ -112,17 +112,17 @@ export function NotesSidebar() {
                     aria-label={t("newNote")}
                     title={t("newNote")}
                     onClick={() => newNote(folder.id)}
-                    className="rounded p-0.5 text-fg-subtle opacity-0 hover:text-fg group-hover:opacity-100"
+                    className="rounded p-0.5 text-fg-subtle hover:text-fg"
                   >
-                    <FilePlus size={12} />
+                    <FilePlus size={13} />
                   </button>
                   <button
                     type="button"
                     aria-label={t("deleteFolder")}
                     onClick={() => deleteFolder(folder.id)}
-                    className="mr-2 rounded p-0.5 text-fg-subtle opacity-0 hover:text-danger group-hover:opacity-100"
+                    className="mr-2 rounded p-0.5 text-fg-subtle hover:text-danger"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
                 {!isCollapsed && (

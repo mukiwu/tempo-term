@@ -43,28 +43,58 @@ function TabItem({ id }: { id: string }) {
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
   const closeTab = useTabsStore((s) => s.closeTab);
+  const setTabTitle = useTabsStore((s) => s.setTabTitle);
   const dirty = useEditorStore((s) =>
     tab?.kind === "editor"
       ? (s.buffers[tab.path]?.content ?? "") !== (s.buffers[tab.path]?.baseline ?? "")
       : false,
   );
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
   if (!tab) {
     return null;
   }
   const active = tab.id === activeId;
   const Icon = tabIcon(tab.kind);
+
+  function commit() {
+    if (tab && draft.trim()) {
+      setTabTitle(tab.id, draft.trim());
+    }
+    setEditing(false);
+  }
+
   return (
     <div
       role="tab"
       aria-selected={active}
       onClick={() => setActive(tab.id)}
+      onDoubleClick={() => {
+        setDraft(tab.title);
+        setEditing(true);
+      }}
       title={tab.title}
       className={`group flex h-7 cursor-pointer items-center gap-2 rounded-md px-3 text-xs transition-colors ${
         active ? "bg-bg-elevated text-fg" : "text-fg-muted hover:bg-bg-elevated/60"
       }`}
     >
       <Icon size={13} className="shrink-0" />
-      <span className="max-w-[160px] truncate">{tab.title}</span>
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          className="w-28 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
+        />
+      ) : (
+        <span className="max-w-[160px] truncate">{tab.title}</span>
+      )}
       {dirty && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
       <button
         type="button"
@@ -73,9 +103,9 @@ function TabItem({ id }: { id: string }) {
           e.stopPropagation();
           closeTab(tab.id);
         }}
-        className="rounded p-0.5 text-fg-subtle opacity-0 hover:bg-border-strong hover:text-fg group-hover:opacity-100"
+        className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
       >
-        <X size={12} />
+        <X size={13} />
       </button>
     </div>
   );
