@@ -28,6 +28,11 @@
     "preview": "預覽",
     "previewText": "The quick brown fox 中文字體預覽 0123",
     "missingHint": "偵測不到正體中文等寬字體，建議安裝下方其中一款",
-    "recommended": "建議字體"
+    "recommended": "建議字體",
+    "systemDefault": "系統預設",
+    "autoDetect": "自動偵測",
+    "detectedUsing": "目前使用",
+    "loading": "正在掃描已安裝的字體⋯",
+    "noCjkInChain": "沒有正體中文後備字體時，部分文字可能會顯示成空白方塊"
   }
 }

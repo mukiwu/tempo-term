@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
+import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 
 interface TerminalViewProps {
   active: boolean;
@@ -15,13 +16,20 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
 
+  const fontFamily = useFontStore(selectTerminalFontFamily);
+  const fontSize = useFontStore((s) => s.fontSize);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
       return;
     }
 
-    const handle = createTerminal();
+    const initial = useFontStore.getState();
+    const handle = createTerminal({
+      fontFamily: selectTerminalFontFamily(initial),
+      fontSize: initial.fontSize,
+    });
     handleRef.current = handle;
     const { term, fit } = handle;
     term.open(container);
@@ -108,6 +116,25 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
     });
     return () => cancelAnimationFrame(frame);
   }, [active]);
+
+  // Apply live font changes from the settings panel to an already-open terminal.
+  useEffect(() => {
+    const handle = handleRef.current;
+    const container = containerRef.current;
+    if (!handle || !container) {
+      return;
+    }
+    handle.term.options.fontFamily = fontFamily;
+    handle.term.options.fontSize = fontSize;
+    if (container.clientWidth > 0 && container.clientHeight > 0) {
+      try {
+        handle.fit.fit();
+      } catch {
+        // ignore transient zero-size
+      }
+      sessionRef.current?.resize(handle.term.cols, handle.term.rows);
+    }
+  }, [fontFamily, fontSize]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

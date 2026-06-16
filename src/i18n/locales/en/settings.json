@@ -28,6 +28,11 @@
     "preview": "Preview",
     "previewText": "The quick brown fox 中文字體預覽 0123",
     "missingHint": "No Traditional Chinese monospace font detected. Install one of the recommended fonts below.",
-    "recommended": "Recommended fonts"
+    "recommended": "Recommended fonts",
+    "systemDefault": "System default",
+    "autoDetect": "Auto-detect",
+    "detectedUsing": "Currently using",
+    "loading": "Scanning installed fonts…",
+    "noCjkInChain": "Without a Traditional Chinese fallback, some characters may show as tofu boxes."
   }
 }
