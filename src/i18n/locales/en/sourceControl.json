@@ -10,6 +10,11 @@
   "unstage": "Unstage",
   "commitPlaceholder": "Commit message",
   "commit": "Commit",
+  "push": "Push",
+  "pushing": "Pushing…",
+  "pushed": "Pushed",
+  "aiGenerate": "Generate with AI",
+  "generating": "Generating…",
   "refresh": "Refresh",
   "history": "Recent commits",
   "nothingToCommit": "Stage changes and write a message to commit"

@@ -6,7 +6,8 @@ use modules::fs::{
 };
 use modules::ai::ai_chat;
 use modules::git::{
-    git_commit, git_log, git_resolve_repo, git_stage, git_status, git_unstage,
+    git_commit, git_diff, git_log, git_push, git_resolve_repo, git_stage, git_status,
+    git_unstage,
 };
 use modules::secrets::{secrets_delete_key, secrets_has_key, secrets_set_key};
 use modules::pty::{
@@ -39,6 +40,8 @@ pub fn run() {
             git_unstage,
             git_commit,
             git_log,
+            git_diff,
+            git_push,
             secrets_set_key,
             secrets_delete_key,
             secrets_has_key,

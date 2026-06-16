@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { GitBranch, Minus, Plus, RefreshCw } from "lucide-react";
+import { GitBranch, Loader2, Minus, Plus, RefreshCw, Sparkles, UploadCloud } from "lucide-react";
 import {
   gitCommit,
+  gitDiff,
   gitLog,
+  gitPush,
   gitResolveRepo,
   gitStage,
   gitStatus,
@@ -12,7 +14,9 @@ import {
   type FileStatus,
   type GitStatus,
 } from "./lib/gitBridge";
+import { generateCommitMessage } from "./lib/aiCommit";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useChatStore } from "@/modules/ai/store/chatStore";
 
 const STATUS_COLOR: Record<string, string> = {
   M: "text-warning",
@@ -66,6 +70,10 @@ export function SourceControlView() {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [history, setHistory] = useState<CommitInfo[]>([]);
   const [message, setMessage] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const providerId = useChatStore((s) => s.providerId);
+  const model = useChatStore((s) => s.model);
 
   const refresh = useCallback(async () => {
     if (!repoPath) {
@@ -105,6 +113,7 @@ export function SourceControlView() {
   }
 
   const canCommit = message.trim().length > 0 && (status?.staged.length ?? 0) > 0;
+  const hasStaged = (status?.staged.length ?? 0) > 0;
 
   async function withRepo(fn: (repo: string) => Promise<void>) {
     if (!repoPath) {
@@ -112,6 +121,38 @@ export function SourceControlView() {
     }
     await fn(repoPath);
     await refresh();
+  }
+
+  async function aiGenerate() {
+    if (!repoPath || generating) {
+      return;
+    }
+    setGenerating(true);
+    try {
+      const diff = await gitDiff(repoPath, true);
+      if (diff.trim()) {
+        setMessage(await generateCommitMessage(diff, providerId, model));
+      }
+    } catch {
+      // leave the message as-is on failure
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function doPush() {
+    if (!repoPath || pushing) {
+      return;
+    }
+    setPushing(true);
+    try {
+      await gitPush(repoPath);
+      await refresh();
+    } catch {
+      // a toast surface comes later
+    } finally {
+      setPushing(false);
+    }
   }
 
   return (
@@ -139,26 +180,58 @@ export function SourceControlView() {
       )}
 
       <div className="px-3 pb-3">
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder={t("commitPlaceholder")}
-          rows={2}
-          className="w-full resize-none rounded-md border border-border bg-bg px-2 py-1.5 text-sm text-fg outline-none focus:border-accent"
-        />
-        <button
-          type="button"
-          disabled={!canCommit}
-          onClick={() =>
-            void withRepo(async (repo) => {
-              await gitCommit(repo, message);
-              setMessage("");
-            })
-          }
-          className="mt-2 w-full rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {t("commit")}
-        </button>
+        <div className="relative">
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder={t("commitPlaceholder")}
+            rows={2}
+            className="w-full resize-none rounded-md border border-border bg-bg px-2 py-1.5 pr-9 text-sm text-fg outline-none focus:border-accent"
+          />
+          <button
+            type="button"
+            disabled={!hasStaged || generating}
+            onClick={() => void aiGenerate()}
+            aria-label={t("aiGenerate")}
+            title={t("aiGenerate")}
+            className="absolute right-1.5 top-1.5 rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {generating ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <Sparkles size={15} />
+            )}
+          </button>
+        </div>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            disabled={!canCommit}
+            onClick={() =>
+              void withRepo(async (repo) => {
+                await gitCommit(repo, message);
+                setMessage("");
+              })
+            }
+            className="flex-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {t("commit")}
+          </button>
+          <button
+            type="button"
+            disabled={pushing}
+            onClick={() => void doPush()}
+            title={t("push")}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg disabled:opacity-40"
+          >
+            {pushing ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <UploadCloud size={14} />
+            )}
+            {t("push")}
+          </button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

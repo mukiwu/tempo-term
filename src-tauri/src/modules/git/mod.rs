@@ -210,9 +210,49 @@ pub fn git_commit(repo_path: String, message: String) -> Result<String, String> 
     commit(&repo_path, &message)
 }
 
+/// Run a git subcommand against `repo_path` using the system git binary. This
+/// reuses the user's configured credentials/helpers, which matters for push.
+fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+/// The staged (`--cached`) or unstaged diff as a unified-diff string.
+pub fn diff(repo_path: &str, staged: bool) -> Result<String, String> {
+    if staged {
+        run_git(repo_path, &["diff", "--cached"])
+    } else {
+        run_git(repo_path, &["diff"])
+    }
+}
+
+/// Push the current branch to its remote.
+pub fn push(repo_path: &str) -> Result<String, String> {
+    run_git(repo_path, &["push"])
+}
+
 #[tauri::command]
 pub fn git_log(repo_path: String, limit: Option<usize>) -> Result<Vec<CommitInfo>, String> {
     log(&repo_path, limit.unwrap_or(50))
+}
+
+#[tauri::command]
+pub fn git_diff(repo_path: String, staged: bool) -> Result<String, String> {
+    diff(&repo_path, staged)
+}
+
+#[tauri::command]
+pub fn git_push(repo_path: String) -> Result<String, String> {
+    push(&repo_path)
 }
 
 #[cfg(test)]
@@ -294,6 +334,23 @@ mod tests {
         let resolved = resolve_repo(&sub.to_string_lossy()).unwrap();
         // Resolved root should be the repo dir (allowing for /private symlink on macOS).
         assert!(resolved.ends_with(dir.file_name().unwrap().to_str().unwrap()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn diff_shows_staged_changes() {
+        let dir = temp_repo_dir("diff");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init"]).unwrap();
+        run_git(&path, &["config", "user.name", "Test"]).unwrap();
+        run_git(&path, &["config", "user.email", "test@example.com"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "hello world\n").unwrap();
+        run_git(&path, &["add", "a.txt"]).unwrap();
+
+        let staged_diff = diff(&path, true).unwrap();
+        assert!(staged_diff.contains("a.txt"));
+        assert!(staged_diff.contains("+hello world"));
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

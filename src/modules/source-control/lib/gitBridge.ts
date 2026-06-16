@@ -42,3 +42,11 @@ export function gitCommit(repoPath: string, message: string): Promise<string> {
 export function gitLog(repoPath: string, limit?: number): Promise<CommitInfo[]> {
   return invoke<CommitInfo[]>("git_log", { repoPath, limit });
 }
+
+export function gitDiff(repoPath: string, staged: boolean): Promise<string> {
+  return invoke<string>("git_diff", { repoPath, staged });
+}
+
+export function gitPush(repoPath: string): Promise<string> {
+  return invoke<string>("git_push", { repoPath });
+}
