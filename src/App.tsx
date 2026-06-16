@@ -1,50 +1,51 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useEffect } from "react";
+import { Bot, FileCode, FolderTree, GitBranch, SquareTerminal } from "lucide-react";
+import { ActivityBar } from "@/components/ActivityBar";
+import { TitleBar } from "@/components/TitleBar";
+import { StatusBar } from "@/components/StatusBar";
+import { Placeholder } from "@/components/Placeholder";
+import { SettingsView } from "@/modules/settings/SettingsView";
+import { useUiStore, type ViewId } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+
+function ActiveView({ view }: { view: ViewId }) {
+  switch (view) {
+    case "settings":
+      return <SettingsView />;
+    case "explorer":
+      return <Placeholder icon={FolderTree} titleKey="nav.explorer" />;
+    case "editor":
+      return <Placeholder icon={FileCode} titleKey="nav.editor" />;
+    case "sourceControl":
+      return <Placeholder icon={GitBranch} titleKey="nav.sourceControl" />;
+    case "ai":
+      return <Placeholder icon={Bot} titleKey="nav.ai" />;
+    case "terminal":
+    default:
+      return <Placeholder icon={SquareTerminal} titleKey="nav.terminal" />;
+  }
+}
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const activeView = useUiStore((s) => s.activeView);
+  const theme = useSettingsStore((s) => s.theme);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+  }, [theme]);
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[--color-bg] text-[--color-fg]">
+      <TitleBar />
+      <div className="flex min-h-0 flex-1">
+        <ActivityBar />
+        <main className="min-w-0 flex-1 overflow-hidden">
+          <ActiveView view={activeView} />
+        </main>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <StatusBar />
+    </div>
   );
 }
 

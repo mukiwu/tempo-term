@@ -1,0 +1,33 @@
+{
+  "title": "Settings",
+  "sections": {
+    "appearance": "Appearance",
+    "terminal": "Terminal",
+    "fonts": "Fonts",
+    "ai": "AI",
+    "shortcuts": "Shortcuts"
+  },
+  "language": {
+    "label": "Display language",
+    "description": "Choose the language used across the interface",
+    "system": "Follow system",
+    "en": "English",
+    "zh-Hant": "正體中文"
+  },
+  "theme": {
+    "label": "Theme",
+    "dark": "Dark",
+    "light": "Light"
+  },
+  "fonts": {
+    "label": "Terminal font",
+    "description": "Pick the primary monospace font and a Traditional Chinese fallback so every glyph renders correctly",
+    "primary": "Primary font",
+    "cjkFallback": "Traditional Chinese fallback",
+    "fontSize": "Font size",
+    "preview": "Preview",
+    "previewText": "The quick brown fox 中文字體預覽 0123",
+    "missingHint": "No Traditional Chinese monospace font detected. Install one of the recommended fonts below.",
+    "recommended": "Recommended fonts"
+  }
+}

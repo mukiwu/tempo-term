@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tt-scaffold",
+  "productName": "TempoTerm",
   "version": "0.1.0",
   "identifier": "com.tempoterm.app",
   "build": {
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "tt-scaffold",
-        "width": 800,
-        "height": 600
+        "title": "TempoTerm",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 720,
+        "minHeight": 480
       }
     ],
     "security": {

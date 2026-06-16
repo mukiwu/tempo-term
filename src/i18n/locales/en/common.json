@@ -1,0 +1,32 @@
+{
+  "appName": "TempoTerm",
+  "tagline": "AI-powered terminal workspace",
+  "nav": {
+    "terminal": "Terminal",
+    "explorer": "Explorer",
+    "editor": "Editor",
+    "sourceControl": "Source Control",
+    "ai": "AI Assistant",
+    "settings": "Settings"
+  },
+  "statusBar": {
+    "ready": "Ready",
+    "shell": "Shell",
+    "encoding": "UTF-8",
+    "language": "Language"
+  },
+  "actions": {
+    "newTab": "New Tab",
+    "closeTab": "Close Tab",
+    "split": "Split",
+    "search": "Search",
+    "cancel": "Cancel",
+    "save": "Save",
+    "confirm": "Confirm"
+  },
+  "placeholder": {
+    "comingSoon": "Coming soon",
+    "terminalArea": "Terminal sessions will appear here",
+    "search": "Search files, commands and settings"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "appName": "TempoTerm",
+  "tagline": "AI 驅動的終端機工作區",
+  "nav": {
+    "terminal": "終端機",
+    "explorer": "檔案總管",
+    "editor": "編輯器",
+    "sourceControl": "原始碼控制",
+    "ai": "AI 助手",
+    "settings": "設定"
+  },
+  "statusBar": {
+    "ready": "就緒",
+    "shell": "Shell",
+    "encoding": "UTF-8",
+    "language": "語言"
+  },
+  "actions": {
+    "newTab": "新增分頁",
+    "closeTab": "關閉分頁",
+    "split": "分割",
+    "search": "搜尋",
+    "cancel": "取消",
+    "save": "儲存",
+    "confirm": "確認"
+  },
+  "placeholder": {
+    "comingSoon": "即將推出",
+    "terminalArea": "終端機工作階段會顯示在這裡",
+    "search": "搜尋檔案、指令與設定"
+  }
+}

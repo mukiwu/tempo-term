@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/*
+ * TempoTerm theme tokens.
+ * Dark-first palette tuned for a terminal-centric workspace.
+ */
+@theme {
+  --color-bg: #0e1116;
+  --color-bg-elevated: #161b22;
+  --color-bg-inset: #0a0d12;
+  --color-border: #232a33;
+  --color-border-strong: #30363d;
+  --color-fg: #e6edf3;
+  --color-fg-muted: #8b949e;
+  --color-fg-subtle: #6e7681;
+  --color-accent: #4493f8;
+  --color-accent-hover: #2f81f7;
+  --color-success: #3fb950;
+  --color-warning: #d29922;
+  --color-danger: #f85149;
+
+  --font-sans: "Inter", system-ui, "PingFang TC", "Noto Sans TC", sans-serif;
+  --font-mono: "JetBrains Mono", "Sarasa Mono TC", "Noto Sans Mono CJK TC",
+    ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Thin scrollbars that match the dark chrome */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

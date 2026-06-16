@@ -1,0 +1,33 @@
+{
+  "title": "設定",
+  "sections": {
+    "appearance": "外觀",
+    "terminal": "終端機",
+    "fonts": "字體",
+    "ai": "AI",
+    "shortcuts": "快捷鍵"
+  },
+  "language": {
+    "label": "顯示語言",
+    "description": "選擇整個介面使用的語言",
+    "system": "跟隨系統",
+    "en": "English",
+    "zh-Hant": "正體中文"
+  },
+  "theme": {
+    "label": "主題",
+    "dark": "深色",
+    "light": "淺色"
+  },
+  "fonts": {
+    "label": "終端機字體",
+    "description": "挑一個主要等寬字體與正體中文後備字體，讓每個字都能正確顯示",
+    "primary": "主要字體",
+    "cjkFallback": "正體中文後備字體",
+    "fontSize": "字級大小",
+    "preview": "預覽",
+    "previewText": "The quick brown fox 中文字體預覽 0123",
+    "missingHint": "偵測不到正體中文等寬字體，建議安裝下方其中一款",
+    "recommended": "建議字體"
+  }
+}
