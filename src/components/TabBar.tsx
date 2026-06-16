@@ -161,7 +161,10 @@ export function TabBar() {
       </button>
       <SpaceDropdown />
       <div className="mx-1 h-4 w-px shrink-0 bg-border" />
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+      <div
+        data-tauri-drag-region
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+      >
         {visibleTabs.map((tab) => (
           <TabItem key={tab.id} id={tab.id} />
         ))}
