@@ -146,3 +146,30 @@ button:disabled {
   text-align: left;
 }
 .note-md th { background: var(--color-bg-elevated); font-weight: 600; }
+
+/* TipTap WYSIWYG editor */
+.tiptap { outline: none; min-height: 12rem; }
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-fg-subtle);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.tiptap ul[data-type="taskList"] { list-style: none; padding-left: 0.2em; }
+.tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; }
+.tiptap ul[data-type="taskList"] li > label { margin-top: 0.25em; user-select: none; }
+.tiptap ul[data-type="taskList"] li > div { min-width: 0; flex: 1; }
+
+/* lowlight (highlight.js) syntax tokens, themed via the palette */
+.note-md .hljs-comment, .note-md .hljs-quote { color: var(--color-fg-subtle); font-style: italic; }
+.note-md .hljs-keyword, .note-md .hljs-built_in, .note-md .hljs-literal,
+.note-md .hljs-type, .note-md .hljs-symbol, .note-md .hljs-link { color: var(--color-accent); }
+.note-md .hljs-string, .note-md .hljs-regexp, .note-md .hljs-addition { color: var(--color-success); }
+.note-md .hljs-number, .note-md .hljs-attr, .note-md .hljs-attribute,
+.note-md .hljs-title, .note-md .hljs-title.function_ { color: var(--color-warning); }
+.note-md .hljs-name, .note-md .hljs-tag, .note-md .hljs-deletion,
+.note-md .hljs-selector-tag { color: var(--color-danger); }
+.note-md .hljs-variable, .note-md .hljs-template-variable,
+.note-md .hljs-property, .note-md .hljs-params { color: var(--color-fg); }
+.note-md .hljs-meta, .note-md .hljs-comment { color: var(--color-fg-subtle); }
