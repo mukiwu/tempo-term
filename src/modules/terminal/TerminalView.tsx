@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
+import { ImeDuplicateFilter } from "./lib/imeDuplicateFilter";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 
 interface TerminalViewProps {
@@ -33,6 +34,24 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
     const { term, fit } = handle;
     term.open(container);
 
+    // Guard against xterm's IME duplicate-send race (switching input method
+    // mid-composition). We learn the committed text from the helper textarea,
+    // tracking compositionupdate as a fallback because some platforms fire
+    // compositionend with empty data when the input source is switched.
+    const imeFilter = new ImeDuplicateFilter();
+    const textarea = container.querySelector(".xterm-helper-textarea");
+    let lastComposing = "";
+    const onCompositionUpdate = (event: Event) => {
+      lastComposing = (event as CompositionEvent).data ?? "";
+    };
+    const onCompositionEnd = (event: Event) => {
+      const committed = (event as CompositionEvent).data || lastComposing;
+      imeFilter.noteCompositionEnd(committed, Date.now());
+      lastComposing = "";
+    };
+    textarea?.addEventListener("compositionupdate", onCompositionUpdate);
+    textarea?.addEventListener("compositionend", onCompositionEnd);
+
     const safeFit = () => {
       if (container.clientWidth > 0 && container.clientHeight > 0) {
         try {
@@ -64,7 +83,11 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
           return;
         }
         sessionRef.current = session;
-        term.onData((data) => void session.write(data));
+        term.onData((data) => {
+          if (imeFilter.shouldForward(data, Date.now())) {
+            void session.write(data);
+          }
+        });
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -83,6 +106,8 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
     return () => {
       disposed = true;
       observer.disconnect();
+      textarea?.removeEventListener("compositionupdate", onCompositionUpdate);
+      textarea?.removeEventListener("compositionend", onCompositionEnd);
       void sessionRef.current?.close();
       term.dispose();
       handleRef.current = null;
