@@ -1,0 +1,16 @@
+{
+  "title": "Source Control",
+  "branch": "Branch",
+  "noRepo": "This folder is not a Git repository",
+  "stagedChanges": "Staged changes",
+  "changes": "Changes",
+  "noChanges": "No changes",
+  "stageAll": "Stage all",
+  "stage": "Stage",
+  "unstage": "Unstage",
+  "commitPlaceholder": "Commit message",
+  "commit": "Commit",
+  "refresh": "Refresh",
+  "history": "Recent commits",
+  "nothingToCommit": "Stage changes and write a message to commit"
+}

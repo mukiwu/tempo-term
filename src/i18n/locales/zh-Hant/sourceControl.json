@@ -1,0 +1,16 @@
+{
+  "title": "原始碼控制",
+  "branch": "分支",
+  "noRepo": "這個資料夾不是 Git 儲存庫",
+  "stagedChanges": "已暫存的變更",
+  "changes": "變更",
+  "noChanges": "沒有變更",
+  "stageAll": "全部暫存",
+  "stage": "暫存",
+  "unstage": "取消暫存",
+  "commitPlaceholder": "提交訊息",
+  "commit": "提交",
+  "refresh": "重新整理",
+  "history": "近期提交",
+  "nothingToCommit": "先暫存變更並輸入訊息才能提交"
+}

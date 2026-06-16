@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Bot, GitBranch } from "lucide-react";
+import { Bot } from "lucide-react";
 import { ActivityBar } from "@/components/ActivityBar";
 import { TitleBar } from "@/components/TitleBar";
 import { StatusBar } from "@/components/StatusBar";
@@ -8,6 +8,7 @@ import { SettingsView } from "@/modules/settings/SettingsView";
 import { TerminalWorkspace } from "@/modules/terminal/TerminalWorkspace";
 import { ExplorerView } from "@/modules/explorer/ExplorerView";
 import { EditorView } from "@/modules/editor/EditorView";
+import { SourceControlView } from "@/modules/source-control/SourceControlView";
 import { useUiStore, type ViewId } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFontStore } from "@/stores/fontStore";
@@ -21,7 +22,7 @@ function ActiveView({ view }: { view: ViewId }) {
     case "editor":
       return <EditorView />;
     case "sourceControl":
-      return <Placeholder icon={GitBranch} titleKey="nav.sourceControl" />;
+      return <SourceControlView />;
     case "ai":
       return <Placeholder icon={Bot} titleKey="nav.ai" />;
     case "terminal":
