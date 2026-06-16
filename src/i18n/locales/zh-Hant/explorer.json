@@ -1,0 +1,13 @@
+{
+  "title": "檔案總管",
+  "openFolder": "開啟資料夾",
+  "rootPlaceholder": "資料夾路徑",
+  "go": "前往",
+  "findFiles": "尋找檔案",
+  "findPlaceholder": "輸入以模糊搜尋檔案",
+  "searchInFiles": "在檔案中搜尋",
+  "searchPlaceholder": "搜尋檔案內的文字",
+  "noResults": "沒有符合的結果",
+  "empty": "這個資料夾是空的",
+  "loading": "載入中⋯"
+}

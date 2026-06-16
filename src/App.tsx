@@ -1,11 +1,12 @@
 import { useEffect } from "react";
-import { Bot, FileCode, FolderTree, GitBranch } from "lucide-react";
+import { Bot, FileCode, GitBranch } from "lucide-react";
 import { ActivityBar } from "@/components/ActivityBar";
 import { TitleBar } from "@/components/TitleBar";
 import { StatusBar } from "@/components/StatusBar";
 import { Placeholder } from "@/components/Placeholder";
 import { SettingsView } from "@/modules/settings/SettingsView";
 import { TerminalWorkspace } from "@/modules/terminal/TerminalWorkspace";
+import { ExplorerView } from "@/modules/explorer/ExplorerView";
 import { useUiStore, type ViewId } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFontStore } from "@/stores/fontStore";
@@ -15,7 +16,7 @@ function ActiveView({ view }: { view: ViewId }) {
     case "settings":
       return <SettingsView />;
     case "explorer":
-      return <Placeholder icon={FolderTree} titleKey="nav.explorer" />;
+      return <ExplorerView />;
     case "editor":
       return <Placeholder icon={FileCode} titleKey="nav.editor" />;
     case "sourceControl":

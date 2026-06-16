@@ -1,7 +1,9 @@
 import enCommon from "./locales/en/common.json";
 import enSettings from "./locales/en/settings.json";
+import enExplorer from "./locales/en/explorer.json";
 import zhHantCommon from "./locales/zh-Hant/common.json";
 import zhHantSettings from "./locales/zh-Hant/settings.json";
+import zhHantExplorer from "./locales/zh-Hant/explorer.json";
 
 export const SUPPORTED_LANGUAGES = ["en", "zh-Hant"] as const;
 
@@ -9,7 +11,7 @@ export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 export const DEFAULT_LANGUAGE: SupportedLanguage = "en";
 
-export const NAMESPACES = ["common", "settings"] as const;
+export const NAMESPACES = ["common", "settings", "explorer"] as const;
 
 export const DEFAULT_NAMESPACE = "common";
 
@@ -17,10 +19,12 @@ export const resources = {
   en: {
     common: enCommon,
     settings: enSettings,
+    explorer: enExplorer,
   },
   "zh-Hant": {
     common: zhHantCommon,
     settings: zhHantSettings,
+    explorer: zhHantExplorer,
   },
 } as const;
 

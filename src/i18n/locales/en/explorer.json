@@ -1,0 +1,13 @@
+{
+  "title": "Explorer",
+  "openFolder": "Open folder",
+  "rootPlaceholder": "Folder path",
+  "go": "Go",
+  "findFiles": "Find files",
+  "findPlaceholder": "Type to fuzzy-find files",
+  "searchInFiles": "Search in files",
+  "searchPlaceholder": "Search text in files",
+  "noResults": "No matches",
+  "empty": "This folder is empty",
+  "loading": "Loading…"
+}
