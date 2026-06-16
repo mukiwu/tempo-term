@@ -1,13 +1,5 @@
 import { useTranslation } from "react-i18next";
-import {
-  Bot,
-  Circle,
-  FolderTree,
-  GitBranch,
-  NotebookPen,
-  Settings,
-  type LucideIcon,
-} from "lucide-react";
+import { Bot, Circle, Settings, type LucideIcon } from "lucide-react";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { useUiStore, type SidebarView } from "@/stores/uiStore";
 
@@ -17,12 +9,9 @@ interface RailItem {
   labelKey: string;
 }
 
-const SIDEBAR_ITEMS: RailItem[] = [
-  { id: "explorer", icon: FolderTree, labelKey: "nav.explorer" },
-  { id: "sourceControl", icon: GitBranch, labelKey: "nav.sourceControl" },
-  { id: "notes", icon: NotebookPen, labelKey: "nav.notes" },
-  { id: "ai", icon: Bot, labelKey: "nav.ai" },
-];
+// Explorer / Git / Notes live as tabs inside the sidebar now; the footer keeps
+// the AI panel toggle and settings.
+const SIDEBAR_ITEMS: RailItem[] = [{ id: "ai", icon: Bot, labelKey: "nav.ai" }];
 
 export function StatusBar() {
   const { t } = useTranslation();
