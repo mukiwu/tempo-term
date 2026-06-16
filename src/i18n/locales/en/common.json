@@ -41,6 +41,9 @@
     "newTerminal": "New terminal",
     "splitRight": "Split right",
     "splitDown": "Split down",
-    "closePane": "Close pane"
+    "closePane": "Close pane",
+    "spaces": "Spaces",
+    "newSpace": "New space",
+    "addTab": "Add tab"
   }
 }

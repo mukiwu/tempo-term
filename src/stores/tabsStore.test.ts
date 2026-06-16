@@ -3,7 +3,7 @@ import { useTabsStore, type TerminalTab } from "./tabsStore";
 import { leafIds } from "@/modules/terminal/lib/terminalLayout";
 
 function reset() {
-  useTabsStore.setState({ tabs: [], activeId: null });
+  useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
 }
 
 function activeTerminal(): TerminalTab {
@@ -70,5 +70,41 @@ describe("tabsStore", () => {
     const b = useTabsStore.getState().newTerminalTab();
     useTabsStore.getState().closeTab(b);
     expect(useTabsStore.getState().activeId).toBe(a);
+  });
+
+  it("creates a default space for the first tab", () => {
+    useTabsStore.getState().newTerminalTab();
+    const s = useTabsStore.getState();
+    expect(s.spaces).toHaveLength(1);
+    expect(s.tabs[0].spaceId).toBe(s.activeSpaceId);
+  });
+
+  it("names a terminal tab after its folder", () => {
+    useTabsStore.getState().newTerminalTab("/Users/muki/Documents/proj");
+    expect(useTabsStore.getState().tabs[0].title).toBe("proj");
+  });
+
+  it("keeps tabs in separate spaces and switches between them", () => {
+    const first = useTabsStore.getState().newTerminalTab();
+    const firstSpace = useTabsStore.getState().activeSpaceId;
+    const secondSpace = useTabsStore.getState().newSpace();
+    expect(useTabsStore.getState().activeId).toBeNull();
+    const second = useTabsStore.getState().newTerminalTab();
+    expect(useTabsStore.getState().tabs.find((t) => t.id === second)?.spaceId).toBe(
+      secondSpace,
+    );
+
+    useTabsStore.getState().setActiveSpace(firstSpace!);
+    expect(useTabsStore.getState().activeSpaceId).toBe(firstSpace);
+    expect(useTabsStore.getState().activeId).toBe(first);
+  });
+
+  it("activating a tab also activates its space", () => {
+    const first = useTabsStore.getState().newTerminalTab();
+    const firstSpace = useTabsStore.getState().activeSpaceId;
+    useTabsStore.getState().newSpace();
+    useTabsStore.getState().newTerminalTab();
+    useTabsStore.getState().setActive(first);
+    expect(useTabsStore.getState().activeSpaceId).toBe(firstSpace);
   });
 });

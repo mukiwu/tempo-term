@@ -6,6 +6,7 @@ import { useEditorStore } from "@/modules/editor/store/editorStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useUiStore } from "@/stores/uiStore";
 import { pickFile, pickFolder } from "@/lib/dialog";
+import { SpaceDropdown } from "./SpaceDropdown";
 
 function TabItem({ id }: { id: string }) {
   const { t } = useTranslation();
@@ -54,6 +55,8 @@ function TabItem({ id }: { id: string }) {
 export function TabBar() {
   const { t } = useTranslation();
   const tabs = useTabsStore((s) => s.tabs);
+  const activeSpaceId = useTabsStore((s) => s.activeSpaceId);
+  const visibleTabs = tabs.filter((tab) => tab.spaceId === activeSpaceId);
   const newTerminalTab = useTabsStore((s) => s.newTerminalTab);
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
   const setRoot = useWorkspaceStore((s) => s.setRoot);
@@ -101,8 +104,10 @@ export function TabBar() {
       data-tauri-drag-region
       className="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-bg-inset pl-20 pr-2"
     >
+      <SpaceDropdown />
+      <div className="mx-1 h-4 w-px shrink-0 bg-border" />
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <TabItem key={tab.id} id={tab.id} />
         ))}
       </div>

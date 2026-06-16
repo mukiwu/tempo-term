@@ -9,32 +9,45 @@ import {
 } from "@/modules/terminal/lib/terminalLayout";
 
 /**
- * Terax-style typed tabs. Each tab is an independent panel of a chosen kind.
- * Terminal tabs own a recursive split paneTree; editor tabs hold one file.
- * Tabs stay mounted when inactive (hidden), so terminals keep running.
+ * Terax-style typed tabs grouped into spaces. A space is a context (like a
+ * window) that holds its own set of tabs. Each tab is an independent panel of a
+ * chosen kind: terminal tabs own a recursive split paneTree; editor tabs hold
+ * one file. Tabs stay mounted when inactive (hidden) so terminals keep running.
  */
-export interface TerminalTab {
+export interface Space {
   id: string;
-  kind: "terminal";
+  name: string;
+}
+
+interface TabBase {
+  id: string;
+  spaceId: string;
   title: string;
+}
+
+export interface TerminalTab extends TabBase {
+  kind: "terminal";
   paneTree: LayoutNode;
   activeLeafId: string;
   /** Directory new panes in this tab start in (the work-tree root at creation). */
   cwd?: string;
 }
 
-export interface EditorTab {
-  id: string;
+export interface EditorTab extends TabBase {
   kind: "editor";
-  title: string;
   path: string;
 }
 
 export type Tab = TerminalTab | EditorTab;
 
 interface TabsState {
+  spaces: Space[];
+  activeSpaceId: string | null;
   tabs: Tab[];
   activeId: string | null;
+  ensureSpace: () => string;
+  newSpace: (name?: string) => string;
+  setActiveSpace: (id: string) => void;
   newTerminalTab: (cwd?: string) => string;
   openEditorTab: (path: string) => string;
   closeTab: (id: string) => void;
@@ -46,6 +59,7 @@ interface TabsState {
 
 let tabCounter = 0;
 let paneCounter = 0;
+let spaceCounter = 0;
 function nextTabId(): string {
   tabCounter += 1;
   return `tab-${tabCounter}`;
@@ -53,6 +67,10 @@ function nextTabId(): string {
 function nextPaneId(): string {
   paneCounter += 1;
   return `pane-${paneCounter}`;
+}
+function nextSpaceId(): string {
+  spaceCounter += 1;
+  return `space-${spaceCounter}`;
 }
 
 function basename(path: string): string {
@@ -65,17 +83,48 @@ function neighbourId(tabs: Tab[], index: number): string | null {
 }
 
 export const useTabsStore = create<TabsState>((set, get) => ({
+  spaces: [],
+  activeSpaceId: null,
   tabs: [],
   activeId: null,
 
+  ensureSpace: () => {
+    const current = get().activeSpaceId;
+    if (current && get().spaces.some((s) => s.id === current)) {
+      return current;
+    }
+    const id = nextSpaceId();
+    const name = `Workspace ${get().spaces.length + 1}`;
+    set((state) => ({ spaces: [...state.spaces, { id, name }], activeSpaceId: id }));
+    return id;
+  },
+
+  newSpace: (name) => {
+    const id = nextSpaceId();
+    set((state) => ({
+      spaces: [...state.spaces, { id, name: name ?? `Workspace ${state.spaces.length + 1}` }],
+      activeSpaceId: id,
+      activeId: null,
+    }));
+    return id;
+  },
+
+  setActiveSpace: (id) =>
+    set((state) => {
+      const firstTab = state.tabs.find((t) => t.spaceId === id);
+      return { activeSpaceId: id, activeId: firstTab ? firstTab.id : null };
+    }),
+
   newTerminalTab: (cwd) => {
+    const spaceId = get().ensureSpace();
     const id = nextTabId();
     const paneId = nextPaneId();
     const count = get().tabs.filter((t) => t.kind === "terminal").length + 1;
     const tab: TerminalTab = {
       id,
+      spaceId,
       kind: "terminal",
-      title: `Terminal ${count}`,
+      title: cwd ? basename(cwd) : `Terminal ${count}`,
       paneTree: leaf(paneId),
       activeLeafId: paneId,
       cwd,
@@ -85,34 +134,46 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   openEditorTab: (path) => {
-    const existing = get().tabs.find((t) => t.kind === "editor" && t.path === path);
+    const spaceId = get().ensureSpace();
+    const existing = get().tabs.find(
+      (t) => t.kind === "editor" && t.path === path && t.spaceId === spaceId,
+    );
     if (existing) {
       set({ activeId: existing.id });
       return existing.id;
     }
     const id = nextTabId();
-    const tab: EditorTab = { id, kind: "editor", title: basename(path), path };
+    const tab: EditorTab = { id, spaceId, kind: "editor", title: basename(path), path };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
   },
 
   closeTab: (id) =>
     set((state) => {
-      const index = state.tabs.findIndex((t) => t.id === id);
-      if (index === -1) {
+      const closing = state.tabs.find((t) => t.id === id);
+      if (!closing) {
         return state;
       }
+      const sameSpace = state.tabs.filter((t) => t.spaceId === closing.spaceId);
+      const indexInSpace = sameSpace.findIndex((t) => t.id === id);
       const tabs = state.tabs.filter((t) => t.id !== id);
-      const activeId =
-        state.activeId === id ? neighbourId(tabs, index) : state.activeId;
+      let activeId = state.activeId;
+      if (state.activeId === id) {
+        const remaining = sameSpace.filter((t) => t.id !== id);
+        activeId = neighbourId(remaining, indexInSpace);
+      }
       return { tabs, activeId };
     }),
 
-  setActive: (id) => set({ activeId: id }),
+  setActive: (id) =>
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === id);
+      return tab ? { activeId: id, activeSpaceId: tab.spaceId } : { activeId: id };
+    }),
 
   splitActivePane: (direction) =>
-    set((state) => {
-      const tabs = state.tabs.map((tab) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) => {
         if (tab.id !== state.activeId || tab.kind !== "terminal") {
           return tab;
         }
@@ -122,16 +183,13 @@ export const useTabsStore = create<TabsState>((set, get) => ({
           paneTree: splitLeaf(tab.paneTree, tab.activeLeafId, direction, newId),
           activeLeafId: newId,
         };
-      });
-      return { tabs };
-    }),
+      }),
+    })),
 
   setActiveLeaf: (tabId, leafId) =>
     set((state) => ({
       tabs: state.tabs.map((tab) =>
-        tab.id === tabId && tab.kind === "terminal"
-          ? { ...tab, activeLeafId: leafId }
-          : tab,
+        tab.id === tabId && tab.kind === "terminal" ? { ...tab, activeLeafId: leafId } : tab,
       ),
     })),
 
@@ -143,17 +201,18 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       }
       const paneTree = removeLeaf(tab.paneTree, leafId);
       if (!paneTree) {
-        // Last pane closed: close the whole tab.
-        const index = state.tabs.findIndex((t) => t.id === tabId);
+        const sameSpace = state.tabs.filter((t) => t.spaceId === tab.spaceId);
+        const indexInSpace = sameSpace.findIndex((t) => t.id === tabId);
         const tabs = state.tabs.filter((t) => t.id !== tabId);
-        const activeId =
-          state.activeId === tabId ? neighbourId(tabs, index) : state.activeId;
+        let activeId = state.activeId;
+        if (state.activeId === tabId) {
+          const remaining = sameSpace.filter((t) => t.id !== tabId);
+          activeId = neighbourId(remaining, indexInSpace);
+        }
         return { tabs, activeId };
       }
       const activeLeafId =
-        tab.activeLeafId === leafId
-          ? (firstLeafId(paneTree) ?? tab.activeLeafId)
-          : tab.activeLeafId;
+        tab.activeLeafId === leafId ? (firstLeafId(paneTree) ?? tab.activeLeafId) : tab.activeLeafId;
       return {
         tabs: state.tabs.map((t) =>
           t.id === tabId && t.kind === "terminal" ? { ...t, paneTree, activeLeafId } : t,

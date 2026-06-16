@@ -63,7 +63,7 @@ export function TabsArea() {
   const tabs = useTabsStore((s) => s.tabs);
   const activeId = useTabsStore((s) => s.activeId);
 
-  if (tabs.length === 0) {
+  if (!activeId) {
     return <EmptyState />;
   }
 
