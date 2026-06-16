@@ -25,8 +25,10 @@ function NoteRow({ note, depth }: { note: Note; depth: number }) {
   return (
     <li
       draggable
-      onDragStart={() => {
+      onDragStart={(e) => {
         draggedNoteId = note.id;
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", note.id);
       }}
       onDragOver={(e) => {
         e.preventDefault();
