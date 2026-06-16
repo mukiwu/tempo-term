@@ -36,6 +36,10 @@
     "closeWorkspace": "Close workspace",
     "toggleTerminal": "Toggle terminal",
     "toggleSidebar": "Toggle sidebar",
-    "terminal": "Terminal"
+    "terminal": "Terminal",
+    "newTerminal": "New terminal",
+    "splitRight": "Split right",
+    "splitDown": "Split down",
+    "closePane": "Close pane"
   }
 }

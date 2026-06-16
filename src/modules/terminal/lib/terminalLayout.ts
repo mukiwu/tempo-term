@@ -1,0 +1,148 @@
+/**
+ * A recursive binary split tree for the terminal area. Each leaf is one
+ * terminal pane; a split holds two children side by side ("row" = left/right)
+ * or stacked ("col" = top/bottom) with a size ratio. All operations return new
+ * trees (immutable) so React state updates stay predictable.
+ */
+
+export type SplitDirection = "row" | "col";
+
+export type LayoutNode =
+  | { kind: "leaf"; id: string }
+  | {
+      kind: "split";
+      direction: SplitDirection;
+      children: [LayoutNode, LayoutNode];
+      sizes: [number, number];
+    };
+
+export function leaf(id: string): LayoutNode {
+  return { kind: "leaf", id };
+}
+
+/** Replace the target leaf with a split of [target, newLeaf]. */
+export function splitLeaf(
+  node: LayoutNode,
+  targetId: string,
+  direction: SplitDirection,
+  newId: string,
+): LayoutNode {
+  if (node.kind === "leaf") {
+    if (node.id !== targetId) {
+      return node;
+    }
+    return {
+      kind: "split",
+      direction,
+      children: [leaf(targetId), leaf(newId)],
+      sizes: [0.5, 0.5],
+    };
+  }
+  return {
+    ...node,
+    children: [
+      splitLeaf(node.children[0], targetId, direction, newId),
+      splitLeaf(node.children[1], targetId, direction, newId),
+    ],
+  };
+}
+
+/** Remove a leaf, collapsing its parent split onto the surviving sibling. */
+export function removeLeaf(node: LayoutNode, targetId: string): LayoutNode | null {
+  if (node.kind === "leaf") {
+    return node.id === targetId ? null : node;
+  }
+  const a = removeLeaf(node.children[0], targetId);
+  const b = removeLeaf(node.children[1], targetId);
+  if (a === null) {
+    return b;
+  }
+  if (b === null) {
+    return a;
+  }
+  return { ...node, children: [a, b] };
+}
+
+/** Adjust the size ratio of the split that owns `targetId` as its first child. */
+export function setSizes(
+  node: LayoutNode,
+  splitFirstChildPredicate: (n: LayoutNode) => boolean,
+  sizes: [number, number],
+): LayoutNode {
+  if (node.kind === "leaf") {
+    return node;
+  }
+  if (splitFirstChildPredicate(node)) {
+    return { ...node, sizes };
+  }
+  return {
+    ...node,
+    children: [
+      setSizes(node.children[0], splitFirstChildPredicate, sizes),
+      setSizes(node.children[1], splitFirstChildPredicate, sizes),
+    ],
+  };
+}
+
+export function leafIds(node: LayoutNode): string[] {
+  if (node.kind === "leaf") {
+    return [node.id];
+  }
+  return [...leafIds(node.children[0]), ...leafIds(node.children[1])];
+}
+
+export function firstLeafId(node: LayoutNode | null): string | null {
+  if (!node) {
+    return null;
+  }
+  return node.kind === "leaf" ? node.id : firstLeafId(node.children[0]);
+}
+
+export interface Rect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface PaneRect {
+  id: string;
+  rect: Rect;
+}
+
+const FULL: Rect = { left: 0, top: 0, width: 100, height: 100 };
+
+/**
+ * Flatten the tree into absolute pane rectangles (percentages). Rendering panes
+ * from a flat list with stable keys keeps each terminal mounted when the tree
+ * restructures, so splitting never kills an existing session.
+ */
+export function computeLayout(node: LayoutNode, rect: Rect = FULL): PaneRect[] {
+  if (node.kind === "leaf") {
+    return [{ id: node.id, rect }];
+  }
+  const total = node.sizes[0] + node.sizes[1];
+  const fraction = node.sizes[0] / total;
+  if (node.direction === "row") {
+    const w0 = rect.width * fraction;
+    return [
+      ...computeLayout(node.children[0], { ...rect, width: w0 }),
+      ...computeLayout(node.children[1], {
+        left: rect.left + w0,
+        top: rect.top,
+        width: rect.width - w0,
+        height: rect.height,
+      }),
+    ];
+  }
+  const h0 = rect.height * fraction;
+  return [
+    ...computeLayout(node.children[0], { ...rect, height: h0 }),
+    ...computeLayout(node.children[1], {
+      left: rect.left,
+      top: rect.top + h0,
+      width: rect.width,
+      height: rect.height - h0,
+    }),
+  ];
+}
