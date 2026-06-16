@@ -36,6 +36,10 @@
     "closeWorkspace": "關閉工作區",
     "toggleTerminal": "切換終端機",
     "toggleSidebar": "切換側邊欄",
-    "terminal": "終端機"
+    "terminal": "終端機",
+    "newTerminal": "新增終端機",
+    "splitRight": "向右分割",
+    "splitDown": "向下分割",
+    "closePane": "關閉面板"
   }
 }

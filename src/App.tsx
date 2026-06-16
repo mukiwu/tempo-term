@@ -14,7 +14,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useFontStore } from "@/stores/fontStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useWorkspaceTabsStore } from "@/stores/workspaceTabsStore";
-import { useTerminalTabsStore } from "@/modules/terminal/store/terminalTabsStore";
+import { useTerminalSplitStore } from "@/modules/terminal/store/terminalSplitStore";
 import { applyTheme, getTheme } from "@/themes/themes";
 
 const MIN_SIDEBAR = 180;
@@ -64,8 +64,8 @@ function App() {
       const key = e.key.toLowerCase();
       if (key === "t") {
         e.preventDefault();
-        useTerminalTabsStore.getState().addTab();
         useUiStore.getState().setTerminalOpen(true);
+        useTerminalSplitStore.getState().splitActive("row");
       } else if (key === "p") {
         e.preventDefault();
         useUiStore.getState().openFileFinder();
