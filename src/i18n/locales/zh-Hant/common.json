@@ -31,6 +31,7 @@
   },
   "workspace": {
     "openFolder": "開啟資料夾",
+    "openFile": "開啟檔案",
     "noWorkspaceTitle": "尚未開啟資料夾",
     "noWorkspaceHint": "開啟一個資料夾開始工作",
     "closeWorkspace": "關閉工作區",

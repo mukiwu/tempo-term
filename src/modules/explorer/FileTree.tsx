@@ -7,7 +7,7 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { fsReadDir, type DirEntry } from "./lib/fsBridge";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useTabsStore } from "@/stores/tabsStore";
 
 interface TreeNodeProps {
   entry: DirEntry;
@@ -17,13 +17,16 @@ interface TreeNodeProps {
 function TreeNode({ entry, depth }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DirEntry[] | null>(null);
-  const openFile = useWorkspaceStore((s) => s.openFile);
-  const activeFile = useWorkspaceStore((s) => s.activeFile);
-  const isActive = !entry.is_dir && activeFile === entry.path;
+  const openEditorTab = useTabsStore((s) => s.openEditorTab);
+  const activeEditorPath = useTabsStore((s) => {
+    const active = s.tabs.find((t) => t.id === s.activeId);
+    return active && active.kind === "editor" ? active.path : null;
+  });
+  const isActive = !entry.is_dir && activeEditorPath === entry.path;
 
   async function toggle() {
     if (!entry.is_dir) {
-      openFile(entry.path);
+      openEditorTab(entry.path);
       return;
     }
     const next = !expanded;

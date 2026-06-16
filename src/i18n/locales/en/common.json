@@ -31,6 +31,7 @@
   },
   "workspace": {
     "openFolder": "Open Folder",
+    "openFile": "Open File",
     "noWorkspaceTitle": "No folder open",
     "noWorkspaceHint": "Open a folder to start working",
     "closeWorkspace": "Close workspace",

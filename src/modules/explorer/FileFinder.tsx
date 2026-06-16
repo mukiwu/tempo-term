@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
 import { fsListFiles } from "./lib/fsBridge";
 import { fuzzyRank } from "./lib/fuzzy";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useTabsStore } from "@/stores/tabsStore";
 
 interface FileFinderProps {
   root: string;
@@ -19,7 +19,7 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
   const [query, setQuery] = useState("");
   const [files, setFiles] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  const openFile = useWorkspaceStore((s) => s.openFile);
+  const openEditorTab = useTabsStore((s) => s.openEditorTab);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -39,7 +39,7 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
   const results = useMemo(() => fuzzyRank(query, files).slice(0, 50), [query, files]);
 
   function open(path: string) {
-    openFile(path);
+    openEditorTab(path);
     onClose();
   }
 
