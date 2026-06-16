@@ -11,7 +11,7 @@ use modules::git::{
 };
 use modules::secrets::{secrets_delete_key, secrets_has_key, secrets_set_key};
 use modules::pty::{
-    pty_close, pty_close_all, pty_open, pty_resize, pty_shell_name, pty_write, PtyState,
+    pty_close, pty_close_all, pty_cwd, pty_open, pty_resize, pty_shell_name, pty_write, PtyState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,6 +25,7 @@ pub fn run() {
             pty_write,
             pty_resize,
             pty_shell_name,
+            pty_cwd,
             pty_close,
             pty_close_all,
             fonts_report,

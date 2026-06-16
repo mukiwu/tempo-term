@@ -9,6 +9,7 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
   const splitActivePane = useTabsStore((s) => s.splitActivePane);
   const setActiveLeaf = useTabsStore((s) => s.setActiveLeaf);
   const closePane = useTabsStore((s) => s.closePane);
+  const isActiveTab = useTabsStore((s) => s.activeId === tab.id);
 
   const panes = computeLayout(tab.paneTree);
   const multiple = panes.length > 1;
@@ -77,7 +78,11 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
                   <X size={12} />
                 </button>
               )}
-              <TerminalView active={active} onExit={() => closePane(tab.id, pane.id)} />
+              <TerminalView
+                active={active}
+                cwdTracking={active && isActiveTab}
+                onExit={() => closePane(tab.id, pane.id)}
+              />
             </div>
           );
         })}

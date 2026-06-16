@@ -3,14 +3,17 @@ import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { getTheme } from "@/themes/themes";
 
 interface TerminalViewProps {
   active: boolean;
+  /** When true, this pane drives the file explorer root from its shell CWD. */
+  cwdTracking?: boolean;
   onExit?: () => void;
 }
 
-export function TerminalView({ active, onExit }: TerminalViewProps) {
+export function TerminalView({ active, cwdTracking = false, onExit }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<TerminalHandle | null>(null);
   const sessionRef = useRef<PtySession | null>(null);
@@ -157,6 +160,37 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
       handle.term.options.theme = getTheme(themeId).terminal;
     }
   }, [themeId]);
+
+  // While this pane is the live one, follow its shell's working directory so
+  // the file explorer tracks `cd`.
+  useEffect(() => {
+    if (!cwdTracking) {
+      return;
+    }
+    let cancelled = false;
+    let last = "";
+    const poll = async () => {
+      const session = sessionRef.current;
+      if (!session) {
+        return;
+      }
+      try {
+        const dir = await session.cwd();
+        if (!cancelled && dir && dir !== last) {
+          last = dir;
+          useWorkspaceStore.getState().setRoot(dir);
+        }
+      } catch {
+        // ignore transient failures
+      }
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), 1200);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [cwdTracking]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

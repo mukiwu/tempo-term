@@ -5,6 +5,7 @@ export interface PtySession {
   write: (data: string) => Promise<void>;
   resize: (cols: number, rows: number) => Promise<void>;
   close: () => Promise<void>;
+  cwd: () => Promise<string | null>;
 }
 
 export interface OpenPtyOptions {
@@ -67,5 +68,6 @@ export async function openPty(opts: OpenPtyOptions): Promise<PtySession> {
     write: (data) => invoke("pty_write", { id, data }),
     resize: (cols, rows) => invoke("pty_resize", { id, cols, rows }),
     close: () => invoke("pty_close", { id }),
+    cwd: () => invoke<string | null>("pty_cwd", { id }),
   };
 }

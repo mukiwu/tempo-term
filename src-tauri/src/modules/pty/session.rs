@@ -175,6 +175,37 @@ pub fn shell_name(state: &PtyState, id: u32) -> Result<String, String> {
     Ok(state.get(id)?.shell_name.clone())
 }
 
+/// The working directory of the terminal's foreground process (the shell when
+/// sitting at a prompt). Lets the file explorer follow `cd`.
+pub fn cwd(state: &PtyState, id: u32) -> Result<Option<String>, String> {
+    let session = state.get(id)?;
+    let pid = session.master.lock().unwrap().process_group_leader();
+    Ok(pid.and_then(read_process_cwd))
+}
+
+#[cfg(target_os = "macos")]
+fn read_process_cwd(pid: i32) -> Option<String> {
+    let output = std::process::Command::new("lsof")
+        .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix('n').map(|p| p.to_string()))
+}
+
+#[cfg(target_os = "linux")]
+fn read_process_cwd(pid: i32) -> Option<String> {
+    std::fs::read_link(format!("/proc/{pid}/cwd"))
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn read_process_cwd(_pid: i32) -> Option<String> {
+    None
+}
+
 pub fn close(state: &PtyState, id: u32) {
     if let Some(session) = state.sessions.write().unwrap().remove(&id) {
         let _ = session.killer.lock().unwrap().kill();

@@ -41,6 +41,11 @@ pub fn pty_shell_name(state: State<'_, PtyState>, id: u32) -> Result<String, Str
 }
 
 #[tauri::command]
+pub fn pty_cwd(state: State<'_, PtyState>, id: u32) -> Result<Option<String>, String> {
+    session::cwd(&state, id)
+}
+
+#[tauri::command]
 pub fn pty_close(state: State<'_, PtyState>, id: u32) {
     session::close(&state, id);
 }
