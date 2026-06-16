@@ -29,6 +29,10 @@ interface NotesState {
   createNote: (folderId?: string | null) => string;
   updateNote: (id: string, patch: Partial<Pick<Note, "title" | "content">>) => void;
   deleteNote: (id: string) => void;
+  /** Move a note into a folder (or to the root when folderId is null). */
+  moveNote: (id: string, folderId: string | null) => void;
+  /** Reorder: place `draggedId` just before `targetId`, adopting its folder. */
+  reorderNote: (draggedId: string, targetId: string) => void;
   noteById: (id: string) => Note | undefined;
 }
 
@@ -89,6 +93,29 @@ export const useNotesStore = create<NotesState>()(
 
       deleteNote: (id) =>
         set((state) => ({ notes: state.notes.filter((n) => n.id !== id) })),
+
+      moveNote: (id, folderId) =>
+        set((state) => ({
+          notes: state.notes.map((n) => (n.id === id ? { ...n, folderId } : n)),
+        })),
+
+      reorderNote: (draggedId, targetId) =>
+        set((state) => {
+          if (draggedId === targetId) {
+            return state;
+          }
+          const dragged = state.notes.find((n) => n.id === draggedId);
+          const target = state.notes.find((n) => n.id === targetId);
+          if (!dragged || !target) {
+            return state;
+          }
+          const without = state.notes.filter((n) => n.id !== draggedId);
+          const targetIndex = without.findIndex((n) => n.id === targetId);
+          const moved = { ...dragged, folderId: target.folderId };
+          const next = [...without];
+          next.splice(targetIndex, 0, moved);
+          return { notes: next };
+        }),
 
       noteById: (id) => get().notes.find((n) => n.id === id),
     }),

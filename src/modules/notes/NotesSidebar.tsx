@@ -12,12 +12,38 @@ import {
 import { useNotesStore, type Note } from "@/stores/notesStore";
 import { useTabsStore } from "@/stores/tabsStore";
 
+// Tracks the note being dragged (dataTransfer is unreliable in the webview).
+let draggedNoteId: string | null = null;
+
 function NoteRow({ note, depth }: { note: Note; depth: number }) {
   const { t } = useTranslation("notes");
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
   const deleteNote = useNotesStore((s) => s.deleteNote);
+  const reorderNote = useNotesStore((s) => s.reorderNote);
+  const [over, setOver] = useState(false);
+
   return (
-    <li className="group flex items-center">
+    <li
+      draggable
+      onDragStart={() => {
+        draggedNoteId = note.id;
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        if (draggedNoteId && draggedNoteId !== note.id) setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setOver(false);
+        if (draggedNoteId && draggedNoteId !== note.id) {
+          reorderNote(draggedNoteId, note.id);
+        }
+        draggedNoteId = null;
+      }}
+      className={`group flex items-center ${over ? "border-t-2 border-accent" : ""}`}
+    >
       <button
         type="button"
         onClick={() => openNoteTab(note.id, note.title)}
@@ -46,14 +72,27 @@ export function NotesSidebar() {
   const createNote = useNotesStore((s) => s.createNote);
   const createFolder = useNotesStore((s) => s.createFolder);
   const deleteFolder = useNotesStore((s) => s.deleteFolder);
+  const renameFolder = useNotesStore((s) => s.renameFolder);
+  const moveNote = useNotesStore((s) => s.moveNote);
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
+
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [editingFolder, setEditingFolder] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [overFolder, setOverFolder] = useState<string | null>(null);
 
   const rootNotes = notes.filter((n) => n.folderId === null);
 
   function newNote(folderId: string | null) {
     const id = createNote(folderId);
     openNoteTab(id, "Untitled");
+  }
+
+  function commitRename() {
+    if (editingFolder && draft.trim()) {
+      renameFolder(editingFolder, draft.trim());
+    }
+    setEditingFolder(null);
   }
 
   return (
@@ -84,7 +123,18 @@ export function NotesSidebar() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      {/* Root drop zone moves a dragged note out of any folder */}
+      <div
+        className="min-h-0 flex-1 overflow-y-auto py-1"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (draggedNoteId) {
+            moveNote(draggedNoteId, null);
+            draggedNoteId = null;
+          }
+        }}
+      >
         {folders.length === 0 && notes.length === 0 && (
           <p className="px-3 py-2 text-xs text-fg-subtle">{t("empty")}</p>
         )}
@@ -95,18 +145,57 @@ export function NotesSidebar() {
             const isCollapsed = collapsed[folder.id];
             return (
               <li key={folder.id}>
-                <div className="group flex items-center">
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (draggedNoteId) setOverFolder(folder.id);
+                  }}
+                  onDragLeave={() => setOverFolder(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setOverFolder(null);
+                    if (draggedNoteId) {
+                      moveNote(draggedNoteId, folder.id);
+                      draggedNoteId = null;
+                    }
+                  }}
+                  className={`group flex items-center ${
+                    overFolder === folder.id ? "bg-accent/15" : ""
+                  }`}
+                >
                   <button
                     type="button"
-                    onClick={() =>
-                      setCollapsed((c) => ({ ...c, [folder.id]: !c[folder.id] }))
-                    }
-                    className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pl-2 pr-2 text-left text-sm text-fg-muted hover:text-fg"
+                    onClick={() => setCollapsed((c) => ({ ...c, [folder.id]: !c[folder.id] }))}
+                    className="flex shrink-0 items-center py-1 pl-2 text-fg-muted hover:text-fg"
                   >
                     {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                    <Folder size={14} className="shrink-0 text-accent" />
-                    <span className="truncate">{folder.name}</span>
                   </button>
+                  <Folder size={14} className="mr-1.5 shrink-0 text-accent" />
+                  {editingFolder === folder.id ? (
+                    <input
+                      autoFocus
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename();
+                        if (e.key === "Escape") setEditingFolder(null);
+                      }}
+                      className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 py-0.5 text-sm text-fg outline-none"
+                    />
+                  ) : (
+                    <span
+                      onDoubleClick={() => {
+                        setEditingFolder(folder.id);
+                        setDraft(folder.name);
+                      }}
+                      className="min-w-0 flex-1 cursor-text truncate py-1 text-sm text-fg-muted"
+                      title={t("renameFolderHint")}
+                    >
+                      {folder.name}
+                    </span>
+                  )}
                   <button
                     type="button"
                     aria-label={t("newNote")}

@@ -4,8 +4,14 @@
   "newFolder": "New folder",
   "deleteNote": "Delete note",
   "deleteFolder": "Delete folder",
+  "renameFolderHint": "Double-click to rename",
   "empty": "No notes yet. Jot something down anytime.",
   "notFound": "This note no longer exists",
   "titlePlaceholder": "Note title",
-  "contentPlaceholder": "Write anything — commands, snippets, ideas…"
+  "contentPlaceholder": "Write anything — commands, snippets, ideas…  (Markdown supported)",
+  "edit": "Edit",
+  "preview": "Preview",
+  "copy": "Copy",
+  "copied": "Copied",
+  "run": "Run in terminal"
 }

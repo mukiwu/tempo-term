@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
+import { registerTerminal, unregisterTerminal } from "./lib/terminalBus";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -12,10 +13,20 @@ interface TerminalViewProps {
   cwdTracking?: boolean;
   /** Directory the shell starts in. */
   cwd?: string;
+  /** Pane id, so notes/workflows can run commands into this terminal. */
+  leafId?: string;
   onExit?: () => void;
 }
 
-export function TerminalView({ active, cwdTracking = false, cwd, onExit }: TerminalViewProps) {
+export function TerminalView({
+  active,
+  cwdTracking = false,
+  cwd,
+  leafId,
+  onExit,
+}: TerminalViewProps) {
+  const leafIdRef = useRef(leafId);
+  leafIdRef.current = leafId;
   const cwdRef = useRef(cwd);
   cwdRef.current = cwd;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -89,6 +100,9 @@ export function TerminalView({ active, cwdTracking = false, cwd, onExit }: Termi
         }
         sessionRef.current = session;
         term.onData((data) => void session.write(data));
+        if (leafIdRef.current) {
+          registerTerminal(leafIdRef.current, (text) => void session.write(text));
+        }
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -107,6 +121,9 @@ export function TerminalView({ active, cwdTracking = false, cwd, onExit }: Termi
     return () => {
       disposed = true;
       observer.disconnect();
+      if (leafIdRef.current) {
+        unregisterTerminal(leafIdRef.current);
+      }
       void sessionRef.current?.close();
       term.dispose();
       handleRef.current = null;

@@ -82,6 +82,7 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
                 active={active}
                 cwdTracking={active && isActiveTab}
                 cwd={tab.cwd}
+                leafId={pane.id}
                 onExit={() => closePane(tab.id, pane.id)}
               />
             </div>

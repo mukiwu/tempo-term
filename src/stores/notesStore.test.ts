@@ -49,4 +49,23 @@ describe("notesStore", () => {
     useNotesStore.getState().createNote();
     expect(localStorage.getItem("tempoterm-notes")).toContain("Untitled");
   });
+
+  it("moves a note into a folder and back to root", () => {
+    const folder = useNotesStore.getState().createFolder("Git");
+    const note = useNotesStore.getState().createNote();
+    useNotesStore.getState().moveNote(note, folder);
+    expect(useNotesStore.getState().noteById(note)?.folderId).toBe(folder);
+    useNotesStore.getState().moveNote(note, null);
+    expect(useNotesStore.getState().noteById(note)?.folderId).toBeNull();
+  });
+
+  it("reorders a note before another, adopting its folder", () => {
+    const folder = useNotesStore.getState().createFolder("F");
+    const a = useNotesStore.getState().createNote(folder);
+    const b = useNotesStore.getState().createNote(); // root
+    useNotesStore.getState().reorderNote(b, a); // drop b before a
+    const ids = useNotesStore.getState().notes.map((n) => n.id);
+    expect(ids.indexOf(b)).toBeLessThan(ids.indexOf(a));
+    expect(useNotesStore.getState().noteById(b)?.folderId).toBe(folder);
+  });
 });
