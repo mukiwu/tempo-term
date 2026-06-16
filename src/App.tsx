@@ -1,10 +1,11 @@
 import { useEffect } from "react";
-import { Bot, FileCode, FolderTree, GitBranch, SquareTerminal } from "lucide-react";
+import { Bot, FileCode, FolderTree, GitBranch } from "lucide-react";
 import { ActivityBar } from "@/components/ActivityBar";
 import { TitleBar } from "@/components/TitleBar";
 import { StatusBar } from "@/components/StatusBar";
 import { Placeholder } from "@/components/Placeholder";
 import { SettingsView } from "@/modules/settings/SettingsView";
+import { TerminalWorkspace } from "@/modules/terminal/TerminalWorkspace";
 import { useUiStore, type ViewId } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -22,7 +23,7 @@ function ActiveView({ view }: { view: ViewId }) {
       return <Placeholder icon={Bot} titleKey="nav.ai" />;
     case "terminal":
     default:
-      return <Placeholder icon={SquareTerminal} titleKey="nav.terminal" />;
+      return <TerminalWorkspace />;
   }
 }
 

@@ -1,0 +1,51 @@
+//! Pseudo-terminal module: spawns shells and bridges their IO to the frontend.
+
+mod session;
+mod shell;
+
+pub use session::PtyState;
+
+use tauri::ipc::{Channel, Response};
+use tauri::State;
+
+#[tauri::command]
+pub fn pty_open(
+    state: State<'_, PtyState>,
+    cols: u16,
+    rows: u16,
+    cwd: Option<String>,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
+) -> Result<u32, String> {
+    session::spawn(&state, cols, rows, cwd, on_data, on_exit)
+}
+
+#[tauri::command]
+pub fn pty_write(state: State<'_, PtyState>, id: u32, data: String) -> Result<(), String> {
+    session::write_input(&state, id, data.as_bytes())
+}
+
+#[tauri::command]
+pub fn pty_resize(
+    state: State<'_, PtyState>,
+    id: u32,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    session::resize(&state, id, cols, rows)
+}
+
+#[tauri::command]
+pub fn pty_shell_name(state: State<'_, PtyState>, id: u32) -> Result<String, String> {
+    session::shell_name(&state, id)
+}
+
+#[tauri::command]
+pub fn pty_close(state: State<'_, PtyState>, id: u32) {
+    session::close(&state, id);
+}
+
+#[tauri::command]
+pub fn pty_close_all(state: State<'_, PtyState>) {
+    session::close_all(&state);
+}
