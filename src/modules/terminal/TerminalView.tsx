@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
@@ -34,13 +33,6 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
     const { term, fit } = handle;
     term.open(container);
 
-    // GPU renderer for throughput; xterm falls back to canvas/DOM on failure.
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch {
-      // ignore, fallback renderer is automatic
-    }
-
     const safeFit = () => {
       if (container.clientWidth > 0 && container.clientHeight > 0) {
         try {
@@ -58,7 +50,13 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
       cols: term.cols,
       rows: term.rows,
       onData: (bytes) => term.write(bytes),
-      onExit: () => onExitRef.current?.(),
+      // Only treat an exit as user-facing when we did not tear the session
+      // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
+      onExit: () => {
+        if (!disposed) {
+          onExitRef.current?.();
+        }
+      },
     })
       .then((session) => {
         if (disposed) {

@@ -49,23 +49,23 @@ function TreeNode({ entry, depth }: TreeNodeProps) {
         style={{ paddingLeft: depth * 12 + 8 }}
         className={`flex w-full items-center gap-1.5 py-1 pr-2 text-left text-sm transition-colors ${
           isActive
-            ? "bg-[--color-bg-elevated] text-[--color-fg]"
-            : "text-[--color-fg-muted] hover:bg-[--color-bg-elevated]/60"
+            ? "bg-bg-elevated text-fg"
+            : "text-fg-muted hover:bg-bg-elevated/60"
         }`}
       >
         {entry.is_dir ? (
           <>
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             {expanded ? (
-              <FolderOpen size={15} className="text-[--color-accent]" />
+              <FolderOpen size={15} className="text-accent" />
             ) : (
-              <Folder size={15} className="text-[--color-accent]" />
+              <Folder size={15} className="text-accent" />
             )}
           </>
         ) : (
           <>
             <span className="w-[14px]" />
-            <FileIcon size={15} className="text-[--color-fg-subtle]" />
+            <FileIcon size={15} className="text-fg-subtle" />
           </>
         )}
         <span className="truncate">{entry.name}</span>

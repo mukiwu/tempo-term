@@ -23,12 +23,12 @@ function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; ne
   useEffect(refresh, [id, needsKey]);
 
   return (
-    <div className="flex items-center gap-3 border-b border-[--color-border] py-3 last:border-b-0">
-      <KeyRound size={15} className="shrink-0 text-[--color-fg-subtle]" />
-      <span className="w-32 shrink-0 text-sm text-[--color-fg]">{label}</span>
+    <div className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
+      <KeyRound size={15} className="shrink-0 text-fg-subtle" />
+      <span className="w-32 shrink-0 text-sm text-fg">{label}</span>
 
       {!needsKey ? (
-        <span className="text-xs text-[--color-fg-subtle]">{t("aiKeys.localNoKey")}</span>
+        <span className="text-xs text-fg-subtle">{t("aiKeys.localNoKey")}</span>
       ) : editing ? (
         <form
           className="flex flex-1 items-center gap-2"
@@ -49,11 +49,11 @@ function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; ne
             value={value}
             placeholder={t("aiKeys.placeholder")}
             onChange={(e) => setValue(e.target.value)}
-            className="flex-1 rounded-md border border-[--color-border] bg-[--color-bg] px-2 py-1 text-sm text-[--color-fg] outline-none focus:border-[--color-accent]"
+            className="flex-1 rounded-md border border-border bg-bg px-2 py-1 text-sm text-fg outline-none focus:border-accent"
           />
           <button
             type="submit"
-            className="rounded-md bg-[--color-accent] px-3 py-1 text-xs font-medium text-white"
+            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white"
           >
             {t("aiKeys.save")}
           </button>
@@ -62,7 +62,7 @@ function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; ne
         <>
           <span
             className={`flex items-center gap-1 text-xs ${
-              hasKey ? "text-[--color-success]" : "text-[--color-fg-subtle]"
+              hasKey ? "text-success" : "text-fg-subtle"
             }`}
           >
             {hasKey && <Check size={13} />}
@@ -72,7 +72,7 @@ function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; ne
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded-md border border-[--color-border] px-3 py-1 text-xs text-[--color-fg-muted] hover:border-[--color-border-strong]"
+              className="rounded-md border border-border px-3 py-1 text-xs text-fg-muted hover:border-border-strong"
             >
               {hasKey ? t("aiKeys.save") : t("aiKeys.placeholder")}
             </button>
@@ -83,7 +83,7 @@ function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; ne
                   await secretsDeleteKey(id);
                   refresh();
                 }}
-                className="rounded-md border border-[--color-border] px-3 py-1 text-xs text-[--color-danger] hover:border-[--color-danger]/60"
+                className="rounded-md border border-border px-3 py-1 text-xs text-danger hover:border-danger/60"
               >
                 {t("aiKeys.remove")}
               </button>
@@ -99,10 +99,10 @@ export function AiSettingsSection() {
   const { t } = useTranslation("settings");
   return (
     <section>
-      <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-[--color-fg-subtle]">
+      <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-fg-subtle">
         {t("sections.ai")}
       </h2>
-      <p className="mb-4 text-xs text-[--color-fg-muted]">{t("aiKeys.description")}</p>
+      <p className="mb-4 text-xs text-fg-muted">{t("aiKeys.description")}</p>
       <div>
         {PROVIDERS.map((provider) => (
           <ProviderKeyRow

@@ -1,9 +1,16 @@
 /**
- * Builds the CSS font-family stack that xterm.js uses. The strategy mirrors
- * Warp's layered fallback but expressed in the terminology a webview
- * understands: the user's primary monospace font first, a Traditional Chinese
- * monospace fallback next so every CJK glyph resolves, then a safe base chain
- * that always ends in the generic `monospace` keyword.
+ * Builds the CSS font-family stack that xterm.js uses.
+ *
+ * Browsers resolve fonts per glyph: for each character they pick the first
+ * family in the list that actually contains it. So the order matters a lot in
+ * a terminal. A Latin-capable monospace font must come BEFORE any (often
+ * proportional) CJK font, otherwise Latin characters get drawn by the CJK
+ * font and lose their fixed width, making text look scattered.
+ *
+ * Order: user's primary monospace, then Latin monospace anchors, then the
+ * Traditional Chinese fallback (and a CJK safety net), then generic monospace.
+ * xterm forces every CJK glyph into two cells via the Unicode 11 width tables,
+ * so a proportional CJK fallback still aligns to the grid.
  */
 
 export interface FontChainInput {
@@ -20,22 +27,20 @@ const GENERIC_FAMILIES = new Set([
   "ui-monospace",
 ]);
 
-/**
- * Always-present tail so the terminal renders even with no font configured.
- * Latin monospace first, then a CJK safety net (so Traditional Chinese still
- * resolves before the generic keyword even when detection has not run), and
- * finally the generic `monospace` keyword.
- */
-export const BASE_MONO_FALLBACKS = [
+/** Latin monospace anchors, tried before any CJK font so ASCII stays fixed-width. */
+export const LATIN_MONO_ANCHORS = [
   "ui-monospace",
   "SFMono-Regular",
   "Menlo",
   "Consolas",
+];
+
+/** CJK safety net so Chinese still resolves even before detection runs. */
+export const CJK_FALLBACKS = [
   "Sarasa Mono TC",
   "Noto Sans Mono CJK TC",
   "PingFang TC",
   "Microsoft JhengHei",
-  "monospace",
 ];
 
 export function quoteFamily(family: string): string {
@@ -66,10 +71,14 @@ export function buildTerminalFontFamily(input: FontChainInput): string {
   };
 
   push(input.primary);
+  for (const anchor of LATIN_MONO_ANCHORS) {
+    push(anchor);
+  }
   push(input.cjkFallback);
-  for (const fallback of BASE_MONO_FALLBACKS) {
+  for (const fallback of CJK_FALLBACKS) {
     push(fallback);
   }
+  push("monospace");
 
   return ordered.join(", ");
 }

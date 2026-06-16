@@ -37,9 +37,9 @@ export function ExplorerView() {
   }, [rootPath]);
 
   return (
-    <div className="relative flex h-full flex-col bg-[--color-bg-inset]">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[--color-border] px-3">
-        <span className="truncate text-xs font-semibold uppercase tracking-wide text-[--color-fg-subtle]">
+    <div className="relative flex h-full flex-col bg-bg-inset">
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
+        <span className="truncate text-xs font-semibold uppercase tracking-wide text-fg-subtle">
           {t("title")}
         </span>
         <button
@@ -47,7 +47,7 @@ export function ExplorerView() {
           aria-label={t("findFiles")}
           title={t("findFiles")}
           onClick={() => setFinderOpen(true)}
-          className="rounded p-1 text-[--color-fg-muted] hover:bg-[--color-bg-elevated] hover:text-[--color-fg]"
+          className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
         >
           <Search size={15} />
         </button>
@@ -55,7 +55,7 @@ export function ExplorerView() {
 
       {rootPath && (
         <div
-          className="truncate border-b border-[--color-border] px-3 py-1 text-[11px] text-[--color-fg-subtle]"
+          className="truncate border-b border-border px-3 py-1 text-[11px] text-fg-subtle"
           title={rootPath}
         >
           {rootPath}
@@ -64,9 +64,9 @@ export function ExplorerView() {
 
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {loading ? (
-          <p className="px-3 py-2 text-xs text-[--color-fg-subtle]">{t("loading")}</p>
+          <p className="px-3 py-2 text-xs text-fg-subtle">{t("loading")}</p>
         ) : entries.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-[--color-fg-subtle]">{t("empty")}</p>
+          <p className="px-3 py-2 text-xs text-fg-subtle">{t("empty")}</p>
         ) : (
           <FileTree entries={entries} />
         )}

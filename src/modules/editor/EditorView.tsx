@@ -17,9 +17,9 @@ function basename(path: string): string {
 function EmptyState() {
   const { t } = useTranslation("editor");
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-[--color-fg-subtle]">
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-fg-subtle">
       <FileCode size={48} strokeWidth={1} />
-      <p className="text-sm font-medium text-[--color-fg-muted]">{t("emptyTitle")}</p>
+      <p className="text-sm font-medium text-fg-muted">{t("emptyTitle")}</p>
       <p className="text-xs">{t("emptyHint")}</p>
     </div>
   );
@@ -80,7 +80,7 @@ export function EditorView() {
 
   return (
     <div
-      className="flex h-full flex-col bg-[--color-bg]"
+      className="flex h-full flex-col bg-bg"
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
           e.preventDefault();
@@ -89,7 +89,7 @@ export function EditorView() {
       }}
     >
       {openFiles.length > 0 && (
-        <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-[--color-border] bg-[--color-bg-inset] px-2">
+        <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-bg-inset px-2">
           {openFiles.map((path) => {
             const active = path === activeFile;
             const dirty = buffers[path]
@@ -104,14 +104,14 @@ export function EditorView() {
                 title={path}
                 className={`group flex h-7 cursor-pointer items-center gap-2 rounded-md px-3 text-xs transition-colors ${
                   active
-                    ? "bg-[--color-bg-elevated] text-[--color-fg]"
-                    : "text-[--color-fg-muted] hover:bg-[--color-bg-elevated]/60"
+                    ? "bg-bg-elevated text-fg"
+                    : "text-fg-muted hover:bg-bg-elevated/60"
                 }`}
               >
                 <span className="whitespace-nowrap">{basename(path)}</span>
                 {dirty && (
                   <span
-                    className="h-1.5 w-1.5 rounded-full bg-[--color-accent]"
+                    className="h-1.5 w-1.5 rounded-full bg-accent"
                     title={t("unsaved")}
                   />
                 )}
@@ -122,7 +122,7 @@ export function EditorView() {
                     e.stopPropagation();
                     closeFile(path);
                   }}
-                  className="rounded p-0.5 text-[--color-fg-subtle] opacity-0 hover:bg-[--color-border-strong] hover:text-[--color-fg] group-hover:opacity-100"
+                  className="rounded p-0.5 text-fg-subtle opacity-0 hover:bg-border-strong hover:text-fg group-hover:opacity-100"
                 >
                   <X size={12} />
                 </button>

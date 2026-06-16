@@ -9,7 +9,7 @@ export function LanguageSwitcher() {
   const setLanguage = useSettingsStore((s) => s.setLanguage);
 
   return (
-    <label className="flex items-center gap-1.5 text-[--color-fg-muted] hover:text-[--color-fg]">
+    <label className="flex items-center gap-1.5 text-fg-muted hover:text-fg">
       <Languages size={13} />
       <select
         aria-label={t("language.label")}
@@ -18,7 +18,7 @@ export function LanguageSwitcher() {
         className="cursor-pointer bg-transparent text-xs outline-none"
       >
         {SUPPORTED_LANGUAGES.map((lng) => (
-          <option key={lng} value={lng} className="bg-[--color-bg-elevated]">
+          <option key={lng} value={lng} className="bg-bg-elevated">
             {t(`language.${lng}`)}
           </option>
         ))}
