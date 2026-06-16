@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useSettingsStore } from "./settingsStore";
+import { DEFAULT_THEME_ID } from "@/themes/themes";
 
 const initialState = useSettingsStore.getState();
 
@@ -8,13 +9,13 @@ describe("settingsStore", () => {
     localStorage.clear();
     useSettingsStore.setState({
       language: initialState.language,
-      theme: initialState.theme,
+      themeId: initialState.themeId,
     });
   });
 
-  it("defaults to English and the dark theme", () => {
+  it("defaults to English and the default theme", () => {
     expect(useSettingsStore.getState().language).toBe("en");
-    expect(useSettingsStore.getState().theme).toBe("dark");
+    expect(useSettingsStore.getState().themeId).toBe(DEFAULT_THEME_ID);
   });
 
   it("updates the language through setLanguage", () => {
@@ -22,9 +23,9 @@ describe("settingsStore", () => {
     expect(useSettingsStore.getState().language).toBe("zh-Hant");
   });
 
-  it("updates the theme through setTheme", () => {
-    useSettingsStore.getState().setTheme("light");
-    expect(useSettingsStore.getState().theme).toBe("light");
+  it("updates the theme through setThemeId", () => {
+    useSettingsStore.getState().setThemeId("dracula");
+    expect(useSettingsStore.getState().themeId).toBe("dracula");
   });
 
   it("persists the chosen language so it survives a reload", () => {

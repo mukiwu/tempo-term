@@ -1,23 +1,66 @@
 @import "tailwindcss";
 
 /*
- * TempoTerm theme tokens.
- * Dark-first palette tuned for a terminal-centric workspace.
+ * TempoTerm theme. Warm "Vitesse Dark Soft" palette (matching the gitlanes
+ * reference). Both the Vitesse scale (slate/cyan/amber/rose/emerald/purple)
+ * and the semantic tokens (bg/fg/accent/...) are defined so components can use
+ * whichever reads better.
  */
 @theme {
-  --color-bg: #0e1116;
-  --color-bg-elevated: #161b22;
-  --color-bg-inset: #0a0d12;
-  --color-border: #232a33;
-  --color-border-strong: #30363d;
-  --color-fg: #e6edf3;
-  --color-fg-muted: #8b949e;
-  --color-fg-subtle: #6e7681;
-  --color-accent: #4493f8;
-  --color-accent-hover: #2f81f7;
-  --color-success: #3fb950;
-  --color-warning: #d29922;
-  --color-danger: #f85149;
+  /* Vitesse Dark Soft backgrounds */
+  --color-slate-950: #1b1b1b;
+  --color-slate-900: #222222;
+  --color-slate-850: #262626;
+  --color-slate-800: #2a2a2a;
+  --color-slate-700: #363636;
+  --color-slate-650: #414141;
+  --color-slate-600: #4b4b4b;
+  --color-slate-500: #6b6b6b;
+  --color-slate-400: #85827b;
+  --color-slate-350: #9d9a8e;
+  --color-slate-300: #b3b0a3;
+  --color-slate-200: #c9c5b8;
+  --color-slate-100: #dbd7ca;
+
+  /* Vitesse Dark Soft cyan/teal (branches, primary accent) */
+  --color-cyan-700: #3a6f78;
+  --color-cyan-600: #4a8e9a;
+  --color-cyan-500: #5eaab5;
+  --color-cyan-400: #6fb8c2;
+
+  /* Vitesse Dark Soft magenta */
+  --color-purple-700: #a85578;
+  --color-purple-600: #c06890;
+  --color-purple-500: #d9739f;
+
+  /* Vitesse Dark Soft yellow (modified / warnings) */
+  --color-amber-600: #c9a94f;
+  --color-amber-500: #dbbd63;
+  --color-amber-400: #e6cc77;
+
+  /* Vitesse Dark Soft red (deletions / danger) */
+  --color-rose-650: #b85f5f;
+  --color-rose-600: #c06b6b;
+  --color-rose-500: #cb7676;
+
+  /* Vitesse Dark Soft green (staged / success) */
+  --color-emerald-600: #3f7a61;
+  --color-emerald-500: #4d9375;
+
+  /* Semantic tokens mapped onto the Vitesse palette */
+  --color-bg: #222222;
+  --color-bg-elevated: #2a2a2a;
+  --color-bg-inset: #1b1b1b;
+  --color-border: #363636;
+  --color-border-strong: #414141;
+  --color-fg: #dbd7ca;
+  --color-fg-muted: #b3b0a3;
+  --color-fg-subtle: #85827b;
+  --color-accent: #5eaab5;
+  --color-accent-hover: #6fb8c2;
+  --color-success: #4d9375;
+  --color-warning: #dbbd63;
+  --color-danger: #cb7676;
 
   --font-sans: "Inter", system-ui, "PingFang TC", "Noto Sans TC", sans-serif;
   --font-mono: "JetBrains Mono", "Sarasa Mono TC", "Noto Sans Mono CJK TC",
@@ -43,7 +86,7 @@ body {
   overflow: hidden;
 }
 
-/* Thin scrollbars that match the dark chrome */
+/* Thin scrollbars that match the warm dark chrome */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

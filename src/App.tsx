@@ -12,6 +12,7 @@ import { useUiStore, type ViewId } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFontStore } from "@/stores/fontStore";
 import { useTerminalTabsStore } from "@/modules/terminal/store/terminalTabsStore";
+import { applyTheme, getTheme } from "@/themes/themes";
 
 function ActiveView({ view }: { view: ViewId }) {
   switch (view) {
@@ -33,13 +34,12 @@ function ActiveView({ view }: { view: ViewId }) {
 
 function App() {
   const activeView = useUiStore((s) => s.activeView);
-  const theme = useSettingsStore((s) => s.theme);
+  const themeId = useSettingsStore((s) => s.themeId);
   const loadFontReport = useFontStore((s) => s.loadReport);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-  }, [theme]);
+    applyTheme(getTheme(themeId), document.documentElement);
+  }, [themeId]);
 
   // Detect installed fonts once so the terminal can pick a Traditional Chinese
   // fallback and the settings picker is populated.

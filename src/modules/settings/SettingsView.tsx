@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Check } from "lucide-react";
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/i18n/config";
-import { useSettingsStore, type Theme } from "@/stores/settingsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { THEMES } from "@/themes/themes";
 import { FontsSettingsSection } from "./FontsSettingsSection";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 
-const THEMES: Theme[] = ["dark", "light"];
 type SectionId = "appearance" | "fonts" | "ai" | "shortcuts";
 const SECTIONS: SectionId[] = ["appearance", "fonts", "ai", "shortcuts"];
 
@@ -14,8 +15,8 @@ function AppearanceSection() {
   const { t } = useTranslation("settings");
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
-  const theme = useSettingsStore((s) => s.theme);
-  const setTheme = useSettingsStore((s) => s.setTheme);
+  const themeId = useSettingsStore((s) => s.themeId);
+  const setThemeId = useSettingsStore((s) => s.setThemeId);
 
   return (
     <section>
@@ -51,22 +52,44 @@ function AppearanceSection() {
         <label className="mb-2 block text-sm font-medium text-fg">
           {t("theme.label")}
         </label>
-        <div className="flex gap-2">
-          {THEMES.map((th) => (
-            <button
-              key={th}
-              type="button"
-              aria-pressed={theme === th}
-              onClick={() => setTheme(th)}
-              className={`rounded-lg border px-4 py-2 text-sm transition-colors ${
-                theme === th
-                  ? "border-accent bg-bg-elevated text-fg"
-                  : "border-border text-fg-muted hover:border-border-strong"
-              }`}
-            >
-              {t(`theme.${th}`)}
-            </button>
-          ))}
+        <div className="grid grid-cols-2 gap-2">
+          {THEMES.map((theme) => {
+            const active = theme.id === themeId;
+            return (
+              <button
+                key={theme.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setThemeId(theme.id)}
+                className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                  active
+                    ? "border-accent bg-bg-elevated"
+                    : "border-border hover:border-border-strong"
+                }`}
+              >
+                {/* Swatch preview built from the theme's own colours */}
+                <span
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border"
+                  style={{
+                    backgroundColor: theme.colors.bg,
+                    borderColor: theme.colors.border,
+                  }}
+                >
+                  <span
+                    className="h-3 w-3 rounded-full"
+                    style={{ backgroundColor: theme.colors.accent }}
+                  />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-fg">{theme.name}</span>
+                  <span className="text-[11px] text-fg-subtle">
+                    {t(`theme.${theme.appearance}`)}
+                  </span>
+                </span>
+                {active && <Check size={15} className="shrink-0 text-accent" />}
+              </button>
+            );
+          })}
         </div>
       </div>
     </section>

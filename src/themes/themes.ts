@@ -1,0 +1,280 @@
+import type { ITheme } from "@xterm/xterm";
+
+/** Semantic colours every UI surface uses. Swapping these swaps the whole app. */
+export interface ThemeColors {
+  bg: string;
+  bgElevated: string;
+  bgInset: string;
+  border: string;
+  borderStrong: string;
+  fg: string;
+  fgMuted: string;
+  fgSubtle: string;
+  accent: string;
+  accentHover: string;
+  success: string;
+  warning: string;
+  danger: string;
+}
+
+export interface AppTheme {
+  id: string;
+  name: string;
+  appearance: "dark" | "light";
+  colors: ThemeColors;
+  terminal: ITheme;
+}
+
+export const THEMES: AppTheme[] = [
+  {
+    id: "vitesse-dark",
+    name: "Vitesse Dark Soft",
+    appearance: "dark",
+    colors: {
+      bg: "#222222",
+      bgElevated: "#2a2a2a",
+      bgInset: "#1b1b1b",
+      border: "#363636",
+      borderStrong: "#414141",
+      fg: "#dbd7ca",
+      fgMuted: "#b3b0a3",
+      fgSubtle: "#85827b",
+      accent: "#5eaab5",
+      accentHover: "#6fb8c2",
+      success: "#4d9375",
+      warning: "#dbbd63",
+      danger: "#cb7676",
+    },
+    terminal: {
+      background: "#1b1b1b",
+      foreground: "#c9c5b8",
+      cursor: "#5eaab5",
+      cursorAccent: "#1b1b1b",
+      selectionBackground: "#3a3a3a",
+      black: "#1b1b1b",
+      red: "#cb7676",
+      green: "#4d9375",
+      yellow: "#dbbd63",
+      blue: "#5eaab5",
+      magenta: "#d9739f",
+      cyan: "#6fb8c2",
+      white: "#c9c5b8",
+      brightBlack: "#85827b",
+      brightRed: "#e09b9b",
+      brightGreen: "#7ab399",
+      brightYellow: "#e6cc77",
+      brightBlue: "#8fc6cf",
+      brightMagenta: "#e69bb8",
+      brightCyan: "#8cc7d0",
+      brightWhite: "#dbd7ca",
+    },
+  },
+  {
+    id: "github-dark",
+    name: "GitHub Dark",
+    appearance: "dark",
+    colors: {
+      bg: "#0e1116",
+      bgElevated: "#161b22",
+      bgInset: "#0a0d12",
+      border: "#232a33",
+      borderStrong: "#30363d",
+      fg: "#e6edf3",
+      fgMuted: "#8b949e",
+      fgSubtle: "#6e7681",
+      accent: "#4493f8",
+      accentHover: "#2f81f7",
+      success: "#3fb950",
+      warning: "#d29922",
+      danger: "#f85149",
+    },
+    terminal: {
+      background: "#0a0d12",
+      foreground: "#e6edf3",
+      cursor: "#4493f8",
+      cursorAccent: "#0a0d12",
+      selectionBackground: "#2f4868",
+      black: "#0a0d12",
+      red: "#f85149",
+      green: "#3fb950",
+      yellow: "#d29922",
+      blue: "#4493f8",
+      magenta: "#bc8cff",
+      cyan: "#39c5cf",
+      white: "#b1bac4",
+      brightBlack: "#6e7681",
+      brightRed: "#ff7b72",
+      brightGreen: "#56d364",
+      brightYellow: "#e3b341",
+      brightBlue: "#79c0ff",
+      brightMagenta: "#d2a8ff",
+      brightCyan: "#56d4dd",
+      brightWhite: "#f0f6fc",
+    },
+  },
+  {
+    id: "one-dark",
+    name: "One Dark",
+    appearance: "dark",
+    colors: {
+      bg: "#282c34",
+      bgElevated: "#2c313a",
+      bgInset: "#21252b",
+      border: "#3b4048",
+      borderStrong: "#4b5263",
+      fg: "#abb2bf",
+      fgMuted: "#828997",
+      fgSubtle: "#5c6370",
+      accent: "#61afef",
+      accentHover: "#6cb6ff",
+      success: "#98c379",
+      warning: "#e5c07b",
+      danger: "#e06c75",
+    },
+    terminal: {
+      background: "#21252b",
+      foreground: "#abb2bf",
+      cursor: "#61afef",
+      cursorAccent: "#21252b",
+      selectionBackground: "#3e4451",
+      black: "#282c34",
+      red: "#e06c75",
+      green: "#98c379",
+      yellow: "#e5c07b",
+      blue: "#61afef",
+      magenta: "#c678dd",
+      cyan: "#56b6c2",
+      white: "#abb2bf",
+      brightBlack: "#5c6370",
+      brightRed: "#e06c75",
+      brightGreen: "#98c379",
+      brightYellow: "#e5c07b",
+      brightBlue: "#61afef",
+      brightMagenta: "#c678dd",
+      brightCyan: "#56b6c2",
+      brightWhite: "#ffffff",
+    },
+  },
+  {
+    id: "dracula",
+    name: "Dracula",
+    appearance: "dark",
+    colors: {
+      bg: "#282a36",
+      bgElevated: "#343746",
+      bgInset: "#21222c",
+      border: "#44475a",
+      borderStrong: "#565869",
+      fg: "#f8f8f2",
+      fgMuted: "#bdbdc7",
+      fgSubtle: "#6272a4",
+      accent: "#bd93f9",
+      accentHover: "#caa9fa",
+      success: "#50fa7b",
+      warning: "#f1fa8c",
+      danger: "#ff5555",
+    },
+    terminal: {
+      background: "#21222c",
+      foreground: "#f8f8f2",
+      cursor: "#bd93f9",
+      cursorAccent: "#21222c",
+      selectionBackground: "#44475a",
+      black: "#21222c",
+      red: "#ff5555",
+      green: "#50fa7b",
+      yellow: "#f1fa8c",
+      blue: "#bd93f9",
+      magenta: "#ff79c6",
+      cyan: "#8be9fd",
+      white: "#f8f8f2",
+      brightBlack: "#6272a4",
+      brightRed: "#ff6e6e",
+      brightGreen: "#69ff94",
+      brightYellow: "#ffffa5",
+      brightBlue: "#d6acff",
+      brightMagenta: "#ff92df",
+      brightCyan: "#a4ffff",
+      brightWhite: "#ffffff",
+    },
+  },
+  {
+    id: "vitesse-light",
+    name: "Vitesse Light",
+    appearance: "light",
+    colors: {
+      bg: "#ffffff",
+      bgElevated: "#f1f0e9",
+      bgInset: "#f7f6f3",
+      border: "#e3e2dd",
+      borderStrong: "#d2d1cb",
+      fg: "#393a34",
+      fgMuted: "#5a5d52",
+      fgSubtle: "#8a8b80",
+      accent: "#2e808f",
+      accentHover: "#296a77",
+      success: "#1e754f",
+      warning: "#bda437",
+      danger: "#ab5959",
+    },
+    terminal: {
+      background: "#f7f6f3",
+      foreground: "#393a34",
+      cursor: "#2e808f",
+      cursorAccent: "#f7f6f3",
+      selectionBackground: "#dfded7",
+      black: "#121212",
+      red: "#ab5959",
+      green: "#1e754f",
+      yellow: "#bda437",
+      blue: "#2e808f",
+      magenta: "#a13865",
+      cyan: "#2e808f",
+      white: "#393a34",
+      brightBlack: "#8a8b80",
+      brightRed: "#c47466",
+      brightGreen: "#3f8a5f",
+      brightYellow: "#d0a83c",
+      brightBlue: "#3a9aaa",
+      brightMagenta: "#b34a77",
+      brightCyan: "#3a9aaa",
+      brightWhite: "#121212",
+    },
+  },
+];
+
+export const DEFAULT_THEME_ID = "vitesse-dark";
+
+export function getTheme(id: string): AppTheme {
+  return THEMES.find((t) => t.id === id) ?? THEMES[0];
+}
+
+/** Map a theme's semantic colours to the CSS custom properties Tailwind reads. */
+export function cssVariablesFor(theme: AppTheme): Record<string, string> {
+  const c = theme.colors;
+  return {
+    "--color-bg": c.bg,
+    "--color-bg-elevated": c.bgElevated,
+    "--color-bg-inset": c.bgInset,
+    "--color-border": c.border,
+    "--color-border-strong": c.borderStrong,
+    "--color-fg": c.fg,
+    "--color-fg-muted": c.fgMuted,
+    "--color-fg-subtle": c.fgSubtle,
+    "--color-accent": c.accent,
+    "--color-accent-hover": c.accentHover,
+    "--color-success": c.success,
+    "--color-warning": c.warning,
+    "--color-danger": c.danger,
+  };
+}
+
+/** Apply a theme to the document: CSS variables + colour-scheme. */
+export function applyTheme(theme: AppTheme, root: HTMLElement): void {
+  const vars = cssVariablesFor(theme);
+  for (const [name, value] of Object.entries(vars)) {
+    root.style.setProperty(name, value);
+  }
+  root.dataset.theme = theme.id;
+  root.style.colorScheme = theme.appearance;
+}

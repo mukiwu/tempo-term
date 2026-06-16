@@ -7,7 +7,7 @@ import { useUiStore } from "@/stores/uiStore";
 
 describe("App shell", () => {
   beforeEach(() => {
-    useSettingsStore.setState({ language: "en", theme: "dark" });
+    useSettingsStore.setState({ language: "en", themeId: "vitesse-dark" });
     useUiStore.setState({ activeView: "settings" });
   });
 

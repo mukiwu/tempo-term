@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { getTheme } from "@/themes/themes";
 
 interface TerminalViewProps {
   active: boolean;
@@ -17,6 +19,7 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
 
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
+  const themeId = useSettingsStore((s) => s.themeId);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -28,6 +31,7 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
     const handle = createTerminal({
       fontFamily: selectTerminalFontFamily(initial),
       fontSize: initial.fontSize,
+      theme: getTheme(useSettingsStore.getState().themeId).terminal,
     });
     handleRef.current = handle;
     const { term, fit } = handle;
@@ -145,6 +149,14 @@ export function TerminalView({ active, onExit }: TerminalViewProps) {
       sessionRef.current?.resize(handle.term.cols, handle.term.rows);
     }
   }, [fontFamily, fontSize]);
+
+  // Recolour an open terminal when the app theme changes.
+  useEffect(() => {
+    const handle = handleRef.current;
+    if (handle) {
+      handle.term.options.theme = getTheme(themeId).terminal;
+    }
+  }, [themeId]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

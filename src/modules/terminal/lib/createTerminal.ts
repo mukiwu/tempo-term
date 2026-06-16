@@ -13,30 +13,6 @@ import "@xterm/xterm/css/xterm.css";
  */
 export const DEFAULT_TERMINAL_FONT_FAMILY = buildTerminalFontFamily({});
 
-const DARK_THEME: ITheme = {
-  background: "#0a0d12",
-  foreground: "#e6edf3",
-  cursor: "#4493f8",
-  cursorAccent: "#0a0d12",
-  selectionBackground: "#2f4868",
-  black: "#0a0d12",
-  red: "#f85149",
-  green: "#3fb950",
-  yellow: "#d29922",
-  blue: "#4493f8",
-  magenta: "#bc8cff",
-  cyan: "#39c5cf",
-  white: "#b1bac4",
-  brightBlack: "#6e7681",
-  brightRed: "#ff7b72",
-  brightGreen: "#56d364",
-  brightYellow: "#e3b341",
-  brightBlue: "#79c0ff",
-  brightMagenta: "#d2a8ff",
-  brightCyan: "#56d4dd",
-  brightWhite: "#f0f6fc",
-};
-
 export interface TerminalHandle {
   term: Terminal;
   fit: FitAddon;
@@ -45,6 +21,7 @@ export interface TerminalHandle {
 export interface CreateTerminalOptions {
   fontFamily?: string;
   fontSize?: number;
+  theme?: ITheme;
 }
 
 export function createTerminal(options: CreateTerminalOptions = {}): TerminalHandle {
@@ -55,7 +32,7 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
     // apart and the text looks scattered.
     cursorBlink: true,
     allowProposedApi: true,
-    theme: DARK_THEME,
+    theme: options.theme,
     scrollback: 10000,
   });
 
