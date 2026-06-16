@@ -98,3 +98,18 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/*
+ * Tailwind v4 / browsers render <button> with the default arrow cursor. Give
+ * every interactive control a pointer cursor (disabled ones excepted).
+ */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"],
+select:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
