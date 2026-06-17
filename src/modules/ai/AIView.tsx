@@ -4,6 +4,8 @@ import { Bot, KeyRound, SendHorizontal, Trash2 } from "lucide-react";
 import { useChatStore } from "./store/chatStore";
 import { providerById, PROVIDERS } from "./lib/providers";
 import { secretsHasKey, secretsSetKey } from "./lib/aiBridge";
+import { ChatMarkdown } from "./ChatMarkdown";
+import { Combobox } from "@/components/Combobox";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 function buildSystemPrompt(rootPath: string | null, activeFile: string | null): string {
@@ -73,6 +75,9 @@ export function AIView() {
   const [hasKey, setHasKey] = useState(true);
   const [input, setInput] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
+  // IME composition tracking so the Enter that confirms a candidate never sends.
+  const composingRef = useRef(false);
+  const lastCompositionEndRef = useRef(0);
 
   useEffect(() => {
     if (!provider.needsKey) {
@@ -99,39 +104,35 @@ export function AIView() {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      {/* Header: provider + model + clear */}
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-bg-inset px-3">
-        <Bot size={16} className="text-accent" />
-        <select
-          value={providerId}
-          aria-label={t("provider")}
-          onChange={(e) => setProvider(e.target.value)}
-          className="rounded-md border border-border bg-bg px-2 py-1 text-xs text-fg outline-none"
-        >
-          {PROVIDERS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        <select
+      {/* Header: provider + model + clear. The dropdowns flex-shrink so they
+          never overflow (and get clipped) when the sidebar is made narrow. */}
+      <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-border bg-bg-inset px-2">
+        <Bot size={16} className="shrink-0 text-accent" />
+        <Combobox
+          value={provider.label}
+          options={PROVIDERS.map((p) => p.label)}
+          onChange={(label) => {
+            const next = PROVIDERS.find((p) => p.label === label);
+            if (next) setProvider(next.id);
+          }}
+          ariaLabel={t("provider")}
+          className="min-w-0 flex-1"
+        />
+        <Combobox
           value={model}
-          aria-label={t("model")}
-          onChange={(e) => setModel(e.target.value)}
-          className="rounded-md border border-border bg-bg px-2 py-1 text-xs text-fg outline-none"
-        >
-          {provider.models.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+          options={provider.models}
+          onChange={setModel}
+          ariaLabel={t("model")}
+          editable
+          placeholder={t("modelPlaceholder")}
+          className="min-w-0 flex-1"
+        />
         <button
           type="button"
           aria-label={t("clear")}
           title={t("clear")}
           onClick={clear}
-          className="ml-auto rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+          className="shrink-0 rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
         >
           <Trash2 size={15} />
         </button>
@@ -157,13 +158,17 @@ export function AIView() {
               className={message.role === "user" ? "flex justify-end" : "flex justify-start"}
             >
               <div
-                className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
+                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
                   message.role === "user"
-                    ? "bg-accent text-white"
+                    ? "whitespace-pre-wrap bg-accent text-white"
                     : "bg-bg-elevated text-fg"
                 }`}
               >
-                {message.content}
+                {message.role === "assistant" ? (
+                  <ChatMarkdown content={message.content} />
+                ) : (
+                  message.content
+                )}
               </div>
             </div>
           ))
@@ -190,11 +195,32 @@ export function AIView() {
             rows={2}
             placeholder={t("placeholder")}
             onChange={(e) => setInput(e.target.value)}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
+              lastCompositionEndRef.current = Date.now();
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit();
+              if (e.key !== "Enter" || e.shiftKey) {
+                return;
               }
+              // The Enter that confirms an IME candidate must never send.
+              // Blink flags it via isComposing/keyCode 229; WebKit (macOS
+              // WebView) fires compositionend *before* this keydown, so also
+              // guard on our own ref and a short window right after it ended.
+              const justComposed = Date.now() - lastCompositionEndRef.current < 120;
+              if (
+                composingRef.current ||
+                e.nativeEvent.isComposing ||
+                e.keyCode === 229 ||
+                justComposed
+              ) {
+                return;
+              }
+              e.preventDefault();
+              submit();
             }}
             className="min-h-0 w-full resize-none rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
           />

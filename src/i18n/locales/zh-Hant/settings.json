@@ -21,19 +21,26 @@
   },
   "fonts": {
     "label": "終端機字體",
-    "description": "挑一個主要等寬字體與正體中文後備字體，讓每個字都能正確顯示",
+    "description": "挑一個主要等寬字體，正體中文會自動套用合適的後備字體",
     "primary": "主要字體",
-    "cjkFallback": "正體中文後備字體",
     "fontSize": "字級大小",
     "preview": "預覽",
     "previewText": "The quick brown fox 中文字體預覽 0123",
-    "missingHint": "偵測不到正體中文等寬字體，建議安裝下方其中一款",
-    "recommended": "建議字體",
     "systemDefault": "系統預設",
-    "autoDetect": "自動偵測",
-    "detectedUsing": "目前使用",
-    "loading": "正在掃描已安裝的字體⋯",
-    "noCjkInChain": "沒有正體中文後備字體時，部分文字可能會顯示成空白方塊"
+    "loading": "正在掃描已安裝的字體⋯"
+  },
+  "terminalSettings": {
+    "description": "調整終端機畫面與面板邊緣之間的間距",
+    "padding": "內距",
+    "preview": "預覽",
+    "previewText": "$ tempo --version\nTempoTerm 終端機間距預覽"
+  },
+  "aiModel": {
+    "label": "預設模型",
+    "description": "選擇 AI 助理預設使用的服務商與模型，可在聊天面板隨時切換",
+    "provider": "服務商",
+    "model": "模型",
+    "customPlaceholder": "輸入自訂模型名稱"
   },
   "aiKeys": {
     "title": "API 金鑰",
@@ -47,9 +54,21 @@
   },
   "shortcutsList": {
     "description": "常用鍵盤快捷鍵",
+    "groups": {
+      "general": "通用",
+      "terminal": "終端機",
+      "editor": "編輯器",
+      "notes": "筆記"
+    },
     "newTab": "新增終端機分頁",
+    "closeTab": "關閉目前分頁",
     "findFiles": "尋找檔案",
+    "toggleSidebar": "顯示／隱藏側邊欄",
+    "settings": "開啟設定",
+    "splitRight": "左右分割面板",
+    "splitDown": "上下分割面板",
     "saveFile": "儲存檔案",
-    "sendMessage": "送出 AI 訊息（Enter）"
+    "slashMenu": "開啟區塊選單",
+    "exitCodeBlock": "跳出程式碼區塊"
   }
 }

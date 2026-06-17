@@ -5,11 +5,12 @@ import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/i18n/config";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { THEMES } from "@/themes/themes";
 import { FontsSettingsSection } from "./FontsSettingsSection";
+import { TerminalSettingsSection } from "./TerminalSettingsSection";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 
-type SectionId = "appearance" | "fonts" | "ai" | "shortcuts";
-const SECTIONS: SectionId[] = ["appearance", "fonts", "ai", "shortcuts"];
+type SectionId = "appearance" | "ai" | "shortcuts";
+const SECTIONS: SectionId[] = ["appearance", "ai", "shortcuts"];
 
 function AppearanceSection() {
   const { t } = useTranslation("settings");
@@ -86,11 +87,25 @@ function AppearanceSection() {
                     {t(`theme.${theme.appearance}`)}
                   </span>
                 </span>
-                {active && <Check size={15} className="shrink-0 text-accent" />}
+                {/* Always reserve the tick's space so switching themes never reflows the row */}
+                <Check
+                  size={15}
+                  className={`shrink-0 text-accent ${active ? "" : "invisible"}`}
+                />
               </button>
             );
           })}
         </div>
+      </div>
+
+      {/* Fonts and terminal display settings now live under Appearance so the
+          sidebar stays a short list of top-level areas. */}
+      <div className="mt-8 border-t border-border pt-8">
+        <FontsSettingsSection />
+      </div>
+
+      <div className="mt-8 border-t border-border pt-8">
+        <TerminalSettingsSection />
       </div>
     </section>
   );
@@ -127,9 +142,9 @@ export function SettingsView() {
       </nav>
 
       <div className="min-w-0 flex-1 overflow-y-auto px-8 py-8">
-        <div className="mx-auto max-w-2xl">
+        {/* Shortcuts read better edge-to-edge; the rest stay in a reading column */}
+        <div className={section === "shortcuts" ? "" : "mx-auto max-w-2xl"}>
           {section === "appearance" && <AppearanceSection />}
-          {section === "fonts" && <FontsSettingsSection />}
           {section === "ai" && <AiSettingsSection />}
           {section === "shortcuts" && <ShortcutsSettingsSection />}
         </div>

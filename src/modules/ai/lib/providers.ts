@@ -16,7 +16,7 @@ export const PROVIDERS: ProviderPreset[] = [
     label: "OpenAI",
     kind: "openai",
     baseUrl: "https://api.openai.com/v1",
-    models: ["gpt-4o-mini", "gpt-4o", "o4-mini"],
+    models: ["gpt-4.1", "gpt-4.1-mini", "o3", "o4-mini", "gpt-4o"],
     needsKey: true,
   },
   {
@@ -24,7 +24,7 @@ export const PROVIDERS: ProviderPreset[] = [
     label: "Anthropic",
     kind: "anthropic",
     baseUrl: "https://api.anthropic.com/v1",
-    models: ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"],
+    models: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5", "claude-fable-5"],
     needsKey: true,
   },
   {
@@ -32,7 +32,7 @@ export const PROVIDERS: ProviderPreset[] = [
     label: "Google Gemini",
     kind: "google",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-    models: ["gemini-2.0-flash", "gemini-1.5-pro"],
+    models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
     needsKey: true,
   },
   {
@@ -40,7 +40,7 @@ export const PROVIDERS: ProviderPreset[] = [
     label: "Groq",
     kind: "openai",
     baseUrl: "https://api.groq.com/openai/v1",
-    models: ["llama-3.3-70b-versatile"],
+    models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
     needsKey: true,
   },
   {
@@ -48,7 +48,7 @@ export const PROVIDERS: ProviderPreset[] = [
     label: "DeepSeek",
     kind: "openai",
     baseUrl: "https://api.deepseek.com",
-    models: ["deepseek-chat"],
+    models: ["deepseek-chat", "deepseek-reasoner"],
     needsKey: true,
   },
   {
@@ -56,7 +56,7 @@ export const PROVIDERS: ProviderPreset[] = [
     label: "Ollama (local)",
     kind: "openai",
     baseUrl: "http://localhost:11434/v1",
-    models: ["llama3.2", "qwen2.5"],
+    models: ["llama3.2", "qwen2.5-coder", "qwen2.5"],
     needsKey: false,
   },
 ];

@@ -48,10 +48,9 @@ pub fn build_request(
     match kind {
         "openai" => Ok(ProviderRequest {
             url: format!("{base}/chat/completions"),
-            headers: vec![
-                ("Authorization".to_string(), format!("Bearer {key}")),
-                ("Content-Type".to_string(), "application/json".to_string()),
-            ],
+            // Content-Type is set by reqwest's .json(); adding it here too would
+            // send a duplicate header that some APIs reject as malformed.
+            headers: vec![("Authorization".to_string(), format!("Bearer {key}"))],
             body: json!({
                 "model": model,
                 "stream": false,
@@ -78,7 +77,6 @@ pub fn build_request(
                 headers: vec![
                     ("x-api-key".to_string(), key.to_string()),
                     ("anthropic-version".to_string(), "2023-06-01".to_string()),
-                    ("Content-Type".to_string(), "application/json".to_string()),
                 ],
                 body: json!({
                     "model": model,
@@ -105,7 +103,7 @@ pub fn build_request(
                 .join("\n\n");
             Ok(ProviderRequest {
                 url: format!("{base}/models/{model}:generateContent?key={key}"),
-                headers: vec![("Content-Type".to_string(), "application/json".to_string())],
+                headers: vec![],
                 body: json!({
                     "contents": contents,
                     "systemInstruction": { "parts": [{ "text": system }] },

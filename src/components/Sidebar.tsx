@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { FolderTree, GitBranch, NotebookPen, type LucideIcon } from "lucide-react";
+import { Bot, FolderTree, GitBranch, NotebookPen, type LucideIcon } from "lucide-react";
 import { ExplorerView } from "@/modules/explorer/ExplorerView";
 import { SourceControlView } from "@/modules/source-control/SourceControlView";
 import { AIView } from "@/modules/ai/AIView";
@@ -16,6 +16,7 @@ const SIDEBAR_TABS: SidebarTab[] = [
   { id: "explorer", icon: FolderTree, labelKey: "nav.explorer" },
   { id: "sourceControl", icon: GitBranch, labelKey: "nav.git" },
   { id: "notes", icon: NotebookPen, labelKey: "nav.notes" },
+  { id: "ai", icon: Bot, labelKey: "nav.ai" },
 ];
 
 export function Sidebar() {
@@ -32,14 +33,15 @@ export function Sidebar() {
             <button
               key={id}
               type="button"
+              title={t(labelKey)}
+              aria-label={t(labelKey)}
               aria-pressed={active}
               onClick={() => selectSidebar(id)}
-              className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
+              className={`flex h-7 w-8 items-center justify-center rounded-md transition-colors ${
                 active ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
               }`}
             >
-              <Icon size={14} />
-              <span>{t(labelKey)}</span>
+              <Icon size={15} />
             </button>
           );
         })}
