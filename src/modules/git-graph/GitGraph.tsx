@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Clock, GitBranch, Maximize2, Minimize2, Tag, User } from "lucide-react";
+import { Check, Clock, GitBranch, Tag, User } from "lucide-react";
 import type { CommitNode, CommitRef } from "./types";
 import {
   computeGraphLayout,
@@ -8,17 +8,14 @@ import {
 } from "./lib/graphLayout";
 
 export interface GitGraphLabels {
-  title: string;
   emptyTitle: string;
   emptyHint: string;
   loadMore: string;
-  commits: string;
   refHint: string;
 }
 
 interface GitGraphProps {
   commits: CommitNode[];
-  currentBranch: string;
   selectedCommit: CommitNode | null;
   onSelectCommit: (commit: CommitNode) => void;
   onCommitContextMenu?: (commit: CommitNode, x: number, y: number) => void;
@@ -26,9 +23,6 @@ interface GitGraphProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
   labels: GitGraphLabels;
-  isMaximized?: boolean;
-  onToggleMaximize?: () => void;
-  maximizeTitle?: string;
 }
 
 // Lane colours cycle through the semantic accent tokens so the graph reads well
@@ -47,6 +41,7 @@ const REF_CHIP_STYLES: Record<string, string> = {
   branch: "border-accent/40 bg-accent/15 text-accent",
   tag: "border-warning/40 bg-warning/15 text-warning",
   remote: "border-border-strong bg-bg-inset text-fg-subtle",
+  stash: "border-purple-500/40 bg-purple-500/15 text-purple-500",
   unknown: "border-border bg-bg-inset text-fg-subtle",
 };
 
@@ -56,7 +51,6 @@ const PADDING_TOP = DEFAULT_GEOMETRY.paddingTop;
 
 export function GitGraph({
   commits,
-  currentBranch,
   selectedCommit,
   onSelectCommit,
   onCommitContextMenu,
@@ -64,9 +58,6 @@ export function GitGraph({
   hasMore = false,
   onLoadMore,
   labels,
-  isMaximized = false,
-  onToggleMaximize,
-  maximizeTitle,
 }: GitGraphProps) {
   // All hooks run unconditionally before any early return so the hook order
   // stays stable when `commits` flips between empty and non-empty.
@@ -113,36 +104,6 @@ export function GitGraph({
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-bg">
-      <div className="flex items-center justify-between border-b border-border bg-bg-inset px-4 py-3">
-        <div className="flex items-center space-x-2">
-          <GitBranch className="h-4 w-4 text-accent" />
-          <h3 className="font-sans text-xs font-medium text-fg">{labels.title}</h3>
-          <span className="font-mono text-[12px] text-fg-subtle">
-            {commits.length}
-            {hasMore ? "+" : ""} {labels.commits}
-          </span>
-        </div>
-        <div className="flex items-center space-x-3">
-          <span className="font-mono text-[12px] text-fg-subtle">
-            HEAD: {currentBranch}
-          </span>
-          {onToggleMaximize && (
-            <button
-              type="button"
-              onClick={onToggleMaximize}
-              title={maximizeTitle}
-              className="rounded p-1 text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
-            >
-              {isMaximized ? (
-                <Minimize2 className="h-3.5 w-3.5" />
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
-              )}
-            </button>
-          )}
-        </div>
-      </div>
-
       <div
         ref={scrollRef}
         className="flex-1 overflow-auto"

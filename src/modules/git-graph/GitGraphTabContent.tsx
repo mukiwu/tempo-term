@@ -211,11 +211,9 @@ export function GitGraphTabContent() {
   };
 
   const labels: GitGraphLabels = {
-    title: t("title"),
     emptyTitle: t("empty.title"),
     emptyHint: t("empty.hint"),
     loadMore: t("loadMore"),
-    commits: t("commits"),
     refHint: t("refHint"),
   };
 
@@ -397,7 +395,6 @@ export function GitGraphTabContent() {
       <div className="min-h-0 flex-1">
         <GitGraph
           commits={visibleCommits}
-          currentBranch={currentBranch}
           selectedCommit={selected}
           onSelectCommit={setSelected}
           onCommitContextMenu={(commit, x, y) =>
