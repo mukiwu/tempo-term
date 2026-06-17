@@ -119,7 +119,6 @@ export function TabBar() {
   const newTerminalTab = useTabsStore((s) => s.newTerminalTab);
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
   const openPreviewTab = useTabsStore((s) => s.openPreviewTab);
-  const openGitGraphTab = useTabsStore((s) => s.openGitGraphTab);
   const setRoot = useWorkspaceStore((s) => s.setRoot);
   const selectSidebar = useUiStore((s) => s.selectSidebar);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
@@ -135,11 +134,6 @@ export function TabBar() {
   function addPreview() {
     setMenuOpen(false);
     openPreviewTab(DEFAULT_PREVIEW_URL);
-  }
-
-  function addGitGraph() {
-    setMenuOpen(false);
-    openGitGraphTab();
   }
 
   async function openFolder() {
@@ -244,14 +238,6 @@ export function TabBar() {
             >
               <Globe size={15} />
               <span className="flex-1">{t("preview:title")}</span>
-            </button>
-            <button
-              type="button"
-              onClick={addGitGraph}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-fg-muted hover:bg-bg hover:text-fg"
-            >
-              <GitBranch size={15} />
-              <span className="flex-1">{t("gitGraph:title")}</span>
             </button>
           </div>
         )}

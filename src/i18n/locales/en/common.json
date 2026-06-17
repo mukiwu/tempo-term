@@ -9,6 +9,7 @@
     "git": "Git",
     "ai": "AI Assistant",
     "notes": "Notes",
+    "gitGraph": "Git Graph",
     "settings": "Settings"
   },
   "statusBar": {
