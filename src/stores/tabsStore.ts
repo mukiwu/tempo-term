@@ -8,6 +8,7 @@ import {
   setSizesById,
   splitLeaf,
   type LayoutNode,
+  type PaneContent,
   type SplitDirection,
 } from "@/modules/terminal/lib/terminalLayout";
 
@@ -78,11 +79,11 @@ interface TabsState {
   splitActivePane: (direction: SplitDirection) => void;
   setActiveLeaf: (tabId: string, leafId: string) => void;
   resizePane: (tabId: string, splitId: string, sizes: [number, number]) => void;
-  /** Split a pane and show `path` in an editor in the new half (Warp-style open). */
-  openFileInSplit: (
+  /** Split a pane and show `content` (terminal/editor/note/preview) in the new half. */
+  splitPaneWith: (
     tabId: string,
     fromLeafId: string,
-    path: string,
+    content: PaneContent,
     direction: SplitDirection,
   ) => void;
   closePane: (tabId: string, leafId: string) => void;
@@ -291,7 +292,7 @@ export const useTabsStore = create<TabsState>()(
       ),
     })),
 
-  openFileInSplit: (tabId, fromLeafId, path, direction) =>
+  splitPaneWith: (tabId, fromLeafId, content, direction) =>
     set((state) => ({
       tabs: state.tabs.map((tab) => {
         if (tab.id !== tabId || tab.kind !== "terminal") {
@@ -300,10 +301,7 @@ export const useTabsStore = create<TabsState>()(
         const newId = nextPaneId();
         return {
           ...tab,
-          paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, {
-            kind: "editor",
-            path,
-          }),
+          paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, content),
           activeLeafId: newId,
         };
       }),

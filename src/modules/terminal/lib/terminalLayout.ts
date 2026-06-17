@@ -7,10 +7,12 @@
 
 export type SplitDirection = "row" | "col";
 
-/** What a leaf pane shows: a terminal session, or an open file (editor). */
+/** What a leaf pane shows: a terminal, an open file, a note, or a preview. */
 export type PaneContent =
   | { kind: "terminal" }
-  | { kind: "editor"; path: string };
+  | { kind: "editor"; path: string }
+  | { kind: "note"; noteId: string }
+  | { kind: "preview"; url: string };
 
 export const TERMINAL_PANE: PaneContent = { kind: "terminal" };
 

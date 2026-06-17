@@ -44,6 +44,13 @@
     "splitRight": "Split right",
     "splitDown": "Split down",
     "closePane": "Close pane",
+    "splitHint": "{{label}}: splits right by default, ⌥ click splits down",
+    "pane": {
+      "terminal": "Terminal",
+      "editor": "File",
+      "note": "Note",
+      "preview": "Preview"
+    },
     "spaces": "Spaces",
     "newSpace": "New space",
     "renameSpace": "Rename space",

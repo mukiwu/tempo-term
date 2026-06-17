@@ -146,22 +146,48 @@ export function TerminalView({
 
     term.registerLinkProvider({
       provideLinks(lineNumber, callback) {
-        const bufferLine = term.buffer.active.getLine(lineNumber - 1);
-        if (!bufferLine) {
+        const buffer = term.buffer.active;
+        const firstLine = buffer.getLine(lineNumber - 1);
+        // Only handle a logical line at its first row; wrapped continuation rows
+        // are covered by the multi-row range built below.
+        if (!firstLine || firstLine.isWrapped) {
           callback(undefined);
           return;
         }
-        const matches = findFilePaths(bufferLine.translateToString(true));
+        // Gather the logical line: this row plus any wrapped continuation rows,
+        // so a path that wraps across rows is still detected as one link.
+        const rows: { y: number; text: string }[] = [];
+        let y = lineNumber;
+        let line: typeof firstLine | undefined = firstLine;
+        while (line) {
+          rows.push({ y, text: line.translateToString(false) });
+          const next = buffer.getLine(y);
+          if (!next || !next.isWrapped) {
+            break;
+          }
+          line = next;
+          y += 1;
+        }
+        const matches = findFilePaths(rows.map((r) => r.text).join(""));
         if (matches.length === 0) {
           callback(undefined);
           return;
         }
+        // Map an index in the joined text back to a buffer cell (1-based x/y).
+        const locate = (index: number): { x: number; y: number } => {
+          let acc = 0;
+          for (const row of rows) {
+            if (index < acc + row.text.length) {
+              return { x: index - acc + 1, y: row.y };
+            }
+            acc += row.text.length;
+          }
+          const last = rows[rows.length - 1];
+          return { x: last.text.length, y: last.y };
+        };
         callback(
           matches.map((m) => ({
-            range: {
-              start: { x: m.start + 1, y: lineNumber },
-              end: { x: m.end, y: lineNumber },
-            },
+            range: { start: locate(m.start), end: locate(m.end - 1) },
             text: m.text,
             activate: (event: MouseEvent) => {
               // Alt+click is xterm's rectangular-select gesture and can be

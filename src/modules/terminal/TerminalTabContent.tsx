@@ -1,9 +1,12 @@
 import { useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
+import { X } from "lucide-react";
 import { TerminalView } from "./TerminalView";
+import { PaneToolbar } from "./PaneToolbar";
 import { computeLayout, computeSplitters, type SplitterInfo } from "./lib/terminalLayout";
 import { EditorTabContent } from "@/modules/editor/EditorTabContent";
+import { NoteTabContent } from "@/modules/notes/NoteTabContent";
+import { PreviewTabContent } from "@/modules/preview/PreviewTabContent";
 import { useTabsStore, type TerminalTab } from "@/stores/tabsStore";
 
 const MIN_FRACTION = 0.1;
@@ -11,10 +14,9 @@ const MAX_FRACTION = 0.9;
 
 export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
   const { t } = useTranslation();
-  const splitActivePane = useTabsStore((s) => s.splitActivePane);
   const setActiveLeaf = useTabsStore((s) => s.setActiveLeaf);
   const resizePane = useTabsStore((s) => s.resizePane);
-  const openFileInSplit = useTabsStore((s) => s.openFileInSplit);
+  const splitPaneWith = useTabsStore((s) => s.splitPaneWith);
   const closePane = useTabsStore((s) => s.closePane);
   const isActiveTab = useTabsStore((s) => s.activeId === tab.id);
   const paneAreaRef = useRef<HTMLDivElement>(null);
@@ -61,33 +63,7 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
   return (
     <div className="flex h-full flex-col bg-bg-inset">
       <div className="flex h-7 shrink-0 items-center justify-end gap-0.5 border-b border-border px-2">
-        <button
-          type="button"
-          title={t("workspace.newTerminal")}
-          aria-label={t("workspace.newTerminal")}
-          onClick={() => splitActivePane("row")}
-          className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-        >
-          <Plus size={14} />
-        </button>
-        <button
-          type="button"
-          title={t("workspace.splitRight")}
-          aria-label={t("workspace.splitRight")}
-          onClick={() => splitActivePane("row")}
-          className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-        >
-          <SplitSquareHorizontal size={14} />
-        </button>
-        <button
-          type="button"
-          title={t("workspace.splitDown")}
-          aria-label={t("workspace.splitDown")}
-          onClick={() => splitActivePane("col")}
-          className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-        >
-          <SplitSquareVertical size={14} />
-        </button>
+        <PaneToolbar tabId={tab.id} leafId={tab.activeLeafId} />
       </div>
 
       <div ref={paneAreaRef} className="relative min-h-0 flex-1">
@@ -124,6 +100,10 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
               )}
               {pane.content.kind === "editor" ? (
                 <EditorTabContent path={pane.content.path} />
+              ) : pane.content.kind === "note" ? (
+                <NoteTabContent noteId={pane.content.noteId} tabId={tab.id} />
+              ) : pane.content.kind === "preview" ? (
+                <PreviewTabContent url={pane.content.url} />
               ) : (
                 <TerminalView
                   active={active}
@@ -132,7 +112,7 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
                   leafId={pane.id}
                   onExit={() => closePane(tab.id, pane.id)}
                   onOpenFile={(absolutePath) =>
-                    openFileInSplit(tab.id, pane.id, absolutePath, "row")
+                    splitPaneWith(tab.id, pane.id, { kind: "editor", path: absolutePath }, "row")
                   }
                 />
               )}

@@ -49,16 +49,28 @@ describe("tabsStore", () => {
     expect(tabs.every((t) => t.kind === "editor")).toBe(true);
   });
 
-  it("opens a file in a split editor pane and activates it", () => {
+  it("splits a pane with the given content and activates it", () => {
     useTabsStore.getState().newTerminalTab();
     const tab = activeTerminal();
-    useTabsStore.getState().openFileInSplit(tab.id, tab.activeLeafId, "/x/App.tsx", "row");
+    useTabsStore
+      .getState()
+      .splitPaneWith(tab.id, tab.activeLeafId, { kind: "editor", path: "/x/App.tsx" }, "row");
     const updated = activeTerminal();
     const panes = computeLayout(updated.paneTree);
     expect(panes).toHaveLength(2);
     const editor = panes.find((p) => p.content.kind === "editor");
     expect(editor?.content).toEqual({ kind: "editor", path: "/x/App.tsx" });
     expect(updated.activeLeafId).toBe(editor?.id);
+  });
+
+  it("can split with a note or preview pane", () => {
+    useTabsStore.getState().newTerminalTab();
+    const tab = activeTerminal();
+    useTabsStore
+      .getState()
+      .splitPaneWith(tab.id, tab.activeLeafId, { kind: "note", noteId: "n1" }, "col");
+    const panes = computeLayout(activeTerminal().paneTree);
+    expect(panes.some((p) => p.content.kind === "note")).toBe(true);
   });
 
   it("closing the last pane closes the whole terminal tab", () => {

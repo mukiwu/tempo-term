@@ -73,9 +73,9 @@ export function ShortcutsSettingsSection() {
       </h2>
       <p className="mb-6 text-xs text-fg-muted">{t("shortcutsList.description")}</p>
 
-      <div className="grid grid-cols-1 gap-x-10 gap-y-6 md:grid-cols-2">
+      <div className="columns-1 gap-x-10 md:columns-2 lg:columns-3">
         {GROUPS.map((group) => (
-          <div key={group.titleKey}>
+          <div key={group.titleKey} className="mb-6 break-inside-avoid">
             <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-subtle">
               {t(group.titleKey)}
             </h3>

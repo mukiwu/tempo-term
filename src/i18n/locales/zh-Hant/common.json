@@ -44,6 +44,13 @@
     "splitRight": "向右分割",
     "splitDown": "向下分割",
     "closePane": "關閉面板",
+    "splitHint": "{{label}}：預設往右分割，點擊 ⌥ 往下分割",
+    "pane": {
+      "terminal": "終端機",
+      "editor": "檔案",
+      "note": "筆記",
+      "preview": "網頁預覽"
+    },
     "spaces": "工作空間",
     "newSpace": "新增工作空間",
     "renameSpace": "重新命名工作空間",
