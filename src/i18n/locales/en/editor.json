@@ -3,5 +3,10 @@
   "emptyHint": "Pick a file from the explorer to start editing",
   "save": "Save",
   "saved": "Saved",
-  "unsaved": "Unsaved changes"
+  "unsaved": "Unsaved changes",
+  "mode": {
+    "edit": "Edit",
+    "split": "Split",
+    "preview": "Preview"
+  }
 }
