@@ -9,5 +9,17 @@
   "searchPlaceholder": "搜尋檔案內的文字",
   "noResults": "沒有符合的結果",
   "empty": "這個資料夾是空的",
-  "loading": "載入中⋯"
+  "loading": "載入中⋯",
+  "menu": {
+    "open": "開啟",
+    "reveal": "在 Finder 中顯示",
+    "newFile": "新增檔案",
+    "newFolder": "新增資料夾",
+    "newFilePlaceholder": "檔案名稱",
+    "newFolderPlaceholder": "資料夾名稱",
+    "copyPath": "複製路徑",
+    "copyRelativePath": "複製相對路徑",
+    "attachToAgent": "附加到 AI 助手",
+    "delete": "刪除"
+  }
 }

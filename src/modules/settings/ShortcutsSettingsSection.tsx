@@ -5,6 +5,8 @@ const IS_MAC =
 const MOD = IS_MAC ? "⌘" : "Ctrl";
 const SHIFT = IS_MAC ? "⇧" : "Shift";
 const ENTER = IS_MAC ? "↵" : "Enter";
+const ALT = IS_MAC ? "⌥" : "Alt";
+const DEL = IS_MAC ? "⌫" : "Backspace";
 
 interface Shortcut {
   labelKey: string;
@@ -32,6 +34,21 @@ const GROUPS: ShortcutGroup[] = [
     items: [
       { labelKey: "shortcutsList.splitRight", keys: `${MOD} D` },
       { labelKey: "shortcutsList.splitDown", keys: `${MOD} ${SHIFT} D` },
+    ],
+  },
+  {
+    titleKey: "shortcutsList.groups.terminalEdit",
+    items: [
+      { labelKey: "shortcutsList.lineStart", keys: `${MOD} ←` },
+      { labelKey: "shortcutsList.lineEnd", keys: `${MOD} →` },
+      { labelKey: "shortcutsList.wordBack", keys: `${ALT} ←` },
+      { labelKey: "shortcutsList.wordForward", keys: `${ALT} →` },
+      { labelKey: "shortcutsList.deleteToStart", keys: `${MOD} ${DEL}` },
+      { labelKey: "shortcutsList.deleteWord", keys: `${ALT} ${DEL}` },
+      { labelKey: "shortcutsList.killLine", keys: `${MOD} K` },
+      { labelKey: "shortcutsList.newlineNoSubmit", keys: `${SHIFT} ${ENTER}` },
+      { labelKey: "shortcutsList.copy", keys: `${MOD} C` },
+      { labelKey: "shortcutsList.paste", keys: `${MOD} V` },
     ],
   },
   {

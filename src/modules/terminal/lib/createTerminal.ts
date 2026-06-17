@@ -34,6 +34,9 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
     allowProposedApi: true,
     theme: options.theme,
     scrollback: 10000,
+    // Otherwise xterm consumes Alt+click to move the cursor, which swallows the
+    // Alt+click that opens file links (Warp-style).
+    altClickMovesCursor: false,
   });
 
   const fit = new FitAddon();

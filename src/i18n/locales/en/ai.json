@@ -17,5 +17,6 @@
   "keySaved": "API key saved",
   "you": "You",
   "assistant": "Assistant",
-  "contextHint": "The assistant sees your current folder and open file as context"
+  "contextHint": "The assistant sees your current folder and open file as context",
+  "removeAttachment": "Remove attachment"
 }

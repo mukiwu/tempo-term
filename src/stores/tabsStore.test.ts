@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useTabsStore, type TerminalTab } from "./tabsStore";
-import { leafIds } from "@/modules/terminal/lib/terminalLayout";
+import { computeLayout, leafIds } from "@/modules/terminal/lib/terminalLayout";
 
 function reset() {
   useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
@@ -47,6 +47,18 @@ describe("tabsStore", () => {
     useTabsStore.getState().splitActivePane("row");
     const tabs = useTabsStore.getState().tabs;
     expect(tabs.every((t) => t.kind === "editor")).toBe(true);
+  });
+
+  it("opens a file in a split editor pane and activates it", () => {
+    useTabsStore.getState().newTerminalTab();
+    const tab = activeTerminal();
+    useTabsStore.getState().openFileInSplit(tab.id, tab.activeLeafId, "/x/App.tsx", "row");
+    const updated = activeTerminal();
+    const panes = computeLayout(updated.paneTree);
+    expect(panes).toHaveLength(2);
+    const editor = panes.find((p) => p.content.kind === "editor");
+    expect(editor?.content).toEqual({ kind: "editor", path: "/x/App.tsx" });
+    expect(updated.activeLeafId).toBe(editor?.id);
   });
 
   it("closing the last pane closes the whole terminal tab", () => {

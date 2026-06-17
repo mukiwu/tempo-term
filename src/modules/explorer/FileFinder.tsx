@@ -3,15 +3,12 @@ import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
 import { fsListFiles } from "./lib/fsBridge";
 import { fuzzyRank } from "./lib/fuzzy";
+import { relativePath } from "./lib/paths";
 import { useTabsStore } from "@/stores/tabsStore";
 
 interface FileFinderProps {
   root: string;
   onClose: () => void;
-}
-
-function relativePath(path: string, root: string): string {
-  return path.startsWith(root) ? path.slice(root.length).replace(/^\/+/, "") : path;
 }
 
 export function FileFinder({ root, onClose }: FileFinderProps) {

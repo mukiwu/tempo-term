@@ -17,5 +17,6 @@
   "keySaved": "已儲存 API 金鑰",
   "you": "你",
   "assistant": "助手",
-  "contextHint": "助手會把你目前的資料夾與開啟的檔案當作情境"
+  "contextHint": "助手會把你目前的資料夾與開啟的檔案當作情境",
+  "removeAttachment": "移除附件"
 }

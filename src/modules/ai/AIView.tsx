@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Bot, KeyRound, SendHorizontal, Trash2 } from "lucide-react";
+import { Bot, KeyRound, Paperclip, SendHorizontal, Trash2, X } from "lucide-react";
 import { useChatStore } from "./store/chatStore";
 import { providerById, PROVIDERS } from "./lib/providers";
 import { secretsHasKey, secretsSetKey } from "./lib/aiBridge";
+import { buildAttachmentsBlock, type AttachedFile } from "./lib/attachments";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { Combobox } from "@/components/Combobox";
+import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
+import { basename } from "@/modules/explorer/lib/paths";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
-function buildSystemPrompt(rootPath: string | null, activeFile: string | null): string {
+function buildSystemPrompt(
+  rootPath: string | null,
+  activeFile: string | null,
+  attachments: string,
+): string {
   const parts = [
     "You are TempoTerm's built-in coding assistant. Be concise and practical.",
   ];
@@ -18,7 +25,30 @@ function buildSystemPrompt(rootPath: string | null, activeFile: string | null): 
   if (activeFile) {
     parts.push(`The user is currently looking at: ${activeFile}`);
   }
+  if (attachments) {
+    parts.push(attachments);
+  }
   return parts.join("\n");
+}
+
+/**
+ * Read every attached file and assemble the context block. Files that cannot be
+ * read (deleted, binary, permission denied) are skipped rather than failing the
+ * whole send.
+ */
+async function buildAttachmentsContext(paths: string[]): Promise<string> {
+  if (paths.length === 0) {
+    return "";
+  }
+  const files: AttachedFile[] = [];
+  for (const path of paths) {
+    try {
+      files.push({ path, contents: await fsReadFile(path) });
+    } catch {
+      // Skip unreadable files.
+    }
+  }
+  return buildAttachmentsBlock(files);
 }
 
 function KeyForm({ providerId, onSaved }: { providerId: string; onSaved: () => void }) {
@@ -67,6 +97,8 @@ export function AIView() {
   const setModel = useChatStore((s) => s.setModel);
   const send = useChatStore((s) => s.send);
   const clear = useChatStore((s) => s.clear);
+  const attachedPaths = useChatStore((s) => s.attachedPaths);
+  const removeAttached = useChatStore((s) => s.removeAttached);
 
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const activeFile = useWorkspaceStore((s) => s.activeFile);
@@ -99,7 +131,9 @@ export function AIView() {
     }
     const text = input;
     setInput("");
-    void send(text, buildSystemPrompt(rootPath, activeFile));
+    void buildAttachmentsContext(attachedPaths).then((attachments) =>
+      send(text, buildSystemPrompt(rootPath, activeFile, attachments)),
+    );
   }
 
   return (
@@ -189,6 +223,29 @@ export function AIView() {
 
       {/* Input */}
       <div className="shrink-0 border-t border-border bg-bg-inset p-3">
+        {attachedPaths.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {attachedPaths.map((path) => (
+              <span
+                key={path}
+                title={path}
+                className="inline-flex max-w-[180px] items-center gap-1 rounded-md border border-border bg-bg px-2 py-1 text-xs text-fg-muted"
+              >
+                <Paperclip size={11} className="shrink-0 text-fg-subtle" />
+                <span className="truncate">{basename(path)}</span>
+                <button
+                  type="button"
+                  aria-label={t("removeAttachment")}
+                  title={t("removeAttachment")}
+                  onClick={() => removeAttached(path)}
+                  className="shrink-0 rounded text-fg-subtle hover:text-fg"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <textarea
             value={input}

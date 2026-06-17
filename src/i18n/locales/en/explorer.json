@@ -9,5 +9,17 @@
   "searchPlaceholder": "Search text in files",
   "noResults": "No matches",
   "empty": "This folder is empty",
-  "loading": "Loading…"
+  "loading": "Loading…",
+  "menu": {
+    "open": "Open",
+    "reveal": "Reveal in Finder",
+    "newFile": "New File",
+    "newFolder": "New Folder",
+    "newFilePlaceholder": "File name",
+    "newFolderPlaceholder": "Folder name",
+    "copyPath": "Copy Path",
+    "copyRelativePath": "Copy Relative Path",
+    "attachToAgent": "Attach to Agent",
+    "delete": "Delete"
+  }
 }

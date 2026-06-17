@@ -7,8 +7,15 @@
 
 export type SplitDirection = "row" | "col";
 
+/** What a leaf pane shows: a terminal session, or an open file (editor). */
+export type PaneContent =
+  | { kind: "terminal" }
+  | { kind: "editor"; path: string };
+
+export const TERMINAL_PANE: PaneContent = { kind: "terminal" };
+
 export type LayoutNode =
-  | { kind: "leaf"; id: string }
+  | { kind: "leaf"; id: string; pane?: PaneContent }
   | {
       kind: "split";
       direction: SplitDirection;
@@ -16,16 +23,28 @@ export type LayoutNode =
       sizes: [number, number];
     };
 
-export function leaf(id: string): LayoutNode {
-  return { kind: "leaf", id };
+export function leaf(id: string, pane: PaneContent = TERMINAL_PANE): LayoutNode {
+  return { kind: "leaf", id, pane };
 }
 
-/** Replace the target leaf with a split of [target, newLeaf]. */
+/**
+ * A leaf's content, defaulting to a terminal — trees persisted before mixed
+ * panes existed have no `pane` field.
+ */
+export function paneOf(node: Extract<LayoutNode, { kind: "leaf" }>): PaneContent {
+  return node.pane ?? TERMINAL_PANE;
+}
+
+/**
+ * Replace the target leaf with a split of [target, newLeaf]. The new leaf shows
+ * `newPane` (a terminal by default), so a split can mix terminals and files.
+ */
 export function splitLeaf(
   node: LayoutNode,
   targetId: string,
   direction: SplitDirection,
   newId: string,
+  newPane: PaneContent = TERMINAL_PANE,
 ): LayoutNode {
   if (node.kind === "leaf") {
     if (node.id !== targetId) {
@@ -34,15 +53,15 @@ export function splitLeaf(
     return {
       kind: "split",
       direction,
-      children: [leaf(targetId), leaf(newId)],
+      children: [leaf(targetId, paneOf(node)), leaf(newId, newPane)],
       sizes: [0.5, 0.5],
     };
   }
   return {
     ...node,
     children: [
-      splitLeaf(node.children[0], targetId, direction, newId),
-      splitLeaf(node.children[1], targetId, direction, newId),
+      splitLeaf(node.children[0], targetId, direction, newId, newPane),
+      splitLeaf(node.children[1], targetId, direction, newId, newPane),
     ],
   };
 }
@@ -138,6 +157,7 @@ export interface Rect {
 export interface PaneRect {
   id: string;
   rect: Rect;
+  content: PaneContent;
 }
 
 const FULL: Rect = { left: 0, top: 0, width: 100, height: 100 };
@@ -149,7 +169,7 @@ const FULL: Rect = { left: 0, top: 0, width: 100, height: 100 };
  */
 export function computeLayout(node: LayoutNode, rect: Rect = FULL): PaneRect[] {
   if (node.kind === "leaf") {
-    return [{ id: node.id, rect }];
+    return [{ id: node.id, rect, content: paneOf(node) }];
   }
   const total = node.sizes[0] + node.sizes[1];
   const fraction = node.sizes[0] / total;

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Plus, SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
 import { TerminalView } from "./TerminalView";
 import { computeLayout, computeSplitters, type SplitterInfo } from "./lib/terminalLayout";
+import { EditorTabContent } from "@/modules/editor/EditorTabContent";
 import { useTabsStore, type TerminalTab } from "@/stores/tabsStore";
 
 const MIN_FRACTION = 0.1;
@@ -13,6 +14,7 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
   const splitActivePane = useTabsStore((s) => s.splitActivePane);
   const setActiveLeaf = useTabsStore((s) => s.setActiveLeaf);
   const resizePane = useTabsStore((s) => s.resizePane);
+  const openFileInSplit = useTabsStore((s) => s.openFileInSplit);
   const closePane = useTabsStore((s) => s.closePane);
   const isActiveTab = useTabsStore((s) => s.activeId === tab.id);
   const paneAreaRef = useRef<HTMLDivElement>(null);
@@ -120,13 +122,20 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
                   <X size={12} />
                 </button>
               )}
-              <TerminalView
-                active={active}
-                cwdTracking={active && isActiveTab}
-                cwd={tab.cwd}
-                leafId={pane.id}
-                onExit={() => closePane(tab.id, pane.id)}
-              />
+              {pane.content.kind === "editor" ? (
+                <EditorTabContent path={pane.content.path} />
+              ) : (
+                <TerminalView
+                  active={active}
+                  cwdTracking={active && isActiveTab}
+                  cwd={tab.cwd}
+                  leafId={pane.id}
+                  onExit={() => closePane(tab.id, pane.id)}
+                  onOpenFile={(absolutePath) =>
+                    openFileInSplit(tab.id, pane.id, absolutePath, "row")
+                  }
+                />
+              )}
             </div>
           );
         })}

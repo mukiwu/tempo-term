@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderOpen, Search } from "lucide-react";
 import { FileTree } from "./FileTree";
@@ -24,9 +24,11 @@ export function ExplorerView() {
     }
   }
 
-  // The root follows the active workspace tab; no folder open means empty.
-  useEffect(() => {
+  // Reload the root listing; also used after a top-level create/delete so the
+  // tree stays in sync without reopening the folder.
+  const loadEntries = useCallback(() => {
     if (!rootPath) {
+      setEntries([]);
       return;
     }
     setLoading(true);
@@ -35,6 +37,11 @@ export function ExplorerView() {
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
   }, [rootPath]);
+
+  // The root follows the active workspace tab; no folder open means empty.
+  useEffect(() => {
+    loadEntries();
+  }, [loadEntries]);
 
   return (
     <div className="relative flex h-full flex-col bg-bg-inset">
@@ -79,7 +86,7 @@ export function ExplorerView() {
         ) : entries.length === 0 ? (
           <p className="px-3 py-2 text-xs text-fg-subtle">{t("empty")}</p>
         ) : (
-          <FileTree entries={entries} />
+          <FileTree entries={entries} onReloadRoot={loadEntries} />
         )}
       </div>
 

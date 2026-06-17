@@ -2,6 +2,7 @@
 //! explorer and editor.
 
 mod dir;
+mod ops;
 mod search;
 
 pub use dir::DirEntry;
@@ -39,4 +40,24 @@ pub fn fs_grep(
     limit: Option<usize>,
 ) -> Result<Vec<GrepMatch>, String> {
     search::grep(&root, &query, limit.unwrap_or(500))
+}
+
+#[tauri::command]
+pub fn fs_create_file(path: String) -> Result<(), String> {
+    ops::create_file(&path)
+}
+
+#[tauri::command]
+pub fn fs_create_dir(path: String) -> Result<(), String> {
+    ops::create_dir(&path)
+}
+
+#[tauri::command]
+pub fn fs_delete(path: String) -> Result<(), String> {
+    ops::delete(&path)
+}
+
+#[tauri::command]
+pub fn fs_reveal(path: String) -> Result<(), String> {
+    ops::reveal(&path)
 }

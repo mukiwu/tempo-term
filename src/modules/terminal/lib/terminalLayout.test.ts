@@ -55,26 +55,38 @@ describe("terminalLayout", () => {
 });
 
 describe("computeLayout", () => {
+  const terminal = { kind: "terminal" } as const;
+
   it("gives a single leaf the full area", () => {
     expect(computeLayout(leaf("a"))).toEqual([
-      { id: "a", rect: { left: 0, top: 0, width: 100, height: 100 } },
+      { id: "a", rect: { left: 0, top: 0, width: 100, height: 100 }, content: terminal },
     ]);
   });
 
   it("splits a row into left and right halves", () => {
     const panes = computeLayout(splitLeaf(leaf("a"), "a", "row", "b"));
     expect(panes).toEqual([
-      { id: "a", rect: { left: 0, top: 0, width: 50, height: 100 } },
-      { id: "b", rect: { left: 50, top: 0, width: 50, height: 100 } },
+      { id: "a", rect: { left: 0, top: 0, width: 50, height: 100 }, content: terminal },
+      { id: "b", rect: { left: 50, top: 0, width: 50, height: 100 }, content: terminal },
     ]);
   });
 
   it("splits a col into top and bottom halves", () => {
     const panes = computeLayout(splitLeaf(leaf("a"), "a", "col", "b"));
     expect(panes).toEqual([
-      { id: "a", rect: { left: 0, top: 0, width: 100, height: 50 } },
-      { id: "b", rect: { left: 0, top: 50, width: 100, height: 50 } },
+      { id: "a", rect: { left: 0, top: 0, width: 100, height: 50 }, content: terminal },
+      { id: "b", rect: { left: 0, top: 50, width: 100, height: 50 }, content: terminal },
     ]);
+  });
+
+  it("carries each leaf's pane content for a mixed terminal + editor split", () => {
+    const tree = splitLeaf(leaf("a"), "a", "row", "b", {
+      kind: "editor",
+      path: "/x/App.tsx",
+    });
+    const panes = computeLayout(tree);
+    expect(panes[0].content).toEqual({ kind: "terminal" });
+    expect(panes[1].content).toEqual({ kind: "editor", path: "/x/App.tsx" });
   });
 
   it("honours an adjusted size ratio", () => {

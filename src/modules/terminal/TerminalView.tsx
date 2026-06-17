@@ -2,10 +2,30 @@ import { useEffect, useRef } from "react";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { registerTerminal, unregisterTerminal } from "./lib/terminalBus";
+import { findFilePaths, resolveFilePath } from "./lib/fileLinks";
+import { terminalKeySequence } from "./lib/terminalKeymap";
+import { fsHomeDir, fsReadFile } from "@/modules/explorer/lib/fsBridge";
+
+const IS_MAC =
+  typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac");
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { getTheme } from "@/themes/themes";
+
+// The home dir never changes within a session; fetch it once and share it so
+// `~/…` paths in terminal output can be expanded.
+let homeDirCache: string | null = null;
+async function getHomeDir(): Promise<string | null> {
+  if (homeDirCache === null) {
+    try {
+      homeDirCache = await fsHomeDir();
+    } catch {
+      homeDirCache = "";
+    }
+  }
+  return homeDirCache;
+}
 
 interface TerminalViewProps {
   active: boolean;
@@ -16,6 +36,8 @@ interface TerminalViewProps {
   /** Pane id, so notes/workflows can run commands into this terminal. */
   leafId?: string;
   onExit?: () => void;
+  /** Alt+click on a file path in the output opens it (with the resolved abs path). */
+  onOpenFile?: (absolutePath: string) => void;
 }
 
 export function TerminalView({
@@ -24,6 +46,7 @@ export function TerminalView({
   cwd,
   leafId,
   onExit,
+  onOpenFile,
 }: TerminalViewProps) {
   const leafIdRef = useRef(leafId);
   leafIdRef.current = leafId;
@@ -34,6 +57,8 @@ export function TerminalView({
   const sessionRef = useRef<PtySession | null>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+  const onOpenFileRef = useRef(onOpenFile);
+  onOpenFileRef.current = onOpenFile;
 
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
@@ -65,7 +90,89 @@ export function TerminalView({
       if (event.type === "keydown" && (event.isComposing || event.keyCode === 229)) {
         return false;
       }
+      // Standard terminal editing shortcuts (Shift+Enter, word/line nav, word
+      // and line delete), matching Terax/Warp so muscle memory carries over.
+      if (event.type === "keydown") {
+        const seq = terminalKeySequence(event, IS_MAC);
+        if (seq) {
+          void sessionRef.current?.write(seq);
+          return false;
+        }
+        // Clipboard on macOS: Cmd+C copies the selection, Cmd+V pastes.
+        if (IS_MAC && event.metaKey && !event.ctrlKey && !event.altKey) {
+          const k = event.key.toLowerCase();
+          if (k === "c" && term.hasSelection()) {
+            void navigator.clipboard.writeText(term.getSelection());
+            return false;
+          }
+          if (k === "v") {
+            navigator.clipboard
+              .readText()
+              .then((text) => {
+                if (text) {
+                  term.paste(text);
+                }
+              })
+              .catch(() => {
+                // clipboard read denied — let xterm's own paste handle it
+              });
+            return false;
+          }
+        }
+      }
       return true;
+    });
+
+    // Warp-style file links: Alt+click a path in the output to open it. The path
+    // is resolved against the live shell cwd and only opened if it really exists.
+    async function openFromTerminal(raw: string) {
+      let resolvedCwd: string | null = cwdRef.current ?? null;
+      try {
+        const live = await sessionRef.current?.cwd();
+        if (live) {
+          resolvedCwd = live;
+        }
+      } catch {
+        // fall back to the starting cwd
+      }
+      const abs = resolveFilePath(raw, resolvedCwd, await getHomeDir());
+      try {
+        await fsReadFile(abs);
+        onOpenFileRef.current?.(abs);
+      } catch {
+        // not a real file (e.g. a bare domain) — ignore the click
+      }
+    }
+
+    term.registerLinkProvider({
+      provideLinks(lineNumber, callback) {
+        const bufferLine = term.buffer.active.getLine(lineNumber - 1);
+        if (!bufferLine) {
+          callback(undefined);
+          return;
+        }
+        const matches = findFilePaths(bufferLine.translateToString(true));
+        if (matches.length === 0) {
+          callback(undefined);
+          return;
+        }
+        callback(
+          matches.map((m) => ({
+            range: {
+              start: { x: m.start + 1, y: lineNumber },
+              end: { x: m.end, y: lineNumber },
+            },
+            text: m.text,
+            activate: (event: MouseEvent) => {
+              // Alt+click is xterm's rectangular-select gesture and can be
+              // swallowed, so Cmd+click works too (matching VS Code's gesture).
+              if (event.altKey || event.metaKey) {
+                void openFromTerminal(m.text);
+              }
+            },
+          })),
+        );
+      },
     });
 
     const safeFit = () => {

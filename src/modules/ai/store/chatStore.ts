@@ -20,10 +20,15 @@ interface ChatState {
   messages: ChatMessage[];
   sending: boolean;
   error: string | null;
+  /** Absolute file paths the user attached as extra context for the assistant. */
+  attachedPaths: string[];
   setProvider: (id: string) => void;
   setModel: (model: string) => void;
   send: (text: string, systemPrompt: string) => Promise<void>;
   clear: () => void;
+  attachPath: (path: string) => void;
+  removeAttached: (path: string) => void;
+  clearAttached: () => void;
 }
 
 export const CHAT_STORAGE_KEY = "tempoterm-chat";
@@ -36,6 +41,7 @@ export const useChatStore = create<ChatState>()(
       messages: [],
       sending: false,
       error: null,
+      attachedPaths: [],
 
       setProvider: (id) => {
         const provider = providerById(id);
@@ -77,10 +83,28 @@ export const useChatStore = create<ChatState>()(
       },
 
       clear: () => set({ messages: [], error: null }),
+
+      attachPath: (path) =>
+        set((state) =>
+          state.attachedPaths.includes(path)
+            ? state
+            : { attachedPaths: [...state.attachedPaths, path] },
+        ),
+
+      removeAttached: (path) =>
+        set((state) => ({
+          attachedPaths: state.attachedPaths.filter((p) => p !== path),
+        })),
+
+      clearAttached: () => set({ attachedPaths: [] }),
     }),
     {
       name: CHAT_STORAGE_KEY,
-      partialize: (state) => ({ providerId: state.providerId, model: state.model }),
+      partialize: (state) => ({
+        providerId: state.providerId,
+        model: state.model,
+        attachedPaths: state.attachedPaths,
+      }),
     },
   ),
 );

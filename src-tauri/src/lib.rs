@@ -2,7 +2,8 @@ mod modules;
 
 use modules::fonts::fonts_report;
 use modules::fs::{
-    fs_grep, fs_home_dir, fs_list_files, fs_read_dir, fs_read_file, fs_write_file,
+    fs_create_dir, fs_create_file, fs_delete, fs_grep, fs_home_dir, fs_list_files, fs_read_dir,
+    fs_read_file, fs_reveal, fs_write_file,
 };
 use modules::ai::ai_chat;
 use modules::git::{
@@ -35,6 +36,10 @@ pub fn run() {
             fs_write_file,
             fs_list_files,
             fs_grep,
+            fs_create_file,
+            fs_create_dir,
+            fs_delete,
+            fs_reveal,
             git_resolve_repo,
             git_status,
             git_stage,

@@ -78,6 +78,13 @@ interface TabsState {
   splitActivePane: (direction: SplitDirection) => void;
   setActiveLeaf: (tabId: string, leafId: string) => void;
   resizePane: (tabId: string, splitId: string, sizes: [number, number]) => void;
+  /** Split a pane and show `path` in an editor in the new half (Warp-style open). */
+  openFileInSplit: (
+    tabId: string,
+    fromLeafId: string,
+    path: string,
+    direction: SplitDirection,
+  ) => void;
   closePane: (tabId: string, leafId: string) => void;
 }
 
@@ -282,6 +289,24 @@ export const useTabsStore = create<TabsState>()(
           ? { ...tab, paneTree: setSizesById(tab.paneTree, splitId, sizes) }
           : tab,
       ),
+    })),
+
+  openFileInSplit: (tabId, fromLeafId, path, direction) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) => {
+        if (tab.id !== tabId || tab.kind !== "terminal") {
+          return tab;
+        }
+        const newId = nextPaneId();
+        return {
+          ...tab,
+          paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, {
+            kind: "editor",
+            path,
+          }),
+          activeLeafId: newId,
+        };
+      }),
     })),
 
   closePane: (tabId, leafId) =>

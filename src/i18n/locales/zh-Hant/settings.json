@@ -57,6 +57,7 @@
     "groups": {
       "general": "通用",
       "terminal": "終端機",
+      "terminalEdit": "終端機編輯",
       "editor": "編輯器",
       "notes": "筆記"
     },
@@ -67,6 +68,16 @@
     "settings": "開啟設定",
     "splitRight": "左右分割面板",
     "splitDown": "上下分割面板",
+    "lineStart": "跳到行首",
+    "lineEnd": "跳到行尾",
+    "wordBack": "跳上一個單字",
+    "wordForward": "跳下一個單字",
+    "deleteToStart": "刪到行首",
+    "deleteWord": "刪一個單字",
+    "killLine": "刪到行尾",
+    "newlineNoSubmit": "換行不送出",
+    "copy": "複製",
+    "paste": "貼上",
     "saveFile": "儲存檔案",
     "slashMenu": "開啟區塊選單",
     "exitCodeBlock": "跳出程式碼區塊"

@@ -40,3 +40,19 @@ export function fsGrep(
 ): Promise<GrepMatch[]> {
   return invoke<GrepMatch[]>("fs_grep", { root, query, limit });
 }
+
+export function fsCreateFile(path: string): Promise<void> {
+  return invoke("fs_create_file", { path });
+}
+
+export function fsCreateDir(path: string): Promise<void> {
+  return invoke("fs_create_dir", { path });
+}
+
+export function fsDelete(path: string): Promise<void> {
+  return invoke("fs_delete", { path });
+}
+
+export function fsReveal(path: string): Promise<void> {
+  return invoke("fs_reveal", { path });
+}

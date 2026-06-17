@@ -57,6 +57,7 @@
     "groups": {
       "general": "General",
       "terminal": "Terminal",
+      "terminalEdit": "Terminal editing",
       "editor": "Editor",
       "notes": "Notes"
     },
@@ -67,6 +68,16 @@
     "settings": "Open settings",
     "splitRight": "Split left / right",
     "splitDown": "Split top / bottom",
+    "lineStart": "Jump to line start",
+    "lineEnd": "Jump to line end",
+    "wordBack": "Jump word left",
+    "wordForward": "Jump word right",
+    "deleteToStart": "Delete to line start",
+    "deleteWord": "Delete word",
+    "killLine": "Delete to line end",
+    "newlineNoSubmit": "Newline (no submit)",
+    "copy": "Copy",
+    "paste": "Paste",
     "saveFile": "Save file",
     "slashMenu": "Open block menu",
     "exitCodeBlock": "Exit code block"
