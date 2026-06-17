@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
+import { Combobox } from "@/components/Combobox";
 import {
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
@@ -71,19 +72,15 @@ export function FontsSettingsSection() {
         <label className="mb-2 block text-sm font-medium text-fg">
           {t("fonts.primary")}
         </label>
-        <select
-          value={primaryFont}
-          aria-label={t("fonts.primary")}
-          onChange={(e) => setPrimaryFont(e.target.value)}
-          className="w-72 rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-        >
-          <option value="">{t("fonts.systemDefault")}</option>
-          {monospaceFonts.map((f) => (
-            <option key={f.family} value={f.family}>
-              {f.family}
-            </option>
-          ))}
-        </select>
+        <Combobox
+          value={primaryFont || t("fonts.systemDefault")}
+          options={[t("fonts.systemDefault"), ...monospaceFonts.map((f) => f.family)]}
+          onChange={(value) =>
+            setPrimaryFont(value === t("fonts.systemDefault") ? "" : value)
+          }
+          ariaLabel={t("fonts.primary")}
+          className="w-72"
+        />
       </div>
     </section>
   );

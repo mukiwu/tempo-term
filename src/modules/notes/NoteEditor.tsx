@@ -22,6 +22,7 @@ import { useMemo, useState } from "react";
 import { runCommandInTerminal } from "@/modules/terminal/lib/terminalBus";
 import { createSlashCommand } from "./slashCommand";
 import { registerNoteInserter, unregisterNoteInserter } from "./lib/noteBus";
+import { Combobox } from "@/components/Combobox";
 
 const lowlight = createLowlight(common);
 const SHELL_LANGS = new Set(["", "sh", "bash", "zsh", "shell", "console", "terminal"]);
@@ -62,21 +63,15 @@ function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
         contentEditable={false}
         className="flex items-center justify-between border-t border-border/60 px-3 py-1.5"
       >
-        <select
+        <Combobox
           value={lang || "text"}
-          aria-label={t("language")}
-          onChange={(e) => {
-            const value = e.target.value;
-            updateAttributes({ language: value === "text" ? null : value });
-          }}
-          className="cursor-pointer rounded bg-transparent font-mono text-[11px] uppercase tracking-wider text-fg-subtle outline-none hover:text-fg"
-        >
-          {CODE_LANGS.map((l) => (
-            <option key={l} value={l} className="bg-bg-elevated normal-case">
-              {l}
-            </option>
-          ))}
-        </select>
+          options={CODE_LANGS}
+          onChange={(value) =>
+            updateAttributes({ language: value === "text" ? null : value })
+          }
+          ariaLabel={t("language")}
+          className="w-32 font-mono"
+        />
         <div className="flex items-center gap-2">
           <span className="select-none text-[11px] text-fg-subtle">{t("exitHint")}</span>
           <button

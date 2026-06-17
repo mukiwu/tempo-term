@@ -10,6 +10,8 @@ interface ComboboxProps {
   editable?: boolean;
   placeholder?: string;
   className?: string;
+  /** Open the list upward (for triggers near the bottom of the window). */
+  dropUp?: boolean;
 }
 
 /**
@@ -25,6 +27,7 @@ export function Combobox({
   editable = false,
   placeholder,
   className,
+  dropUp = false,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -88,7 +91,11 @@ export function Combobox({
       </div>
 
       {open && (
-        <ul className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-border-strong bg-bg-elevated p-1.5 shadow-xl">
+        <ul
+          className={`absolute left-0 right-0 z-50 max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-border-strong bg-bg-elevated p-1.5 shadow-xl ${
+            dropUp ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          }`}
+        >
           {list.map((opt) => {
             const active = opt === value;
             return (

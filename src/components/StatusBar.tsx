@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import { Circle, Settings } from "lucide-react";
-import { LanguageSwitcher } from "./LanguageSwitcher";
 import { useUiStore } from "@/stores/uiStore";
 
 export function StatusBar() {
@@ -15,18 +14,15 @@ export function StatusBar() {
       </span>
       <span className="ml-3">{t("statusBar.encoding")}</span>
 
-      <div className="ml-auto flex items-center gap-1">
-        <LanguageSwitcher />
-        <button
-          type="button"
-          title={t("nav.settings")}
-          aria-label={t("nav.settings")}
-          onClick={() => setSettingsOpen(true)}
-          className="flex h-5 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:text-fg"
-        >
-          <Settings size={14} strokeWidth={1.75} />
-        </button>
-      </div>
+      <button
+        type="button"
+        title={t("nav.settings")}
+        aria-label={t("nav.settings")}
+        onClick={() => setSettingsOpen(true)}
+        className="ml-auto flex h-5 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:text-fg"
+      >
+        <Settings size={14} strokeWidth={1.75} />
+      </button>
     </footer>
   );
 }
