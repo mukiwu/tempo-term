@@ -8,9 +8,10 @@ import { FontsSettingsSection } from "./FontsSettingsSection";
 import { TerminalSettingsSection } from "./TerminalSettingsSection";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
+import { AboutSettingsSection } from "./AboutSettingsSection";
 
-type SectionId = "appearance" | "ai" | "shortcuts";
-const SECTIONS: SectionId[] = ["appearance", "ai", "shortcuts"];
+type SectionId = "appearance" | "ai" | "shortcuts" | "about";
+const SECTIONS: SectionId[] = ["appearance", "ai", "shortcuts", "about"];
 
 /**
  * A read-only code snippet painted in a theme's own colours, so the syntax
@@ -200,6 +201,7 @@ export function SettingsView() {
           {section === "appearance" && <AppearanceSection />}
           {section === "ai" && <AiSettingsSection />}
           {section === "shortcuts" && <ShortcutsSettingsSection />}
+          {section === "about" && <AboutSettingsSection />}
         </div>
       </div>
     </div>

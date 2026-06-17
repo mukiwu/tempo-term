@@ -5,7 +5,25 @@
     "terminal": "Terminal",
     "fonts": "Fonts",
     "ai": "AI",
-    "shortcuts": "Shortcuts"
+    "shortcuts": "Shortcuts",
+    "about": "About"
+  },
+  "about": {
+    "appName": "TempoTerm",
+    "tagline": "AI-powered terminal, editor and file explorer",
+    "version": "Version"
+  },
+  "update": {
+    "available": "Update available: v{{version}}",
+    "notes": "What's new",
+    "viewFullNotes": "View full release notes",
+    "install": "Update now",
+    "later": "Later",
+    "installing": "Updating…",
+    "check": "Check for updates",
+    "checking": "Checking…",
+    "upToDate": "You're on the latest version",
+    "checkFailed": "Couldn't check for updates"
   },
   "language": {
     "label": "Display language",
