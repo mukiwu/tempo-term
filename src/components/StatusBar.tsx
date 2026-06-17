@@ -9,24 +9,23 @@ export function StatusBar() {
 
   return (
     <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-border bg-bg-inset px-2 text-xs text-fg-muted">
-      <button
-        type="button"
-        title={t("nav.settings")}
-        aria-label={t("nav.settings")}
-        onClick={() => setSettingsOpen(true)}
-        className="flex h-5 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:text-fg"
-      >
-        <Settings size={14} strokeWidth={1.75} />
-      </button>
-
-      <span className="ml-3 flex items-center gap-1.5">
+      <span className="flex items-center gap-1.5">
         <Circle size={8} className="fill-success text-success" />
         {t("statusBar.ready")}
       </span>
       <span className="ml-3">{t("statusBar.encoding")}</span>
 
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-1">
         <LanguageSwitcher />
+        <button
+          type="button"
+          title={t("nav.settings")}
+          aria-label={t("nav.settings")}
+          onClick={() => setSettingsOpen(true)}
+          className="flex h-5 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:text-fg"
+        >
+          <Settings size={14} strokeWidth={1.75} />
+        </button>
       </div>
     </footer>
   );
