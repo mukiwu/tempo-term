@@ -9,9 +9,13 @@ TAG="v${VERSION}"
 
 echo "→ Releasing TempoTerm ${TAG}"
 
+# Accept either APPLE_PASSWORD or the longer APPLE_APP_SPECIFIC_PASSWORD name
+# (xcrun notarytool + Tauri's auto-notarization both read APPLE_PASSWORD).
+export APPLE_PASSWORD="${APPLE_PASSWORD:-${APPLE_APP_SPECIFIC_PASSWORD:-}}"
+
 # 1. Pre-flight checks
 [ -z "${APPLE_ID:-}" ] && { echo "✗ APPLE_ID env not set"; exit 1; }
-[ -z "${APPLE_PASSWORD:-}" ] && { echo "✗ APPLE_PASSWORD env not set (use an app-specific password)"; exit 1; }
+[ -z "${APPLE_PASSWORD:-}" ] && { echo "✗ APPLE_PASSWORD / APPLE_APP_SPECIFIC_PASSWORD env not set (use an app-specific password)"; exit 1; }
 [ -z "${APPLE_TEAM_ID:-}" ] && { echo "✗ APPLE_TEAM_ID env not set"; exit 1; }
 [ -f ~/.tempoterm/updater-key.json ] || { echo "✗ Updater private key missing at ~/.tempoterm/updater-key.json"; exit 1; }
 [ -f CHANGELOG-NEXT.md ] || { echo "✗ CHANGELOG-NEXT.md missing (write release notes there first)"; exit 1; }
