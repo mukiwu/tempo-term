@@ -1,12 +1,51 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, KeyRound } from "lucide-react";
-import { PROVIDERS } from "@/modules/ai/lib/providers";
+import { PROVIDERS, providerById } from "@/modules/ai/lib/providers";
+import { useChatStore } from "@/modules/ai/store/chatStore";
+import { Combobox } from "@/components/Combobox";
 import {
   secretsDeleteKey,
   secretsHasKey,
   secretsSetKey,
 } from "@/modules/ai/lib/aiBridge";
+
+function DefaultModelRow() {
+  const { t } = useTranslation("settings");
+  const providerId = useChatStore((s) => s.providerId);
+  const model = useChatStore((s) => s.model);
+  const setProvider = useChatStore((s) => s.setProvider);
+  const setModel = useChatStore((s) => s.setModel);
+  const provider = providerById(providerId);
+
+  return (
+    <div className="mb-6">
+      <label className="mb-1 block text-sm font-medium text-fg">{t("aiModel.label")}</label>
+      <p className="mb-2 text-xs text-fg-muted">{t("aiModel.description")}</p>
+      <div className="flex flex-wrap gap-2">
+        <Combobox
+          value={provider.label}
+          options={PROVIDERS.map((p) => p.label)}
+          onChange={(label) => {
+            const next = PROVIDERS.find((p) => p.label === label);
+            if (next) setProvider(next.id);
+          }}
+          ariaLabel={t("aiModel.provider")}
+          className="w-48"
+        />
+        <Combobox
+          value={model}
+          options={provider.models}
+          onChange={setModel}
+          ariaLabel={t("aiModel.model")}
+          editable
+          placeholder={t("aiModel.customPlaceholder")}
+          className="w-56"
+        />
+      </div>
+    </div>
+  );
+}
 
 function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; needsKey: boolean }) {
   const { t } = useTranslation("settings");
@@ -99,10 +138,14 @@ export function AiSettingsSection() {
   const { t } = useTranslation("settings");
   return (
     <section>
-      <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-fg-subtle">
+      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-fg-subtle">
         {t("sections.ai")}
       </h2>
-      <p className="mb-4 text-xs text-fg-muted">{t("aiKeys.description")}</p>
+
+      <DefaultModelRow />
+
+      <label className="mb-1 block text-sm font-medium text-fg">{t("aiKeys.title")}</label>
+      <p className="mb-2 text-xs text-fg-muted">{t("aiKeys.description")}</p>
       <div>
         {PROVIDERS.map((provider) => (
           <ProviderKeyRow

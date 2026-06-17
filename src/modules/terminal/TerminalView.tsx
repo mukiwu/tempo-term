@@ -38,6 +38,7 @@ export function TerminalView({
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
   const themeId = useSettingsStore((s) => s.themeId);
+  const terminalPadding = useSettingsStore((s) => s.terminalPadding);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -183,6 +184,23 @@ export function TerminalView({
     }
   }, [themeId]);
 
+  // The pane's inner padding is configurable; re-fit so the grid recomputes.
+  useEffect(() => {
+    const handle = handleRef.current;
+    const container = containerRef.current;
+    if (!handle || !container) {
+      return;
+    }
+    if (container.clientWidth > 0 && container.clientHeight > 0) {
+      try {
+        handle.fit.fit();
+      } catch {
+        // ignore transient zero-size
+      }
+      sessionRef.current?.resize(handle.term.cols, handle.term.rows);
+    }
+  }, [terminalPadding]);
+
   // While this pane is the live one, follow its shell's working directory so
   // the file explorer tracks `cd`.
   useEffect(() => {
@@ -214,5 +232,16 @@ export function TerminalView({
     };
   }, [cwdTracking]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  // Match the padding gutter to the terminal's own background so the inset
+  // reads as breathing room rather than a different-coloured frame.
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full"
+      style={{
+        padding: terminalPadding,
+        backgroundColor: getTheme(themeId).terminal.background,
+      }}
+    />
+  );
 }

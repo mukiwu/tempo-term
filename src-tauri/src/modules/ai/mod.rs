@@ -21,6 +21,10 @@ pub async fn ai_chat(
     model: String,
     messages: Vec<ChatMessage>,
 ) -> Result<String, String> {
+    if model.trim().is_empty() {
+        return Err("No model selected — choose or type a model in the chat header.".to_string());
+    }
+
     let key = secrets::get_key(&provider)?.unwrap_or_default();
     let request = build_request(&kind, &base_url, &model, &messages, &key)?;
 

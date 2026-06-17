@@ -13,5 +13,20 @@
   "preview": "預覽",
   "copy": "複製",
   "copied": "已複製",
-  "run": "在終端機執行"
+  "run": "在終端機執行",
+  "language": "語言",
+  "exitHint": "Cmd + Enter 跳脫",
+  "slash": {
+    "text": "文字",
+    "h1": "標題 1",
+    "h2": "標題 2",
+    "h3": "標題 3",
+    "bullet": "項目清單",
+    "ordered": "編號清單",
+    "todo": "待辦清單",
+    "quote": "引用",
+    "code": "程式碼區塊",
+    "divider": "分隔線",
+    "empty": "沒有符合的區塊"
+  }
 }

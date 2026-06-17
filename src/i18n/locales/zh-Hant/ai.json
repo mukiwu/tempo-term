@@ -2,6 +2,7 @@
   "title": "AI 助手",
   "provider": "供應商",
   "model": "模型",
+  "modelPlaceholder": "輸入自訂模型",
   "send": "送出",
   "clear": "清除",
   "placeholder": "問任何關於你專案的問題",

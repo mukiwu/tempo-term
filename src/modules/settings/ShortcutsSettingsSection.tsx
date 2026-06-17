@@ -3,12 +3,48 @@ import { useTranslation } from "react-i18next";
 const IS_MAC =
   typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac");
 const MOD = IS_MAC ? "⌘" : "Ctrl";
+const SHIFT = IS_MAC ? "⇧" : "Shift";
+const ENTER = IS_MAC ? "↵" : "Enter";
 
-const SHORTCUTS: { labelKey: string; keys: string }[] = [
-  { labelKey: "shortcutsList.newTab", keys: `${MOD} T` },
-  { labelKey: "shortcutsList.findFiles", keys: `${MOD} P` },
-  { labelKey: "shortcutsList.saveFile", keys: `${MOD} S` },
-  { labelKey: "shortcutsList.sendMessage", keys: "Enter" },
+interface Shortcut {
+  labelKey: string;
+  keys: string;
+}
+
+interface ShortcutGroup {
+  titleKey: string;
+  items: Shortcut[];
+}
+
+const GROUPS: ShortcutGroup[] = [
+  {
+    titleKey: "shortcutsList.groups.general",
+    items: [
+      { labelKey: "shortcutsList.newTab", keys: `${MOD} T` },
+      { labelKey: "shortcutsList.closeTab", keys: `${MOD} W` },
+      { labelKey: "shortcutsList.findFiles", keys: `${MOD} P` },
+      { labelKey: "shortcutsList.toggleSidebar", keys: `${MOD} B` },
+      { labelKey: "shortcutsList.settings", keys: `${MOD} ,` },
+    ],
+  },
+  {
+    titleKey: "shortcutsList.groups.terminal",
+    items: [
+      { labelKey: "shortcutsList.splitRight", keys: `${MOD} D` },
+      { labelKey: "shortcutsList.splitDown", keys: `${MOD} ${SHIFT} D` },
+    ],
+  },
+  {
+    titleKey: "shortcutsList.groups.editor",
+    items: [{ labelKey: "shortcutsList.saveFile", keys: `${MOD} S` }],
+  },
+  {
+    titleKey: "shortcutsList.groups.notes",
+    items: [
+      { labelKey: "shortcutsList.slashMenu", keys: "/" },
+      { labelKey: "shortcutsList.exitCodeBlock", keys: `${MOD} ${ENTER}` },
+    ],
+  },
 ];
 
 export function ShortcutsSettingsSection() {
@@ -18,22 +54,30 @@ export function ShortcutsSettingsSection() {
       <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-fg-subtle">
         {t("sections.shortcuts")}
       </h2>
-      <p className="mb-4 text-xs text-fg-muted">
-        {t("shortcutsList.description")}
-      </p>
-      <ul className="divide-y divide-border">
-        {SHORTCUTS.map((shortcut) => (
-          <li
-            key={shortcut.labelKey}
-            className="flex items-center justify-between py-2.5 text-sm"
-          >
-            <span className="text-fg-muted">{t(shortcut.labelKey)}</span>
-            <kbd className="rounded border border-border-strong bg-bg-inset px-2 py-0.5 font-mono text-xs text-fg">
-              {shortcut.keys}
-            </kbd>
-          </li>
+      <p className="mb-6 text-xs text-fg-muted">{t("shortcutsList.description")}</p>
+
+      <div className="grid grid-cols-1 gap-x-10 gap-y-6 md:grid-cols-2">
+        {GROUPS.map((group) => (
+          <div key={group.titleKey}>
+            <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-subtle">
+              {t(group.titleKey)}
+            </h3>
+            <ul className="divide-y divide-border">
+              {group.items.map((shortcut) => (
+                <li
+                  key={shortcut.labelKey}
+                  className="flex items-center justify-between py-2 text-sm"
+                >
+                  <span className="text-fg-muted">{t(shortcut.labelKey)}</span>
+                  <kbd className="shrink-0 rounded border border-border-strong bg-bg-inset px-2 py-0.5 font-mono text-xs text-fg">
+                    {shortcut.keys}
+                  </kbd>
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
     </section>
   );
 }

@@ -21,19 +21,26 @@
   },
   "fonts": {
     "label": "Terminal font",
-    "description": "Pick the primary monospace font and a Traditional Chinese fallback so every glyph renders correctly",
+    "description": "Pick the primary monospace font; a Traditional Chinese fallback is applied automatically",
     "primary": "Primary font",
-    "cjkFallback": "Traditional Chinese fallback",
     "fontSize": "Font size",
     "preview": "Preview",
     "previewText": "The quick brown fox 中文字體預覽 0123",
-    "missingHint": "No Traditional Chinese monospace font detected. Install one of the recommended fonts below.",
-    "recommended": "Recommended fonts",
     "systemDefault": "System default",
-    "autoDetect": "Auto-detect",
-    "detectedUsing": "Currently using",
-    "loading": "Scanning installed fonts…",
-    "noCjkInChain": "Without a Traditional Chinese fallback, some characters may show as tofu boxes."
+    "loading": "Scanning installed fonts…"
+  },
+  "terminalSettings": {
+    "description": "Adjust the gap between the terminal content and its pane edges",
+    "padding": "Inner padding",
+    "preview": "Preview",
+    "previewText": "$ tempo --version\nTempoTerm terminal padding preview"
+  },
+  "aiModel": {
+    "label": "Default model",
+    "description": "Choose the provider and model the assistant uses by default; you can switch anytime in the chat panel",
+    "provider": "Provider",
+    "model": "Model",
+    "customPlaceholder": "Type a custom model name"
   },
   "aiKeys": {
     "title": "API keys",
@@ -47,9 +54,21 @@
   },
   "shortcutsList": {
     "description": "Common keyboard shortcuts",
+    "groups": {
+      "general": "General",
+      "terminal": "Terminal",
+      "editor": "Editor",
+      "notes": "Notes"
+    },
     "newTab": "New terminal tab",
+    "closeTab": "Close current tab",
     "findFiles": "Find files",
+    "toggleSidebar": "Toggle sidebar",
+    "settings": "Open settings",
+    "splitRight": "Split left / right",
+    "splitDown": "Split top / bottom",
     "saveFile": "Save file",
-    "sendMessage": "Send AI message (Enter)"
+    "slashMenu": "Open block menu",
+    "exitCodeBlock": "Exit code block"
   }
 }

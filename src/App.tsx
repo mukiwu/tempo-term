@@ -46,12 +46,25 @@ function App() {
         useTabsStore
           .getState()
           .newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
+      } else if (key === "w") {
+        e.preventDefault();
+        const activeId = useTabsStore.getState().activeId;
+        if (activeId) {
+          useTabsStore.getState().closeTab(activeId);
+        }
       } else if (key === "p") {
         e.preventDefault();
         useUiStore.getState().openFileFinder();
       } else if (key === "b") {
         e.preventDefault();
         useUiStore.getState().toggleSidebar();
+      } else if (key === ",") {
+        e.preventDefault();
+        useUiStore.getState().setSettingsOpen(true);
+      } else if (key === "d") {
+        // ⌘D splits left/right, ⌘⇧D splits top/bottom (no-op off a terminal tab).
+        e.preventDefault();
+        useTabsStore.getState().splitActivePane(e.shiftKey ? "col" : "row");
       }
     }
     window.addEventListener("keydown", onKeyDown);

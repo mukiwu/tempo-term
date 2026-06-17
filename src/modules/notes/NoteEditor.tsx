@@ -15,15 +15,37 @@ import Placeholder from "@tiptap/extension-placeholder";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { Markdown } from "tiptap-markdown";
 import { common, createLowlight } from "lowlight";
+import { exitCode } from "@tiptap/pm/commands";
 import { Check, Copy, SquareTerminal } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { runCommandInTerminal } from "@/modules/terminal/lib/terminalBus";
+import { createSlashCommand } from "./slashCommand";
 
 const lowlight = createLowlight(common);
 const SHELL_LANGS = new Set(["", "sh", "bash", "zsh", "shell", "console", "terminal"]);
 
+const CODE_LANGS = [
+  "text",
+  "bash",
+  "javascript",
+  "typescript",
+  "jsx",
+  "tsx",
+  "json",
+  "python",
+  "rust",
+  "go",
+  "css",
+  "html",
+  "yaml",
+  "sql",
+  "markdown",
+  "toml",
+  "diff",
+];
+
 /** Code block with a language label, copy and run-in-terminal actions. */
-function CodeBlockView({ node }: NodeViewProps) {
+function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
   const { t } = useTranslation("notes");
   const [copied, setCopied] = useState(false);
   const lang = (node.attrs.language as string) || "";
@@ -38,10 +60,23 @@ function CodeBlockView({ node }: NodeViewProps) {
         contentEditable={false}
         className="flex items-center justify-between border-t border-border/60 px-3 py-1.5"
       >
-        <span className="font-mono text-[11px] uppercase tracking-wider text-fg-subtle">
-          {lang || "text"}
-        </span>
-        <div className="flex items-center gap-1">
+        <select
+          value={lang || "text"}
+          aria-label={t("language")}
+          onChange={(e) => {
+            const value = e.target.value;
+            updateAttributes({ language: value === "text" ? null : value });
+          }}
+          className="cursor-pointer rounded bg-transparent font-mono text-[11px] uppercase tracking-wider text-fg-subtle outline-none hover:text-fg"
+        >
+          {CODE_LANGS.map((l) => (
+            <option key={l} value={l} className="bg-bg-elevated normal-case">
+              {l}
+            </option>
+          ))}
+        </select>
+        <div className="flex items-center gap-2">
+          <span className="select-none text-[11px] text-fg-subtle">{t("exitHint")}</span>
           <button
             type="button"
             title={t("copy")}
@@ -77,7 +112,16 @@ const CodeBlock = CodeBlockLowlight.extend({
   addNodeView() {
     return ReactNodeViewRenderer(CodeBlockView);
   },
-}).configure({ lowlight });
+  addKeyboardShortcuts() {
+    return {
+      ...this.parent?.(),
+      // Cmd/Ctrl+Enter leaves the code block into a fresh paragraph below
+      // (works even when the block is the last node in the document).
+      "Mod-Enter": () =>
+        this.editor.commands.command(({ state, dispatch }) => exitCode(state, dispatch)),
+    };
+  },
+}).configure({ lowlight, exitOnArrowDown: true, exitOnTripleEnter: true });
 
 interface NoteEditorProps {
   content: string;
@@ -87,11 +131,13 @@ interface NoteEditorProps {
 export function NoteEditor({ content, onChange }: NoteEditorProps) {
   const { t } = useTranslation("notes");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const slashCommand = useMemo(() => createSlashCommand(t), [t]);
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ codeBlock: false }),
       CodeBlock,
+      slashCommand,
       TaskList,
       TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: t("contentPlaceholder") }),

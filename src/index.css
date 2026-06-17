@@ -147,6 +147,35 @@ button:disabled {
 }
 .note-md th { background: var(--color-bg-elevated); font-weight: 600; }
 
+/* Inline code and fenced code blocks (used by both notes and AI replies) */
+.note-md :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--color-bg-inset);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.note-md pre {
+  background: var(--color-bg-inset);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.8em 1em;
+  margin: 0.7em 0;
+  overflow-x: auto;
+}
+.note-md pre code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+/* In chat bubbles, trim the leading/trailing block margins */
+.note-md--chat > :first-child { margin-top: 0; }
+.note-md--chat > :last-child { margin-bottom: 0; }
+
 /* TipTap WYSIWYG editor */
 .tiptap { outline: none; min-height: 12rem; }
 .tiptap p.is-editor-empty:first-child::before {
