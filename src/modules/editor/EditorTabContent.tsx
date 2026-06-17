@@ -9,6 +9,8 @@ import { useEditorStore } from "./store/editorStore";
 import { fsReadFile, fsWriteFile } from "@/modules/explorer/lib/fsBridge";
 import { MarkdownView } from "@/components/MarkdownView";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { getTheme } from "@/themes/themes";
 
 type EditorMode = "edit" | "split" | "preview";
 
@@ -33,6 +35,7 @@ export function EditorTabContent({ path }: { path: string }) {
 
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
+  const isDark = useSettingsStore((s) => getTheme(s.themeId).appearance === "dark");
 
   const isMarkdown = isMarkdownPath(path);
   const [mode, setMode] = useState<EditorMode>("edit");
@@ -71,7 +74,7 @@ export function EditorTabContent({ path }: { path: string }) {
   const editorPane = (
     <CodeMirror
       value={content}
-      theme={oneDark}
+      theme={isDark ? oneDark : "light"}
       extensions={extensions}
       onChange={(value) => setContent(path, value)}
       height="100%"
@@ -94,7 +97,8 @@ export function EditorTabContent({ path }: { path: string }) {
       }}
     >
       {isMarkdown && (
-        <div className="flex h-7 shrink-0 items-center justify-end gap-0.5 border-b border-border px-2">
+        // pr-8 leaves room for the pane's close button (absolute, top-right).
+        <div className="flex h-7 shrink-0 items-center justify-end gap-0.5 border-b border-border pl-2 pr-8">
           {MODES.map((m) => {
             const Icon = m.icon;
             const active = mode === m.key;

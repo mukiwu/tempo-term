@@ -3,10 +3,19 @@ import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { TerminalView } from "./TerminalView";
 import { PaneToolbar } from "./PaneToolbar";
-import { computeLayout, computeSplitters, type SplitterInfo } from "./lib/terminalLayout";
+import { writeToTerminal } from "./lib/terminalBus";
+import {
+  computeLayout,
+  computeSplitters,
+  type PaneContent,
+  type SplitterInfo,
+} from "./lib/terminalLayout";
 import { EditorTabContent } from "@/modules/editor/EditorTabContent";
 import { NoteTabContent } from "@/modules/notes/NoteTabContent";
 import { PreviewTabContent } from "@/modules/preview/PreviewTabContent";
+import { EntryDropOverlay, useEntryDragging } from "@/components/EntryDropOverlay";
+import { fileUrl, shellQuotePath, type DraggedEntry } from "@/modules/explorer/lib/dragEntry";
+import { insertLinkIntoNote } from "@/modules/notes/lib/noteBus";
 import { useTabsStore, type TerminalTab } from "@/stores/tabsStore";
 
 const MIN_FRACTION = 0.1;
@@ -17,13 +26,44 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
   const setActiveLeaf = useTabsStore((s) => s.setActiveLeaf);
   const resizePane = useTabsStore((s) => s.resizePane);
   const splitPaneWith = useTabsStore((s) => s.splitPaneWith);
+  const setPaneContent = useTabsStore((s) => s.setPaneContent);
   const closePane = useTabsStore((s) => s.closePane);
   const isActiveTab = useTabsStore((s) => s.activeId === tab.id);
   const paneAreaRef = useRef<HTMLDivElement>(null);
+  const dragging = useEntryDragging();
 
   const panes = computeLayout(tab.paneTree);
   const splitters = computeSplitters(tab.paneTree);
   const multiple = panes.length > 1;
+
+  // Single-file panes (editor/preview) reject folders; terminal/note take both.
+  function canDrop(content: PaneContent, entry: DraggedEntry): boolean {
+    if (content.kind === "editor" || content.kind === "preview") {
+      return !entry.isDir;
+    }
+    return true;
+  }
+
+  function handleDrop(content: PaneContent, leafId: string, entry: DraggedEntry) {
+    switch (content.kind) {
+      case "terminal":
+        writeToTerminal(leafId, `${shellQuotePath(entry.path)} `);
+        break;
+      case "editor":
+        if (!entry.isDir) {
+          setPaneContent(tab.id, leafId, { kind: "editor", path: entry.path });
+        }
+        break;
+      case "note":
+        insertLinkIntoNote(content.noteId, entry.name, entry.path);
+        break;
+      case "preview":
+        if (!entry.isDir) {
+          setPaneContent(tab.id, leafId, { kind: "preview", url: fileUrl(entry.path) });
+        }
+        break;
+    }
+  }
 
   function startDrag(e: ReactMouseEvent, splitter: SplitterInfo) {
     e.preventDefault();
@@ -114,6 +154,15 @@ export function TerminalTabContent({ tab }: { tab: TerminalTab }) {
                   onOpenFile={(absolutePath) =>
                     splitPaneWith(tab.id, pane.id, { kind: "editor", path: absolutePath }, "row")
                   }
+                />
+              )}
+
+              {/* Drop overlay covers the pane (incl. the preview iframe) so a
+                  dragged explorer entry can land on any content type. */}
+              {dragging && (
+                <EntryDropOverlay
+                  accept={(entry) => canDrop(pane.content, entry)}
+                  onDropEntry={(entry) => handleDrop(pane.content, pane.id, entry)}
                 />
               )}
             </div>

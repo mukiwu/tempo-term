@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RotateCw } from "lucide-react";
 
@@ -8,6 +8,12 @@ export function PreviewTabContent({ url }: { url: string }) {
   const [input, setInput] = useState(url);
   const [reloadKey, setReloadKey] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
+
+  // Follow the url prop when it changes (e.g. a file dropped onto this pane).
+  useEffect(() => {
+    setCurrent(url);
+    setInput(url);
+  }, [url]);
 
   return (
     <div className="flex h-full flex-col bg-bg">

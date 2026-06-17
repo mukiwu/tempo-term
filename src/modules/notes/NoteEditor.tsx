@@ -13,6 +13,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Placeholder from "@tiptap/extension-placeholder";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import Link from "@tiptap/extension-link";
 import { Markdown } from "tiptap-markdown";
 import { common, createLowlight } from "lowlight";
 import { exitCode } from "@tiptap/pm/commands";
@@ -20,6 +21,7 @@ import { Check, Copy, SquareTerminal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { runCommandInTerminal } from "@/modules/terminal/lib/terminalBus";
 import { createSlashCommand } from "./slashCommand";
+import { registerNoteInserter, unregisterNoteInserter } from "./lib/noteBus";
 
 const lowlight = createLowlight(common);
 const SHELL_LANGS = new Set(["", "sh", "bash", "zsh", "shell", "console", "terminal"]);
@@ -126,9 +128,11 @@ const CodeBlock = CodeBlockLowlight.extend({
 interface NoteEditorProps {
   content: string;
   onChange: (markdown: string) => void;
+  /** When set, dropped explorer entries can insert a link into this note. */
+  noteId?: string;
 }
 
-export function NoteEditor({ content, onChange }: NoteEditorProps) {
+export function NoteEditor({ content, onChange, noteId }: NoteEditorProps) {
   const { t } = useTranslation("notes");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slashCommand = useMemo(() => createSlashCommand(t), [t]);
@@ -138,6 +142,7 @@ export function NoteEditor({ content, onChange }: NoteEditorProps) {
       StarterKit.configure({ codeBlock: false }),
       CodeBlock,
       slashCommand,
+      Link.configure({ openOnClick: false }),
       TaskList,
       TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: t("contentPlaceholder") }),
@@ -168,6 +173,24 @@ export function NoteEditor({ content, onChange }: NoteEditorProps) {
       }
     };
   }, []);
+
+  // Let a dropped explorer entry insert a Markdown link at the cursor.
+  useEffect(() => {
+    if (!editor || !noteId) {
+      return;
+    }
+    registerNoteInserter(noteId, (name, path) => {
+      editor
+        .chain()
+        .focus()
+        .insertContent([
+          { type: "text", text: name, marks: [{ type: "link", attrs: { href: path } }] },
+          { type: "text", text: " " },
+        ])
+        .run();
+    });
+    return () => unregisterNoteInserter(noteId);
+  }, [editor, noteId]);
 
   return <EditorContent editor={editor} className="h-full" />;
 }

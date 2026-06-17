@@ -27,6 +27,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
     "@tiptap/extension-code-block-lowlight": "^2.27.2",
+    "@tiptap/extension-link": "^2.27.2",
     "@tiptap/extension-placeholder": "^2.27.2",
     "@tiptap/extension-task-item": "^2.27.2",
     "@tiptap/extension-task-list": "^2.27.2",

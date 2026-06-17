@@ -5,6 +5,7 @@ import {
   firstLeafId,
   leaf,
   removeLeaf,
+  setLeafPane,
   setSizesById,
   splitLeaf,
   type LayoutNode,
@@ -86,6 +87,12 @@ interface TabsState {
     content: PaneContent,
     direction: SplitDirection,
   ) => void;
+  /** Replace a pane's content in place (used when dropping a file onto it). */
+  setPaneContent: (tabId: string, leafId: string, content: PaneContent) => void;
+  /** Point an editor tab at a different file (dropping a file onto the tab). */
+  setEditorTabPath: (tabId: string, path: string) => void;
+  /** Point a preview tab at a different url (dropping a file onto the tab). */
+  setPreviewTabUrl: (tabId: string, url: string) => void;
   closePane: (tabId: string, leafId: string) => void;
 }
 
@@ -305,6 +312,31 @@ export const useTabsStore = create<TabsState>()(
           activeLeafId: newId,
         };
       }),
+    })),
+
+  setPaneContent: (tabId, leafId, content) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId && tab.kind === "terminal"
+          ? { ...tab, paneTree: setLeafPane(tab.paneTree, leafId, content) }
+          : tab,
+      ),
+    })),
+
+  setEditorTabPath: (tabId, path) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId && tab.kind === "editor"
+          ? { ...tab, path, title: basename(path) }
+          : tab,
+      ),
+    })),
+
+  setPreviewTabUrl: (tabId, url) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId && tab.kind === "preview" ? { ...tab, url } : tab,
+      ),
     })),
 
   closePane: (tabId, leafId) =>

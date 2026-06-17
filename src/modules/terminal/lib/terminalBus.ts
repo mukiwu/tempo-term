@@ -21,7 +21,7 @@ export function unregisterTerminal(leafId: string): void {
 }
 
 /** Write to a specific pane, queueing until it registers (fresh PTYs). */
-function writeToTerminal(leafId: string, text: string): void {
+export function writeToTerminal(leafId: string, text: string): void {
   const write = writers.get(leafId);
   if (write) {
     write(text);

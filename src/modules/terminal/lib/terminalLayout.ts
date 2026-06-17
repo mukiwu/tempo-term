@@ -68,6 +68,24 @@ export function splitLeaf(
   };
 }
 
+/** Replace one leaf's content in place (used when dropping a file onto a pane). */
+export function setLeafPane(
+  node: LayoutNode,
+  leafId: string,
+  pane: PaneContent,
+): LayoutNode {
+  if (node.kind === "leaf") {
+    return node.id === leafId ? { ...node, pane } : node;
+  }
+  return {
+    ...node,
+    children: [
+      setLeafPane(node.children[0], leafId, pane),
+      setLeafPane(node.children[1], leafId, pane),
+    ],
+  };
+}
+
 /** Remove a leaf, collapsing its parent split onto the surviving sibling. */
 export function removeLeaf(node: LayoutNode, targetId: string): LayoutNode | null {
   if (node.kind === "leaf") {

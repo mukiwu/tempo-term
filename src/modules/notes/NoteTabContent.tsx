@@ -34,6 +34,7 @@ export function NoteTabContent({ noteId, tabId }: { noteId: string; tabId: strin
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         <NoteEditor
           key={noteId}
+          noteId={noteId}
           content={note.content}
           onChange={(markdown) => updateNote(noteId, { content: markdown })}
         />

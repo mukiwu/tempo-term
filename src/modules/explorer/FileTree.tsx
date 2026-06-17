@@ -22,6 +22,7 @@ import {
   type DirEntry,
 } from "./lib/fsBridge";
 import { dirname, joinPath, relativePath } from "./lib/paths";
+import { setDraggedEntry } from "./lib/dragEntry";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -46,6 +47,9 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
   const [children, setChildren] = useState<DirEntry[] | null>(null);
   const [menu, setMenu] = useState<MenuPosition | null>(null);
   const [creating, setCreating] = useState<Creating>(null);
+  // JS hover: CSS :hover is suppressed inside a draggable subtree (WebKit), so
+  // track hover manually to highlight just this row.
+  const [hovered, setHovered] = useState(false);
 
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
@@ -204,38 +208,53 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
 
   return (
     <li>
-      <button
-        type="button"
-        onClick={() => void toggle()}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          setMenu({ x: event.clientX, y: event.clientY });
+      {/* draggable lives on the wrapper, not the button: WebKit suppresses
+          :hover on draggable elements, which killed the row hover style. */}
+      <div
+        draggable
+        onDragStart={(event) => {
+          setDraggedEntry({ path: entry.path, name: entry.name, isDir: entry.is_dir });
+          event.dataTransfer.effectAllowed = "copy";
         }}
-        title={entry.name}
-        style={{ paddingLeft: depth * 12 + 8 }}
-        className={`flex w-full items-center gap-1.5 py-1 pr-2 text-left text-sm transition-colors ${
-          isActive
-            ? "bg-bg-elevated text-fg"
-            : "text-fg-muted hover:bg-bg-elevated/60"
-        }`}
+        onDragEnd={() => setDraggedEntry(null)}
       >
-        {entry.is_dir ? (
-          <>
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            {expanded ? (
-              <FolderOpen size={15} className="text-accent" />
-            ) : (
-              <Folder size={15} className="text-accent" />
-            )}
-          </>
-        ) : (
-          <>
-            <span className="w-[14px]" />
-            <FileIcon size={15} className="text-fg-subtle" />
-          </>
-        )}
-        <span className="truncate">{entry.name}</span>
-      </button>
+        <button
+          type="button"
+          onClick={() => void toggle()}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setMenu({ x: event.clientX, y: event.clientY });
+          }}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          title={entry.name}
+          style={{ paddingLeft: depth * 12 + 8 }}
+          className={`flex w-full items-center gap-1.5 py-1 pr-2 text-left text-sm transition-colors ${
+            isActive
+              ? "bg-accent/15 text-fg"
+              : hovered
+                ? "bg-fg/10 text-fg"
+                : "text-fg-muted"
+          }`}
+        >
+          {entry.is_dir ? (
+            <>
+              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              {expanded ? (
+                <FolderOpen size={15} className="text-accent" />
+              ) : (
+                <Folder size={15} className="text-accent" />
+              )}
+            </>
+          ) : (
+            <>
+              <span className="w-[14px]" />
+              <FileIcon size={15} className="text-fg-subtle" />
+            </>
+          )}
+          <span className="truncate">{entry.name}</span>
+        </button>
+      </div>
 
       {creating && (
         <NewEntryInput
