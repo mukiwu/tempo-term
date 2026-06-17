@@ -4,8 +4,10 @@ import { Sidebar } from "@/components/Sidebar";
 import { Resizer } from "@/components/Resizer";
 import { StatusBar } from "@/components/StatusBar";
 import { SettingsModal } from "@/components/SettingsModal";
+import { UpdateModal } from "@/components/UpdateModal";
 import { TabsArea } from "@/components/TabsArea";
 import { useUiStore } from "@/stores/uiStore";
+import { useUpdaterStore } from "@/stores/updaterStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useFontStore } from "@/stores/fontStore";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -33,6 +35,15 @@ function App() {
   useEffect(() => {
     void loadFontReport();
   }, [loadFontReport]);
+
+  // Quietly check for a new release a few seconds after launch; the prompt only
+  // appears if one actually exists, so a normal start stays uninterrupted.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void useUpdaterStore.getState().checkForUpdate({ silent: true });
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Global keyboard shortcuts.
   useEffect(() => {
@@ -95,6 +106,7 @@ function App() {
 
       <StatusBar />
       {settingsOpen && <SettingsModal />}
+      <UpdateModal />
     </div>
   );
 }

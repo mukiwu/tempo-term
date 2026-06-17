@@ -25,3 +25,8 @@ dist-ssr
 
 # Icon design drafts (scratch)
 icon-drafts/
+
+# Updater signing keys — private keys must never be committed (they live in
+# ~/.tempoterm). These patterns are a safety net if one is ever copied in.
+*.key
+updater-key*.json
