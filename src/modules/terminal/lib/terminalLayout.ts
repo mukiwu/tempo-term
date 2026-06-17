@@ -91,6 +91,36 @@ export function leafIds(node: LayoutNode): string[] {
   return [...leafIds(node.children[0]), ...leafIds(node.children[1])];
 }
 
+/**
+ * A stable identifier for a split: the sorted ids of every leaf it contains.
+ * Different splits never share the same leaf set, and it survives tree
+ * restructuring without needing ids baked into the persisted tree.
+ */
+export function splitId(node: LayoutNode): string {
+  return leafIds(node).slice().sort().join("|");
+}
+
+/** Adjust a split's size ratio, locating the split by its leaf-id signature. */
+export function setSizesById(
+  node: LayoutNode,
+  id: string,
+  sizes: [number, number],
+): LayoutNode {
+  if (node.kind === "leaf") {
+    return node;
+  }
+  if (splitId(node) === id) {
+    return { ...node, sizes };
+  }
+  return {
+    ...node,
+    children: [
+      setSizesById(node.children[0], id, sizes),
+      setSizesById(node.children[1], id, sizes),
+    ],
+  };
+}
+
 export function firstLeafId(node: LayoutNode | null): string | null {
   if (!node) {
     return null;
@@ -139,6 +169,53 @@ export function computeLayout(node: LayoutNode, rect: Rect = FULL): PaneRect[] {
   return [
     ...computeLayout(node.children[0], { ...rect, height: h0 }),
     ...computeLayout(node.children[1], {
+      left: rect.left,
+      top: rect.top + h0,
+      width: rect.width,
+      height: rect.height - h0,
+    }),
+  ];
+}
+
+export interface SplitterInfo {
+  /** Matches setSizesById's id, so a drag can target this exact split. */
+  id: string;
+  direction: SplitDirection;
+  /** The split's whole area, in percentages. */
+  rect: Rect;
+  /** Current fraction taken by the first child (left/top). */
+  fraction: number;
+}
+
+/**
+ * Collect every split's divider as a draggable handle descriptor: where the
+ * split lives, which way it divides, and its current ratio.
+ */
+export function computeSplitters(node: LayoutNode, rect: Rect = FULL): SplitterInfo[] {
+  if (node.kind === "leaf") {
+    return [];
+  }
+  const total = node.sizes[0] + node.sizes[1];
+  const fraction = node.sizes[0] / total;
+  const here: SplitterInfo = { id: splitId(node), direction: node.direction, rect, fraction };
+  if (node.direction === "row") {
+    const w0 = rect.width * fraction;
+    return [
+      here,
+      ...computeSplitters(node.children[0], { ...rect, width: w0 }),
+      ...computeSplitters(node.children[1], {
+        left: rect.left + w0,
+        top: rect.top,
+        width: rect.width - w0,
+        height: rect.height,
+      }),
+    ];
+  }
+  const h0 = rect.height * fraction;
+  return [
+    here,
+    ...computeSplitters(node.children[0], { ...rect, height: h0 }),
+    ...computeSplitters(node.children[1], {
       left: rect.left,
       top: rect.top + h0,
       width: rect.width,

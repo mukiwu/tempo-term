@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   computeLayout,
+  computeSplitters,
   firstLeafId,
   leaf,
   leafIds,
   removeLeaf,
+  setSizesById,
+  splitId,
   splitLeaf,
   type LayoutNode,
 } from "./terminalLayout";
@@ -72,5 +75,45 @@ describe("computeLayout", () => {
       { id: "a", rect: { left: 0, top: 0, width: 100, height: 50 } },
       { id: "b", rect: { left: 0, top: 50, width: 100, height: 50 } },
     ]);
+  });
+
+  it("honours an adjusted size ratio", () => {
+    const tree = setSizesById(
+      splitLeaf(leaf("a"), "a", "row", "b"),
+      splitId(splitLeaf(leaf("a"), "a", "row", "b")),
+      [0.7, 0.3],
+    );
+    const panes = computeLayout(tree);
+    expect(panes[0].rect.width).toBeCloseTo(70);
+    expect(panes[1].rect.left).toBeCloseTo(70);
+  });
+});
+
+describe("computeSplitters", () => {
+  it("has no splitter for a single leaf", () => {
+    expect(computeSplitters(leaf("a"))).toEqual([]);
+  });
+
+  it("describes a row split's divider at its current fraction", () => {
+    const tree = splitLeaf(leaf("a"), "a", "row", "b");
+    const [splitter] = computeSplitters(tree);
+    expect(splitter.direction).toBe("row");
+    expect(splitter.fraction).toBeCloseTo(0.5);
+    expect(splitter.rect).toEqual({ left: 0, top: 0, width: 100, height: 100 });
+    expect(splitter.id).toBe(splitId(tree));
+  });
+
+  it("emits one splitter per split in a nested tree", () => {
+    const tree = splitLeaf(splitLeaf(leaf("a"), "a", "row", "b"), "b", "col", "c");
+    expect(computeSplitters(tree)).toHaveLength(2);
+  });
+
+  it("setSizesById only resizes the matching split", () => {
+    const tree = splitLeaf(splitLeaf(leaf("a"), "a", "row", "b"), "b", "col", "c");
+    const inner = computeSplitters(tree).find((s) => s.direction === "col")!;
+    const resized = setSizesById(tree, inner.id, [0.8, 0.2]);
+    const after = computeSplitters(resized);
+    expect(after.find((s) => s.direction === "col")!.fraction).toBeCloseTo(0.8);
+    expect(after.find((s) => s.direction === "row")!.fraction).toBeCloseTo(0.5);
   });
 });

@@ -5,6 +5,7 @@ import {
   firstLeafId,
   leaf,
   removeLeaf,
+  setSizesById,
   splitLeaf,
   type LayoutNode,
   type SplitDirection,
@@ -76,6 +77,7 @@ interface TabsState {
   setActive: (id: string) => void;
   splitActivePane: (direction: SplitDirection) => void;
   setActiveLeaf: (tabId: string, leafId: string) => void;
+  resizePane: (tabId: string, splitId: string, sizes: [number, number]) => void;
   closePane: (tabId: string, leafId: string) => void;
 }
 
@@ -270,6 +272,15 @@ export const useTabsStore = create<TabsState>()(
     set((state) => ({
       tabs: state.tabs.map((tab) =>
         tab.id === tabId && tab.kind === "terminal" ? { ...tab, activeLeafId: leafId } : tab,
+      ),
+    })),
+
+  resizePane: (tabId, splitId, sizes) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId && tab.kind === "terminal"
+          ? { ...tab, paneTree: setSizesById(tab.paneTree, splitId, sizes) }
+          : tab,
       ),
     })),
 

@@ -4,6 +4,7 @@ import { ExplorerView } from "@/modules/explorer/ExplorerView";
 import { SourceControlView } from "@/modules/source-control/SourceControlView";
 import { AIView } from "@/modules/ai/AIView";
 import { NotesSidebar } from "@/modules/notes/NotesSidebar";
+import { Tooltip } from "@/components/Tooltip";
 import { useUiStore, type SidebarView } from "@/stores/uiStore";
 
 interface SidebarTab {
@@ -30,19 +31,19 @@ export function Sidebar() {
         {SIDEBAR_TABS.map(({ id, icon: Icon, labelKey }) => {
           const active = sidebarView === id;
           return (
-            <button
-              key={id}
-              type="button"
-              title={t(labelKey)}
-              aria-label={t(labelKey)}
-              aria-pressed={active}
-              onClick={() => selectSidebar(id)}
-              className={`flex h-7 w-8 items-center justify-center rounded-md transition-colors ${
-                active ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
-              }`}
-            >
-              <Icon size={15} />
-            </button>
+            <Tooltip key={id} label={t(labelKey)} side="bottom">
+              <button
+                type="button"
+                aria-label={t(labelKey)}
+                aria-pressed={active}
+                onClick={() => selectSidebar(id)}
+                className={`flex h-7 w-8 items-center justify-center rounded-md transition-colors ${
+                  active ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
+                }`}
+              >
+                <Icon size={15} />
+              </button>
+            </Tooltip>
           );
         })}
       </div>
