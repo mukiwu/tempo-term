@@ -264,6 +264,18 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// Reject a value that begins with `-`. Branch/tag names and commit hashes are
+/// passed to `git` as positional arguments; a leading dash would let a crafted
+/// value (e.g. from a malicious repo's ref names) be smuggled in as a flag
+/// (argv flag smuggling). This is the single thing that closes that vector: an
+/// argument can only be read as a flag if it starts with `-`.
+fn ensure_not_flag(value: &str) -> Result<(), String> {
+    if value.starts_with('-') {
+        return Err(format!("invalid value, looks like a flag: {value}"));
+    }
+    Ok(())
+}
+
 /// The staged (`--cached`) or unstaged diff as a unified-diff string.
 pub fn diff(repo_path: &str, staged: bool) -> Result<String, String> {
     if staged {
@@ -427,30 +439,38 @@ pub fn branches(repo_path: &str) -> Result<Vec<BranchInfo>, String> {
 
 /// Check out an existing branch.
 pub fn branch_checkout(repo_path: &str, name: &str) -> Result<(), String> {
-    if name.trim().is_empty() {
+    let name = name.trim();
+    if name.is_empty() {
         return Err("branch name is required".to_string());
     }
-    run_git(repo_path, &["checkout", name.trim()]).map(|_| ())
+    ensure_not_flag(name)?;
+    run_git(repo_path, &["checkout", name]).map(|_| ())
 }
 
 /// Create a new branch pointing at `commit` and switch to it.
 pub fn branch_create_at(repo_path: &str, name: &str, commit: &str) -> Result<(), String> {
-    if name.trim().is_empty() {
+    let name = name.trim();
+    let commit = commit.trim();
+    if name.is_empty() {
         return Err("branch name is required".to_string());
     }
-    if commit.trim().is_empty() {
+    if commit.is_empty() {
         return Err("commit hash is required".to_string());
     }
-    run_git(repo_path, &["checkout", "-b", name.trim(), commit.trim()]).map(|_| ())
+    ensure_not_flag(name)?;
+    ensure_not_flag(commit)?;
+    run_git(repo_path, &["checkout", "-b", name, commit]).map(|_| ())
 }
 
 /// Delete a local branch. `force` allows deleting unmerged branches.
 pub fn branch_delete(repo_path: &str, name: &str, force: bool) -> Result<(), String> {
-    if name.trim().is_empty() {
+    let name = name.trim();
+    if name.is_empty() {
         return Err("branch name is required".to_string());
     }
+    ensure_not_flag(name)?;
     let flag = if force { "-D" } else { "-d" };
-    run_git(repo_path, &["branch", flag, name.trim()]).map(|_| ())
+    run_git(repo_path, &["branch", flag, name]).map(|_| ())
 }
 
 /// Create a tag at `commit`. With a non-empty `message` it is annotated.
@@ -460,14 +480,16 @@ pub fn tag_create(
     commit: &str,
     message: Option<&str>,
 ) -> Result<(), String> {
-    if name.trim().is_empty() {
-        return Err("tag name is required".to_string());
-    }
-    if commit.trim().is_empty() {
-        return Err("commit hash is required".to_string());
-    }
     let name = name.trim();
     let commit = commit.trim();
+    if name.is_empty() {
+        return Err("tag name is required".to_string());
+    }
+    if commit.is_empty() {
+        return Err("commit hash is required".to_string());
+    }
+    ensure_not_flag(name)?;
+    ensure_not_flag(commit)?;
     match message.map(str::trim).filter(|m| !m.is_empty()) {
         Some(msg) => run_git(repo_path, &["tag", "-a", name, commit, "-m", msg]),
         None => run_git(repo_path, &["tag", name, commit]),
@@ -477,43 +499,53 @@ pub fn tag_create(
 
 /// Delete a tag.
 pub fn tag_delete(repo_path: &str, name: &str) -> Result<(), String> {
-    if name.trim().is_empty() {
+    let name = name.trim();
+    if name.is_empty() {
         return Err("tag name is required".to_string());
     }
-    run_git(repo_path, &["tag", "-d", name.trim()]).map(|_| ())
+    ensure_not_flag(name)?;
+    run_git(repo_path, &["tag", "-d", name]).map(|_| ())
 }
 
 /// Merge `name` into the current branch (always a merge commit, --no-ff).
 pub fn merge(repo_path: &str, name: &str) -> Result<(), String> {
-    if name.trim().is_empty() {
+    let name = name.trim();
+    if name.is_empty() {
         return Err("branch name is required".to_string());
     }
-    run_git(repo_path, &["merge", "--no-ff", name.trim()]).map(|_| ())
+    ensure_not_flag(name)?;
+    run_git(repo_path, &["merge", "--no-ff", name]).map(|_| ())
 }
 
 /// Revert `commit` with a new commit (--no-edit).
 pub fn revert(repo_path: &str, commit: &str) -> Result<(), String> {
-    if commit.trim().is_empty() {
+    let commit = commit.trim();
+    if commit.is_empty() {
         return Err("commit hash is required".to_string());
     }
-    run_git(repo_path, &["revert", commit.trim(), "--no-edit"]).map(|_| ())
+    ensure_not_flag(commit)?;
+    run_git(repo_path, &["revert", commit, "--no-edit"]).map(|_| ())
 }
 
 /// Cherry-pick `commit` onto the current branch.
 pub fn cherry_pick(repo_path: &str, commit: &str) -> Result<(), String> {
-    if commit.trim().is_empty() {
+    let commit = commit.trim();
+    if commit.is_empty() {
         return Err("commit hash is required".to_string());
     }
-    run_git(repo_path, &["cherry-pick", commit.trim()]).map(|_| ())
+    ensure_not_flag(commit)?;
+    run_git(repo_path, &["cherry-pick", commit]).map(|_| ())
 }
 
 /// Reset the current branch to `commit`. `mode` is "soft" or "hard" (default).
 pub fn reset(repo_path: &str, commit: &str, mode: Option<&str>) -> Result<(), String> {
-    if commit.trim().is_empty() {
+    let commit = commit.trim();
+    if commit.is_empty() {
         return Err("commit hash is required".to_string());
     }
+    ensure_not_flag(commit)?;
     let flag = if mode == Some("soft") { "--soft" } else { "--hard" };
-    run_git(repo_path, &["reset", flag, commit.trim()]).map(|_| ())
+    run_git(repo_path, &["reset", flag, commit]).map(|_| ())
 }
 
 #[tauri::command]
@@ -722,6 +754,27 @@ mod tests {
         assert!(tag_create(&path, "x", "  ", None).is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn flag_like_arguments_are_rejected_before_running_git() {
+        // A ref/commit value beginning with '-' would be smuggled to git as a
+        // flag (argv flag smuggling). The guard must reject it *before* any git
+        // call, so the error comes from us, not from git tripping over an
+        // unknown switch. We assert the guard's wording to prove it fired.
+        let err = branch_checkout("/no/such/repo", "--upload-pack=evil").unwrap_err();
+        assert!(err.to_lowercase().contains("flag"), "got: {err}");
+
+        let err = revert("/no/such/repo", "-x").unwrap_err();
+        assert!(err.to_lowercase().contains("flag"), "got: {err}");
+
+        // Legitimate names/hashes pass; only a leading dash is rejected.
+        assert!(ensure_not_flag("main").is_ok());
+        assert!(ensure_not_flag("feature/x").is_ok());
+        assert!(ensure_not_flag("v1.0").is_ok());
+        assert!(ensure_not_flag("a1b2c3d").is_ok());
+        assert!(ensure_not_flag("-x").is_err());
+        assert!(ensure_not_flag("--upload-pack=evil").is_err());
     }
 
     fn temp_repo_dir(tag: &str) -> std::path::PathBuf {
