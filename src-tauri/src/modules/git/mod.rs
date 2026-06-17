@@ -27,6 +27,44 @@ pub struct CommitInfo {
     pub timestamp: i64,
 }
 
+/// A ref decoration attached to a commit in the graph view. `kind` is one of
+/// "head" (the current branch), "branch" (another local branch), "tag", or
+/// "remote" (read-only, no context-menu actions).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct GraphRef {
+    pub name: String,
+    pub kind: String,
+}
+
+/// One node of the commit DAG rendered by the Git graph tab. Shapes match the
+/// frontend `CommitNode` type: short hash, parent short hashes, author, a
+/// preformatted date string, the subject, and any ref decorations.
+#[derive(Debug, Clone, Serialize)]
+pub struct GraphCommit {
+    pub hash: String,
+    pub parents: Vec<String>,
+    pub author: String,
+    pub date: String,
+    pub message: String,
+    pub refs: Vec<GraphRef>,
+}
+
+/// A page of graph commits plus whether more history exists past `commits`.
+#[derive(Debug, Clone, Serialize)]
+pub struct GraphLog {
+    pub commits: Vec<GraphCommit>,
+    #[serde(rename = "hasMore")]
+    pub has_more: bool,
+}
+
+/// A local branch entry for the branch list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BranchInfo {
+    pub name: String,
+    #[serde(rename = "isCurrent")]
+    pub is_current: bool,
+}
+
 /// Short code for the staged (index vs HEAD) side of a status, if any.
 fn index_status(status: Status) -> Option<&'static str> {
     if status.contains(Status::INDEX_NEW) {
@@ -240,6 +278,244 @@ pub fn push(repo_path: &str) -> Result<String, String> {
     run_git(repo_path, &["push"])
 }
 
+/// Parse a `git log --decorate=full` decoration string (the `%d` placeholder,
+/// e.g. " (HEAD -> refs/heads/main, tag: refs/tags/v1.0, refs/remotes/origin/main)")
+/// into structured refs. Pure so it can be unit tested without a repo.
+pub fn parse_refs(decoration: &str) -> Vec<GraphRef> {
+    let outer = decoration.trim();
+    let outer = outer.strip_prefix('(').unwrap_or(outer);
+    let outer = outer.strip_suffix(')').unwrap_or(outer);
+    let trimmed = outer.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    trimmed
+        .split(", ")
+        .filter_map(|token| {
+            let token = token.trim();
+            if token.is_empty() {
+                return None;
+            }
+            if let Some(rest) = token.strip_prefix("HEAD -> ") {
+                let name = rest.trim().strip_prefix("refs/heads/").unwrap_or(rest.trim());
+                return Some(GraphRef {
+                    name: name.to_string(),
+                    kind: "head".to_string(),
+                });
+            }
+            if token == "HEAD" {
+                return Some(GraphRef {
+                    name: "HEAD".to_string(),
+                    kind: "head".to_string(),
+                });
+            }
+            if let Some(rest) = token.strip_prefix("tag: ") {
+                let name = rest.trim().strip_prefix("refs/tags/").unwrap_or(rest.trim());
+                return Some(GraphRef {
+                    name: name.to_string(),
+                    kind: "tag".to_string(),
+                });
+            }
+            if let Some(rest) = token.strip_prefix("refs/heads/") {
+                return Some(GraphRef {
+                    name: rest.to_string(),
+                    kind: "branch".to_string(),
+                });
+            }
+            if let Some(rest) = token.strip_prefix("refs/remotes/") {
+                return Some(GraphRef {
+                    name: rest.to_string(),
+                    kind: "remote".to_string(),
+                });
+            }
+            if let Some(rest) = token.strip_prefix("refs/tags/") {
+                return Some(GraphRef {
+                    name: rest.to_string(),
+                    kind: "tag".to_string(),
+                });
+            }
+            // Unknown namespace (refs/notes, stash, ...) — not a deletable branch/tag.
+            Some(GraphRef {
+                name: token.to_string(),
+                kind: "unknown".to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Parse one `git log` line (our pipe-delimited format) into a graph commit.
+/// Returns `None` for blank lines. Pure for unit testing.
+fn parse_graph_commit(line: &str) -> Option<GraphCommit> {
+    if line.trim().is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = line.split('|').collect();
+    Some(GraphCommit {
+        hash: parts.first().unwrap_or(&"").trim().to_string(),
+        parents: parts
+            .get(1)
+            .unwrap_or(&"")
+            .split_whitespace()
+            .map(String::from)
+            .collect(),
+        author: parts.get(2).unwrap_or(&"").trim().to_string(),
+        date: parts.get(3).unwrap_or(&"").trim().to_string(),
+        refs: parse_refs(parts.get(4).unwrap_or(&"")),
+        // The subject may itself contain "|", so re-join the tail.
+        message: parts
+            .get(5..)
+            .map(|rest| rest.join("|"))
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
+    })
+}
+
+/// Read the commit DAG for the Git graph view. `limit` caps how many commits
+/// are returned; one extra is fetched internally to compute `has_more`.
+pub fn graph_log(repo_path: &str, limit: usize, skip: usize) -> Result<GraphLog, String> {
+    let limit = limit.clamp(1, 2000);
+    let max_count = format!("--max-count={}", limit + 1);
+    let skip_arg = format!("--skip={skip}");
+    let stdout = run_git(
+        repo_path,
+        &[
+            "log",
+            "--all",
+            "--topo-order",
+            "--decorate=full",
+            "--pretty=format:%h|%p|%an|%ad|%d|%s",
+            "--date=format-local:%Y-%m-%d %H:%M",
+            &max_count,
+            &skip_arg,
+        ],
+    )
+    // An empty repo (no commits yet) makes `git log` exit non-zero; treat that
+    // as an empty graph rather than an error.
+    .unwrap_or_default();
+
+    let mut commits: Vec<GraphCommit> = stdout.lines().filter_map(parse_graph_commit).collect();
+    let has_more = commits.len() > limit;
+    if has_more {
+        commits.truncate(limit);
+    }
+    Ok(GraphLog { commits, has_more })
+}
+
+/// List local branches, marking the current one.
+pub fn branches(repo_path: &str) -> Result<Vec<BranchInfo>, String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let head_name = repo
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().map(|s| s.to_string()));
+
+    let mut out = Vec::new();
+    let iter = repo
+        .branches(Some(git2::BranchType::Local))
+        .map_err(|e| e.message().to_string())?;
+    for entry in iter {
+        let (branch, _) = entry.map_err(|e| e.message().to_string())?;
+        if let Some(name) = branch.name().map_err(|e| e.message().to_string())? {
+            let name = name.to_string();
+            let is_current = Some(&name) == head_name.as_ref();
+            out.push(BranchInfo { name, is_current });
+        }
+    }
+    Ok(out)
+}
+
+/// Check out an existing branch.
+pub fn branch_checkout(repo_path: &str, name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("branch name is required".to_string());
+    }
+    run_git(repo_path, &["checkout", name.trim()]).map(|_| ())
+}
+
+/// Create a new branch pointing at `commit` and switch to it.
+pub fn branch_create_at(repo_path: &str, name: &str, commit: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("branch name is required".to_string());
+    }
+    if commit.trim().is_empty() {
+        return Err("commit hash is required".to_string());
+    }
+    run_git(repo_path, &["checkout", "-b", name.trim(), commit.trim()]).map(|_| ())
+}
+
+/// Delete a local branch. `force` allows deleting unmerged branches.
+pub fn branch_delete(repo_path: &str, name: &str, force: bool) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("branch name is required".to_string());
+    }
+    let flag = if force { "-D" } else { "-d" };
+    run_git(repo_path, &["branch", flag, name.trim()]).map(|_| ())
+}
+
+/// Create a tag at `commit`. With a non-empty `message` it is annotated.
+pub fn tag_create(
+    repo_path: &str,
+    name: &str,
+    commit: &str,
+    message: Option<&str>,
+) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("tag name is required".to_string());
+    }
+    if commit.trim().is_empty() {
+        return Err("commit hash is required".to_string());
+    }
+    let name = name.trim();
+    let commit = commit.trim();
+    match message.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(msg) => run_git(repo_path, &["tag", "-a", name, commit, "-m", msg]),
+        None => run_git(repo_path, &["tag", name, commit]),
+    }
+    .map(|_| ())
+}
+
+/// Delete a tag.
+pub fn tag_delete(repo_path: &str, name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("tag name is required".to_string());
+    }
+    run_git(repo_path, &["tag", "-d", name.trim()]).map(|_| ())
+}
+
+/// Merge `name` into the current branch (always a merge commit, --no-ff).
+pub fn merge(repo_path: &str, name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("branch name is required".to_string());
+    }
+    run_git(repo_path, &["merge", "--no-ff", name.trim()]).map(|_| ())
+}
+
+/// Revert `commit` with a new commit (--no-edit).
+pub fn revert(repo_path: &str, commit: &str) -> Result<(), String> {
+    if commit.trim().is_empty() {
+        return Err("commit hash is required".to_string());
+    }
+    run_git(repo_path, &["revert", commit.trim(), "--no-edit"]).map(|_| ())
+}
+
+/// Cherry-pick `commit` onto the current branch.
+pub fn cherry_pick(repo_path: &str, commit: &str) -> Result<(), String> {
+    if commit.trim().is_empty() {
+        return Err("commit hash is required".to_string());
+    }
+    run_git(repo_path, &["cherry-pick", commit.trim()]).map(|_| ())
+}
+
+/// Reset the current branch to `commit`. `mode` is "soft" or "hard" (default).
+pub fn reset(repo_path: &str, commit: &str, mode: Option<&str>) -> Result<(), String> {
+    if commit.trim().is_empty() {
+        return Err("commit hash is required".to_string());
+    }
+    let flag = if mode == Some("soft") { "--soft" } else { "--hard" };
+    run_git(repo_path, &["reset", flag, commit.trim()]).map(|_| ())
+}
+
 #[tauri::command]
 pub fn git_log(repo_path: String, limit: Option<usize>) -> Result<Vec<CommitInfo>, String> {
     log(&repo_path, limit.unwrap_or(50))
@@ -253,6 +529,70 @@ pub fn git_diff(repo_path: String, staged: bool) -> Result<String, String> {
 #[tauri::command]
 pub fn git_push(repo_path: String) -> Result<String, String> {
     push(&repo_path)
+}
+
+#[tauri::command]
+pub fn git_graph_log(
+    repo_path: String,
+    limit: Option<usize>,
+    skip: Option<usize>,
+) -> Result<GraphLog, String> {
+    graph_log(&repo_path, limit.unwrap_or(300), skip.unwrap_or(0))
+}
+
+#[tauri::command]
+pub fn git_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
+    branches(&repo_path)
+}
+
+#[tauri::command]
+pub fn git_branch_checkout(repo_path: String, name: String) -> Result<(), String> {
+    branch_checkout(&repo_path, &name)
+}
+
+#[tauri::command]
+pub fn git_branch_create_at(repo_path: String, name: String, commit: String) -> Result<(), String> {
+    branch_create_at(&repo_path, &name, &commit)
+}
+
+#[tauri::command]
+pub fn git_branch_delete(repo_path: String, name: String, force: Option<bool>) -> Result<(), String> {
+    branch_delete(&repo_path, &name, force.unwrap_or(false))
+}
+
+#[tauri::command]
+pub fn git_tag_create(
+    repo_path: String,
+    name: String,
+    commit: String,
+    message: Option<String>,
+) -> Result<(), String> {
+    tag_create(&repo_path, &name, &commit, message.as_deref())
+}
+
+#[tauri::command]
+pub fn git_tag_delete(repo_path: String, name: String) -> Result<(), String> {
+    tag_delete(&repo_path, &name)
+}
+
+#[tauri::command]
+pub fn git_merge(repo_path: String, name: String) -> Result<(), String> {
+    merge(&repo_path, &name)
+}
+
+#[tauri::command]
+pub fn git_revert(repo_path: String, commit: String) -> Result<(), String> {
+    revert(&repo_path, &commit)
+}
+
+#[tauri::command]
+pub fn git_cherry_pick(repo_path: String, commit: String) -> Result<(), String> {
+    cherry_pick(&repo_path, &commit)
+}
+
+#[tauri::command]
+pub fn git_reset(repo_path: String, commit: String, mode: Option<String>) -> Result<(), String> {
+    reset(&repo_path, &commit, mode.as_deref())
 }
 
 #[cfg(test)]
@@ -273,6 +613,115 @@ mod tests {
         assert_eq!(worktree_status(Status::WT_MODIFIED), Some("M"));
         assert_eq!(worktree_status(Status::WT_DELETED), Some("D"));
         assert_eq!(worktree_status(Status::INDEX_NEW), None);
+    }
+
+    #[test]
+    fn parse_refs_head_branch_tag_remote() {
+        let refs = parse_refs(
+            " (HEAD -> refs/heads/main, tag: refs/tags/v1.0, refs/remotes/origin/main, refs/heads/feature/x)",
+        );
+        assert_eq!(refs.len(), 4);
+        assert_eq!(refs[0], GraphRef { name: "main".into(), kind: "head".into() });
+        assert_eq!(refs[1], GraphRef { name: "v1.0".into(), kind: "tag".into() });
+        assert_eq!(refs[2], GraphRef { name: "origin/main".into(), kind: "remote".into() });
+        assert_eq!(refs[3], GraphRef { name: "feature/x".into(), kind: "branch".into() });
+    }
+
+    #[test]
+    fn parse_refs_empty_and_detached() {
+        assert!(parse_refs("").is_empty());
+        assert!(parse_refs("   ").is_empty());
+        let refs = parse_refs(" (HEAD)");
+        assert_eq!(refs, vec![GraphRef { name: "HEAD".into(), kind: "head".into() }]);
+    }
+
+    #[test]
+    fn parse_graph_commit_splits_fields_and_keeps_pipes_in_message() {
+        let commit =
+            parse_graph_commit("abc123|p1 p2|Ada|2024-01-02 03:04| (HEAD -> refs/heads/main)|fix: a|b")
+                .unwrap();
+        assert_eq!(commit.hash, "abc123");
+        assert_eq!(commit.parents, vec!["p1".to_string(), "p2".to_string()]);
+        assert_eq!(commit.author, "Ada");
+        assert_eq!(commit.date, "2024-01-02 03:04");
+        assert_eq!(commit.refs, vec![GraphRef { name: "main".into(), kind: "head".into() }]);
+        // The subject retained its embedded pipe.
+        assert_eq!(commit.message, "fix: a|b");
+        assert!(parse_graph_commit("   ").is_none());
+    }
+
+    #[test]
+    fn graph_log_and_branches_on_a_real_repo() {
+        let dir = temp_repo_dir("graph");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.name", "Test"]).unwrap();
+        run_git(&path, &["config", "user.email", "test@example.com"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        run_git(&path, &["add", "a.txt"]).unwrap();
+        run_git(&path, &["commit", "-m", "first"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+        run_git(&path, &["commit", "-am", "second"]).unwrap();
+
+        let log = graph_log(&path, 10, 0).unwrap();
+        assert_eq!(log.commits.len(), 2);
+        assert!(!log.has_more);
+        // Newest first; the HEAD ref decorates the tip.
+        assert_eq!(log.commits[0].message, "second");
+        assert!(log.commits[0]
+            .refs
+            .iter()
+            .any(|r| r.kind == "head" && r.name == "main"));
+
+        // has_more is true once the page is smaller than the history.
+        let page = graph_log(&path, 1, 0).unwrap();
+        assert_eq!(page.commits.len(), 1);
+        assert!(page.has_more);
+
+        let branches = branches(&path).unwrap();
+        assert_eq!(
+            branches,
+            vec![BranchInfo { name: "main".into(), is_current: true }]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn branch_and_tag_actions_on_a_real_repo() {
+        let dir = temp_repo_dir("actions");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.name", "Test"]).unwrap();
+        run_git(&path, &["config", "user.email", "test@example.com"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        run_git(&path, &["add", "a.txt"]).unwrap();
+        run_git(&path, &["commit", "-m", "first"]).unwrap();
+        let head = run_git(&path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+        // Create branch at the commit and switch to it.
+        branch_create_at(&path, "feature", &head).unwrap();
+        assert!(branches(&path).unwrap().iter().any(|b| b.name == "feature" && b.is_current));
+
+        // Tag the commit, then it should decorate the graph node.
+        tag_create(&path, "v1", &head, Some("release")).unwrap();
+        let log = graph_log(&path, 10, 0).unwrap();
+        assert!(log.commits[0].refs.iter().any(|r| r.kind == "tag" && r.name == "v1"));
+
+        // Back to main, then the feature branch can be deleted.
+        branch_checkout(&path, "main").unwrap();
+        branch_delete(&path, "feature", true).unwrap();
+        assert!(!branches(&path).unwrap().iter().any(|b| b.name == "feature"));
+
+        tag_delete(&path, "v1").unwrap();
+        let log = graph_log(&path, 10, 0).unwrap();
+        assert!(!log.commits[0].refs.iter().any(|r| r.kind == "tag"));
+
+        // Empty-name guards surface as errors instead of running git.
+        assert!(branch_checkout(&path, "  ").is_err());
+        assert!(tag_create(&path, "x", "  ", None).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn temp_repo_dir(tag: &str) -> std::path::PathBuf {

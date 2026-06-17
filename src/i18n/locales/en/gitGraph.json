@@ -1,4 +1,41 @@
 {
   "title": "Git Graph",
-  "noRepo": "This folder is not a Git repository"
+  "noRepo": "This folder is not a Git repository",
+  "commits": "commits",
+  "loadMore": "Load more",
+  "dismiss": "Dismiss",
+  "refHint": "{{name}} — right-click for options",
+  "empty": {
+    "title": "No commits yet",
+    "hint": "Make a commit to start building history, and it will appear here."
+  },
+  "menu": {
+    "createBranchHere": "Create branch here…",
+    "createTagHere": "Create tag here…",
+    "cherryPick": "Cherry-pick onto current branch",
+    "revert": "Revert this commit",
+    "resetSoft": "Reset (soft) to here",
+    "resetHard": "Reset (hard) to here",
+    "checkout": "Checkout branch",
+    "merge": "Merge {{name}} into current",
+    "deleteBranch": "Delete branch",
+    "deleteTag": "Delete tag"
+  },
+  "modal": {
+    "cancel": "Cancel",
+    "branchName": "Branch name",
+    "branchPlaceholder": "feature/my-change",
+    "tagName": "Tag name",
+    "tagPlaceholder": "v1.0.0",
+    "tagMessage": "Message (optional)",
+    "tagMessagePlaceholder": "Release notes…",
+    "createBranch": {
+      "title": "Create branch at commit",
+      "confirm": "Create branch"
+    },
+    "createTag": {
+      "title": "Create tag at commit",
+      "confirm": "Create tag"
+    }
+  }
 }

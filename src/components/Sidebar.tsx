@@ -1,10 +1,11 @@
 import { useTranslation } from "react-i18next";
-import { Bot, FolderTree, GitBranch, NotebookPen, type LucideIcon } from "lucide-react";
+import { Bot, FolderTree, GitBranch, NotebookPen, Waypoints, type LucideIcon } from "lucide-react";
 import { ExplorerView } from "@/modules/explorer/ExplorerView";
 import { SourceControlView } from "@/modules/source-control/SourceControlView";
 import { AIView } from "@/modules/ai/AIView";
 import { NotesSidebar } from "@/modules/notes/NotesSidebar";
 import { Tooltip } from "@/components/Tooltip";
+import { useTabsStore } from "@/stores/tabsStore";
 import { useUiStore, type SidebarView } from "@/stores/uiStore";
 
 interface SidebarTab {
@@ -24,6 +25,7 @@ export function Sidebar() {
   const { t } = useTranslation();
   const sidebarView = useUiStore((s) => s.sidebarView);
   const selectSidebar = useUiStore((s) => s.selectSidebar);
+  const openGitGraphTab = useTabsStore((s) => s.openGitGraphTab);
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden border-r border-border bg-bg-inset">
@@ -46,6 +48,18 @@ export function Sidebar() {
             </Tooltip>
           );
         })}
+
+        {/* Git graph opens full-width in the main area (not a sidebar view). */}
+        <Tooltip label={t("nav.gitGraph")} side="bottom">
+          <button
+            type="button"
+            aria-label={t("nav.gitGraph")}
+            onClick={() => openGitGraphTab()}
+            className="flex h-7 w-8 items-center justify-center rounded-md text-fg-subtle transition-colors hover:text-fg"
+          >
+            <Waypoints size={15} />
+          </button>
+        </Tooltip>
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">

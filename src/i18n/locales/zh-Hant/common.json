@@ -9,6 +9,7 @@
     "git": "Git",
     "ai": "AI 助手",
     "notes": "筆記",
+    "gitGraph": "Git 圖",
     "settings": "設定"
   },
   "statusBar": {

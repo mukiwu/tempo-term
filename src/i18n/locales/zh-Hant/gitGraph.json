@@ -1,4 +1,41 @@
 {
-  "title": "Git Graph",
-  "noRepo": "這個資料夾不是 Git 儲存庫"
+  "title": "Git 線圖",
+  "noRepo": "這個資料夾不是 Git 儲存庫",
+  "commits": "個提交",
+  "loadMore": "載入更多",
+  "dismiss": "關閉",
+  "refHint": "{{name}}，按右鍵開啟選單",
+  "empty": {
+    "title": "還沒有任何提交",
+    "hint": "做一次提交開始建立歷史紀錄，之後就會顯示在這裡。"
+  },
+  "menu": {
+    "createBranchHere": "在這裡建立分支…",
+    "createTagHere": "在這裡建立標籤…",
+    "cherryPick": "揀選到目前分支",
+    "revert": "還原這次提交",
+    "resetSoft": "軟重置到這裡",
+    "resetHard": "硬重置到這裡",
+    "checkout": "切換到此分支",
+    "merge": "把 {{name}} 合併進目前分支",
+    "deleteBranch": "刪除分支",
+    "deleteTag": "刪除標籤"
+  },
+  "modal": {
+    "cancel": "取消",
+    "branchName": "分支名稱",
+    "branchPlaceholder": "feature/my-change",
+    "tagName": "標籤名稱",
+    "tagPlaceholder": "v1.0.0",
+    "tagMessage": "說明（選填）",
+    "tagMessagePlaceholder": "版本說明…",
+    "createBranch": {
+      "title": "在此提交建立分支",
+      "confirm": "建立分支"
+    },
+    "createTag": {
+      "title": "在此提交建立標籤",
+      "confirm": "建立標籤"
+    }
+  }
 }
