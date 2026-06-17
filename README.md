@@ -1,44 +1,82 @@
+<div align="center">
+
+<img src="src-tauri/icons/128x128.png" width="88" alt="TempoTerm" />
+
 # TempoTerm
 
-一個用 Tauri 打造的 AI 終端機工作區，把終端機、程式碼編輯器、檔案總管、Git、AI 助手與筆記整合在同一個視窗，介面支援正體中文與英文
+An AI-native terminal workspace that brings the terminal, code editor, file explorer, Git and an AI assistant into a single window, with first-class Traditional Chinese support.
 
-## 技術堆疊
+**English** · [正體中文](./README.zh-Hant.md) · [简体中文](./README.zh-Hans.md)
 
-- Tauri 2 與 Rust 後端
-- React 19、TypeScript、Vite 前端
-- Zustand 狀態管理
-- Tailwind CSS v4
-- xterm.js v6 終端機
-- CodeMirror 6 程式碼編輯器
-- TipTap 筆記編輯器
-- i18next 多語系（en 與 zh-Hant）
+</div>
 
-## 開發指令
+TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a native PTY terminal with a code editor, file explorer, source control, web preview, notes and a bring-your-own-key AI assistant, and ships a full Traditional Chinese interface with CJK-friendly terminal fonts.
+
+## Features
+
+### Terminal
+
+- xterm.js v6 over a native PTY (portable-pty), with typed tabs
+- Free split layout: panels can mix types, for example a terminal next to a file editor, with draggable dividers to resize
+- Alt or Cmd click a file path in the output to open it in a split pane
+- Standard editing shortcuts that carry over from other terminals: Shift+Enter, word and line navigation, delete to line start/end, copy and paste
+- Unicode 11 width tables so full-width CJK glyphs stay aligned
+
+### Editor
+
+- CodeMirror 6 with syntax highlighting
+- Follows the app theme's light or dark appearance
+- Markdown files toggle between edit, split and preview
+
+### File explorer
+
+- File tree with fuzzy find and content grep
+- Right-click context menu: open, reveal in Finder, new file or folder, copy path, attach to the AI agent, delete to trash
+- Drag a file or folder onto any pane, with behavior per pane type
+
+### Source control
+
+- Status, stage, unstage, commit and push
+- Git history with a commit graph
+
+### Web preview
+
+- Embedded preview of a URL or a dropped local file
+
+### Notes
+
+- WYSIWYG editor (TipTap) with a slash command menu
+- Code blocks with syntax highlighting, copy and run-in-terminal
+- Global folders that persist across restarts
+
+### AI assistant
+
+- Bring your own key: OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, Ollama and any OpenAI-compatible endpoint
+- Keys are stored in the OS keychain and never returned to the webview
+- Replies render as Markdown; attach files from the explorer as context
+
+### Themes and languages
+
+- Several dark and light themes, applied across the whole window
+- Full English and Traditional Chinese UI, switchable on the fly
+- CJK-friendly terminal font settings
+
+## Tech stack
+
+Tauri 2, Rust, portable-pty, git2, keyring, React 19, TypeScript, Vite, Zustand, Tailwind CSS v4, xterm.js v6, CodeMirror 6, TipTap, i18next.
+
+## Development
 
 ```bash
-pnpm install        # 安裝前端依賴
-pnpm tauri dev      # 啟動桌面 app（開發模式）
-pnpm test           # 跑前端單元與整合測試（Vitest）
-pnpm typecheck      # TypeScript 型別檢查
-pnpm build          # 建置前端
+pnpm install        # install frontend dependencies
+pnpm tauri dev      # run the desktop app in dev mode
+pnpm typecheck      # TypeScript type check
+pnpm build          # build the frontend
 ```
 
-## 功能
-
-- 分頁式工作區，每個分頁可以是終端機、編輯器、筆記、網頁預覽或 Git 圖
-- 終端機可自由左右或上下分割，同一組分割能混合不同類型，例如終端機與檔案編輯器並排，分割線可拖曳調整比例
-- 終端機輸出裡的檔案路徑可以點擊直接開啟，並對齊常見終端機的標準鍵盤快捷
-- 從檔案總管把檔案或資料夾拖到面板，依面板類型有對應行為
-- 多種佈景主題，深色與淺色皆備，編輯器也跟著切換明暗
-- 對正體中文友善的終端機字體設定
-- Markdown 檔案可在編輯、並排、預覽之間切換
-- 所見即所得的筆記，支援斜線選單與程式碼區塊
-- 自帶金鑰的多供應商 AI 對話，金鑰存在系統 keychain
-- 整體介面正體中文與英文雙語，可即時切換並記住選擇
-
-## 測試
+## Testing
 
 ```bash
-pnpm test                       # 前端 Vitest
-cd src-tauri && cargo test      # 後端 Rust 測試
+pnpm test                       # frontend unit and integration tests (Vitest)
+cd src-tauri && cargo test      # backend Rust tests
 ```
