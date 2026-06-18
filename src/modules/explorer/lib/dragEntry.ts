@@ -3,7 +3,7 @@
  * HTML5 drag-and-drop: Tauri intercepts it at the native layer when
  * `dragDropEnabled` is on, which makes elementFromPoint and event coordinates
  * unreliable mid-drag (flaky hover, wrong drop target). Pointer events sidestep
- * that entirely, so the cursor position stays exact. (Mirrors Terax's approach.)
+ * that entirely, so the cursor position stays exact.
  */
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";

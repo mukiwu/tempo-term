@@ -205,14 +205,14 @@ export function TerminalView({
         return false;
       }
       // Standard terminal editing shortcuts (Shift+Enter, word/line nav, word
-      // and line delete), matching Terax/Warp so muscle memory carries over.
+      // and line delete), matching common terminals so muscle memory carries over.
       if (event.type === "keydown") {
         const seq = terminalKeySequence(event, IS_MAC);
         if (seq) {
           // preventDefault is essential: without it xterm's hidden textarea
           // still receives the keystroke and emits its own bytes. For
           // Shift+Enter that means a bare CR sneaks through after our ESC CR
-          // and submits the line. Matches the reference Terax handler.
+          // and submits the line. Matches common terminal behavior.
           event.preventDefault();
           void sessionRef.current?.write(seq);
           return false;
@@ -242,7 +242,7 @@ export function TerminalView({
       return true;
     });
 
-    // Warp-style file links: Alt+click a path in the output to open it. The path
+    // Alt+click a path in the output to open it. The path
     // is resolved against the live shell cwd and only opened if it really exists.
     async function openFromTerminal(raw: string) {
       let resolvedCwd: string | null = cwdRef.current ?? null;

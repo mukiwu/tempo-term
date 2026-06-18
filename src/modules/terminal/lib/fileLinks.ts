@@ -1,6 +1,6 @@
 /**
  * Detect file-path-looking tokens in a line of terminal output so they can be
- * turned into Alt-clickable links (Warp-style). Matching is deliberately broad;
+ * turned into Alt-clickable links. Matching is deliberately broad;
  * the caller verifies the file actually exists before opening it, which filters
  * out false positives like bare domains.
  */

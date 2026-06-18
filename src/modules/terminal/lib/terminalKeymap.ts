@@ -1,7 +1,7 @@
 /**
  * Map a key event to the byte sequence a standard terminal would send, matching
- * how Terax/Warp wire up editing shortcuts so muscle memory carries over from
- * other terminals:
+ * how common terminals wire up editing shortcuts so muscle memory carries over
+ * from other terminals:
  *
  *   Shift+Enter        → ESC CR         newline without submitting
  *   Cmd+Left/Right     → Ctrl-A/Ctrl-E  line start / end          (macOS)
@@ -27,7 +27,7 @@ export function terminalKeySequence(event: NavKeyEvent, isMac: boolean): string 
 
   // Shift+Enter → ESC CR, the same bytes macOS Option+Enter sends. Claude Code
   // and similar CLIs treat that as "insert a newline" rather than submit. This
-  // matches the reference Terax terminal. The caller MUST preventDefault on
+  // matches common terminal behavior. The caller MUST preventDefault on
   // this key, otherwise xterm's hidden textarea also emits a bare CR and the
   // line gets submitted anyway.
   if (key === "Enter" && shiftKey && !ctrlKey && !metaKey && !altKey) {

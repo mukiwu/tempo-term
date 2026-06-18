@@ -35,7 +35,7 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
     theme: options.theme,
     scrollback: 10000,
     // Otherwise xterm consumes Alt+click to move the cursor, which swallows the
-    // Alt+click that opens file links (Warp-style).
+    // Alt+click that opens file links.
     altClickMovesCursor: false,
   });
 
