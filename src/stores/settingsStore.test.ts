@@ -57,4 +57,11 @@ describe("settingsStore", () => {
     useSettingsStore.getState().toggleWordWrap();
     expect(useSettingsStore.getState().wordWrap).toBe(false);
   });
+
+  it("persists wordWrap so it survives a reload", () => {
+    useSettingsStore.getState().toggleWordWrap();
+    const persisted = localStorage.getItem("tempoterm-settings");
+    expect(persisted).toBeTruthy();
+    expect(persisted).toContain('"wordWrap":true');
+  });
 });
