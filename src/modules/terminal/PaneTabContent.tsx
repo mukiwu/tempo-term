@@ -1,6 +1,6 @@
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { TerminalView } from "./TerminalView";
 import { dropPathsIntoTerminal, writeToTerminal } from "./lib/terminalBus";
 import {
@@ -9,10 +9,24 @@ import {
   type PaneContent,
   type SplitterInfo,
 } from "./lib/terminalLayout";
-import { EditorTabContent } from "@/modules/editor/EditorTabContent";
-import { NoteTabContent } from "@/modules/notes/NoteTabContent";
-import { PreviewTabContent } from "@/modules/preview/PreviewTabContent";
-import { GitGraphTabContent } from "@/modules/git-graph/GitGraphTabContent";
+// Heavy, non-terminal pane content is code-split so it stays out of the startup
+// bundle (TipTap + lowlight, CodeMirror, the git graph). It loads the first time
+// such a pane is shown. The terminal and launcher stay eager — a terminal is
+// usually the first pane painted on launch.
+const EditorTabContent = lazy(() =>
+  import("@/modules/editor/EditorTabContent").then((m) => ({ default: m.EditorTabContent })),
+);
+const NoteTabContent = lazy(() =>
+  import("@/modules/notes/NoteTabContent").then((m) => ({ default: m.NoteTabContent })),
+);
+const PreviewTabContent = lazy(() =>
+  import("@/modules/preview/PreviewTabContent").then((m) => ({ default: m.PreviewTabContent })),
+);
+const GitGraphTabContent = lazy(() =>
+  import("@/modules/git-graph/GitGraphTabContent").then((m) => ({
+    default: m.GitGraphTabContent,
+  })),
+);
 import { LauncherPanel } from "@/components/LauncherPanel";
 import { dropOverlayClassName } from "@/components/EntryDropOverlay";
 import {
@@ -191,30 +205,38 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   <X size={12} />
                 </button>
               )}
-              {pane.content.kind === "editor" ? (
-                <EditorTabContent path={pane.content.path} />
-              ) : pane.content.kind === "note" ? (
-                <NoteTabContent noteId={pane.content.noteId} tabId={tab.id} />
-              ) : pane.content.kind === "preview" ? (
-                <PreviewTabContent url={pane.content.url} />
-              ) : pane.content.kind === "git-graph" ? (
-                <GitGraphTabContent />
-              ) : pane.content.kind === "launcher" ? (
-                <LauncherPanel
-                  target={{ mode: "replacePane", tabId: tab.id, leafId: pane.id }}
-                />
-              ) : (
-                <TerminalView
-                  active={active}
-                  cwdTracking={active && isActiveTab}
-                  cwd={rootPath ?? tab.cwd}
-                  leafId={pane.id}
-                  onExit={() => closePane(tab.id, pane.id)}
-                  onOpenFile={(absolutePath) =>
-                    splitPaneWith(tab.id, pane.id, { kind: "editor", path: absolutePath }, "row")
-                  }
-                />
-              )}
+              <Suspense
+                fallback={
+                  <div className="flex h-full w-full items-center justify-center text-fg-subtle">
+                    <Loader2 size={16} className="animate-spin" />
+                  </div>
+                }
+              >
+                {pane.content.kind === "editor" ? (
+                  <EditorTabContent path={pane.content.path} />
+                ) : pane.content.kind === "note" ? (
+                  <NoteTabContent noteId={pane.content.noteId} tabId={tab.id} />
+                ) : pane.content.kind === "preview" ? (
+                  <PreviewTabContent url={pane.content.url} />
+                ) : pane.content.kind === "git-graph" ? (
+                  <GitGraphTabContent />
+                ) : pane.content.kind === "launcher" ? (
+                  <LauncherPanel
+                    target={{ mode: "replacePane", tabId: tab.id, leafId: pane.id }}
+                  />
+                ) : (
+                  <TerminalView
+                    active={active}
+                    cwdTracking={active && isActiveTab}
+                    cwd={rootPath ?? tab.cwd}
+                    leafId={pane.id}
+                    onExit={() => closePane(tab.id, pane.id)}
+                    onOpenFile={(absolutePath) =>
+                      splitPaneWith(tab.id, pane.id, { kind: "editor", path: absolutePath }, "row")
+                    }
+                  />
+                )}
+              </Suspense>
 
               {/* Highlight only the pane under the cursor while dragging an
                   explorer entry. The drop itself is handled by the document-level
