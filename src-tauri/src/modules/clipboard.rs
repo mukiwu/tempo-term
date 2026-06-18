@@ -76,9 +76,21 @@ fn clipboard_image_paths() -> Result<Vec<String>, String> {
     Ok(Vec::new())
 }
 
+/// Spawn a macOS helper with a forced UTF-8 codeset. A GUI (Finder) launch
+/// inherits no UTF-8 locale, so `pbpaste`/`osascript` fall back to the region's
+/// legacy encoding (e.g. Big5 for zh-Hant) and their non-ASCII output then
+/// fails to decode as UTF-8, leaving replacement characters. `LC_ALL` outranks
+/// any inherited locale, so it reliably pins the codeset to UTF-8.
+#[cfg(target_os = "macos")]
+fn utf8_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    cmd.env("LC_ALL", "en_US.UTF-8");
+    cmd
+}
+
 #[cfg(target_os = "macos")]
 fn clipboard_text() -> Result<String, String> {
-    let output = Command::new("pbpaste")
+    let output = utf8_command("pbpaste")
         .output()
         .map_err(|e| format!("failed to run pbpaste: {e}"))?;
     if !output.status.success() {
@@ -219,7 +231,7 @@ end try
 
 #[cfg(target_os = "macos")]
 fn run_osascript(script: &str) -> Result<String, String> {
-    let output = Command::new("osascript")
+    let output = utf8_command("osascript")
         .arg("-e")
         .arg(script)
         .output()
@@ -321,6 +333,23 @@ fn applescript_string(path: &Path) -> String {
 mod tests {
     use super::{image_extension, is_image_path, is_valid_clipboard_file_path, unique_paths};
     use std::path::Path;
+
+    // A GUI (Finder) launch inherits no UTF-8 locale, so helpers like `pbpaste`
+    // fall back to the region's legacy encoding (e.g. Big5) for CJK text. The
+    // helper command must force a UTF-8 codeset so its output decodes cleanly.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn helper_command_forces_a_utf8_locale() {
+        let cmd = super::utf8_command("pbpaste");
+        let forces_utf8 = cmd.get_envs().any(|(k, v)| {
+            (k == "LC_ALL" || k == "LC_CTYPE" || k == "LANG")
+                && v
+                    .and_then(|v| v.to_str())
+                    .map(|v| v.to_ascii_uppercase().contains("UTF-8"))
+                    .unwrap_or(false)
+        });
+        assert!(forces_utf8);
+    }
 
     #[test]
     fn detects_image_paths_by_extension() {

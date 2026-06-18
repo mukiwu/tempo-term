@@ -67,7 +67,12 @@ fn build_shell_command(cwd: Option<String>) -> (CommandBuilder, String) {
     if let Some(dir) = cwd.filter(|d| !d.trim().is_empty()) {
         cmd.cwd(dir);
     }
-    for (key, value) in terminal_env(std::env::var("LANG").ok()) {
+    let locale_env = terminal_env(
+        std::env::var("LC_ALL").ok(),
+        std::env::var("LC_CTYPE").ok(),
+        std::env::var("LANG").ok(),
+    );
+    for (key, value) in locale_env {
         cmd.env(key, value);
     }
 

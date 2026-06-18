@@ -29,12 +29,38 @@ fn default_shell() -> String {
     std::env::var("COMSPEC").unwrap_or_else(|_| "powershell.exe".to_string())
 }
 
+/// A UTF-8 locale that is reliably present on the target platform. We only need
+/// a UTF-8 codeset for `LC_CTYPE`; the territory is incidental.
+#[cfg(target_os = "macos")]
+fn utf8_locale() -> &'static str {
+    // Always shipped on macOS.
+    "en_US.UTF-8"
+}
+
+#[cfg(not(target_os = "macos"))]
+fn utf8_locale() -> &'static str {
+    // Language-neutral and present on modern glibc/musl.
+    "C.UTF-8"
+}
+
+/// True when a locale value carries a UTF-8 codeset (e.g. `zh_TW.UTF-8`).
+fn is_utf8_locale(value: &str) -> bool {
+    value.to_lowercase().replace('-', "").contains("utf8")
+}
+
 /// Build the base environment a terminal session should run with.
 ///
-/// `existing_lang` is whatever `$LANG` currently holds. When it is missing or
-/// empty we inject a UTF-8 locale so multi-byte output (including CJK) is not
-/// mangled by a C/POSIX locale.
-pub fn terminal_env(existing_lang: Option<String>) -> Vec<(String, String)> {
+/// `lc_all`, `lc_ctype` and `lang` are whatever those variables currently hold.
+/// The effective character encoding follows the POSIX precedence
+/// `LC_ALL` > `LC_CTYPE` > `LANG`. When the winning value is not a UTF-8 locale
+/// (missing, `C`, `POSIX`, or any non-UTF-8 codeset) we force a UTF-8 locale so
+/// multi-byte input/output (including CJK) is not mangled. A GUI launch from
+/// Finder inherits no shell locale at all, which is exactly this case.
+pub fn terminal_env(
+    lc_all: Option<String>,
+    lc_ctype: Option<String>,
+    lang: Option<String>,
+) -> Vec<(String, String)> {
     let mut env = vec![
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
@@ -42,12 +68,19 @@ pub fn terminal_env(existing_lang: Option<String>) -> Vec<(String, String)> {
         ("TEMPOTERM".to_string(), "1".to_string()),
     ];
 
-    let lang_missing = existing_lang
-        .as_deref()
-        .map(|l| l.trim().is_empty())
-        .unwrap_or(true);
-    if lang_missing {
-        env.push(("LANG".to_string(), "en_US.UTF-8".to_string()));
+    let non_empty = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
+    let lc_all = non_empty(lc_all);
+    let effective = lc_all
+        .clone()
+        .or_else(|| non_empty(lc_ctype))
+        .or_else(|| non_empty(lang));
+
+    let already_utf8 = effective.as_deref().map(is_utf8_locale).unwrap_or(false);
+    if !already_utf8 {
+        // `LC_ALL` outranks `LC_CTYPE`, so when it is the (non-UTF-8) value in
+        // effect we must override it directly; otherwise `LC_CTYPE` is enough.
+        let key = if lc_all.is_some() { "LC_ALL" } else { "LC_CTYPE" };
+        env.push((key.to_string(), utf8_locale().to_string()));
     }
 
     env
@@ -101,22 +134,46 @@ mod tests {
 
     #[test]
     fn terminal_env_always_sets_term_and_colorterm() {
-        let env = terminal_env(Some("en_US.UTF-8".to_string()));
+        let env = terminal_env(None, None, Some("en_US.UTF-8".to_string()));
         assert!(env.contains(&("TERM".to_string(), "xterm-256color".to_string())));
         assert!(env.contains(&("COLORTERM".to_string(), "truecolor".to_string())));
     }
 
-    #[test]
-    fn terminal_env_injects_utf8_lang_when_missing() {
-        let env = terminal_env(None);
-        assert!(env
-            .iter()
-            .any(|(k, v)| k == "LANG" && v.contains("UTF-8")));
+    fn has_utf8(env: &[(String, String)], key: &str) -> bool {
+        env.iter()
+            .any(|(k, v)| k == key && v.to_lowercase().replace('-', "").contains("utf8"))
     }
 
     #[test]
-    fn terminal_env_keeps_existing_lang() {
-        let env = terminal_env(Some("zh_TW.UTF-8".to_string()));
-        assert!(!env.iter().any(|(k, _)| k == "LANG"));
+    fn forces_utf8_ctype_when_lang_is_c() {
+        let env = terminal_env(None, None, Some("C".to_string()));
+        assert!(has_utf8(&env, "LC_CTYPE"));
+    }
+
+    #[test]
+    fn forces_utf8_ctype_when_no_locale_is_set() {
+        // A Finder/Dock launch inherits no shell locale at all.
+        let env = terminal_env(None, None, None);
+        assert!(has_utf8(&env, "LC_CTYPE"));
+    }
+
+    #[test]
+    fn keeps_existing_utf8_lang_untouched() {
+        let env = terminal_env(None, None, Some("zh_TW.UTF-8".to_string()));
+        assert!(!env.iter().any(|(k, _)| k.starts_with("LC_") || k == "LANG"));
+    }
+
+    #[test]
+    fn respects_lc_ctype_precedence_over_lang() {
+        // LC_CTYPE outranks LANG, so a UTF-8 LC_CTYPE means we leave it alone.
+        let env = terminal_env(None, Some("en_US.UTF-8".to_string()), Some("C".to_string()));
+        assert!(!env.iter().any(|(k, _)| k.starts_with("LC_") || k == "LANG"));
+    }
+
+    #[test]
+    fn overrides_lc_all_when_it_forces_a_non_utf8_locale() {
+        // LC_ALL outranks LC_CTYPE, so patching LC_CTYPE alone would not win.
+        let env = terminal_env(Some("C".to_string()), None, Some("zh_TW.UTF-8".to_string()));
+        assert!(has_utf8(&env, "LC_ALL"));
     }
 }
