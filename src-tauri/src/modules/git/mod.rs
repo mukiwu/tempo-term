@@ -67,6 +67,20 @@ pub struct BranchInfo {
     pub is_remote: bool,
 }
 
+/// 一個 commit 變更的單一檔案。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CommitFileChange {
+    pub status: String,
+    pub path: String,
+}
+
+/// 一個 commit 的詳情：完整訊息與變更檔案清單。
+#[derive(Debug, Clone, Serialize)]
+pub struct CommitDetails {
+    pub message: String,
+    pub files: Vec<CommitFileChange>,
+}
+
 /// 線圖的顯示選項，來自前端工具列。branch 空字串或 None 代表 Show All。
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -430,6 +444,23 @@ fn parse_graph_commit(line: &str) -> Option<GraphCommit> {
             .trim()
             .to_string(),
     })
+}
+
+/// 解析一行 `git diff --name-status` 輸出成 CommitFileChange。
+/// 純函式方便測試。改名/複製(R100、C95)取最後一欄(新路徑)，狀態取首字母。
+fn parse_name_status_line(line: &str) -> Option<CommitFileChange> {
+    if line.trim().is_empty() {
+        return None;
+    }
+    let mut parts = line.trim_end().split('\t');
+    let status_raw = parts.next()?.trim();
+    let status = status_raw.chars().next()?.to_string();
+    // 一般狀態 "M\tpath" 的 path 是最後一欄；改名 "R100\told\tnew" 的新路徑也是最後一欄。
+    let path = parts.last()?.trim().to_string();
+    if path.is_empty() {
+        return None;
+    }
+    Some(CommitFileChange { status, path })
 }
 
 /// 讀取線圖的 commit DAG。`limit` 限制回傳數量，內部多抓一筆算 `has_more`。
@@ -1007,5 +1038,39 @@ mod tests {
             ..GraphOptions::default()
         };
         assert_eq!(build_log_refs(&options), vec!["--branches".to_string()]);
+    }
+
+    #[test]
+    fn parse_name_status_modified() {
+        assert_eq!(
+            parse_name_status_line("M\tsrc/main.rs"),
+            Some(CommitFileChange { status: "M".into(), path: "src/main.rs".into() })
+        );
+    }
+
+    #[test]
+    fn parse_name_status_added_and_deleted() {
+        assert_eq!(
+            parse_name_status_line("A\tnew.txt"),
+            Some(CommitFileChange { status: "A".into(), path: "new.txt".into() })
+        );
+        assert_eq!(
+            parse_name_status_line("D\told.txt"),
+            Some(CommitFileChange { status: "D".into(), path: "old.txt".into() })
+        );
+    }
+
+    #[test]
+    fn parse_name_status_rename_takes_new_path() {
+        assert_eq!(
+            parse_name_status_line("R100\told/a.rs\tnew/b.rs"),
+            Some(CommitFileChange { status: "R".into(), path: "new/b.rs".into() })
+        );
+    }
+
+    #[test]
+    fn parse_name_status_blank_is_none() {
+        assert_eq!(parse_name_status_line(""), None);
+        assert_eq!(parse_name_status_line("   "), None);
     }
 }
