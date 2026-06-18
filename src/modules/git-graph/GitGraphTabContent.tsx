@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   GitBranch,
@@ -72,6 +72,8 @@ export function GitGraphTabContent() {
     const v = Number(localStorage.getItem("tempoterm-gitgraph-details-height"));
     return Number.isFinite(v) && v > 0 ? v : 280;
   });
+  const detailsHeightRef = useRef(detailsHeight);
+  detailsHeightRef.current = detailsHeight;
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -230,8 +232,11 @@ export function GitGraphTabContent() {
   };
 
   const persistDetailsHeight = useCallback(() => {
-    localStorage.setItem("tempoterm-gitgraph-details-height", String(detailsHeight));
-  }, [detailsHeight]);
+    localStorage.setItem(
+      "tempoterm-gitgraph-details-height",
+      String(detailsHeightRef.current),
+    );
+  }, []);
 
   const labels: GitGraphLabels = {
     emptyTitle: t("empty.title"),
