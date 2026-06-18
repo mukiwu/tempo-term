@@ -55,7 +55,7 @@ function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
   const runnable = SHELL_LANGS.has(lang.toLowerCase());
 
   return (
-    <NodeViewWrapper className="my-3 overflow-hidden rounded-lg border border-border bg-bg-inset">
+    <NodeViewWrapper className="my-3 rounded-lg border border-border bg-bg-inset">
       <pre className="overflow-x-auto px-4 py-3 font-mono text-[13px] leading-relaxed">
         <NodeViewContent as="code" className={lang ? `language-${lang}` : undefined} />
       </pre>
@@ -70,7 +70,8 @@ function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
             updateAttributes({ language: value === "text" ? null : value })
           }
           ariaLabel={t("language")}
-          className="w-32 font-mono"
+          size="sm"
+          className="font-mono"
         />
         <div className="flex items-center gap-2">
           <span className="select-none text-[11px] text-fg-subtle">{t("exitHint")}</span>

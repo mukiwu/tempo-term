@@ -12,6 +12,8 @@ interface ComboboxProps {
   className?: string;
   /** Open the list upward (for triggers near the bottom of the window). */
   dropUp?: boolean;
+  /** Compact trigger sizing for dense toolbars (e.g. a code block header). */
+  size?: "sm" | "md";
 }
 
 /**
@@ -28,9 +30,13 @@ export function Combobox({
   placeholder,
   className,
   dropUp = false,
+  size = "md",
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const dense = size === "sm";
+  const fieldClass = dense ? "px-2 py-0.5 text-xs" : "px-3 py-2 text-sm";
+  const optionClass = dense ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm";
 
   useEffect(() => {
     if (!open) {
@@ -64,14 +70,14 @@ export function Combobox({
             spellCheck={false}
             onChange={(e) => onChange(e.target.value)}
             onFocus={() => setOpen(true)}
-            className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-fg outline-none placeholder:text-fg-subtle"
+            className={`min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-subtle ${fieldClass}`}
           />
         ) : (
           <button
             type="button"
             aria-label={ariaLabel}
             onClick={() => setOpen((o) => !o)}
-            className="flex min-w-0 flex-1 items-center px-3 py-2 text-left text-sm text-fg"
+            className={`flex min-w-0 flex-1 items-center text-left ${dense ? "text-fg-muted" : "text-fg"} ${fieldClass}`}
           >
             <span className="truncate">{value}</span>
           </button>
@@ -81,10 +87,10 @@ export function Combobox({
           aria-label={ariaLabel}
           tabIndex={-1}
           onClick={() => setOpen((o) => !o)}
-          className="shrink-0 px-2 py-2 text-fg-subtle hover:text-fg"
+          className={`shrink-0 text-fg-subtle hover:text-fg ${dense ? "px-1 py-0.5" : "px-2 py-2"}`}
         >
           <ChevronDown
-            size={15}
+            size={dense ? 12 : 15}
             className={`transition-transform ${open ? "rotate-180" : ""}`}
           />
         </button>
@@ -92,7 +98,8 @@ export function Combobox({
 
       {open && (
         <ul
-          className={`absolute left-0 right-0 z-50 max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-border-strong bg-bg-elevated p-1.5 shadow-xl ${
+          data-combobox
+          className={`absolute left-0 z-50 max-h-60 w-max min-w-full max-w-[16rem] space-y-0.5 overflow-y-auto rounded-lg border border-border-strong bg-bg-elevated p-1 shadow-xl ${
             dropUp ? "bottom-full mb-1.5" : "top-full mt-1.5"
           }`}
         >
@@ -106,7 +113,7 @@ export function Combobox({
                     onChange(opt);
                     setOpen(false);
                   }}
-                  className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm ${
+                  className={`flex w-full items-center justify-between gap-2 rounded-md text-left ${optionClass} ${
                     active ? "bg-bg text-fg" : "text-fg-muted hover:bg-bg hover:text-fg"
                   }`}
                 >
