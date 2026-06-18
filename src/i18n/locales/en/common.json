@@ -1,6 +1,7 @@
 {
   "appName": "TempoTerm",
   "tagline": "AI-powered terminal workspace",
+  "terminalConnecting": "Starting shell…",
   "nav": {
     "terminal": "Terminal",
     "explorer": "Explorer",

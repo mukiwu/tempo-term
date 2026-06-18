@@ -1,5 +1,7 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Loader2 } from "lucide-react";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import {
@@ -88,6 +90,8 @@ export function TerminalView({
   const fontSize = useFontStore((s) => s.fontSize);
   const themeId = useSettingsStore((s) => s.themeId);
   const terminalPadding = useSettingsStore((s) => s.terminalPadding);
+  const { t } = useTranslation();
+  const [connecting, setConnecting] = useState(true);
   const [externalFileDragging, setExternalFileDragging] = useState(false);
   const dragDepthRef = useRef(0);
   const nativeDragPathsRef = useRef<string[]>([]);
@@ -375,10 +379,14 @@ export function TerminalView({
         if (cwdTracking && cwdRef.current) {
           useWorkspaceStore.getState().setRoot(cwdRef.current);
         }
+        setConnecting(false);
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         term.write(`\r\n\x1b[31mFailed to open shell: ${message}\x1b[0m\r\n`);
+        if (!disposed) {
+          setConnecting(false);
+        }
       });
 
     const observer = new ResizeObserver(() => {
@@ -707,6 +715,12 @@ export function TerminalView({
       }}
     >
       {externalFileDragging && <div className={dropOverlayClassName(true)} />}
+      {connecting && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-fg-subtle">
+          <Loader2 size={15} className="animate-spin" />
+          <span className="text-xs">{t("terminalConnecting")}</span>
+        </div>
+      )}
     </div>
   );
 }

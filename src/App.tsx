@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TabBar } from "@/components/TabBar";
 import { Sidebar } from "@/components/Sidebar";
 import { Resizer } from "@/components/Resizer";
@@ -31,6 +32,19 @@ function App() {
   useEffect(() => {
     applyTheme(getTheme(themeId), document.documentElement);
   }, [themeId]);
+
+  // The window starts hidden (visible: false) to avoid a blank flash while the
+  // webview boots; reveal it once the UI has painted its first frame.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      try {
+        void getCurrentWindow().show().catch(() => {});
+      } catch {
+        // Not running inside a Tauri window (e.g. tests); nothing to reveal.
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   useEffect(() => {
     void loadFontReport();
