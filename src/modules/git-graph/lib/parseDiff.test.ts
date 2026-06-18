@@ -26,6 +26,14 @@ describe("parseDiffLines", () => {
     expect(parseDiffLines("index 1234..5678 100644")[0].kind).toBe("meta");
   });
 
+  it("classifies all meta header prefixes", () => {
+    expect(parseDiffLines("new file mode 100644")[0].kind).toBe("meta");
+    expect(parseDiffLines("deleted file mode 100644")[0].kind).toBe("meta");
+    expect(parseDiffLines("similarity index 95%")[0].kind).toBe("meta");
+    expect(parseDiffLines("rename from old.ts")[0].kind).toBe("meta");
+    expect(parseDiffLines("rename to new.ts")[0].kind).toBe("meta");
+  });
+
   it("does not emit a trailing empty line", () => {
     expect(parseDiffLines("+a\n")).toHaveLength(1);
   });

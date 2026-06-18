@@ -709,7 +709,7 @@ pub fn commit_file_diff(repo_path: &str, commit: &str, file: &str) -> Result<Str
 
     let parent = format!("{commit}^1");
     let diff = run_git(repo_path, &["diff", &parent, commit, "--", file])
-        .or_else(|_| run_git(repo_path, &["show", "--root", commit, "--", file]))
+        .or_else(|_| run_git(repo_path, &["show", "--root", "--format=", commit, "--", file]))
         .unwrap_or_default();
     Ok(diff)
 }
