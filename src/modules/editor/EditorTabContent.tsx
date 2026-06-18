@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Columns2, Eye, SquarePen, type LucideIcon } from "lucide-react";
+import { Columns2, Eye, SquarePen, WrapText, type LucideIcon } from "lucide-react";
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView as CMView } from "@codemirror/view";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -36,6 +36,8 @@ export function EditorTabContent({ path }: { path: string }) {
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
   const isDark = useSettingsStore((s) => getTheme(s.themeId).appearance === "dark");
+  const wordWrap = useSettingsStore((s) => s.wordWrap);
+  const toggleWordWrap = useSettingsStore((s) => s.toggleWordWrap);
 
   const isMarkdown = isMarkdownPath(path);
   const [mode, setMode] = useState<EditorMode>("edit");
@@ -56,9 +58,10 @@ export function EditorTabContent({ path }: { path: string }) {
         "&": { height: "100%", fontSize: `${fontSize}px` },
         ".cm-content, .cm-gutters, .cm-scroller": { fontFamily },
       }),
+      ...(wordWrap ? [CMView.lineWrapping] : []),
       ...languageExtension(path),
     ],
-    [path, fontFamily, fontSize],
+    [path, fontFamily, fontSize, wordWrap],
   );
 
   async function save() {
@@ -96,10 +99,22 @@ export function EditorTabContent({ path }: { path: string }) {
         }
       }}
     >
-      {isMarkdown && (
-        // pr-8 leaves room for the pane's close button (absolute, top-right).
-        <div className="flex h-7 shrink-0 items-center justify-end gap-0.5 border-b border-border pl-2 pr-8">
-          {MODES.map((m) => {
+      {/* pr-8 leaves room for the pane's close button (absolute, top-right). */}
+      <div className="flex h-7 shrink-0 items-center justify-end gap-0.5 border-b border-border pl-2 pr-8">
+        <button
+          type="button"
+          title={t("wrap")}
+          aria-label={t("wrap")}
+          aria-pressed={wordWrap}
+          onClick={toggleWordWrap}
+          className={`rounded p-1 ${
+            wordWrap ? "bg-bg-elevated text-fg" : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
+          }`}
+        >
+          <WrapText size={14} />
+        </button>
+        {isMarkdown &&
+          MODES.map((m) => {
             const Icon = m.icon;
             const active = mode === m.key;
             return (
@@ -118,8 +133,7 @@ export function EditorTabContent({ path }: { path: string }) {
               </button>
             );
           })}
-        </div>
-      )}
+      </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {effectiveMode === "split" ? (

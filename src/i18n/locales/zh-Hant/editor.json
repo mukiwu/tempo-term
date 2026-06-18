@@ -4,6 +4,7 @@
   "save": "儲存",
   "saved": "已儲存",
   "unsaved": "尚未儲存的變更",
+  "wrap": "自動換行",
   "mode": {
     "edit": "編輯",
     "split": "並排",
