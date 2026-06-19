@@ -24,6 +24,19 @@ describe("findFilePaths", () => {
     expect(findFilePaths("just some regular words here")).toEqual([]);
   });
 
+  it("matches a path whose filename contains CJK characters", () => {
+    const line = "exists docs/specs/2026-06-19-新點首頁三新風格EFG-design.md, checked";
+    const matches = findFilePaths(line);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].text).toBe("docs/specs/2026-06-19-新點首頁三新風格EFG-design.md");
+  });
+
+  it("matches a path with a CJK directory segment", () => {
+    expect(findFilePaths("open 專案/notes.md").map((m) => m.text)).toEqual([
+      "專案/notes.md",
+    ]);
+  });
+
   it("ignores file-looking tokens inside a web URL but still finds real paths", () => {
     const matches = findFilePaths("see https://muki.tw/a.png and ./src/b.ts").map((m) => m.text);
     expect(matches).toContain("./src/b.ts");

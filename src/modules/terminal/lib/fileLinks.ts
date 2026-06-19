@@ -15,9 +15,11 @@ export interface FilePathMatch {
 }
 
 // optional ~/ ./ ../ or / prefix, dir segments, a filename with an extension,
-// and an optional :line or :line:col suffix.
+// and an optional :line or :line:col suffix. Segment characters allow any
+// Unicode letter/number (via the u flag) so CJK file and directory names match,
+// not just ASCII; the extension itself stays ASCII.
 const FILE_PATH_RE =
-  /(?:~\/|\.{0,2}\/)?(?:[\w.\-]+\/)*[\w.\-]+\.[A-Za-z0-9]+(?::\d+(?::\d+)?)?/g;
+  /(?:~\/|\.{0,2}\/)?(?:[\p{L}\p{N}_.\-]+\/)*[\p{L}\p{N}_.\-]+\.[A-Za-z0-9]+(?::\d+(?::\d+)?)?/gu;
 
 // Web URLs are handled by the web-links addon; skip any file-looking token that
 // sits inside one so the two link providers don't fight over the same text.

@@ -31,6 +31,7 @@ import {
   shellQuotePath,
 } from "./lib/terminalClipboard";
 import { findFilePaths, resolveFilePath } from "./lib/fileLinks";
+import { buildCellPositions, type TerminalRow } from "./lib/cellPositions";
 import { terminalKeySequence } from "./lib/terminalKeymap";
 import { shouldCdToRoot } from "./lib/cwdSync";
 import { dropOverlayClassName } from "@/components/EntryDropOverlay";
@@ -306,12 +307,22 @@ export function TerminalView({
           return;
         }
         // Gather the logical line: this row plus any wrapped continuation rows,
-        // so a path that wraps across rows is still detected as one link.
-        const rows: { y: number; text: string }[] = [];
+        // so a path that wraps across rows is still detected as one link. Read
+        // the actual buffer cells (not translateToString) so column math stays
+        // in sync with xterm's own widths for wide / CJK glyphs.
+        const cellRows: TerminalRow[] = [];
         let y = lineNumber;
         let line: typeof firstLine | undefined = firstLine;
         while (line) {
-          rows.push({ y, text: line.translateToString(false) });
+          const cells: TerminalRow["cells"] = [];
+          for (let col = 0; col < line.length; col += 1) {
+            const cell = line.getCell(col);
+            cells.push({
+              chars: cell?.getChars() ?? "",
+              width: cell?.getWidth() ?? 1,
+            });
+          }
+          cellRows.push({ y, cells });
           const next = buffer.getLine(y);
           if (!next || !next.isWrapped) {
             break;
@@ -319,26 +330,26 @@ export function TerminalView({
           line = next;
           y += 1;
         }
-        const matches = findFilePaths(rows.map((r) => r.text).join(""));
+        const { text, spans } = buildCellPositions(cellRows);
+        const matches = findFilePaths(text);
         if (matches.length === 0) {
           callback(undefined);
           return;
         }
-        // Map an index in the joined text back to a buffer cell (1-based x/y).
-        const locate = (index: number): { x: number; y: number } => {
-          let acc = 0;
-          for (const row of rows) {
-            if (index < acc + row.text.length) {
-              return { x: index - acc + 1, y: row.y };
-            }
-            acc += row.text.length;
-          }
-          const last = rows[rows.length - 1];
-          return { x: last.text.length, y: last.y };
+        const lastSpan = spans[spans.length - 1];
+        // Map a string index back to a buffer cell (1-based x/y). start uses the
+        // glyph's first column; end uses its last, so wide glyphs are covered.
+        const startCell = (index: number): { x: number; y: number } => {
+          const span = spans[index] ?? lastSpan;
+          return { x: span.startX, y: span.y };
+        };
+        const endCell = (index: number): { x: number; y: number } => {
+          const span = spans[index] ?? lastSpan;
+          return { x: span.endX, y: span.y };
         };
         callback(
           matches.map((m) => ({
-            range: { start: locate(m.start), end: locate(m.end - 1) },
+            range: { start: startCell(m.start), end: endCell(m.end - 1) },
             text: m.text,
             activate: (event: MouseEvent) => {
               // Alt+click is xterm's rectangular-select gesture and can be
