@@ -95,6 +95,28 @@ body {
  */
 
 /*
+ * The terminal is different: xterm 6.0 ships its own VS Code-style scrollbar
+ * (.xterm-scrollable-element) instead of using the native overlay one, so the
+ * policy above never reaches it. Its width is JS-measured, and on macOS overlay
+ * scrollbars that measurement is 0, so split panes ended up with inconsistent
+ * (missing or overly thick) scrollbars. Force a consistent thin, rounded,
+ * semi-transparent overlay slider; xterm's own opacity transition still fades
+ * it out when idle.
+ */
+.xterm .xterm-scrollable-element > .scrollbar.vertical {
+  width: 11px !important;
+}
+.xterm .xterm-scrollable-element > .scrollbar.vertical .slider {
+  width: 6px !important;
+  left: 3px !important;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.22) !important;
+}
+.xterm .xterm-scrollable-element > .scrollbar.vertical:hover .slider {
+  background: rgba(255, 255, 255, 0.36) !important;
+}
+
+/*
  * Tailwind v4 / browsers render <button> with the default arrow cursor. Give
  * every interactive control a pointer cursor (disabled ones excepted).
  */
