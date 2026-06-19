@@ -1,123 +1,50 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyNoteDrop, dropEdge, resolveNoteDrop } from "./noteDrag";
-
-function stubRect(el: HTMLElement, top: number, height: number): void {
-  el.getBoundingClientRect = () =>
-    ({
-      top,
-      height,
-      bottom: top + height,
-      left: 0,
-      right: 0,
-      width: 0,
-      x: 0,
-      y: top,
-      toJSON: () => ({}),
-    }) as DOMRect;
-}
-
-describe("dropEdge", () => {
-  it("returns 'before' when the cursor is in the top half of a row", () => {
-    // Row spans y = 100..140 (top 100, height 40); cursor at 110 → top half.
-    expect(dropEdge(100, 40, 110)).toBe("before");
-  });
-
-  it("returns 'after' when the cursor is in the bottom half of a row", () => {
-    expect(dropEdge(100, 40, 130)).toBe("after");
-  });
-
-  it("treats the exact midpoint as 'after'", () => {
-    expect(dropEdge(100, 40, 120)).toBe("after");
-  });
-});
+import { applyNoteDrop, resolveNoteDrop } from "./noteDrag";
 
 describe("resolveNoteDrop", () => {
-  it("resolves a note row to a note target with edge position", () => {
-    const li = document.createElement("li");
-    li.setAttribute("data-note-id", "n1");
-    stubRect(li, 100, 40);
-    expect(resolveNoteDrop(li, 110)).toEqual({
-      kind: "note",
-      noteId: "n1",
-      position: "before",
-    });
-  });
-
-  it("resolves a folder header to a folder target", () => {
+  it("resolves a folder header to a folder target carrying its path", () => {
     const div = document.createElement("div");
-    div.setAttribute("data-folder-id", "f1");
-    expect(resolveNoteDrop(div, 0)).toEqual({ kind: "folder", folderId: "f1" });
+    div.setAttribute("data-folder-path", "/root/Ideas");
+    expect(resolveNoteDrop(div)).toEqual({ kind: "folder", path: "/root/Ideas" });
   });
 
-  it("resolves the bare root container to a root target", () => {
+  it("resolves the root container to a root target carrying the root path", () => {
     const root = document.createElement("div");
-    root.setAttribute("data-notes-root", "");
-    expect(resolveNoteDrop(root, 0)).toEqual({ kind: "root" });
+    root.setAttribute("data-notes-root", "/root");
+    expect(resolveNoteDrop(root)).toEqual({ kind: "root", path: "/root" });
   });
 
-  it("returns null when the cursor is outside the notes sidebar", () => {
-    expect(resolveNoteDrop(document.createElement("div"), 0)).toBeNull();
-    expect(resolveNoteDrop(null, 0)).toBeNull();
-  });
-
-  it("prefers the note row when a note sits inside a folder subtree", () => {
+  it("prefers the folder when a note row sits inside a folder subtree", () => {
     const folderWrap = document.createElement("div");
-    folderWrap.setAttribute("data-folder-id", "f1");
+    folderWrap.setAttribute("data-folder-path", "/root/Ideas");
     const li = document.createElement("li");
-    li.setAttribute("data-note-id", "n1");
-    stubRect(li, 100, 40);
+    li.setAttribute("data-note-path", "/root/Ideas/n.md");
     folderWrap.appendChild(li);
-    expect(resolveNoteDrop(li, 130)).toEqual({
-      kind: "note",
-      noteId: "n1",
-      position: "after",
-    });
+    expect(resolveNoteDrop(li)).toEqual({ kind: "folder", path: "/root/Ideas" });
+  });
+
+  it("returns null when the cursor is outside any drop zone", () => {
+    expect(resolveNoteDrop(document.createElement("div"))).toBeNull();
+    expect(resolveNoteDrop(null)).toBeNull();
   });
 });
 
 describe("applyNoteDrop", () => {
-  it("reorders relative to the target note when dropped on another note", () => {
-    const reorderNote = vi.fn();
-    const moveNote = vi.fn();
-    applyNoteDrop({ kind: "note", noteId: "target", position: "after" }, "dragged", {
-      reorderNote,
-      moveNote,
-    });
-    expect(reorderNote).toHaveBeenCalledWith("dragged", "target", "after");
-    expect(moveNote).not.toHaveBeenCalled();
-  });
-
-  it("ignores a note dropped onto itself", () => {
-    const reorderNote = vi.fn();
-    const moveNote = vi.fn();
-    applyNoteDrop({ kind: "note", noteId: "same", position: "before" }, "same", {
-      reorderNote,
-      moveNote,
-    });
-    expect(reorderNote).not.toHaveBeenCalled();
-    expect(moveNote).not.toHaveBeenCalled();
-  });
-
   it("moves the note into a folder when dropped on a folder", () => {
-    const reorderNote = vi.fn();
-    const moveNote = vi.fn();
-    applyNoteDrop({ kind: "folder", folderId: "f1" }, "dragged", { reorderNote, moveNote });
-    expect(moveNote).toHaveBeenCalledWith("dragged", "f1");
-    expect(reorderNote).not.toHaveBeenCalled();
+    const moveNote = vi.fn().mockResolvedValue("/root/Ideas/n.md");
+    applyNoteDrop({ kind: "folder", path: "/root/Ideas" }, "/root/n.md", { moveNote });
+    expect(moveNote).toHaveBeenCalledWith("/root/n.md", "/root/Ideas");
   });
 
   it("moves the note to the root when dropped on the root zone", () => {
-    const reorderNote = vi.fn();
-    const moveNote = vi.fn();
-    applyNoteDrop({ kind: "root" }, "dragged", { reorderNote, moveNote });
-    expect(moveNote).toHaveBeenCalledWith("dragged", null);
+    const moveNote = vi.fn().mockResolvedValue("/root/n.md");
+    applyNoteDrop({ kind: "root", path: "/root" }, "/root/Ideas/n.md", { moveNote });
+    expect(moveNote).toHaveBeenCalledWith("/root/Ideas/n.md", "/root");
   });
 
   it("does nothing when there is no drop target", () => {
-    const reorderNote = vi.fn();
     const moveNote = vi.fn();
-    applyNoteDrop(null, "dragged", { reorderNote, moveNote });
-    expect(reorderNote).not.toHaveBeenCalled();
+    applyNoteDrop(null, "/root/n.md", { moveNote });
     expect(moveNote).not.toHaveBeenCalled();
   });
 });

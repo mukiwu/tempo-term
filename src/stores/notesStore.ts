@@ -1,135 +1,159 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import { uid } from "@/lib/id";
+import {
+  fsCreateDir,
+  fsCreateFile,
+  fsDelete,
+  fsReadDir,
+  fsReadFile,
+  fsRename,
+  fsWriteFile,
+} from "@/modules/explorer/lib/fsBridge";
+import { fileNameForTitle, sanitizeName } from "@/modules/notes/lib/notesPaths";
+import { type NotesNode, nodesFromEntries } from "@/modules/notes/lib/notesTree";
 
 /**
- * A global, persistent notes library: the user can jot markdown notes any time,
- * organised into folders. Stored locally so it survives restarts and is
- * independent of the open workspace.
+ * Global notes backed by a user-chosen folder. The filesystem is the single
+ * source of truth: notes are `.md` files, folders are real subdirectories, and
+ * a note's identity is its absolute path. Sync is delegated to whatever the
+ * user points the folder at (a cloud drive, a Git repo); this store never
+ * manages sync, accounts, or a backend.
  */
-export interface NoteFolder {
-  id: string;
-  name: string;
-}
-
-export interface Note {
-  id: string;
-  folderId: string | null;
-  title: string;
-  content: string;
-  updatedAt: number;
-}
-
 interface NotesState {
-  folders: NoteFolder[];
-  notes: Note[];
-  createFolder: (name?: string) => string;
-  renameFolder: (id: string, name: string) => void;
-  deleteFolder: (id: string) => void;
-  createNote: (folderId?: string | null) => string;
-  updateNote: (id: string, patch: Partial<Pick<Note, "title" | "content">>) => void;
-  deleteNote: (id: string) => void;
-  /** Move a note into a folder (or to the root when folderId is null). */
-  moveNote: (id: string, folderId: string | null) => void;
-  /**
-   * Reorder: place `draggedId` just before (default) or after `targetId`,
-   * adopting its folder.
-   */
-  reorderNote: (
-    draggedId: string,
-    targetId: string,
-    position?: "before" | "after",
-  ) => void;
-  noteById: (id: string) => Note | undefined;
+  /** Folder backing the notes, or null before one is chosen. */
+  rootPath: string | null;
+  /** The current folder tree, rebuilt from disk on every mutation. */
+  tree: NotesNode[];
+  loading: boolean;
+  error: string | null;
+
+  setRoot: (path: string | null) => Promise<void>;
+  refresh: () => Promise<void>;
+  readNote: (path: string) => Promise<string>;
+  writeNote: (path: string, content: string) => Promise<void>;
+  createNote: (dirPath: string) => Promise<string>;
+  createFolder: (dirPath: string, name: string) => Promise<string>;
+  renameNote: (path: string, newTitle: string) => Promise<string>;
+  renameFolder: (path: string, newName: string) => Promise<string>;
+  deleteNote: (path: string) => Promise<void>;
+  moveNote: (path: string, targetDir: string) => Promise<string>;
 }
 
-function now(): number {
-  // App runtime only (not a workflow script), so Date is available.
-  return Date.now();
+function joinPath(dir: string, name: string): string {
+  return `${dir.replace(/\/+$/, "")}/${name}`;
 }
 
-export const NOTES_STORAGE_KEY = "tempoterm-notes";
+function parentDir(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx <= 0 ? "" : path.slice(0, idx);
+}
 
-export const useNotesStore = create<NotesState>()(
-  persist(
-    (set, get) => ({
-      folders: [],
-      notes: [],
+function baseName(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx < 0 ? path : path.slice(idx + 1);
+}
 
-      createFolder: (name) => {
-        const id = uid("folder");
-        set((state) => ({
-          folders: [
-            ...state.folders,
-            { id, name: name ?? `Folder ${state.folders.length + 1}` },
-          ],
-        }));
-        return id;
-      },
+/** Recursively read a directory into a sorted notes tree. */
+async function readTree(dir: string): Promise<NotesNode[]> {
+  const entries = await fsReadDir(dir);
+  const childrenByPath = new Map<string, NotesNode[]>();
+  for (const entry of entries) {
+    if (entry.is_dir) {
+      childrenByPath.set(entry.path, await readTree(entry.path));
+    }
+  }
+  return nodesFromEntries(entries, (folderPath) => childrenByPath.get(folderPath) ?? []);
+}
 
-      renameFolder: (id, name) =>
-        set((state) => ({
-          folders: state.folders.map((f) => (f.id === id ? { ...f, name } : f)),
-        })),
+/** Pick a free `<base> N.md` name given the filenames already in a directory. */
+async function uniqueNotePath(dirPath: string, base: string): Promise<string> {
+  const entries = await fsReadDir(dirPath);
+  const existing = new Set(entries.map((e) => e.name));
+  let name = `${base}.md`;
+  let n = 2;
+  while (existing.has(name)) {
+    name = `${base} ${n}.md`;
+    n += 1;
+  }
+  return joinPath(dirPath, name);
+}
 
-      deleteFolder: (id) =>
-        set((state) => ({
-          folders: state.folders.filter((f) => f.id !== id),
-          notes: state.notes.filter((n) => n.folderId !== id),
-        })),
+export const useNotesStore = create<NotesState>()((set, get) => ({
+  rootPath: null,
+  tree: [],
+  loading: false,
+  error: null,
 
-      createNote: (folderId = null) => {
-        const id = uid("note");
-        const note: Note = {
-          id,
-          folderId,
-          title: "Untitled",
-          content: "",
-          updatedAt: now(),
-        };
-        set((state) => ({ notes: [...state.notes, note] }));
-        return id;
-      },
+  setRoot: async (path) => {
+    set({ rootPath: path });
+    await get().refresh();
+  },
 
-      updateNote: (id, patch) =>
-        set((state) => ({
-          notes: state.notes.map((n) =>
-            n.id === id ? { ...n, ...patch, updatedAt: now() } : n,
-          ),
-        })),
+  refresh: async () => {
+    const { rootPath } = get();
+    if (!rootPath) {
+      set({ tree: [], error: null });
+      return;
+    }
+    set({ loading: true, error: null });
+    try {
+      const tree = await readTree(rootPath);
+      set({ tree, loading: false });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to read notes folder";
+      set({ loading: false, error: message });
+    }
+  },
 
-      deleteNote: (id) =>
-        set((state) => ({ notes: state.notes.filter((n) => n.id !== id) })),
+  readNote: (path) => fsReadFile(path),
 
-      moveNote: (id, folderId) =>
-        set((state) => ({
-          notes: state.notes.map((n) => (n.id === id ? { ...n, folderId } : n)),
-        })),
+  writeNote: (path, content) => fsWriteFile(path, content),
 
-      reorderNote: (draggedId, targetId, position = "before") =>
-        set((state) => {
-          if (draggedId === targetId) {
-            return state;
-          }
-          const dragged = state.notes.find((n) => n.id === draggedId);
-          const target = state.notes.find((n) => n.id === targetId);
-          if (!dragged || !target) {
-            return state;
-          }
-          const without = state.notes.filter((n) => n.id !== draggedId);
-          const targetIndex = without.findIndex((n) => n.id === targetId);
-          const insertAt = position === "after" ? targetIndex + 1 : targetIndex;
-          const moved = { ...dragged, folderId: target.folderId };
-          const next = [...without];
-          next.splice(insertAt, 0, moved);
-          return { notes: next };
-        }),
+  createNote: async (dirPath) => {
+    const path = await uniqueNotePath(dirPath, "Untitled");
+    await fsCreateFile(path);
+    await get().refresh();
+    return path;
+  },
 
-      noteById: (id) => get().notes.find((n) => n.id === id),
-    }),
-    {
-      name: NOTES_STORAGE_KEY,
-      partialize: (state) => ({ folders: state.folders, notes: state.notes }),
-    },
-  ),
-);
+  createFolder: async (dirPath, name) => {
+    const path = joinPath(dirPath, name);
+    await fsCreateDir(path);
+    await get().refresh();
+    return path;
+  },
+
+  renameNote: async (path, newTitle) => {
+    const newPath = joinPath(parentDir(path), fileNameForTitle(newTitle));
+    if (newPath === path) {
+      return path;
+    }
+    await fsRename(path, newPath);
+    await get().refresh();
+    return newPath;
+  },
+
+  renameFolder: async (path, newName) => {
+    const newPath = joinPath(parentDir(path), sanitizeName(newName));
+    if (newPath === path) {
+      return path;
+    }
+    await fsRename(path, newPath);
+    await get().refresh();
+    return newPath;
+  },
+
+  deleteNote: async (path) => {
+    await fsDelete(path);
+    await get().refresh();
+  },
+
+  moveNote: async (path, targetDir) => {
+    const newPath = joinPath(targetDir, baseName(path));
+    if (newPath === path) {
+      return path;
+    }
+    await fsRename(path, newPath);
+    await get().refresh();
+    return newPath;
+  },
+}));

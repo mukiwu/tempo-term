@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -9,30 +9,23 @@ import {
   Folder,
   Trash2,
 } from "lucide-react";
-import { useNotesStore, type Note } from "@/stores/notesStore";
+import { useNotesStore } from "@/stores/notesStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore } from "@/stores/tabsStore";
+import type { FolderNode, NoteNode, NotesNode } from "@/modules/notes/lib/notesTree";
+import { NotesEmptyState } from "./NotesEmptyState";
 import { beginNoteDrag, consumeNoteDragClick, useNoteDragStore } from "./lib/noteDrag";
 
-function NoteRow({ note, depth }: { note: Note; depth: number }) {
+function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
   const { t } = useTranslation("notes");
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
   const deleteNote = useNotesStore((s) => s.deleteNote);
-  // While a drag hovers this row, show an insertion line on the matching edge.
-  const edge = useNoteDragStore((s) =>
-    s.hover?.kind === "note" && s.hover.noteId === note.id ? s.hover.position : null,
-  );
 
   return (
     <li
-      data-note-id={note.id}
-      onPointerDown={(e) => beginNoteDrag(note.id, note.title || "Untitled", e)}
-      className={`group flex items-center ${
-        edge === "before"
-          ? "border-t-2 border-accent"
-          : edge === "after"
-            ? "border-b-2 border-accent"
-            : ""
-      }`}
+      data-note-path={note.path}
+      onPointerDown={(e) => beginNoteDrag(note.path, note.title || "Untitled", e)}
+      className="group flex items-center"
     >
       <button
         type="button"
@@ -41,18 +34,26 @@ function NoteRow({ note, depth }: { note: Note; depth: number }) {
           if (consumeNoteDragClick()) {
             return;
           }
-          openNoteTab(note.id, note.title);
+          openNoteTab(note.path, note.title || "Untitled");
         }}
         style={{ paddingLeft: depth * 12 + 10 }}
         className="flex min-w-0 flex-1 items-center gap-2 py-1 pr-2 text-left text-sm text-fg-muted hover:text-fg"
       >
         <FileText size={14} className="shrink-0 text-fg-subtle" />
         <span className="truncate">{note.title || "Untitled"}</span>
+        {note.isConflict && (
+          <span
+            title={t("conflictHint")}
+            className="shrink-0 rounded bg-warning/15 px-1 py-0.5 text-[10px] font-medium uppercase text-warning"
+          >
+            {t("conflictBadge")}
+          </span>
+        )}
       </button>
       <button
         type="button"
         aria-label={t("deleteNote")}
-        onClick={() => deleteNote(note.id)}
+        onClick={() => void deleteNote(note.path)}
         className="mr-2 rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-danger"
       >
         <Trash2 size={13} />
@@ -61,36 +62,145 @@ function NoteRow({ note, depth }: { note: Note; depth: number }) {
   );
 }
 
-export function NotesSidebar() {
+function FolderRow({ folder, depth }: { folder: FolderNode; depth: number }) {
   const { t } = useTranslation("notes");
-  const folders = useNotesStore((s) => s.folders);
-  const notes = useNotesStore((s) => s.notes);
   const createNote = useNotesStore((s) => s.createNote);
-  const createFolder = useNotesStore((s) => s.createFolder);
-  const deleteFolder = useNotesStore((s) => s.deleteFolder);
   const renameFolder = useNotesStore((s) => s.renameFolder);
+  const deleteNote = useNotesStore((s) => s.deleteNote);
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
-  // Folder the current drag is hovering over, for the drop highlight.
-  const overFolderId = useNoteDragStore((s) =>
-    s.hover?.kind === "folder" ? s.hover.folderId : null,
+  const isOver = useNoteDragStore(
+    (s) => s.hover?.kind === "folder" && s.hover.path === folder.path,
   );
 
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [editingFolder, setEditingFolder] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
-  const rootNotes = notes.filter((n) => n.folderId === null);
-
-  function newNote(folderId: string | null) {
-    const id = createNote(folderId);
-    openNoteTab(id, "Untitled");
+  function newNoteInFolder() {
+    void (async () => {
+      const path = await createNote(folder.path);
+      openNoteTab(path, "Untitled");
+    })();
   }
 
   function commitRename() {
-    if (editingFolder && draft.trim()) {
-      renameFolder(editingFolder, draft.trim());
+    const next = draft.trim();
+    if (next && next !== folder.name) {
+      void renameFolder(folder.path, next);
     }
-    setEditingFolder(null);
+    setEditing(false);
+  }
+
+  return (
+    <li>
+      <div
+        data-folder-path={folder.path}
+        className={`group flex items-center ${isOver ? "bg-accent/15" : ""}`}
+      >
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          style={{ paddingLeft: depth * 12 + 8 }}
+          className="flex shrink-0 items-center py-1 text-fg-muted hover:text-fg"
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+        </button>
+        <Folder size={14} className="mr-1.5 shrink-0 text-accent" />
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 py-0.5 text-sm text-fg outline-none"
+          />
+        ) : (
+          <span
+            onDoubleClick={() => {
+              setEditing(true);
+              setDraft(folder.name);
+            }}
+            className="min-w-0 flex-1 cursor-text truncate py-1 text-sm text-fg-muted"
+            title={t("renameFolderHint")}
+          >
+            {folder.name}
+          </span>
+        )}
+        <button
+          type="button"
+          aria-label={t("newNote")}
+          title={t("newNote")}
+          onClick={newNoteInFolder}
+          className="rounded p-0.5 text-fg-subtle hover:text-fg"
+        >
+          <FilePlus size={13} />
+        </button>
+        <button
+          type="button"
+          aria-label={t("deleteFolder")}
+          onClick={() => void deleteNote(folder.path)}
+          className="mr-2 rounded p-0.5 text-fg-subtle hover:text-danger"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+      {!collapsed && (
+        <ul>
+          {folder.children.map((child) => (
+            <NodeRow key={child.path} node={child} depth={depth + 1} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function NodeRow({ node, depth }: { node: NotesNode; depth: number }) {
+  if (node.kind === "folder") {
+    return <FolderRow folder={node} depth={depth} />;
+  }
+  return <NoteRow note={node} depth={depth} />;
+}
+
+export function NotesSidebar() {
+  const { t } = useTranslation("notes");
+  const rootPath = useSettingsStore((s) => s.notesFolderPath);
+  const tree = useNotesStore((s) => s.tree);
+  const createNote = useNotesStore((s) => s.createNote);
+  const createFolder = useNotesStore((s) => s.createFolder);
+  const openNoteTab = useTabsStore((s) => s.openNoteTab);
+  const isOverRoot = useNoteDragStore((s) => s.hover?.kind === "root");
+
+  useEffect(() => {
+    if (rootPath) {
+      void useNotesStore.getState().setRoot(rootPath);
+    }
+  }, [rootPath]);
+
+  if (!rootPath) {
+    return <NotesEmptyState />;
+  }
+
+  function newNote() {
+    if (!rootPath) {
+      return;
+    }
+    void (async () => {
+      const path = await createNote(rootPath);
+      openNoteTab(path, "Untitled");
+    })();
+  }
+
+  function newFolder() {
+    if (!rootPath) {
+      return;
+    }
+    // Ignore rejection when a folder with the default name already exists.
+    void createFolder(rootPath, "New Folder").catch(() => {});
   }
 
   return (
@@ -104,7 +214,7 @@ export function NotesSidebar() {
             type="button"
             aria-label={t("newNote")}
             title={t("newNote")}
-            onClick={() => newNote(null)}
+            onClick={newNote}
             className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
           >
             <FilePlus size={15} />
@@ -113,7 +223,7 @@ export function NotesSidebar() {
             type="button"
             aria-label={t("newFolder")}
             title={t("newFolder")}
-            onClick={() => createFolder()}
+            onClick={newFolder}
             className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
           >
             <FolderPlus size={15} />
@@ -122,85 +232,16 @@ export function NotesSidebar() {
       </div>
 
       {/* Dropping on empty space here moves a dragged note out to the root. */}
-      <div data-notes-root="" className="min-h-0 flex-1 overflow-y-auto py-1">
-        {folders.length === 0 && notes.length === 0 && (
+      <div
+        data-notes-root={rootPath}
+        className={`min-h-0 flex-1 overflow-y-auto py-1 ${isOverRoot ? "bg-accent/10" : ""}`}
+      >
+        {tree.length === 0 && (
           <p className="px-3 py-2 text-xs text-fg-subtle">{t("empty")}</p>
         )}
-
         <ul>
-          {folders.map((folder) => {
-            const folderNotes = notes.filter((n) => n.folderId === folder.id);
-            const isCollapsed = collapsed[folder.id];
-            return (
-              <li key={folder.id}>
-                <div
-                  data-folder-id={folder.id}
-                  className={`group flex items-center ${
-                    overFolderId === folder.id ? "bg-accent/15" : ""
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setCollapsed((c) => ({ ...c, [folder.id]: !c[folder.id] }))}
-                    className="flex shrink-0 items-center py-1 pl-2 text-fg-muted hover:text-fg"
-                  >
-                    {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                  </button>
-                  <Folder size={14} className="mr-1.5 shrink-0 text-accent" />
-                  {editingFolder === folder.id ? (
-                    <input
-                      autoFocus
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitRename();
-                        if (e.key === "Escape") setEditingFolder(null);
-                      }}
-                      className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 py-0.5 text-sm text-fg outline-none"
-                    />
-                  ) : (
-                    <span
-                      onDoubleClick={() => {
-                        setEditingFolder(folder.id);
-                        setDraft(folder.name);
-                      }}
-                      className="min-w-0 flex-1 cursor-text truncate py-1 text-sm text-fg-muted"
-                      title={t("renameFolderHint")}
-                    >
-                      {folder.name}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    aria-label={t("newNote")}
-                    title={t("newNote")}
-                    onClick={() => newNote(folder.id)}
-                    className="rounded p-0.5 text-fg-subtle hover:text-fg"
-                  >
-                    <FilePlus size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t("deleteFolder")}
-                    onClick={() => deleteFolder(folder.id)}
-                    className="mr-2 rounded p-0.5 text-fg-subtle hover:text-danger"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-                {!isCollapsed && (
-                  <ul>
-                    {folderNotes.map((note) => (
-                      <NoteRow key={note.id} note={note} depth={1} />
-                    ))}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-          {rootNotes.map((note) => (
-            <NoteRow key={note.id} note={note} depth={0} />
+          {tree.map((node) => (
+            <NodeRow key={node.path} node={node} depth={0} />
           ))}
         </ul>
       </div>
