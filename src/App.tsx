@@ -11,6 +11,8 @@ import { useUpdaterStore } from "@/stores/updaterStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
+import { leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { applyTheme, getTheme } from "@/themes/themes";
 
 const MIN_SIDEBAR = 180;
@@ -33,6 +35,13 @@ function App() {
   // The font report (enumerating every installed family) is loaded lazily by
   // the Fonts settings section when it opens, not at startup — the terminal's
   // default font chain already covers CJK, so a cold launch does no font work.
+
+  // Drop saved terminal scrollback for panes that no longer exist (orphans
+  // left by closed tabs/panes), keeping only the panes still in the layout.
+  useEffect(() => {
+    const keep = useTabsStore.getState().tabs.flatMap((t) => leafIds(t.paneTree));
+    void pruneTerminalHistory(keep).catch(() => {});
+  }, []);
 
   // Quietly check for a new release a few seconds after launch; the prompt only
   // appears if one actually exists, so a normal start stays uninterrupted.

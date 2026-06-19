@@ -56,7 +56,11 @@
     "description": "Adjust the gap between the terminal content and its pane edges",
     "padding": "Inner padding",
     "preview": "Preview",
-    "previewText": "$ tempo --version\nTempoTerm terminal padding preview"
+    "previewText": "$ tempo --version\nTempoTerm terminal padding preview",
+    "restoreHistory": "Restore terminal history on relaunch",
+    "restoreHistoryHint": "Reopen each terminal with its previous output (read-only), unless its shell was exited or the pane was closed",
+    "clearHistory": "Clear saved history",
+    "historyCleared": "Cleared"
   },
   "aiModel": {
     "label": "Default model",

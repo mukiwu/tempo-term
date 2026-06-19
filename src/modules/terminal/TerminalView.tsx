@@ -5,6 +5,14 @@ import { Loader2 } from "lucide-react";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import {
+  deleteTerminalHistory,
+  loadTerminalHistory,
+  saveTerminalHistory,
+  serializeBufferText,
+  trimScrollback,
+  MAX_SCROLLBACK_LINES,
+} from "./lib/terminalHistory";
+import {
   registerTerminal,
   registerTerminalPathDrop,
   unregisterTerminal,
@@ -357,7 +365,29 @@ export function TerminalView({
     safeFit();
 
     let disposed = false;
-    void openPty({
+
+    // Restore the saved scrollback (read-only history) before the shell starts,
+    // so it appears above a fresh prompt. Gated on the user setting.
+    const restoreHistory = async () => {
+      const leafId = leafIdRef.current;
+      if (!leafId || !useSettingsStore.getState().restoreTerminalHistory) {
+        return;
+      }
+      const saved = await loadTerminalHistory(leafId).catch(() => null);
+      if (disposed || !saved) {
+        return;
+      }
+      // Plain logical lines; dim the whole block grey so it reads as history,
+      // and convert "\n" to "\r\n" for the terminal.
+      term.write(`\x1b[90m${saved.replace(/\n/g, "\r\n")}\x1b[0m\r\n`);
+      term.write("\x1b[90m── previous session ──\x1b[0m\r\n");
+    };
+
+    void restoreHistory().then(() => {
+      if (disposed) {
+        return;
+      }
+      void openPty({
       cols: term.cols,
       rows: term.rows,
       cwd: cwdRef.current,
@@ -367,6 +397,12 @@ export function TerminalView({
       onExit: () => {
         if (!disposed) {
           onExitRef.current?.();
+          // The shell ended while the app is running (e.g. the user typed
+          // `exit`), so its history is no longer wanted. An app teardown sets
+          // `disposed` first, so that path keeps the history for next launch.
+          if (leafIdRef.current) {
+            void deleteTerminalHistory(leafIdRef.current);
+          }
         }
       },
     })
@@ -399,6 +435,19 @@ export function TerminalView({
         term.write(`\r\n\x1b[31mFailed to open shell: ${message}\x1b[0m\r\n`);
         setConnecting(false);
       });
+    });
+
+    // Snapshot the scrollback periodically so a crash/quit loses at most a few
+    // seconds. Overwrites the same per-pane file; gated on the user setting.
+    const snapshot = () => {
+      const leafId = leafIdRef.current;
+      if (!leafId || !useSettingsStore.getState().restoreTerminalHistory) {
+        return;
+      }
+      const data = trimScrollback(serializeBufferText(term), MAX_SCROLLBACK_LINES);
+      void saveTerminalHistory(leafId, data).catch(() => {});
+    };
+    const snapshotTimer = setInterval(snapshot, 5000);
 
     const observer = new ResizeObserver(() => {
       safeFit();
@@ -411,6 +460,7 @@ export function TerminalView({
 
     return () => {
       disposed = true;
+      clearInterval(snapshotTimer);
       observer.disconnect();
       document.removeEventListener("keydown", onKeyDownCapture, true);
       document.removeEventListener("paste", onPasteCapture, true);

@@ -1,17 +1,22 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   MAX_TERMINAL_PADDING,
   MIN_TERMINAL_PADDING,
   useSettingsStore,
 } from "@/stores/settingsStore";
+import { clearTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { getTheme } from "@/themes/themes";
 
 export function TerminalSettingsSection() {
   const { t } = useTranslation("settings");
   const terminalPadding = useSettingsStore((s) => s.terminalPadding);
   const setTerminalPadding = useSettingsStore((s) => s.setTerminalPadding);
+  const restoreTerminalHistory = useSettingsStore((s) => s.restoreTerminalHistory);
+  const setRestoreTerminalHistory = useSettingsStore((s) => s.setRestoreTerminalHistory);
   const themeId = useSettingsStore((s) => s.themeId);
   const terminal = getTheme(themeId).terminal;
+  const [cleared, setCleared] = useState(false);
 
   return (
     <section>
@@ -34,6 +39,31 @@ export function TerminalSettingsSection() {
           onChange={(e) => setTerminalPadding(Number(e.target.value))}
           className="w-64 accent-accent"
         />
+      </div>
+
+      <div className="mb-6">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
+          <input
+            type="checkbox"
+            checked={restoreTerminalHistory}
+            onChange={(e) => setRestoreTerminalHistory(e.target.checked)}
+            className="accent-accent"
+          />
+          {t("terminalSettings.restoreHistory")}
+        </label>
+        <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.restoreHistoryHint")}</p>
+        <button
+          type="button"
+          onClick={() => {
+            void clearTerminalHistory().then(() => {
+              setCleared(true);
+              setTimeout(() => setCleared(false), 1500);
+            });
+          }}
+          className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+        >
+          {cleared ? t("terminalSettings.historyCleared") : t("terminalSettings.clearHistory")}
+        </button>
       </div>
 
       {/* Live preview: an inner box inset by the chosen padding, in terminal colours */}
