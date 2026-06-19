@@ -32,7 +32,7 @@ import {
 } from "./lib/gitGraphBridge";
 import { GitGraphToolbar, type GitGraphToolbarLabels } from "./GitGraphToolbar";
 import { filterCommits } from "./lib/filterCommits";
-import { withMinDuration } from "./lib/withMinDuration";
+import { withMinDuration } from "@/lib/withMinDuration";
 import type { Branch, CommitNode, CommitRef, GraphOptions } from "./types";
 
 const PAGE_SIZE = 200;
