@@ -56,7 +56,11 @@
     "description": "調整終端機畫面與面板邊緣之間的間距",
     "padding": "內距",
     "preview": "預覽",
-    "previewText": "$ tempo --version\nTempoTerm 終端機間距預覽"
+    "previewText": "$ tempo --version\nTempoTerm 終端機間距預覽",
+    "restoreHistory": "重新啟動時還原終端機歷史",
+    "restoreHistoryHint": "重開時把每個終端機的上次輸出以唯讀方式還原,除非該 shell 已結束或分頁已關閉",
+    "clearHistory": "清除已儲存的歷史",
+    "historyCleared": "已清除"
   },
   "aiModel": {
     "label": "預設模型",

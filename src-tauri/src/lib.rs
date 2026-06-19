@@ -21,6 +21,10 @@ use modules::pty::{
     pty_close, pty_close_all, pty_cwd, pty_foreground_command, pty_open, pty_resize,
     pty_shell_name, pty_write, PtyState,
 };
+use modules::terminal_history::{
+    terminal_history_clear, terminal_history_delete, terminal_history_load,
+    terminal_history_prune, terminal_history_save,
+};
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,7 +112,12 @@ pub fn run() {
             secrets_set_key,
             secrets_delete_key,
             secrets_has_key,
-            ai_chat
+            ai_chat,
+            terminal_history_save,
+            terminal_history_load,
+            terminal_history_delete,
+            terminal_history_clear,
+            terminal_history_prune
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

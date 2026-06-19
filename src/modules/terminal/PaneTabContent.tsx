@@ -37,6 +37,7 @@ import {
   type DraggedEntry,
 } from "@/modules/explorer/lib/dragEntry";
 import { insertLinkIntoNote } from "@/modules/notes/lib/noteBus";
+import { deleteTerminalHistory } from "./lib/terminalHistory";
 import { useTabsStore, type Tab } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
@@ -200,6 +201,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   title={t("workspace.closePane")}
                   onClick={(e) => {
                     e.stopPropagation();
+                    void deleteTerminalHistory(pane.id);
                     closePane(tab.id, pane.id);
                   }}
                   className="absolute right-1.5 top-1.5 z-10 rounded bg-bg-inset/80 p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"

@@ -13,10 +13,13 @@ interface SettingsState {
   /** Inner padding (px) between the terminal content and its pane edges. */
   terminalPadding: number;
   wordWrap: boolean;
+  /** Persist each terminal's scrollback and restore it on next launch. */
+  restoreTerminalHistory: boolean;
   setLanguage: (language: SupportedLanguage) => void;
   setThemeId: (themeId: string) => void;
   setTerminalPadding: (padding: number) => void;
   toggleWordWrap: () => void;
+  setRestoreTerminalHistory: (value: boolean) => void;
 }
 
 export const SETTINGS_STORAGE_KEY = "tempoterm-settings";
@@ -35,10 +38,12 @@ export const useSettingsStore = create<SettingsState>()(
       themeId: DEFAULT_THEME_ID,
       terminalPadding: DEFAULT_TERMINAL_PADDING,
       wordWrap: false,
+      restoreTerminalHistory: true,
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
       toggleWordWrap: () => set((s) => ({ wordWrap: !s.wordWrap })),
+      setRestoreTerminalHistory: (value) => set({ restoreTerminalHistory: value }),
     }),
     {
       name: SETTINGS_STORAGE_KEY,
