@@ -61,11 +61,13 @@ function App() {
   // Stream Claude Code progress: the backend watcher emits appended transcript
   // lines, which we feed through the normalizer into the progress store.
   useEffect(() => {
+    // listen() rejects when there is no Tauri runtime (unit tests, web preview);
+    // swallow it so it never surfaces as an unhandled rejection.
     const unlisten = listen<string[]>("claude-progress:lines", (event) => {
       useProgressStore.getState().pushLines(event.payload);
-    });
+    }).catch(() => undefined);
     return () => {
-      void unlisten.then((off) => off());
+      void unlisten.then((off) => off?.());
     };
   }, []);
 
