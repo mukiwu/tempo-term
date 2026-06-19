@@ -9,6 +9,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use notify::event::ModifyKind;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -165,10 +166,16 @@ fn build_watcher(app: &AppHandle, dir: &Path, cwd: String) -> Result<Recommended
         let mut cursor = cursor_cb.lock().unwrap();
 
         // Only rescan the directory when a new session file might have appeared
-        // (a Create event) or when we don't yet have one to tail. Plain Modify
-        // events just append to the file we're already following, so reusing the
-        // stored path avoids walking the whole directory on every write.
-        if cursor.current.is_none() || matches!(event.kind, notify::EventKind::Create(_)) {
+        // or when we don't yet have one to tail. A new transcript surfaces as a
+        // Create, or (on some backends) as a rename into the directory; both are
+        // covered. Plain Modify(Data) events just append to the file we're
+        // already following, so reusing the stored path avoids walking the whole
+        // directory on every write.
+        let may_be_new_file = matches!(
+            event.kind,
+            notify::EventKind::Create(_) | notify::EventKind::Modify(ModifyKind::Name(_))
+        );
+        if cursor.current.is_none() || may_be_new_file {
             if let Some(latest) = latest_transcript(&dir_cb) {
                 if cursor.current.as_ref() != Some(&latest) {
                     cursor.current = Some(latest);
@@ -360,6 +367,24 @@ mod tests {
         let (lines, offset) = read_new_lines(&path, 100);
         assert_eq!(lines, vec!["x"]);
         assert_eq!(offset, 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tail_read_falls_back_to_the_start_on_a_multibyte_mid_character_offset() {
+        // An in-place rewrite can leave the stored offset mid-way through a
+        // multibyte char. Seeking there makes read_to_string return non-UTF-8
+        // bytes (Err), which must route through the read-from-start recovery
+        // instead of dropping bytes or panicking. "中" is 3 bytes; offset 1
+        // lands inside it.
+        let dir = temp_progress_dir("midchar");
+        let path = dir.join("session.jsonl");
+        std::fs::write(&path, "中\n").unwrap();
+
+        let (lines, offset) = read_new_lines(&path, 1);
+        assert_eq!(lines, vec!["中"]);
+        assert_eq!(offset, 4);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
