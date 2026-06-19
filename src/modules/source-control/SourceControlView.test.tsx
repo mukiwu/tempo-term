@@ -1,20 +1,26 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
-import { SourceControlView } from "./SourceControlView";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import * as gitBridge from "./lib/gitBridge";
 
 vi.mock("./lib/gitBridge", () => ({
-  gitResolveRepo: vi.fn(),
+  gitResolveRepo: vi.fn().mockResolvedValue("/repo"),
   gitStatus: vi.fn(),
-  gitStage: vi.fn(),
-  gitUnstage: vi.fn(),
-  gitCommit: vi.fn(),
-  gitLog: vi.fn(),
-  gitDiff: vi.fn(),
-  gitPush: vi.fn(),
+  gitLog: vi.fn().mockResolvedValue([]),
+  gitDiff: vi.fn().mockResolvedValue(""),
+  gitStage: vi.fn().mockResolvedValue(undefined),
+  gitUnstage: vi.fn().mockResolvedValue(undefined),
+  gitCommit: vi.fn().mockResolvedValue(undefined),
+  gitPush: vi.fn().mockResolvedValue(undefined),
 }));
+
+vi.mock("./lib/aiCommit", () => ({
+  generateCommitMessage: vi.fn().mockResolvedValue(""),
+}));
+
+import { SourceControlView } from "./SourceControlView";
+import * as gitBridge from "./lib/gitBridge";
+import type { GitStatus } from "./lib/gitBridge";
 
 describe("SourceControlView folder view", () => {
   beforeEach(() => {
@@ -89,5 +95,43 @@ describe("SourceControlView folder view", () => {
 
     // Grouped under "a/b", the row keeps a readable "dir/" label.
     expect(await screen.findByText("dir/")).toBeInTheDocument();
+  });
+});
+
+describe("SourceControlView refresh feedback", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(gitBridge.gitResolveRepo).mockResolvedValue("/repo");
+    vi.mocked(gitBridge.gitLog).mockResolvedValue([]);
+    useWorkspaceStore.setState({ rootPath: "/root" });
+  });
+
+  it("spins and disables the refresh button while a reload is in flight", async () => {
+    // Hold gitStatus pending so the refresh stays in flight while we assert.
+    let resolveStatus!: (value: GitStatus) => void;
+    vi.mocked(gitBridge.gitStatus).mockImplementation(
+      () =>
+        new Promise<GitStatus>((resolve) => {
+          resolveStatus = resolve;
+        }),
+    );
+
+    render(<SourceControlView />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /refresh/i })).toBeDisabled();
+    });
+    expect(
+      screen.getByRole("button", { name: /refresh/i }).querySelector(".animate-spin"),
+    ).not.toBeNull();
+
+    resolveStatus({ branch: "main", staged: [], unstaged: [] });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /refresh/i })).not.toBeDisabled();
+    });
+    expect(
+      screen.getByRole("button", { name: /refresh/i }).querySelector(".animate-spin"),
+    ).toBeNull();
   });
 });

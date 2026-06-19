@@ -20,7 +20,8 @@
     "fetch": "Fetch",
     "fetching": "Fetching…",
     "matches": "{{count}} matches",
-    "head": "HEAD"
+    "head": "HEAD",
+    "more": "More"
   },
   "details": {
     "author": "Author",
@@ -39,16 +40,25 @@
     "aiEmpty": "Nothing to explain"
   },
   "menu": {
-    "createBranchHere": "Create branch here…",
-    "createTagHere": "Create tag here…",
-    "cherryPick": "Cherry-pick onto current branch",
-    "revert": "Revert this commit",
-    "resetSoft": "Reset (soft) to here",
-    "resetHard": "Reset (hard) to here",
-    "checkout": "Checkout branch",
-    "merge": "Merge {{name}} into current",
-    "deleteBranch": "Delete branch",
-    "deleteTag": "Delete tag"
+    "createBranchHere": "Create branch here… (git branch)",
+    "createTagHere": "Create tag here… (git tag)",
+    "cherryPick": "Cherry-pick onto current branch (git cherry-pick)",
+    "revert": "Revert this commit (git revert)",
+    "resetSoft": "Reset (soft) to here (git reset --soft)",
+    "resetHard": "Reset (hard) to here (git reset --hard)",
+    "checkout": "Checkout branch (git checkout)",
+    "merge": "Merge {{name}} into current (git merge)",
+    "deleteBranch": "Delete branch (git branch -d)",
+    "deleteTag": "Delete tag (git tag -d)",
+    "checkoutCommit": "Checkout this commit (git checkout)",
+    "mergeCommit": "Merge this commit into current (git merge)",
+    "rebase": "Rebase current branch on this commit (git rebase)",
+    "copyHash": "Copy commit hash",
+    "copySubject": "Copy commit subject",
+    "checkoutRemote": "Checkout branch… (git checkout --track)",
+    "pull": "Pull into current branch (git pull)",
+    "deleteRemote": "Delete remote branch… (git push --delete)",
+    "copyBranchName": "Copy branch name"
   },
   "modal": {
     "cancel": "Cancel",
@@ -65,6 +75,15 @@
     "createTag": {
       "title": "Create tag at commit",
       "confirm": "Create tag"
+    },
+    "checkoutRemote": {
+      "title": "Checkout remote branch",
+      "confirm": "Checkout"
+    },
+    "deleteRemote": {
+      "title": "Delete remote branch",
+      "message": "Delete {{name}} on the remote? This cannot be undone.",
+      "confirm": "Delete"
     }
   }
 }

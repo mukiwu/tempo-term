@@ -60,7 +60,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       ref={menuRef}
       role="menu"
       style={{ position: "fixed", left: x, top: y }}
-      className="z-[200] min-w-[200px] overflow-hidden rounded-md border border-border-strong bg-bg-elevated py-1 text-sm shadow-lg"
+      className="z-[200] min-w-[200px] overflow-hidden rounded-md border border-border-strong bg-bg-elevated py-1 text-[13px] shadow-lg"
     >
       {items.map((item, index) => {
         const previous = items[index - 1];

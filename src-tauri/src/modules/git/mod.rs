@@ -666,6 +666,67 @@ pub fn reset(repo_path: &str, commit: &str, mode: Option<&str>) -> Result<(), St
     run_git(repo_path, &["reset", flag, commit]).map(|_| ())
 }
 
+/// Rebase the current branch onto `commit`.
+pub fn rebase(repo_path: &str, commit: &str) -> Result<(), String> {
+    let commit = commit.trim();
+    if commit.is_empty() {
+        return Err("commit hash is required".to_string());
+    }
+    ensure_not_flag(commit)?;
+    run_git(repo_path, &["rebase", commit]).map(|_| ())
+}
+
+/// Create a local branch `local` tracking `remote_ref` (e.g. "origin/feat/x")
+/// and switch to it. Checking out a remote ref directly would detach HEAD, so a
+/// tracking branch is created instead.
+pub fn branch_checkout_track(
+    repo_path: &str,
+    local: &str,
+    remote_ref: &str,
+) -> Result<(), String> {
+    let local = local.trim();
+    let remote_ref = remote_ref.trim();
+    if local.is_empty() {
+        return Err("branch name is required".to_string());
+    }
+    if remote_ref.is_empty() {
+        return Err("remote ref is required".to_string());
+    }
+    ensure_not_flag(local)?;
+    ensure_not_flag(remote_ref)?;
+    run_git(repo_path, &["checkout", "-b", local, "--track", remote_ref]).map(|_| ())
+}
+
+/// Pull `branch` from `remote` into the current branch (fetch + merge).
+pub fn pull(repo_path: &str, remote: &str, branch: &str) -> Result<(), String> {
+    let remote = remote.trim();
+    let branch = branch.trim();
+    if remote.is_empty() {
+        return Err("remote is required".to_string());
+    }
+    if branch.is_empty() {
+        return Err("branch is required".to_string());
+    }
+    ensure_not_flag(remote)?;
+    ensure_not_flag(branch)?;
+    run_git(repo_path, &["pull", remote, branch]).map(|_| ())
+}
+
+/// Delete `branch` on `remote` (git push <remote> --delete <branch>).
+pub fn push_delete(repo_path: &str, remote: &str, branch: &str) -> Result<(), String> {
+    let remote = remote.trim();
+    let branch = branch.trim();
+    if remote.is_empty() {
+        return Err("remote is required".to_string());
+    }
+    if branch.is_empty() {
+        return Err("branch is required".to_string());
+    }
+    ensure_not_flag(remote)?;
+    ensure_not_flag(branch)?;
+    run_git(repo_path, &["push", remote, "--delete", branch]).map(|_| ())
+}
+
 /// 一個 commit 的完整訊息與變更檔案。檔案清單對第一個 parent 取差異，
 /// 一般 commit 等同 `git show`，merge 顯示相對主線帶進來的變更。
 /// root commit(無 parent)退回 `--root` 模式。
@@ -802,6 +863,30 @@ pub fn git_cherry_pick(repo_path: String, commit: String) -> Result<(), String> 
 #[tauri::command]
 pub fn git_reset(repo_path: String, commit: String, mode: Option<String>) -> Result<(), String> {
     reset(&repo_path, &commit, mode.as_deref())
+}
+
+#[tauri::command]
+pub fn git_rebase(repo_path: String, commit: String) -> Result<(), String> {
+    rebase(&repo_path, &commit)
+}
+
+#[tauri::command]
+pub fn git_branch_checkout_track(
+    repo_path: String,
+    local: String,
+    remote_ref: String,
+) -> Result<(), String> {
+    branch_checkout_track(&repo_path, &local, &remote_ref)
+}
+
+#[tauri::command]
+pub fn git_pull(repo_path: String, remote: String, branch: String) -> Result<(), String> {
+    pull(&repo_path, &remote, &branch)
+}
+
+#[tauri::command]
+pub fn git_push_delete(repo_path: String, remote: String, branch: String) -> Result<(), String> {
+    push_delete(&repo_path, &remote, &branch)
 }
 
 #[tauri::command]
@@ -978,6 +1063,64 @@ mod tests {
         assert!(ensure_not_flag("a1b2c3d").is_ok());
         assert!(ensure_not_flag("-x").is_err());
         assert!(ensure_not_flag("--upload-pack=evil").is_err());
+    }
+
+    #[test]
+    fn remote_branch_actions_with_a_local_bare_remote() {
+        // A bare repo on disk stands in for a real remote so push/pull/delete
+        // run fully offline.
+        let bare = temp_repo_dir("remote-bare");
+        let bare_path = bare.to_string_lossy().to_string();
+        run_git(&bare_path, &["init", "--bare", "-b", "main"]).unwrap();
+
+        let work = temp_repo_dir("remote-work");
+        let path = work.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.name", "Test"]).unwrap();
+        run_git(&path, &["config", "user.email", "test@example.com"]).unwrap();
+        std::fs::write(work.join("a.txt"), "one\n").unwrap();
+        run_git(&path, &["add", "a.txt"]).unwrap();
+        run_git(&path, &["commit", "-m", "first"]).unwrap();
+        run_git(&path, &["remote", "add", "origin", &bare_path]).unwrap();
+        run_git(&path, &["push", "-u", "origin", "main"]).unwrap();
+
+        // A second branch pushed to the remote, then fetched so origin/feature
+        // shows up as a remote-tracking ref.
+        run_git(&path, &["checkout", "-b", "feature"]).unwrap();
+        std::fs::write(work.join("a.txt"), "two\n").unwrap();
+        run_git(&path, &["commit", "-am", "second"]).unwrap();
+        run_git(&path, &["push", "origin", "feature"]).unwrap();
+        run_git(&path, &["checkout", "main"]).unwrap();
+        run_git(&path, &["fetch", "origin"]).unwrap();
+
+        // Checkout the remote branch as a local tracking branch.
+        branch_checkout_track(&path, "feature-local", "origin/feature").unwrap();
+        assert!(branches(&path)
+            .unwrap()
+            .iter()
+            .any(|b| b.name == "feature-local" && b.is_current && !b.is_remote));
+
+        // Pull main from the remote (already up to date) succeeds.
+        run_git(&path, &["checkout", "main"]).unwrap();
+        pull(&path, "origin", "main").unwrap();
+
+        // Rebasing onto an ancestor (HEAD) is a no-op that still succeeds.
+        rebase(&path, "HEAD").unwrap();
+
+        // Delete the feature branch on the remote; it disappears from ls-remote.
+        push_delete(&path, "origin", "feature").unwrap();
+        let remote_heads = run_git(&path, &["ls-remote", "--heads", "origin"]).unwrap();
+        assert!(!remote_heads.contains("refs/heads/feature"));
+        assert!(remote_heads.contains("refs/heads/main"));
+
+        // Empty-arg guards surface as errors instead of running git.
+        assert!(branch_checkout_track(&path, "  ", "origin/feature").is_err());
+        assert!(pull(&path, "origin", "  ").is_err());
+        assert!(push_delete(&path, "  ", "feature").is_err());
+        assert!(rebase(&path, "  ").is_err());
+
+        let _ = std::fs::remove_dir_all(&work);
+        let _ = std::fs::remove_dir_all(&bare);
     }
 
     fn temp_repo_dir(tag: &str) -> std::path::PathBuf {

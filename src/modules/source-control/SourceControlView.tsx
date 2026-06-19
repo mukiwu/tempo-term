@@ -27,10 +27,15 @@ import {
 } from "./lib/gitBridge";
 import { groupByFolder } from "./lib/groupByFolder";
 import { generateCommitMessage } from "./lib/aiCommit";
-
-type ViewMode = "flat" | "folder";
+import { withMinDuration } from "@/lib/withMinDuration";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
+
+type ViewMode = "flat" | "folder";
+
+// Local git reads finish almost instantly; keep the refresh spinner up at least
+// this long so the feedback is perceptible.
+const MIN_REFRESH_MS = 400;
 
 const STATUS_COLOR: Record<string, string> = {
   M: "text-warning",
@@ -180,6 +185,7 @@ export function SourceControlView() {
   const [generating, setGenerating] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("flat");
+  const [refreshing, setRefreshing] = useState(false);
   const providerId = useChatStore((s) => s.providerId);
   const model = useChatStore((s) => s.model);
 
@@ -187,11 +193,19 @@ export function SourceControlView() {
     if (!repoPath) {
       return;
     }
+    setRefreshing(true);
     try {
-      setStatus(await gitStatus(repoPath));
-      setHistory(await gitLog(repoPath, 20));
+      await withMinDuration(
+        (async () => {
+          setStatus(await gitStatus(repoPath));
+          setHistory(await gitLog(repoPath, 20));
+        })(),
+        MIN_REFRESH_MS,
+      );
     } catch {
       // ignore transient git errors
+    } finally {
+      setRefreshing(false);
     }
   }, [repoPath]);
 
@@ -284,9 +298,10 @@ export function SourceControlView() {
             aria-label={t("refresh")}
             title={t("refresh")}
             onClick={() => void refresh()}
-            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+            disabled={refreshing}
+            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg disabled:opacity-50"
           >
-            <RefreshCw size={14} />
+            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
           </button>
         </div>
       </div>

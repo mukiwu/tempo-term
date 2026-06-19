@@ -1,14 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  GitBranch,
-  GitCommit,
-  GitMerge,
-  RotateCcw,
-  Tag,
-  Trash2,
-  Undo2,
-} from "lucide-react";
+import { GitCommit } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { Resizer } from "@/components/Resizer";
 import { gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
@@ -18,6 +10,7 @@ import { CommitInputModal, type InputField } from "./CommitInputModal";
 import { CommitDetailsPanel, type CommitDetailsLabels } from "./CommitDetailsPanel";
 import {
   gitBranchCheckout,
+  gitBranchCheckoutTrack,
   gitBranchCreateAt,
   gitBranchDelete,
   gitBranches,
@@ -25,6 +18,9 @@ import {
   gitFetch,
   gitGraphLog,
   gitMerge,
+  gitPull,
+  gitPushDelete,
+  gitRebase,
   gitReset,
   gitRevert,
   gitTagCreate,
@@ -32,9 +28,15 @@ import {
 } from "./lib/gitGraphBridge";
 import { GitGraphToolbar, type GitGraphToolbarLabels } from "./GitGraphToolbar";
 import { filterCommits } from "./lib/filterCommits";
+import { buildCommitMenu, buildRefMenu } from "./lib/contextMenuItems";
+import { splitRemoteRef } from "./lib/remoteRef";
+import { withMinDuration } from "@/lib/withMinDuration";
 import type { Branch, CommitNode, CommitRef, GraphOptions } from "./types";
 
 const PAGE_SIZE = 200;
+// Local git reloads finish almost instantly; keep the busy spinner up at least
+// this long so the refresh feedback is actually perceptible.
+const MIN_BUSY_MS = 400;
 
 type MenuTarget =
   | { type: "commit"; commit: CommitNode; x: number; y: number }
@@ -42,8 +44,10 @@ type MenuTarget =
 
 interface ModalState {
   title: string;
+  message?: string;
   fields: InputField[];
   confirmLabel: string;
+  confirmDanger?: boolean;
   onConfirm: (values: Record<string, string>) => void;
 }
 
@@ -84,6 +88,9 @@ export function GitGraphTabContent() {
   const [includeStashes, setIncludeStashes] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [fetching, setFetching] = useState(false);
+  // Any action that reloads the graph (refresh button + context-menu git ops)
+  // flips this so the refresh icon spins while the reload is in flight.
+  const [busy, setBusy] = useState(false);
 
   const options: GraphOptions = {
     branch: selectedBranch,
@@ -165,11 +172,19 @@ export function GitGraphTabContent() {
         return;
       }
       setError(null);
+      setBusy(true);
       try {
-        await action();
-        await reload(repo, limit, options);
+        await withMinDuration(
+          (async () => {
+            await action();
+            await reload(repo, limit, options);
+          })(),
+          MIN_BUSY_MS,
+        );
       } catch (err: unknown) {
         setError(getErrorMessage(err));
+      } finally {
+        setBusy(false);
       }
     },
     [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes],
@@ -229,6 +244,7 @@ export function GitGraphTabContent() {
     fetching: t("toolbar.fetching"),
     matches: t("toolbar.matches"),
     head: t("toolbar.head"),
+    more: t("toolbar.more"),
   };
 
   const persistDetailsHeight = useCallback(() => {
@@ -262,134 +278,132 @@ export function GitGraphTabContent() {
     aiEmpty: t("details.aiEmpty"),
   };
 
-  // Build the right-click menu for a commit node.
-  const commitMenuItems = (commit: CommitNode): ContextMenuItem[] => [
-    {
-      id: "branchHere",
-      label: t("menu.createBranchHere"),
-      icon: GitBranch,
-      group: 0,
-      onSelect: () =>
-        setModal({
-          title: t("modal.createBranch.title"),
-          confirmLabel: t("modal.createBranch.confirm"),
-          fields: [
-            {
-              key: "name",
-              label: t("modal.branchName"),
-              placeholder: t("modal.branchPlaceholder"),
-              required: true,
-            },
-          ],
-          onConfirm: (values) =>
-            void runAction(() => gitBranchCreateAt(repo!, values.name, commit.hash)),
-        }),
-    },
-    {
-      id: "tagHere",
-      label: t("menu.createTagHere"),
-      icon: Tag,
-      group: 0,
-      onSelect: () =>
-        setModal({
-          title: t("modal.createTag.title"),
-          confirmLabel: t("modal.createTag.confirm"),
-          fields: [
-            {
-              key: "name",
-              label: t("modal.tagName"),
-              placeholder: t("modal.tagPlaceholder"),
-              required: true,
-            },
-            {
-              key: "message",
-              label: t("modal.tagMessage"),
-              placeholder: t("modal.tagMessagePlaceholder"),
-              multiline: true,
-            },
-          ],
-          onConfirm: (values) =>
-            void runAction(() =>
-              gitTagCreate(repo!, values.name, commit.hash, values.message),
-            ),
-        }),
-    },
-    {
-      id: "cherryPick",
-      label: t("menu.cherryPick"),
-      icon: GitCommit,
-      group: 1,
-      onSelect: () => void runAction(() => gitCherryPick(repo!, commit.hash)),
-    },
-    {
-      id: "revert",
-      label: t("menu.revert"),
-      icon: Undo2,
-      group: 1,
-      onSelect: () => void runAction(() => gitRevert(repo!, commit.hash)),
-    },
-    {
-      id: "resetSoft",
-      label: t("menu.resetSoft"),
-      icon: RotateCcw,
-      group: 2,
-      onSelect: () => void runAction(() => gitReset(repo!, commit.hash, "soft")),
-    },
-    {
-      id: "resetHard",
-      label: t("menu.resetHard"),
-      icon: RotateCcw,
-      group: 2,
-      danger: true,
-      onSelect: () => void runAction(() => gitReset(repo!, commit.hash, "hard")),
-    },
-  ];
+  const openCreateBranchModal = (commit: CommitNode) =>
+    setModal({
+      title: t("modal.createBranch.title"),
+      confirmLabel: t("modal.createBranch.confirm"),
+      fields: [
+        {
+          key: "name",
+          label: t("modal.branchName"),
+          placeholder: t("modal.branchPlaceholder"),
+          required: true,
+        },
+      ],
+      onConfirm: (values) =>
+        void runAction(() => gitBranchCreateAt(repo!, values.name, commit.hash)),
+    });
 
-  // Build the right-click menu for a branch / tag / HEAD decoration.
-  const refMenuItems = (ref: CommitRef): ContextMenuItem[] => {
-    if (ref.kind === "tag") {
-      return [
+  const openCreateTagModal = (commit: CommitNode) =>
+    setModal({
+      title: t("modal.createTag.title"),
+      confirmLabel: t("modal.createTag.confirm"),
+      fields: [
         {
-          id: "deleteTag",
-          label: t("menu.deleteTag"),
-          icon: Trash2,
-          group: 0,
-          danger: true,
-          onSelect: () => void runAction(() => gitTagDelete(repo!, ref.name)),
-        },
-      ];
-    }
-    // head = current branch (no checkout/merge of itself), branch = other local.
-    const items: ContextMenuItem[] = [];
-    if (ref.kind === "branch") {
-      items.push(
-        {
-          id: "checkout",
-          label: t("menu.checkout"),
-          icon: GitBranch,
-          group: 0,
-          onSelect: () => void runAction(() => gitBranchCheckout(repo!, ref.name)),
+          key: "name",
+          label: t("modal.tagName"),
+          placeholder: t("modal.tagPlaceholder"),
+          required: true,
         },
         {
-          id: "merge",
-          label: t("menu.merge", { name: ref.name }),
-          icon: GitMerge,
-          group: 0,
-          onSelect: () => void runAction(() => gitMerge(repo!, ref.name)),
+          key: "message",
+          label: t("modal.tagMessage"),
+          placeholder: t("modal.tagMessagePlaceholder"),
+          multiline: true,
         },
-        {
-          id: "deleteBranch",
-          label: t("menu.deleteBranch"),
-          icon: Trash2,
-          group: 1,
-          danger: true,
-          onSelect: () =>
-            void runAction(() => gitBranchDelete(repo!, ref.name, true)),
+      ],
+      onConfirm: (values) =>
+        void runAction(() => gitTagCreate(repo!, values.name, commit.hash, values.message)),
+    });
+
+  // Build the right-click menu for a commit node.
+  const commitMenuItems = (commit: CommitNode): ContextMenuItem[] =>
+    buildCommitMenu(
+      {
+        addTag: t("menu.createTagHere"),
+        createBranch: t("menu.createBranchHere"),
+        checkout: t("menu.checkoutCommit"),
+        cherryPick: t("menu.cherryPick"),
+        revert: t("menu.revert"),
+        merge: t("menu.mergeCommit"),
+        rebase: t("menu.rebase"),
+        resetSoft: t("menu.resetSoft"),
+        resetHard: t("menu.resetHard"),
+        copyHash: t("menu.copyHash"),
+        copySubject: t("menu.copySubject"),
+      },
+      {
+        onAddTag: () => openCreateTagModal(commit),
+        onCreateBranch: () => openCreateBranchModal(commit),
+        onCheckout: () => void runAction(() => gitBranchCheckout(repo!, commit.hash)),
+        onCherryPick: () => void runAction(() => gitCherryPick(repo!, commit.hash)),
+        onRevert: () => void runAction(() => gitRevert(repo!, commit.hash)),
+        onMerge: () => void runAction(() => gitMerge(repo!, commit.hash)),
+        onRebase: () => void runAction(() => gitRebase(repo!, commit.hash)),
+        onResetSoft: () => void runAction(() => gitReset(repo!, commit.hash, "soft")),
+        onResetHard: () => void runAction(() => gitReset(repo!, commit.hash, "hard")),
+        onCopyHash: () => void navigator.clipboard.writeText(commit.hash),
+        onCopySubject: () => void navigator.clipboard.writeText(commit.message),
+      },
+    );
+
+  // Build the right-click menu for a branch / tag / remote / HEAD decoration.
+  const refMenuItems = (ref: CommitRef): ContextMenuItem[] =>
+    buildRefMenu(
+      ref,
+      {
+        checkout: t("menu.checkout"),
+        merge: t("menu.merge", { name: ref.name }),
+        deleteBranch: t("menu.deleteBranch"),
+        deleteTag: t("menu.deleteTag"),
+        checkoutRemote: t("menu.checkoutRemote"),
+        mergeRemote: t("menu.merge", { name: ref.name }),
+        pull: t("menu.pull"),
+        deleteRemote: t("menu.deleteRemote"),
+        copyBranchName: t("menu.copyBranchName"),
+      },
+      {
+        onCheckout: () => void runAction(() => gitBranchCheckout(repo!, ref.name)),
+        onMerge: () => void runAction(() => gitMerge(repo!, ref.name)),
+        onDeleteBranch: () => void runAction(() => gitBranchDelete(repo!, ref.name, true)),
+        onDeleteTag: () => void runAction(() => gitTagDelete(repo!, ref.name)),
+        onCheckoutRemote: () => {
+          const { branch } = splitRemoteRef(ref.name);
+          setModal({
+            title: t("modal.checkoutRemote.title"),
+            confirmLabel: t("modal.checkoutRemote.confirm"),
+            fields: [
+              {
+                key: "name",
+                label: t("modal.branchName"),
+                placeholder: t("modal.branchPlaceholder"),
+                required: true,
+                defaultValue: branch,
+              },
+            ],
+            onConfirm: (values) =>
+              void runAction(() => gitBranchCheckoutTrack(repo!, values.name, ref.name)),
+          });
         },
-      );
-    }
-    return items;
-  };
+        onMergeRemote: () => void runAction(() => gitMerge(repo!, ref.name)),
+        onPull: () => {
+          const { remote, branch } = splitRemoteRef(ref.name);
+          void runAction(() => gitPull(repo!, remote, branch));
+        },
+        onDeleteRemote: () => {
+          const { remote, branch } = splitRemoteRef(ref.name);
+          setModal({
+            title: t("modal.deleteRemote.title"),
+            message: t("modal.deleteRemote.message", { name: ref.name }),
+            confirmLabel: t("modal.deleteRemote.confirm"),
+            confirmDanger: true,
+            fields: [],
+            onConfirm: () => void runAction(() => gitPushDelete(repo!, remote, branch)),
+          });
+        },
+        onCopyBranchName: () => void navigator.clipboard.writeText(ref.name),
+      },
+    );
 
   if (resolved && !repo) {
     return (
@@ -432,6 +446,7 @@ export function GitGraphTabContent() {
           onRefresh={() => void runAction(async () => {})}
           onFetch={() => void handleFetch()}
           fetching={fetching}
+          refreshing={busy}
           currentBranch={currentBranch}
           labels={toolbarLabels}
         />
@@ -498,8 +513,10 @@ export function GitGraphTabContent() {
         <CommitInputModal
           open
           title={modal.title}
+          message={modal.message}
           fields={modal.fields}
           confirmLabel={modal.confirmLabel}
+          confirmDanger={modal.confirmDanger}
           cancelLabel={t("modal.cancel")}
           onConfirm={(values) => {
             modal.onConfirm(values);

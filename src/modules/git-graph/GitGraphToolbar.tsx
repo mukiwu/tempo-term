@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   DownloadCloud,
+  MoreHorizontal,
   RefreshCw,
   Search,
   Settings2,
@@ -9,6 +10,12 @@ import {
 } from "lucide-react";
 import { Combobox } from "@/components/Combobox";
 import type { Branch } from "./types";
+
+// Below this measured toolbar width the layout switches to compact: the action
+// icons fold into a single overflow menu. Sized to the point where the roomy
+// row (branch label + combobox + remote checkbox + four icons + HEAD text) just
+// begins to crowd in a split panel.
+const COMPACT_WIDTH = 620;
 
 export interface GitGraphToolbarLabels {
   branches: string;
@@ -24,6 +31,7 @@ export interface GitGraphToolbarLabels {
   fetching: string;
   matches: string;
   head: string;
+  more: string;
 }
 
 interface GitGraphToolbarProps {
@@ -42,6 +50,7 @@ interface GitGraphToolbarProps {
   onRefresh: () => void;
   onFetch: () => void;
   fetching: boolean;
+  refreshing: boolean;
   currentBranch: string;
   labels: GitGraphToolbarLabels;
 }
@@ -62,11 +71,33 @@ export function GitGraphToolbar({
   onRefresh,
   onFetch,
   fetching,
+  refreshing,
   currentBranch,
   labels,
 }: GitGraphToolbarProps) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const measured = entries[0]?.contentRect.width;
+      if (typeof measured === "number") {
+        setWidth(measured);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const isCompact = width !== null && width < COMPACT_WIDTH;
 
   const locals = branches.filter((b) => !b.isRemote);
   const remotes = branches.filter((b) => b.isRemote);
@@ -80,36 +111,54 @@ export function GitGraphToolbar({
     ...(includeRemotes ? remotes.map((b) => b.name) : []),
   ];
 
-  return (
-    <div className="relative flex items-center justify-between gap-3 rounded-lg border border-border bg-bg-inset px-3 py-2">
-      {/* 左側：分支下拉 + 遠端開關 */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-xs text-fg-subtle">
-          <span>{labels.branches}:</span>
-          <Combobox
-            value={selectedBranch ?? labels.showAll}
-            options={branchOptions}
-            onChange={(v) => onSelectBranch(v === labels.showAll ? null : v)}
-            ariaLabel={labels.branches}
-            className="w-48"
-          />
-        </div>
+  // Toggles render either as the gear popover (roomy) or rows in the overflow
+  // menu (compact). Remote-branches lives here too once the toolbar is compact.
+  const toggles: ToggleRowProps[] = [
+    { label: labels.showTags, checked: includeTags, onChange: onToggleTags },
+    { label: labels.showStashes, checked: includeStashes, onChange: onToggleStashes },
+  ];
 
-        <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-fg-muted">
-          <input
-            type="checkbox"
-            checked={includeRemotes}
-            onChange={(e) => onToggleRemotes(e.target.checked)}
-            className="accent-accent"
-          />
-          <span>{labels.showRemoteBranches}</span>
-        </label>
+  // In compact mode an open search input needs the whole row, so the branch
+  // combobox steps aside until search closes.
+  const showBranchControls = !(isCompact && searchOpen);
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative flex items-center justify-between gap-3 rounded-lg border border-border bg-bg-inset px-3 py-2"
+    >
+      {/* 左側：分支下拉 + 遠端開關（compact 時遠端開關移進 ⋯ 選單） */}
+      <div className="flex min-w-0 items-center gap-3">
+        {showBranchControls && (
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
+            <span className="shrink-0">{labels.branches}:</span>
+            <Combobox
+              value={selectedBranch ?? labels.showAll}
+              options={branchOptions}
+              onChange={(v) => onSelectBranch(v === labels.showAll ? null : v)}
+              ariaLabel={labels.branches}
+              className="w-48"
+            />
+          </div>
+        )}
+
+        {!isCompact && (
+          <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-fg-muted">
+            <input
+              type="checkbox"
+              checked={includeRemotes}
+              onChange={(e) => onToggleRemotes(e.target.checked)}
+              className="accent-accent"
+            />
+            <span>{labels.showRemoteBranches}</span>
+          </label>
+        )}
       </div>
 
-      {/* 右側：搜尋 + 顯示選項 + Refresh + Fetch + HEAD */}
-      <div className="flex items-center gap-2">
+      {/* 右側：搜尋一直在；其餘 compact 時收進 ⋯ */}
+      <div className="flex min-w-0 items-center gap-0.5">
         {searchOpen ? (
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1">
             <input
               autoFocus
               value={searchQuery}
@@ -145,60 +194,120 @@ export function GitGraphToolbar({
           </button>
         )}
 
-        <div className="relative">
-          <button
-            type="button"
-            title={labels.displayOptions}
-            onClick={() => setOptionsOpen((v) => !v)}
-            className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
-          >
-            <Settings2 className="h-4 w-4" />
-          </button>
-          {optionsOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-20"
-                onClick={() => setOptionsOpen(false)}
-                aria-hidden="true"
-              />
-              <div className="absolute right-0 z-30 mt-1 w-44 rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg">
-                <ToggleRow
-                  label={labels.showTags}
-                  checked={includeTags}
-                  onChange={onToggleTags}
+        {isCompact ? (
+          <div className="relative">
+            <button
+              type="button"
+              title={labels.more}
+              aria-label={labels.more}
+              aria-expanded={overflowOpen}
+              onClick={() => setOverflowOpen((v) => !v)}
+              className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {overflowOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setOverflowOpen(false)}
+                  aria-hidden="true"
                 />
-                <ToggleRow
-                  label={labels.showStashes}
-                  checked={includeStashes}
-                  onChange={onToggleStashes}
-                />
-              </div>
-            </>
-          )}
-        </div>
+                <div className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg">
+                  <div className="px-2 py-1.5 font-mono text-[11px] text-fg-subtle">
+                    {labels.head}: {currentBranch}
+                  </div>
+                  <ActionRow
+                    icon={
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+                      />
+                    }
+                    label={labels.refresh}
+                    disabled={refreshing}
+                    onClick={() => {
+                      setOverflowOpen(false);
+                      onRefresh();
+                    }}
+                  />
+                  <ActionRow
+                    icon={
+                      <DownloadCloud
+                        className={`h-3.5 w-3.5 ${fetching ? "animate-pulse" : ""}`}
+                      />
+                    }
+                    label={fetching ? labels.fetching : labels.fetch}
+                    disabled={fetching}
+                    onClick={() => {
+                      setOverflowOpen(false);
+                      onFetch();
+                    }}
+                  />
+                  <div className="my-1 border-t border-border" />
+                  <ToggleRow
+                    label={labels.showRemoteBranches}
+                    checked={includeRemotes}
+                    onChange={onToggleRemotes}
+                  />
+                  {toggles.map((t) => (
+                    <ToggleRow key={t.label} {...t} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="relative">
+              <button
+                type="button"
+                title={labels.displayOptions}
+                onClick={() => setOptionsOpen((v) => !v)}
+                className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+              >
+                <Settings2 className="h-4 w-4" />
+              </button>
+              {optionsOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-20"
+                    onClick={() => setOptionsOpen(false)}
+                    aria-hidden="true"
+                  />
+                  <div className="absolute right-0 z-30 mt-1 w-44 rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg">
+                    {toggles.map((t) => (
+                      <ToggleRow key={t.label} {...t} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
 
-        <button
-          type="button"
-          title={labels.refresh}
-          onClick={onRefresh}
-          className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </button>
+            <button
+              type="button"
+              title={labels.refresh}
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+            </button>
 
-        <button
-          type="button"
-          title={fetching ? labels.fetching : labels.fetch}
-          onClick={onFetch}
-          disabled={fetching}
-          className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:opacity-50"
-        >
-          <DownloadCloud className={`h-4 w-4 ${fetching ? "animate-pulse" : ""}`} />
-        </button>
+            <button
+              type="button"
+              title={fetching ? labels.fetching : labels.fetch}
+              onClick={onFetch}
+              disabled={fetching}
+              className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:opacity-50"
+            >
+              <DownloadCloud className={`h-4 w-4 ${fetching ? "animate-pulse" : ""}`} />
+            </button>
 
-        <span className="ml-1 font-mono text-[11px] text-fg-subtle">
-          {labels.head}: {currentBranch}
-        </span>
+            <span className="ml-1 whitespace-nowrap font-mono text-[11px] text-fg-subtle">
+              {labels.head}: {currentBranch}
+            </span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -221,6 +330,27 @@ function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
     >
       <span>{label}</span>
       {checked && <Check className="h-3.5 w-3.5 text-accent" />}
+    </button>
+  );
+}
+
+interface ActionRowProps {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+function ActionRow({ icon, label, onClick, disabled = false }: ActionRowProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-fg-muted hover:bg-bg-inset hover:text-fg disabled:opacity-50"
+    >
+      <span className="text-fg-subtle">{icon}</span>
+      <span>{label}</span>
     </button>
   );
 }

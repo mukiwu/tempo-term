@@ -17,10 +17,11 @@ use modules::clipboard::{
     terminal_prepare_clipboard_image_attachment, terminal_save_dropped_image,
 };
 use modules::git::{
-    git_branch_checkout, git_branch_create_at, git_branch_delete, git_branches, git_cherry_pick,
-    git_commit, git_commit_details, git_commit_file_diff, git_diff, git_fetch, git_graph_log, git_log,
-    git_merge, git_push, git_reset, git_resolve_repo, git_revert, git_stage, git_status,
-    git_tag_create, git_tag_delete, git_unstage,
+    git_branch_checkout, git_branch_checkout_track, git_branch_create_at, git_branch_delete,
+    git_branches, git_cherry_pick, git_commit, git_commit_details, git_commit_file_diff, git_diff,
+    git_fetch, git_graph_log, git_log, git_merge, git_pull, git_push, git_push_delete, git_rebase,
+    git_reset, git_resolve_repo, git_revert, git_stage, git_status, git_tag_create, git_tag_delete,
+    git_unstage,
 };
 use modules::secrets::{secrets_delete_key, secrets_has_key, secrets_set_key};
 use modules::pty::{
@@ -134,6 +135,10 @@ pub fn run() {
             git_revert,
             git_cherry_pick,
             git_reset,
+            git_rebase,
+            git_branch_checkout_track,
+            git_pull,
+            git_push_delete,
             git_commit_details,
             git_commit_file_diff,
             secrets_set_key,

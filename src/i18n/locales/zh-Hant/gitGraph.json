@@ -20,7 +20,8 @@
     "fetch": "抓取遠端",
     "fetching": "抓取中…",
     "matches": "{{count}} 筆符合",
-    "head": "HEAD"
+    "head": "HEAD",
+    "more": "更多"
   },
   "details": {
     "author": "作者",
@@ -39,16 +40,25 @@
     "aiEmpty": "沒有可解讀的差異"
   },
   "menu": {
-    "createBranchHere": "在這裡建立分支…",
-    "createTagHere": "在這裡建立標籤…",
-    "cherryPick": "揀選到目前分支",
-    "revert": "還原這次提交",
-    "resetSoft": "軟重置到這裡",
-    "resetHard": "硬重置到這裡",
-    "checkout": "切換到此分支",
-    "merge": "把 {{name}} 合併進目前分支",
-    "deleteBranch": "刪除分支",
-    "deleteTag": "刪除標籤"
+    "createBranchHere": "在這裡建立分支… (git branch)",
+    "createTagHere": "在這裡建立標籤… (git tag)",
+    "cherryPick": "揀選到目前分支 (git cherry-pick)",
+    "revert": "還原這次提交 (git revert)",
+    "resetSoft": "軟重置到這裡 (git reset --soft)",
+    "resetHard": "硬重置到這裡 (git reset --hard)",
+    "checkout": "切換到此分支 (git checkout)",
+    "merge": "把 {{name}} 合併進目前分支 (git merge)",
+    "deleteBranch": "刪除分支 (git branch -d)",
+    "deleteTag": "刪除標籤 (git tag -d)",
+    "checkoutCommit": "切換到此提交 (git checkout)",
+    "mergeCommit": "把這次提交合併進目前分支 (git merge)",
+    "rebase": "把目前分支變基到此提交 (git rebase)",
+    "copyHash": "複製提交雜湊",
+    "copySubject": "複製提交標題",
+    "checkoutRemote": "建立本地分支並切換… (git checkout --track)",
+    "pull": "拉取到目前分支 (git pull)",
+    "deleteRemote": "刪除遠端分支… (git push --delete)",
+    "copyBranchName": "複製分支名稱"
   },
   "modal": {
     "cancel": "取消",
@@ -65,6 +75,15 @@
     "createTag": {
       "title": "在此提交建立標籤",
       "confirm": "建立標籤"
+    },
+    "checkoutRemote": {
+      "title": "建立本地追蹤分支",
+      "confirm": "切換"
+    },
+    "deleteRemote": {
+      "title": "刪除遠端分支",
+      "message": "確定要在遠端刪除 {{name}}？此動作無法復原",
+      "confirm": "刪除"
     }
   }
 }

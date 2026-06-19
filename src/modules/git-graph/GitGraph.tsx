@@ -214,12 +214,13 @@ export function GitGraph({
                     </span>
 
                     {commit.refs.map((ref) => {
-                      // head / branch / tag are actionable; remote / unknown are
-                      // read-only with no context menu.
+                      // head / branch / tag / remote are actionable; unknown
+                      // refs stay read-only with no context menu.
                       const interactive =
                         ref.kind === "tag" ||
                         ref.kind === "branch" ||
-                        ref.kind === "head";
+                        ref.kind === "head" ||
+                        ref.kind === "remote";
                       const chip = REF_CHIP_STYLES[ref.kind] ?? REF_CHIP_STYLES.branch;
                       return (
                         <span

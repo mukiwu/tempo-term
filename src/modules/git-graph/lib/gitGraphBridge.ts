@@ -83,6 +83,30 @@ export function gitReset(
   return invoke("git_reset", { repoPath, commit, mode });
 }
 
+/** Rebase the current branch onto `commit`. */
+export function gitRebase(repoPath: string, commit: string): Promise<void> {
+  return invoke("git_rebase", { repoPath, commit });
+}
+
+/** Create a local branch `local` tracking `remoteRef` (e.g. "origin/x") and switch to it. */
+export function gitBranchCheckoutTrack(
+  repoPath: string,
+  local: string,
+  remoteRef: string,
+): Promise<void> {
+  return invoke("git_branch_checkout_track", { repoPath, local, remoteRef });
+}
+
+/** Pull `branch` from `remote` into the current branch. */
+export function gitPull(repoPath: string, remote: string, branch: string): Promise<void> {
+  return invoke("git_pull", { repoPath, remote, branch });
+}
+
+/** Delete `branch` on `remote`. */
+export function gitPushDelete(repoPath: string, remote: string, branch: string): Promise<void> {
+  return invoke("git_push_delete", { repoPath, remote, branch });
+}
+
 /** Read a commit's full message and changed files. */
 export function gitCommitDetails(repoPath: string, commit: string): Promise<CommitDetails> {
   return invoke<CommitDetails>("git_commit_details", { repoPath, commit });
