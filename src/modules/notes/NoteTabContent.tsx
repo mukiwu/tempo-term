@@ -3,9 +3,14 @@ import { useTranslation } from "react-i18next";
 import { useNotesStore } from "@/stores/notesStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { titleFromFilename } from "@/modules/notes/lib/notesPaths";
+import { decideExternalChange } from "@/modules/notes/lib/notesExternalChange";
+import { onNotesChanged } from "@/modules/notes/lib/notesWatch";
 import { NoteEditor } from "./NoteEditor";
 
 const WRITE_DEBOUNCE_MS = 400;
+// Ignore watcher events that arrive shortly after our own write (the echo of
+// saving to disk) so saving never looks like an external change.
+const SELF_WRITE_WINDOW_MS = 2000;
 
 function basename(path: string): string {
   const idx = path.lastIndexOf("/");
@@ -27,15 +32,23 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
   const [title, setTitle] = useState(() => titleFromFilename(basename(noteId)));
   const [content, setContent] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  // Bumped to force the editor to remount with freshly loaded content after an
+  // external reload (the editor only takes `content` as its initial value).
+  const [reloadKey, setReloadKey] = useState(0);
+  // True when the file changed on disk while we had unsaved edits.
+  const [externalChanged, setExternalChanged] = useState(false);
+
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Latest editor content not yet flushed to disk, so a rename can persist it
-  // to the current path before moving the file.
+  // Latest editor content not yet flushed to disk; null once flushed.
   const pending = useRef<string | null>(null);
+  // The last write this tab made, used to ignore the watcher echo of it.
+  const selfWrite = useRef<{ path: string; at: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setContent(null);
     setNotFound(false);
+    setExternalChanged(false);
     void (async () => {
       try {
         const text = await useNotesStore.getState().readNote(path);
@@ -61,6 +74,62 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
     };
   }, []);
 
+  // React to the notes folder changing on disk (e.g. a cloud drive syncing in
+  // edits from another machine) while this note is open.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void onNotesChanged((paths) => {
+      const action = decideExternalChange({
+        notePath: path,
+        changedPaths: paths,
+        dirty: pending.current !== null,
+        selfWrite: selfWrite.current,
+        now: Date.now(),
+        selfWriteWindowMs: SELF_WRITE_WINDOW_MS,
+      });
+      if (action === "reload") {
+        void reloadFromDisk();
+      } else if (action === "prompt") {
+        setExternalChanged(true);
+      }
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+    // reloadFromDisk reads only refs/state setters, so re-subscribing on `path`
+    // change is enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
+
+  async function reloadFromDisk() {
+    if (writeTimer.current) {
+      clearTimeout(writeTimer.current);
+      writeTimer.current = null;
+    }
+    pending.current = null;
+    try {
+      const text = await useNotesStore.getState().readNote(path);
+      setContent(text);
+      setReloadKey((k) => k + 1);
+      setExternalChanged(false);
+    } catch {
+      setNotFound(true);
+    }
+  }
+
+  function persist(target: string, markdown: string) {
+    selfWrite.current = { path: target, at: Date.now() };
+    return useNotesStore.getState().writeNote(target, markdown);
+  }
+
   function commitTitle() {
     void (async () => {
       const store = useNotesStore.getState();
@@ -73,7 +142,7 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
           writeTimer.current = null;
         }
         if (pending.current !== null) {
-          await store.writeNote(path, pending.current);
+          await persist(path, pending.current);
           pending.current = null;
         }
         const newPath = await store.renameNote(path, title);
@@ -101,8 +170,15 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
     const target = path;
     writeTimer.current = setTimeout(() => {
       pending.current = null;
-      void useNotesStore.getState().writeNote(target, markdown);
+      void persist(target, markdown);
     }, WRITE_DEBOUNCE_MS);
+  }
+
+  function keepMine() {
+    const markdown = pending.current ?? content ?? "";
+    void persist(path, markdown);
+    pending.current = null;
+    setExternalChanged(false);
   }
 
   if (notFound) {
@@ -130,12 +206,33 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
           className="w-full bg-transparent text-2xl font-bold text-fg outline-none placeholder:text-fg-subtle"
         />
       </div>
+      {externalChanged && (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-warning/10 px-6 py-2 text-xs text-fg">
+          <span>{t("externalChanged")}</span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void reloadFromDisk()}
+              className="rounded border border-border-strong px-2 py-0.5 hover:bg-border-strong"
+            >
+              {t("useDiskVersion")}
+            </button>
+            <button
+              type="button"
+              onClick={keepMine}
+              className="rounded border border-border-strong px-2 py-0.5 hover:bg-border-strong"
+            >
+              {t("keepMine")}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {content === null ? (
           <p className="text-sm text-fg-subtle">{t("loading")}</p>
         ) : (
           <NoteEditor
-            key={path}
+            key={`${path}#${reloadKey}`}
             noteId={path}
             content={content}
             onChange={scheduleWrite}

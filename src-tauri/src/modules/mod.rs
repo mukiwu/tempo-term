@@ -4,6 +4,7 @@ pub mod clipboard;
 pub mod fonts;
 pub mod fs;
 pub mod git;
+pub mod notes;
 pub mod pty;
 pub mod secrets;
 pub mod terminal_history;

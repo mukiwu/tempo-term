@@ -11,6 +11,7 @@ use modules::ai::ai_chat;
 use modules::claude_progress::{
     claude_progress_unwatch, claude_progress_watch, ClaudeProgressState,
 };
+use modules::notes::{notes_unwatch, notes_watch, NotesWatchState};
 use modules::clipboard::{
     terminal_clipboard_image_paths, terminal_clipboard_paths, terminal_clipboard_text,
     terminal_prepare_clipboard_image_attachment, terminal_save_dropped_image,
@@ -68,6 +69,7 @@ pub fn run() {
         )
         .manage(PtyState::new())
         .manage(ClaudeProgressState::new())
+        .manage(NotesWatchState::new())
         .setup(|app| {
             // window-state restores the last size/position, but it can persist a
             // corrupt tiny / off-screen value (observed 360x240 at a negative
@@ -144,7 +146,9 @@ pub fn run() {
             terminal_history_clear,
             terminal_history_prune,
             claude_progress_watch,
-            claude_progress_unwatch
+            claude_progress_unwatch,
+            notes_watch,
+            notes_unwatch
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

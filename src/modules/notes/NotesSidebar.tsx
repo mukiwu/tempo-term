@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -177,12 +177,6 @@ export function NotesSidebar() {
   const createFolder = useNotesStore((s) => s.createFolder);
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
   const isOverRoot = useNoteDragStore((s) => s.hover?.kind === "root");
-
-  useEffect(() => {
-    if (rootPath) {
-      void useNotesStore.getState().setRoot(rootPath);
-    }
-  }, [rootPath]);
 
   if (!rootPath) {
     return <NotesEmptyState />;
