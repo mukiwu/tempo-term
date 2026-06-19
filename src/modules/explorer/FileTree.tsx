@@ -5,15 +5,15 @@ import {
   ChevronRight,
   Clipboard,
   ClipboardList,
-  File as FileIcon,
+  File,
   FilePlus,
-  Folder,
   FolderOpen,
   FolderPlus,
   MessageSquarePlus,
   TerminalSquare,
   Trash2,
 } from "lucide-react";
+import { FileIcon } from "./components/FileIcon";
 import {
   fsCreateDir,
   fsCreateFile,
@@ -155,7 +155,7 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
     {
       id: "open",
       label: t("menu.open"),
-      icon: entry.is_dir ? FolderOpen : FileIcon,
+      icon: entry.is_dir ? FolderOpen : File,
       group: 0,
       onSelect: () => void toggle(),
     },
@@ -267,16 +267,12 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
           {entry.is_dir ? (
             <>
               {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              {expanded ? (
-                <FolderOpen size={15} className="text-accent" />
-              ) : (
-                <Folder size={15} className="text-accent" />
-              )}
+              <FileIcon name={entry.name} isDir open={expanded} size={16} />
             </>
           ) : (
             <>
               <span className="w-[14px]" />
-              <FileIcon size={15} className="text-fg-subtle" />
+              <FileIcon name={entry.name} isDir={false} size={16} />
             </>
           )}
           <span className="truncate">{entry.name}</span>
@@ -328,7 +324,6 @@ interface NewEntryInputProps {
 function NewEntryInput({ kind, depth, onConfirm, onCancel }: NewEntryInputProps) {
   const { t } = useTranslation("explorer");
   const [value, setValue] = useState("");
-  const Icon = kind === "file" ? FileIcon : Folder;
 
   return (
     <div
@@ -336,7 +331,11 @@ function NewEntryInput({ kind, depth, onConfirm, onCancel }: NewEntryInputProps)
       className="flex items-center gap-1.5 py-1 pr-2"
     >
       <span className="w-[14px]" />
-      <Icon size={15} className={kind === "file" ? "text-fg-subtle" : "text-accent"} />
+      <FileIcon
+        name={value || (kind === "dir" ? "folder" : "file")}
+        isDir={kind === "dir"}
+        size={16}
+      />
       <input
         autoFocus
         value={value}
