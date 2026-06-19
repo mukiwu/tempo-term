@@ -2,8 +2,15 @@ import { useState } from "react";
 import { Check, ChevronDown, ChevronRight, CircleDot, Loader2, Square, X } from "lucide-react";
 import { activeCount, isEmptyProgress, useProgressStore } from "./lib/progressStore";
 import type { ProgressState, SubagentProgress } from "./lib/progressState";
+import { deriveStatus } from "./lib/progressState";
 import type { TodoItem } from "./lib/normalize";
 import { basename } from "@/modules/explorer/lib/paths";
+
+const STATUS_LABEL: Record<ReturnType<typeof deriveStatus>, string> = {
+  active: "正在執行",
+  thinking: "思考中",
+  idle: "等待輸入",
+};
 
 function Subagent({ sub }: { sub: SubagentProgress }) {
   const running = sub.status === "running";
@@ -48,7 +55,7 @@ function TodoRow({ item }: { item: TodoItem }) {
 }
 
 function SessionBody({ progress }: { progress: ProgressState }) {
-  const { runningTools, subagents, todos } = progress;
+  const { activities, subagents, todos } = progress;
   return (
     <div className="space-y-3 px-2.5 pb-2.5 pt-1 text-xs">
       {subagents.length > 0 && (
@@ -62,15 +69,27 @@ function SessionBody({ progress }: { progress: ProgressState }) {
         </section>
       )}
 
-      {runningTools.length > 0 && (
+      {activities.length > 0 && (
         <section className="space-y-1">
           <h4 className="text-[11px] font-medium uppercase tracking-wide text-fg-subtle">
-            進行中的工具
+            活動
           </h4>
-          {runningTools.map((tool) => (
-            <div key={tool.id} className="flex items-center gap-2 text-fg-muted">
-              <Loader2 size={12} className="shrink-0 animate-spin text-accent" />
-              <span className="truncate">{tool.name}</span>
+          {activities.map((activity) => (
+            <div key={activity.id} className="flex items-center gap-2 text-fg-muted">
+              {activity.status === "running" ? (
+                <Loader2 size={12} className="shrink-0 animate-spin text-accent" />
+              ) : activity.status === "error" ? (
+                <X size={12} className="shrink-0 text-fg-subtle" />
+              ) : (
+                <Check size={12} className="shrink-0 text-success" />
+              )}
+              <span
+                className={
+                  activity.status === "running" ? "truncate" : "truncate text-fg-subtle"
+                }
+              >
+                {activity.name}
+              </span>
             </div>
           ))}
         </section>
@@ -99,6 +118,7 @@ interface SessionSectionProps {
 
 function SessionSection({ cwd, progress, collapsed, onToggle }: SessionSectionProps) {
   const running = activeCount(progress);
+  const status = deriveStatus(progress);
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-bg-inset">
       <button
@@ -114,6 +134,7 @@ function SessionSection({ cwd, progress, collapsed, onToggle }: SessionSectionPr
         <span className="min-w-0 flex-1 truncate text-xs font-semibold text-fg" title={cwd}>
           {basename(cwd)}
         </span>
+        <span className="shrink-0 text-[10px] text-fg-subtle">{STATUS_LABEL[status]}</span>
         {running > 0 && (
           <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold leading-none text-bg">
             {running}
