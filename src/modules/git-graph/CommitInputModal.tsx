@@ -8,14 +8,20 @@ export interface InputField {
   placeholder?: string;
   required?: boolean;
   multiline?: boolean;
+  /** Pre-filled value when the modal opens (e.g. a suggested branch name). */
+  defaultValue?: string;
 }
 
 interface CommitInputModalProps {
   open: boolean;
   title: string;
+  /** Optional descriptive body, e.g. the question for a confirmation dialog. */
+  message?: string;
   fields: InputField[];
   confirmLabel: string;
   cancelLabel: string;
+  /** Render the confirm button in the danger colour (destructive actions). */
+  confirmDanger?: boolean;
   onConfirm: (values: Record<string, string>) => void;
   onClose: () => void;
 }
@@ -28,19 +34,30 @@ interface CommitInputModalProps {
 export function CommitInputModal({
   open,
   title,
+  message,
   fields,
   confirmLabel,
   cancelLabel,
+  confirmDanger = false,
   onConfirm,
   onClose,
 }: CommitInputModalProps) {
   const [values, setValues] = useState<Record<string, string>>({});
 
-  // Reset whenever the modal (re)opens or its purpose (title) changes.
+  // Reset whenever the modal (re)opens or its purpose (title) changes, seeding
+  // any fields that carry a default value.
   useEffect(() => {
     if (open) {
-      setValues({});
+      const seeded: Record<string, string> = {};
+      for (const field of fields) {
+        if (field.defaultValue !== undefined) {
+          seeded[field.key] = field.defaultValue;
+        }
+      }
+      setValues(seeded);
     }
+    // `fields` is rebuilt each render; key off `title` as the stable open identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, title]);
 
   useEffect(() => {
@@ -85,7 +102,9 @@ export function CommitInputModal({
             <X className="h-4 w-4" />
           </button>
         </div>
+        {(message || fields.length > 0) && (
         <div className="space-y-3 px-4 py-4">
+          {message && <p className="text-[14px] leading-relaxed text-fg-muted">{message}</p>}
           {fields.map((field) => (
             <div key={field.key}>
               <label className="mb-1.5 block text-[12px] font-bold uppercase tracking-wider text-fg-subtle">
@@ -121,6 +140,7 @@ export function CommitInputModal({
             </div>
           ))}
         </div>
+        )}
         <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
           <button
             type="button"
@@ -133,7 +153,9 @@ export function CommitInputModal({
             type="button"
             onClick={submit}
             disabled={!requiredFilled}
-            className="rounded bg-accent px-4 py-1.5 font-mono text-[12px] font-bold text-bg-inset hover:bg-accent-hover disabled:opacity-50"
+            className={`rounded px-4 py-1.5 font-mono text-[12px] font-bold text-bg-inset disabled:opacity-50 ${
+              confirmDanger ? "bg-danger hover:bg-danger/90" : "bg-accent hover:bg-accent-hover"
+            }`}
           >
             {confirmLabel}
           </button>

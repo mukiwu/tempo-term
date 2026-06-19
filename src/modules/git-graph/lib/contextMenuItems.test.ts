@@ -14,7 +14,10 @@ const refLabels: RefMenuLabels = {
   merge: "Merge into current",
   deleteBranch: "Delete branch",
   deleteTag: "Delete tag",
+  checkoutRemote: "Checkout branch",
   mergeRemote: "Merge into current branch",
+  pull: "Pull into current branch",
+  deleteRemote: "Delete remote branch",
   copyBranchName: "Copy branch name",
 };
 
@@ -24,7 +27,10 @@ function refActions(): RefMenuActions {
     onMerge: vi.fn(),
     onDeleteBranch: vi.fn(),
     onDeleteTag: vi.fn(),
+    onCheckoutRemote: vi.fn(),
     onMergeRemote: vi.fn(),
+    onPull: vi.fn(),
+    onDeleteRemote: vi.fn(),
     onCopyBranchName: vi.fn(),
   };
 }
@@ -36,6 +42,7 @@ const commitLabels: CommitMenuLabels = {
   cherryPick: "Cherry-pick",
   revert: "Revert",
   merge: "Merge into current branch",
+  rebase: "Rebase current branch on this commit",
   resetSoft: "Reset (soft)",
   resetHard: "Reset (hard)",
   copyHash: "Copy commit hash",
@@ -50,6 +57,7 @@ function commitActions(): CommitMenuActions {
     onCherryPick: vi.fn(),
     onRevert: vi.fn(),
     onMerge: vi.fn(),
+    onRebase: vi.fn(),
     onResetSoft: vi.fn(),
     onResetHard: vi.fn(),
     onCopyHash: vi.fn(),
@@ -60,11 +68,18 @@ function commitActions(): CommitMenuActions {
 const ids = (items: { id: string }[]) => items.map((i) => i.id);
 
 describe("buildRefMenu", () => {
-  it("gives a remote branch a merge and a copy-name action", () => {
+  it("gives a remote branch the full VSCode-style action set", () => {
     const ref: CommitRef = { name: "origin/feat/x", kind: "remote" };
     const items = buildRefMenu(ref, refLabels, refActions());
-    expect(ids(items)).toEqual(["mergeRemote", "copyBranchName"]);
-    expect(items.every((i) => !i.danger)).toBe(true);
+    expect(ids(items)).toEqual([
+      "checkoutRemote",
+      "mergeRemote",
+      "pull",
+      "deleteRemote",
+      "copyBranchName",
+    ]);
+    expect(items.find((i) => i.id === "deleteRemote")?.danger).toBe(true);
+    expect(items.find((i) => i.id === "copyBranchName")?.danger).toBeFalsy();
   });
 
   it("offers only delete for a tag, in the danger colour", () => {
@@ -86,12 +101,18 @@ describe("buildRefMenu", () => {
     expect(buildRefMenu(ref, refLabels, refActions())).toEqual([]);
   });
 
-  it("wires the copy-name action to its callback", () => {
+  it("wires the remote actions to their callbacks", () => {
     const actions = refActions();
     const ref: CommitRef = { name: "origin/feat/x", kind: "remote" };
     const items = buildRefMenu(ref, refLabels, actions);
     items.find((i) => i.id === "copyBranchName")?.onSelect();
+    items.find((i) => i.id === "checkoutRemote")?.onSelect();
+    items.find((i) => i.id === "pull")?.onSelect();
+    items.find((i) => i.id === "deleteRemote")?.onSelect();
     expect(actions.onCopyBranchName).toHaveBeenCalledTimes(1);
+    expect(actions.onCheckoutRemote).toHaveBeenCalledTimes(1);
+    expect(actions.onPull).toHaveBeenCalledTimes(1);
+    expect(actions.onDeleteRemote).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -105,6 +126,7 @@ describe("buildCommitMenu", () => {
       "cherryPick",
       "revert",
       "merge",
+      "rebase",
       "resetSoft",
       "resetHard",
       "copyHash",

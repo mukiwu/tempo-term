@@ -1,8 +1,10 @@
 import {
   Copy,
+  DownloadCloud,
   GitBranch,
   GitCommit,
   GitMerge,
+  GitPullRequestArrow,
   RotateCcw,
   Tag,
   Trash2,
@@ -26,6 +28,7 @@ export interface CommitMenuLabels {
   cherryPick: string;
   revert: string;
   merge: string;
+  rebase: string;
   resetSoft: string;
   resetHard: string;
   copyHash: string;
@@ -39,6 +42,7 @@ export interface CommitMenuActions {
   onCherryPick: () => void;
   onRevert: () => void;
   onMerge: () => void;
+  onRebase: () => void;
   onResetSoft: () => void;
   onResetHard: () => void;
   onCopyHash: () => void;
@@ -74,6 +78,13 @@ export function buildCommitMenu(
     },
     { id: "revert", label: labels.revert, icon: Undo2, group: 1, onSelect: actions.onRevert },
     { id: "merge", label: labels.merge, icon: GitMerge, group: 2, onSelect: actions.onMerge },
+    {
+      id: "rebase",
+      label: labels.rebase,
+      icon: GitPullRequestArrow,
+      group: 2,
+      onSelect: actions.onRebase,
+    },
     {
       id: "resetSoft",
       label: labels.resetSoft,
@@ -111,7 +122,10 @@ export interface RefMenuLabels {
   merge: string;
   deleteBranch: string;
   deleteTag: string;
+  checkoutRemote: string;
   mergeRemote: string;
+  pull: string;
+  deleteRemote: string;
   copyBranchName: string;
 }
 
@@ -120,7 +134,10 @@ export interface RefMenuActions {
   onMerge: () => void;
   onDeleteBranch: () => void;
   onDeleteTag: () => void;
+  onCheckoutRemote: () => void;
   onMergeRemote: () => void;
+  onPull: () => void;
+  onDeleteRemote: () => void;
   onCopyBranchName: () => void;
 }
 
@@ -166,6 +183,13 @@ export function buildRefMenu(
   if (ref.kind === "remote") {
     return [
       {
+        id: "checkoutRemote",
+        label: labels.checkoutRemote,
+        icon: GitBranch,
+        group: 0,
+        onSelect: actions.onCheckoutRemote,
+      },
+      {
         id: "mergeRemote",
         label: labels.mergeRemote,
         icon: GitMerge,
@@ -173,10 +197,25 @@ export function buildRefMenu(
         onSelect: actions.onMergeRemote,
       },
       {
+        id: "pull",
+        label: labels.pull,
+        icon: DownloadCloud,
+        group: 0,
+        onSelect: actions.onPull,
+      },
+      {
+        id: "deleteRemote",
+        label: labels.deleteRemote,
+        icon: Trash2,
+        group: 1,
+        danger: true,
+        onSelect: actions.onDeleteRemote,
+      },
+      {
         id: "copyBranchName",
         label: labels.copyBranchName,
         icon: Copy,
-        group: 1,
+        group: 2,
         onSelect: actions.onCopyBranchName,
       },
     ];

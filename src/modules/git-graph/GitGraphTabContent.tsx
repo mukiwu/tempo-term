@@ -10,6 +10,7 @@ import { CommitInputModal, type InputField } from "./CommitInputModal";
 import { CommitDetailsPanel, type CommitDetailsLabels } from "./CommitDetailsPanel";
 import {
   gitBranchCheckout,
+  gitBranchCheckoutTrack,
   gitBranchCreateAt,
   gitBranchDelete,
   gitBranches,
@@ -17,6 +18,9 @@ import {
   gitFetch,
   gitGraphLog,
   gitMerge,
+  gitPull,
+  gitPushDelete,
+  gitRebase,
   gitReset,
   gitRevert,
   gitTagCreate,
@@ -25,6 +29,7 @@ import {
 import { GitGraphToolbar, type GitGraphToolbarLabels } from "./GitGraphToolbar";
 import { filterCommits } from "./lib/filterCommits";
 import { buildCommitMenu, buildRefMenu } from "./lib/contextMenuItems";
+import { splitRemoteRef } from "./lib/remoteRef";
 import { withMinDuration } from "@/lib/withMinDuration";
 import type { Branch, CommitNode, CommitRef, GraphOptions } from "./types";
 
@@ -39,8 +44,10 @@ type MenuTarget =
 
 interface ModalState {
   title: string;
+  message?: string;
   fields: InputField[];
   confirmLabel: string;
+  confirmDanger?: boolean;
   onConfirm: (values: Record<string, string>) => void;
 }
 
@@ -319,6 +326,7 @@ export function GitGraphTabContent() {
         cherryPick: t("menu.cherryPick"),
         revert: t("menu.revert"),
         merge: t("menu.mergeCommit"),
+        rebase: t("menu.rebase"),
         resetSoft: t("menu.resetSoft"),
         resetHard: t("menu.resetHard"),
         copyHash: t("menu.copyHash"),
@@ -331,6 +339,7 @@ export function GitGraphTabContent() {
         onCherryPick: () => void runAction(() => gitCherryPick(repo!, commit.hash)),
         onRevert: () => void runAction(() => gitRevert(repo!, commit.hash)),
         onMerge: () => void runAction(() => gitMerge(repo!, commit.hash)),
+        onRebase: () => void runAction(() => gitRebase(repo!, commit.hash)),
         onResetSoft: () => void runAction(() => gitReset(repo!, commit.hash, "soft")),
         onResetHard: () => void runAction(() => gitReset(repo!, commit.hash, "hard")),
         onCopyHash: () => void navigator.clipboard.writeText(commit.hash),
@@ -347,7 +356,10 @@ export function GitGraphTabContent() {
         merge: t("menu.merge", { name: ref.name }),
         deleteBranch: t("menu.deleteBranch"),
         deleteTag: t("menu.deleteTag"),
+        checkoutRemote: t("menu.checkoutRemote"),
         mergeRemote: t("menu.merge", { name: ref.name }),
+        pull: t("menu.pull"),
+        deleteRemote: t("menu.deleteRemote"),
         copyBranchName: t("menu.copyBranchName"),
       },
       {
@@ -355,7 +367,40 @@ export function GitGraphTabContent() {
         onMerge: () => void runAction(() => gitMerge(repo!, ref.name)),
         onDeleteBranch: () => void runAction(() => gitBranchDelete(repo!, ref.name, true)),
         onDeleteTag: () => void runAction(() => gitTagDelete(repo!, ref.name)),
+        onCheckoutRemote: () => {
+          const { branch } = splitRemoteRef(ref.name);
+          setModal({
+            title: t("modal.checkoutRemote.title"),
+            confirmLabel: t("modal.checkoutRemote.confirm"),
+            fields: [
+              {
+                key: "name",
+                label: t("modal.branchName"),
+                placeholder: t("modal.branchPlaceholder"),
+                required: true,
+                defaultValue: branch,
+              },
+            ],
+            onConfirm: (values) =>
+              void runAction(() => gitBranchCheckoutTrack(repo!, values.name, ref.name)),
+          });
+        },
         onMergeRemote: () => void runAction(() => gitMerge(repo!, ref.name)),
+        onPull: () => {
+          const { remote, branch } = splitRemoteRef(ref.name);
+          void runAction(() => gitPull(repo!, remote, branch));
+        },
+        onDeleteRemote: () => {
+          const { remote, branch } = splitRemoteRef(ref.name);
+          setModal({
+            title: t("modal.deleteRemote.title"),
+            message: t("modal.deleteRemote.message", { name: ref.name }),
+            confirmLabel: t("modal.deleteRemote.confirm"),
+            confirmDanger: true,
+            fields: [],
+            onConfirm: () => void runAction(() => gitPushDelete(repo!, remote, branch)),
+          });
+        },
         onCopyBranchName: () => void navigator.clipboard.writeText(ref.name),
       },
     );
@@ -468,8 +513,10 @@ export function GitGraphTabContent() {
         <CommitInputModal
           open
           title={modal.title}
+          message={modal.message}
           fields={modal.fields}
           confirmLabel={modal.confirmLabel}
+          confirmDanger={modal.confirmDanger}
           cancelLabel={t("modal.cancel")}
           onConfirm={(values) => {
             modal.onConfirm(values);
