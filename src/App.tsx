@@ -14,6 +14,10 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { applyTheme, getTheme } from "@/themes/themes";
+import { listen } from "@tauri-apps/api/event";
+import { ClaudeProgressPanel } from "@/modules/claude-progress/ClaudeProgressPanel";
+import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
+import { useWatchSessions } from "@/modules/claude-progress/lib/useWatchSessions";
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 640;
@@ -27,6 +31,8 @@ function App() {
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const [sidebarWidth, setSidebarWidth] = useState(260);
+
+  useWatchSessions();
 
   useEffect(() => {
     applyTheme(getTheme(themeId), document.documentElement);
@@ -50,6 +56,23 @@ function App() {
       void useUpdaterStore.getState().checkForUpdate({ silent: true });
     }, 5000);
     return () => clearTimeout(timer);
+  }, []);
+
+  // Stream Claude Code progress: the backend watcher emits appended transcript
+  // lines, which we feed through the normalizer into the progress store.
+  useEffect(() => {
+    // listen() rejects when there is no Tauri runtime (unit tests, web preview);
+    // swallow it so it never surfaces as an unhandled rejection.
+    const unlisten = listen<{ cwd: string; lines: string[]; reset: boolean }>(
+      "claude-progress:lines",
+      (event) => {
+        const { cwd, lines, reset } = event.payload;
+        useProgressStore.getState().pushLines(cwd, lines, reset);
+      },
+    ).catch(() => undefined);
+    return () => {
+      void unlisten.then((off) => off?.());
+    };
   }, []);
 
   // Global keyboard shortcuts.
@@ -114,6 +137,7 @@ function App() {
       </div>
 
       <StatusBar />
+      <ClaudeProgressPanel />
       {settingsOpen && <SettingsModal />}
       <UpdateModal />
     </div>

@@ -1,11 +1,16 @@
 mod modules;
 
+use tauri::Manager;
+
 use modules::fonts::fonts_report;
 use modules::fs::{
     fs_create_dir, fs_create_file, fs_delete, fs_grep, fs_home_dir, fs_list_files, fs_read_dir,
     fs_read_file, fs_rename, fs_reveal, fs_write_file,
 };
 use modules::ai::ai_chat;
+use modules::claude_progress::{
+    claude_progress_unwatch, claude_progress_watch, ClaudeProgressState,
+};
 use modules::clipboard::{
     terminal_clipboard_image_paths, terminal_clipboard_paths, terminal_clipboard_text,
     terminal_prepare_clipboard_image_attachment, terminal_save_dropped_image,
@@ -56,11 +61,30 @@ pub fn run() {
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::SIZE
-                        | tauri_plugin_window_state::StateFlags::POSITION,
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
                 )
                 .build(),
         )
         .manage(PtyState::new())
+        .manage(ClaudeProgressState::new())
+        .setup(|app| {
+            // window-state restores the last size/position, but it can persist a
+            // corrupt tiny / off-screen value (observed 360x240 at a negative
+            // position) and restores it bypassing the configured minimums. Clamp
+            // anything below the minimums back to the default, centered, so the
+            // window can never shrink to nothing or get lost off-screen.
+            if let Some(window) = app.get_webview_window("main") {
+                if let (Ok(size), Ok(scale)) = (window.inner_size(), window.scale_factor()) {
+                    let logical = size.to_logical::<f64>(scale);
+                    if logical.width < 720.0 || logical.height < 480.0 {
+                        let _ = window.set_size(tauri::LogicalSize::new(1200.0, 800.0));
+                        let _ = window.center();
+                    }
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             pty_open,
             pty_write,
@@ -118,7 +142,9 @@ pub fn run() {
             terminal_history_load,
             terminal_history_delete,
             terminal_history_clear,
-            terminal_history_prune
+            terminal_history_prune,
+            claude_progress_watch,
+            claude_progress_unwatch
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

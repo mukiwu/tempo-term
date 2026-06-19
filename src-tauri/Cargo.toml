@@ -36,6 +36,7 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-window-state = "2"
 trash = "5"
+notify = "6"
 
 # keyring 3.x ships no credential store by default; each platform must opt into
 # its native backend or every keychain operation fails silently.

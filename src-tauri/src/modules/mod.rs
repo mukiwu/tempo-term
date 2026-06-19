@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod claude_progress;
 pub mod clipboard;
 pub mod fonts;
 pub mod fs;
