@@ -2,16 +2,42 @@ import { describe, expect, it } from "vitest";
 import {
   computeLayout,
   computeSplitters,
+  findPaneContent,
   firstLeafId,
   leaf,
   leafIds,
   paneIdAt,
   removeLeaf,
+  resolveTerminalCwd,
   setSizesById,
   splitId,
   splitLeaf,
   type LayoutNode,
 } from "./terminalLayout";
+
+describe("resolveTerminalCwd", () => {
+  it("prefers the pane's own saved cwd over the explorer root and tab cwd", () => {
+    expect(resolveTerminalCwd("/pane/dir", "/root/dir", "/tab/dir")).toBe("/pane/dir");
+  });
+
+  it("falls back to the explorer root, then the tab cwd", () => {
+    expect(resolveTerminalCwd(undefined, "/root/dir", "/tab/dir")).toBe("/root/dir");
+    expect(resolveTerminalCwd(undefined, null, "/tab/dir")).toBe("/tab/dir");
+  });
+
+  it("returns undefined when nothing is set", () => {
+    expect(resolveTerminalCwd(undefined, null, undefined)).toBeUndefined();
+    expect(resolveTerminalCwd("", null, "")).toBeUndefined();
+  });
+});
+
+describe("findPaneContent", () => {
+  it("returns a leaf's content by id, or undefined when absent", () => {
+    const tree = splitLeaf(leaf("a", { kind: "terminal", cwd: "/x" }), "a", "row", "b");
+    expect(findPaneContent(tree, "a")).toEqual({ kind: "terminal", cwd: "/x" });
+    expect(findPaneContent(tree, "missing")).toBeUndefined();
+  });
+});
 
 describe("terminalLayout", () => {
   it("splits a leaf into a two-pane split", () => {

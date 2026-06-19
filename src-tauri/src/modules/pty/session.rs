@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtyPair, PtySize};
 use tauri::ipc::{Channel, Response};
 
-use super::shell::{login_args, resolve_shell, terminal_env};
+use super::shell::{login_args, resolve_shell, terminal_env, usable_cwd};
 
 /// A single live terminal session.
 pub struct Session {
@@ -64,7 +64,7 @@ fn build_shell_command(cwd: Option<String>) -> (CommandBuilder, String) {
     for arg in login_args(&shell) {
         cmd.arg(arg);
     }
-    if let Some(dir) = cwd.filter(|d| !d.trim().is_empty()) {
+    if let Some(dir) = usable_cwd(cwd) {
         cmd.cwd(dir);
     }
     let locale_env = terminal_env(

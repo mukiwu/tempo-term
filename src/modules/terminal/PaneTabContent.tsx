@@ -6,6 +6,7 @@ import { dropPathsIntoTerminal, writeToTerminal } from "./lib/terminalBus";
 import {
   computeLayout,
   computeSplitters,
+  resolveTerminalCwd,
   type PaneContent,
   type SplitterInfo,
 } from "./lib/terminalLayout";
@@ -53,6 +54,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const resizePane = useTabsStore((s) => s.resizePane);
   const splitPaneWith = useTabsStore((s) => s.splitPaneWith);
   const setPaneContent = useTabsStore((s) => s.setPaneContent);
+  const setTerminalCwd = useTabsStore((s) => s.setTerminalCwd);
   const closePane = useTabsStore((s) => s.closePane);
   const isActiveTab = useTabsStore((s) => s.activeId === tab.id);
   const paneAreaRef = useRef<HTMLDivElement>(null);
@@ -228,9 +230,14 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   <TerminalView
                     active={active}
                     cwdTracking={active && isActiveTab}
-                    cwd={rootPath ?? tab.cwd}
+                    cwd={resolveTerminalCwd(
+                      pane.content.kind === "terminal" ? pane.content.cwd : undefined,
+                      rootPath,
+                      tab.cwd,
+                    )}
                     leafId={pane.id}
                     onExit={() => closePane(tab.id, pane.id)}
+                    onCwdChange={(dir) => setTerminalCwd(tab.id, pane.id, dir)}
                     onOpenFile={(absolutePath) =>
                       splitPaneWith(tab.id, pane.id, { kind: "editor", path: absolutePath }, "row")
                     }

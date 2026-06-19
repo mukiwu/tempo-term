@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { uid } from "@/lib/id";
 import {
   computeLayout,
+  findPaneContent,
   firstLeafId,
   leaf,
   paneOf,
@@ -86,6 +87,8 @@ interface TabsState {
   ) => void;
   /** Replace a pane's content in place (used when dropping a file onto it). */
   setPaneContent: (tabId: string, leafId: string, content: PaneContent) => void;
+  /** Remember a terminal pane's current working directory for session restore. */
+  setTerminalCwd: (tabId: string, leafId: string, cwd: string) => void;
   closePane: (tabId: string, leafId: string) => void;
 }
 
@@ -498,6 +501,27 @@ export const useTabsStore = create<TabsState>()(
           : tab,
       ),
     })),
+
+  setTerminalCwd: (tabId, leafId, cwd) =>
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === tabId);
+      if (!tab) {
+        return state;
+      }
+      const current = findPaneContent(tab.paneTree, leafId);
+      // Only terminal panes carry a cwd; skip a no-op write so persistence is
+      // not churned on every snapshot.
+      if (!current || current.kind !== "terminal" || current.cwd === cwd) {
+        return state;
+      }
+      return {
+        tabs: state.tabs.map((t) =>
+          t.id === tabId
+            ? { ...t, paneTree: setLeafPane(t.paneTree, leafId, { kind: "terminal", cwd }) }
+            : t,
+        ),
+      };
+    }),
 
   closePane: (tabId, leafId) =>
     set((state) => {

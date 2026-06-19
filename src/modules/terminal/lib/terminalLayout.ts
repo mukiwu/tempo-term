@@ -12,7 +12,7 @@ export type SplitDirection = "row" | "col";
  * graph, or the launcher (a freshly split pane that hasn't been chosen yet).
  */
 export type PaneContent =
-  | { kind: "terminal" }
+  | { kind: "terminal"; cwd?: string }
   | { kind: "editor"; path: string }
   | { kind: "note"; noteId: string }
   | { kind: "preview"; url: string }
@@ -20,6 +20,19 @@ export type PaneContent =
   | { kind: "launcher" };
 
 export const TERMINAL_PANE: PaneContent = { kind: "terminal" };
+
+/**
+ * Where a terminal pane should spawn. A pane's own saved cwd (restored from a
+ * previous session) wins, then the explorer root, then the tab's initial cwd.
+ * Empty values are skipped; returns undefined when nothing is set.
+ */
+export function resolveTerminalCwd(
+  paneCwd: string | undefined,
+  rootPath: string | null | undefined,
+  tabCwd: string | undefined,
+): string | undefined {
+  return paneCwd || rootPath || tabCwd || undefined;
+}
 
 export type LayoutNode =
   | { kind: "leaf"; id: string; pane?: PaneContent }
@@ -38,6 +51,14 @@ export function leaf(id: string, pane: PaneContent = TERMINAL_PANE): LayoutNode 
  * A leaf's content, defaulting to a terminal — trees persisted before mixed
  * panes existed have no `pane` field.
  */
+/** Find a leaf's content by id anywhere in the tree, or undefined if absent. */
+export function findPaneContent(node: LayoutNode, leafId: string): PaneContent | undefined {
+  if (node.kind === "leaf") {
+    return node.id === leafId ? paneOf(node) : undefined;
+  }
+  return findPaneContent(node.children[0], leafId) ?? findPaneContent(node.children[1], leafId);
+}
+
 export function paneOf(node: Extract<LayoutNode, { kind: "leaf" }>): PaneContent {
   return node.pane ?? TERMINAL_PANE;
 }

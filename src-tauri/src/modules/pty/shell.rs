@@ -99,6 +99,14 @@ pub fn login_args(shell: &str) -> Vec<String> {
     }
 }
 
+/// Keep a start directory only when it is a real, existing directory. A restored
+/// session may point at a folder that has since been deleted; spawning there
+/// would fail, so fall back (the caller drops to the default) instead.
+pub fn usable_cwd(cwd: Option<String>) -> Option<String> {
+    cwd.filter(|d| !d.trim().is_empty())
+        .filter(|d| std::path::Path::new(d).is_dir())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +183,13 @@ mod tests {
         // LC_ALL outranks LC_CTYPE, so patching LC_CTYPE alone would not win.
         let env = terminal_env(Some("C".to_string()), None, Some("zh_TW.UTF-8".to_string()));
         assert!(has_utf8(&env, "LC_ALL"));
+    }
+
+    #[test]
+    fn usable_cwd_keeps_existing_dirs_and_drops_the_rest() {
+        assert_eq!(usable_cwd(Some("/".to_string())), Some("/".to_string()));
+        assert_eq!(usable_cwd(Some("/no/such/dir/zzz_tempoterm".to_string())), None);
+        assert_eq!(usable_cwd(Some("   ".to_string())), None);
+        assert_eq!(usable_cwd(None), None);
     }
 }

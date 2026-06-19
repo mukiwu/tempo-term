@@ -60,6 +60,8 @@ interface TerminalViewProps {
   /** Pane id, so notes/workflows can run commands into this terminal. */
   leafId?: string;
   onExit?: () => void;
+  /** Report the shell's current directory so it can be restored next launch. */
+  onCwdChange?: (cwd: string) => void;
   /** Alt+click on a file path in the output opens it (with the resolved abs path). */
   onOpenFile?: (absolutePath: string) => void;
 }
@@ -70,6 +72,7 @@ export function TerminalView({
   cwd,
   leafId,
   onExit,
+  onCwdChange,
   onOpenFile,
 }: TerminalViewProps) {
   const leafIdRef = useRef(leafId);
@@ -83,6 +86,8 @@ export function TerminalView({
   const sessionRef = useRef<PtySession | null>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+  const onCwdChangeRef = useRef(onCwdChange);
+  onCwdChangeRef.current = onCwdChange;
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
   const { t } = useTranslation();
@@ -504,7 +509,12 @@ export function TerminalView({
       }
       try {
         const dir = await session.cwd();
-        if (!cancelled && dir && dir !== last) {
+        if (cancelled || !dir) {
+          return;
+        }
+        // Remember this pane's own cwd for session restore (store dedupes).
+        onCwdChangeRef.current?.(dir);
+        if (dir !== last) {
           last = dir;
           useWorkspaceStore.getState().setRoot(dir);
         }
@@ -542,6 +552,26 @@ export function TerminalView({
       unsubscribe();
     };
   }, [cwdTracking]);
+
+  // Snapshot the cwd when this pane stops being active (e.g. switching tabs), so
+  // its last directory is saved between polls. Event-driven, no extra polling.
+  useEffect(() => {
+    if (active) {
+      return;
+    }
+    const session = sessionRef.current;
+    if (!session) {
+      return;
+    }
+    void session
+      .cwd()
+      .then((dir) => {
+        if (dir) {
+          onCwdChangeRef.current?.(dir);
+        }
+      })
+      .catch(() => {});
+  }, [active]);
 
   useEffect(() => {
     const container = containerRef.current;

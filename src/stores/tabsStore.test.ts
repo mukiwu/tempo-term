@@ -265,6 +265,29 @@ describe("tabsStore", () => {
     useTabsStore.getState().closePaneOrTab();
     expect(useTabsStore.getState().tabs.find((t) => t.id === id)).toBeUndefined();
   });
+
+  it("saves a terminal pane's cwd into its layout leaf", () => {
+    const id = useTabsStore.getState().newTerminalTab();
+    const leafId = activeTab().activeLeafId;
+    useTabsStore.getState().setTerminalCwd(id, leafId, "/work/dir");
+    expect(firstLeafContent(activeTab())).toEqual({ kind: "terminal", cwd: "/work/dir" });
+  });
+
+  it("leaves a non-terminal pane untouched", () => {
+    const id = useTabsStore.getState().openEditorTab("/a/b.ts");
+    const leafId = activeTab().activeLeafId;
+    useTabsStore.getState().setTerminalCwd(id, leafId, "/work/dir");
+    expect(firstLeafContent(activeTab())).toEqual({ kind: "editor", path: "/a/b.ts" });
+  });
+
+  it("does not rewrite state when the cwd is unchanged", () => {
+    const id = useTabsStore.getState().newTerminalTab();
+    const leafId = activeTab().activeLeafId;
+    useTabsStore.getState().setTerminalCwd(id, leafId, "/work/dir");
+    const before = useTabsStore.getState().tabs;
+    useTabsStore.getState().setTerminalCwd(id, leafId, "/work/dir");
+    expect(useTabsStore.getState().tabs).toBe(before);
+  });
 });
 
 describe("migratePersistedTabs", () => {
