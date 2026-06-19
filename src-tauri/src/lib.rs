@@ -3,7 +3,7 @@ mod modules;
 use modules::fonts::fonts_report;
 use modules::fs::{
     fs_create_dir, fs_create_file, fs_delete, fs_grep, fs_home_dir, fs_list_files, fs_read_dir,
-    fs_read_file, fs_reveal, fs_write_file,
+    fs_read_file, fs_rename, fs_reveal, fs_write_file,
 };
 use modules::ai::ai_chat;
 use modules::clipboard::{
@@ -86,6 +86,7 @@ pub fn run() {
             fs_create_file,
             fs_create_dir,
             fs_delete,
+            fs_rename,
             fs_reveal,
             git_resolve_repo,
             git_status,

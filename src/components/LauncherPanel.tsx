@@ -12,6 +12,8 @@ import { useTabsStore } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useNotesStore } from "@/stores/notesStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { pickNotesFolder } from "@/modules/notes/lib/pickNotesFolder";
 import { pickFile, pickFolder } from "@/lib/dialog";
 import type { PaneContent } from "@/modules/terminal/lib/terminalLayout";
 
@@ -147,7 +149,21 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
           key: "note",
           label: t("workspace.note"),
           icon: FileText,
-          run: () => apply({ kind: "note", noteId: createNote() }),
+          run: async () => {
+            const settings = useSettingsStore.getState();
+            let rootPath = settings.notesFolderPath;
+            if (!rootPath) {
+              const picked = await pickNotesFolder();
+              if (!picked) {
+                return;
+              }
+              settings.setNotesFolderPath(picked);
+              await useNotesStore.getState().setRoot(picked);
+              rootPath = picked;
+            }
+            const notePath = await createNote(rootPath);
+            apply({ kind: "note", noteId: notePath });
+          },
         },
         {
           key: "preview",

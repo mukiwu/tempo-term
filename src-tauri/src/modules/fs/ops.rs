@@ -30,6 +30,23 @@ pub fn delete(path: &str) -> Result<(), String> {
     trash::delete(path).map_err(|e| e.to_string())
 }
 
+/// Rename or move a file or directory from `from` to `to`, failing if a
+/// different entry already exists at `to` so a rename never clobbers another
+/// note. A case-only rename on a case-insensitive filesystem (where `to`
+/// resolves to the same entry as `from`, e.g. `draft.md` -> `Draft.md`) is
+/// allowed.
+pub fn rename(from: &str, to: &str) -> Result<(), String> {
+    if Path::new(to).exists() {
+        let from_canonical = std::fs::canonicalize(from).ok();
+        let to_canonical = std::fs::canonicalize(to).ok();
+        let same_entry = from_canonical.is_some() && from_canonical == to_canonical;
+        if !same_entry {
+            return Err(format!("{to} already exists"));
+        }
+    }
+    std::fs::rename(from, to).map_err(|e| e.to_string())
+}
+
 /// Reveal an entry in the platform's file manager, selecting it where possible:
 /// Finder on macOS, Explorer on Windows, and a best-effort open of the parent
 /// directory elsewhere.

@@ -53,6 +53,10 @@ export function fsDelete(path: string): Promise<void> {
   return invoke("fs_delete", { path });
 }
 
+export function fsRename(from: string, to: string): Promise<void> {
+  return invoke("fs_rename", { from, to });
+}
+
 export function fsReveal(path: string): Promise<void> {
   return invoke("fs_reveal", { path });
 }

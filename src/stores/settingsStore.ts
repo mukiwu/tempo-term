@@ -15,11 +15,14 @@ interface SettingsState {
   wordWrap: boolean;
   /** Persist each terminal's scrollback and restore it on next launch. */
   restoreTerminalHistory: boolean;
+  /** Folder that backs global notes; null until the user picks one. */
+  notesFolderPath: string | null;
   setLanguage: (language: SupportedLanguage) => void;
   setThemeId: (themeId: string) => void;
   setTerminalPadding: (padding: number) => void;
   toggleWordWrap: () => void;
   setRestoreTerminalHistory: (value: boolean) => void;
+  setNotesFolderPath: (path: string | null) => void;
 }
 
 export const SETTINGS_STORAGE_KEY = "tempoterm-settings";
@@ -39,11 +42,13 @@ export const useSettingsStore = create<SettingsState>()(
       terminalPadding: DEFAULT_TERMINAL_PADDING,
       wordWrap: false,
       restoreTerminalHistory: true,
+      notesFolderPath: null,
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
       toggleWordWrap: () => set((s) => ({ wordWrap: !s.wordWrap })),
       setRestoreTerminalHistory: (value) => set({ restoreTerminalHistory: value }),
+      setNotesFolderPath: (path) => set({ notesFolderPath: path }),
     }),
     {
       name: SETTINGS_STORAGE_KEY,

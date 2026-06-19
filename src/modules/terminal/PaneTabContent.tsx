@@ -219,7 +219,11 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                 {pane.content.kind === "editor" ? (
                   <EditorTabContent path={pane.content.path} />
                 ) : pane.content.kind === "note" ? (
-                  <NoteTabContent noteId={pane.content.noteId} tabId={tab.id} />
+                  <NoteTabContent
+                    noteId={pane.content.noteId}
+                    tabId={tab.id}
+                    leafId={pane.id}
+                  />
                 ) : pane.content.kind === "preview" ? (
                   <PreviewTabContent url={pane.content.url} />
                 ) : pane.content.kind === "git-graph" ? (

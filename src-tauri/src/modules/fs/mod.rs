@@ -58,6 +58,11 @@ pub fn fs_delete(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn fs_rename(from: String, to: String) -> Result<(), String> {
+    ops::rename(&from, &to)
+}
+
+#[tauri::command]
 pub fn fs_reveal(path: String) -> Result<(), String> {
     ops::reveal(&path)
 }

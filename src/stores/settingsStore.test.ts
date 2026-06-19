@@ -64,4 +64,18 @@ describe("settingsStore", () => {
     expect(persisted).toBeTruthy();
     expect(persisted).toContain('"wordWrap":true');
   });
+
+  it("defaults the notes folder path to null and updates it", () => {
+    expect(useSettingsStore.getState().notesFolderPath).toBeNull();
+    useSettingsStore.getState().setNotesFolderPath("/Users/me/Notes");
+    expect(useSettingsStore.getState().notesFolderPath).toBe("/Users/me/Notes");
+    useSettingsStore.getState().setNotesFolderPath(null);
+    expect(useSettingsStore.getState().notesFolderPath).toBeNull();
+  });
+
+  it("persists the notes folder path so it survives a reload", () => {
+    useSettingsStore.getState().setNotesFolderPath("/Users/me/Notes");
+    const persisted = localStorage.getItem("tempoterm-settings");
+    expect(persisted).toContain("/Users/me/Notes");
+  });
 });
