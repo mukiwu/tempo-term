@@ -21,7 +21,10 @@
     "fetching": "抓取中…",
     "matches": "{{count}} 筆符合",
     "head": "HEAD",
-    "more": "更多"
+    "more": "更多",
+    "commitOrder": "排序方式",
+    "orderDate": "日期順序",
+    "orderTopo": "拓樸順序"
   },
   "details": {
     "author": "作者",

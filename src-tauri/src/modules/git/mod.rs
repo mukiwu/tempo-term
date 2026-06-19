@@ -82,6 +82,16 @@ pub struct CommitDetails {
 }
 
 /// 線圖的顯示選項，來自前端工具列。branch 空字串或 None 代表 Show All。
+/// 線圖 commit 的排序方式。`Date` 依時間交錯（VSCode 預設，分支線並排展開），
+/// `Topo` 依拓樸把同一分支的 commit 收攏（線較少）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CommitOrder {
+    #[default]
+    Date,
+    Topo,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct GraphOptions {
@@ -89,6 +99,15 @@ pub struct GraphOptions {
     pub include_remotes: bool,
     pub include_tags: bool,
     pub include_stashes: bool,
+    pub order: CommitOrder,
+}
+
+/// 把排序選項翻成 git log 旗標。純函式方便測試。
+fn order_flag(order: CommitOrder) -> &'static str {
+    match order {
+        CommitOrder::Date => "--date-order",
+        CommitOrder::Topo => "--topo-order",
+    }
 }
 
 /// 把顯示選項翻成 git log 的 ref 範圍參數。純函式方便測試。
@@ -488,7 +507,7 @@ pub fn graph_log(
     let ref_args = build_log_refs(options);
     let mut args: Vec<&str> = vec![
         "log",
-        "--topo-order",
+        order_flag(options.order),
         "--decorate=full",
         "--pretty=format:%h|%p|%an|%ad|%d|%s",
         "--date=format-local:%Y-%m-%d %H:%M",
@@ -1224,6 +1243,7 @@ mod tests {
             include_remotes: true,
             include_tags: true,
             include_stashes: true,
+            order: CommitOrder::Date,
         };
         assert_eq!(
             build_log_refs(&options),
@@ -1243,6 +1263,17 @@ mod tests {
             ..GraphOptions::default()
         };
         assert_eq!(build_log_refs(&options), vec!["--branches".to_string()]);
+    }
+
+    #[test]
+    fn order_flag_maps_each_commit_order() {
+        assert_eq!(order_flag(CommitOrder::Date), "--date-order");
+        assert_eq!(order_flag(CommitOrder::Topo), "--topo-order");
+    }
+
+    #[test]
+    fn graph_options_default_order_is_date() {
+        assert_eq!(GraphOptions::default().order, CommitOrder::Date);
     }
 
     #[test]

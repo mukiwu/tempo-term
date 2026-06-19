@@ -25,14 +25,21 @@ interface GitGraphProps {
   labels: GitGraphLabels;
 }
 
-// Lane colours cycle through the semantic accent tokens so the graph reads well
-// in either theme (the tokens are remapped per theme, unlike hardcoded hex).
-const LANE_COLORS = [
-  "var(--color-accent)",
-  "var(--color-purple-500)",
-  "var(--color-warning)",
-  "var(--color-success)",
-  "var(--color-danger)",
+// Branch colours cycle per branch line (see CommitLayout.colorIndex), not per
+// lane index, so concurrent lanes never share a colour. This is a fixed rainbow
+// (red→violet), deliberately NOT theme tokens: branch colours are identifiers,
+// not UI surfaces, so they stay constant across themes — and the theme's colour
+// scales aren't remapped per theme anyway, so a token palette would wash out on
+// the light themes. Hues are mid-lightness so each reads on both dark (#222) and
+// light (#fff) backgrounds, and evenly spaced so adjacent lanes stay distinct.
+const BRANCH_COLORS = [
+  "#e0555f", // red
+  "#e08a3c", // orange
+  "#d6a82c", // yellow (deepened so it reads on light themes)
+  "#46a758", // green
+  "#3b8ee0", // blue
+  "#6366d6", // indigo
+  "#a857c4", // violet
 ];
 
 // Decoration chip styles per ref kind, built from semantic tokens.
@@ -131,7 +138,7 @@ export function GitGraph({
                 if (edge.parentIndex < visibleStart || edge.childIndex > visibleEnd) {
                   return null;
                 }
-                const color = LANE_COLORS[edge.lane % LANE_COLORS.length];
+                const color = BRANCH_COLORS[edge.colorIndex % BRANCH_COLORS.length];
                 return (
                   <path
                     key={`edge-${idx}`}
@@ -151,7 +158,7 @@ export function GitGraph({
               if (!layout) {
                 return null;
               }
-              const color = LANE_COLORS[layout.lane % LANE_COLORS.length];
+              const color = BRANCH_COLORS[layout.colorIndex % BRANCH_COLORS.length];
               const isSelected = selectedCommit?.hash === commit.hash;
               return (
                 <button

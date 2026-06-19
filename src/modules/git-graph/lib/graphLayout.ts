@@ -24,6 +24,8 @@ export interface CommitLayout {
   y: number;
   lane: number;
   index: number;
+  /** Branch colour id — cycles per branch line, not per lane index. */
+  colorIndex: number;
 }
 
 /** A parent→child link resolved to concrete coordinates for drawing. */
@@ -35,6 +37,8 @@ export interface GraphEdge {
   lane: number;
   childIndex: number;
   parentIndex: number;
+  /** Branch colour id of the line (the branch side of a merge/branch bend). */
+  colorIndex: number;
 }
 
 export interface GraphLayout {
@@ -68,12 +72,19 @@ export function computeGraphLayout(
   // Each slot holds the hash a lane is currently waiting for. An empty string
   // marks a freed lane that a new branch can reuse.
   const activeLanes: string[] = [];
+  // Colour id per lane slot. A new branch line (every claim, including reusing a
+  // freed slot) takes the next colour so concurrent lanes never share a colour
+  // and adjacent branches stay visually distinct, independent of lane index.
+  const laneColors: number[] = [];
+  let nextColor = 0;
   const claimLane = (): number => {
     const free = activeLanes.indexOf("");
     if (free !== -1) {
+      laneColors[free] = nextColor++;
       return free;
     }
     activeLanes.push("");
+    laneColors.push(nextColor++);
     return activeLanes.length - 1;
   };
 
@@ -101,7 +112,13 @@ export function computeGraphLayout(
       activeLanes[lane] = "";
     }
 
-    layouts[commit.hash] = { x: laneX(lane, geometry), y, lane, index };
+    layouts[commit.hash] = {
+      x: laneX(lane, geometry),
+      y,
+      lane,
+      index,
+      colorIndex: laneColors[lane] ?? 0,
+    };
   });
 
   // Parents may be referenced by a hash of a different length than the keys in
@@ -128,6 +145,12 @@ export function computeGraphLayout(
       if (!parent) {
         return;
       }
+      // Colour the line by its branch side: the endpoint on the higher lane.
+      // For a merge bend that is the merged-in branch (parent); for a branch's
+      // tail merging back to the trunk it is the branch commit (child). Keeps
+      // merge lines off the trunk colour so the graph reads as multiple colours.
+      const colorIndex =
+        child.lane >= parent.lane ? child.colorIndex : parent.colorIndex;
       edges.push({
         cx: child.x,
         cy: child.y,
@@ -136,6 +159,7 @@ export function computeGraphLayout(
         lane: child.lane,
         childIndex: index,
         parentIndex: parent.index,
+        colorIndex,
       });
     });
   });

@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { Combobox } from "@/components/Combobox";
-import type { Branch } from "./types";
+import type { Branch, CommitOrder } from "./types";
 
 // Below this measured toolbar width the layout switches to compact: the action
 // icons fold into a single overflow menu. Sized to the point where the roomy
@@ -32,6 +32,9 @@ export interface GitGraphToolbarLabels {
   matches: string;
   head: string;
   more: string;
+  commitOrder: string;
+  orderDate: string;
+  orderTopo: string;
 }
 
 interface GitGraphToolbarProps {
@@ -44,6 +47,8 @@ interface GitGraphToolbarProps {
   onToggleTags: (value: boolean) => void;
   includeStashes: boolean;
   onToggleStashes: (value: boolean) => void;
+  commitOrder: CommitOrder;
+  onChangeOrder: (order: CommitOrder) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   matchCount: number;
@@ -65,6 +70,8 @@ export function GitGraphToolbar({
   onToggleTags,
   includeStashes,
   onToggleStashes,
+  commitOrder,
+  onChangeOrder,
   searchQuery,
   onSearchChange,
   matchCount,
@@ -117,6 +124,32 @@ export function GitGraphToolbar({
     { label: labels.showTags, checked: includeTags, onChange: onToggleTags },
     { label: labels.showStashes, checked: includeStashes, onChange: onToggleStashes },
   ];
+
+  const orderOptions: { value: CommitOrder; label: string }[] = [
+    { value: "date", label: labels.orderDate },
+    { value: "topo", label: labels.orderTopo },
+  ];
+  const orderSection = (
+    <>
+      <div className="my-1 border-t border-border" />
+      <div
+        className="px-2 py-1 font-mono text-[11px] text-fg-subtle"
+        aria-hidden="true"
+      >
+        {labels.commitOrder}
+      </div>
+      <div role="radiogroup" aria-label={labels.commitOrder}>
+        {orderOptions.map((o) => (
+          <OrderRow
+            key={o.value}
+            label={o.label}
+            checked={commitOrder === o.value}
+            onSelect={() => onChangeOrder(o.value)}
+          />
+        ))}
+      </div>
+    </>
+  );
 
   // In compact mode an open search input needs the whole row, so the branch
   // combobox steps aside until search closes.
@@ -252,6 +285,7 @@ export function GitGraphToolbar({
                   {toggles.map((t) => (
                     <ToggleRow key={t.label} {...t} />
                   ))}
+                  {orderSection}
                 </div>
               </>
             )}
@@ -274,10 +308,11 @@ export function GitGraphToolbar({
                     onClick={() => setOptionsOpen(false)}
                     aria-hidden="true"
                   />
-                  <div className="absolute right-0 z-30 mt-1 w-44 rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg">
+                  <div className="absolute right-0 z-30 mt-1 w-48 rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg">
                     {toggles.map((t) => (
                       <ToggleRow key={t.label} {...t} />
                     ))}
+                    {orderSection}
                   </div>
                 </>
               )}
@@ -326,6 +361,27 @@ function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
       role="checkbox"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
+      className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs text-fg-muted hover:bg-bg-inset hover:text-fg"
+    >
+      <span>{label}</span>
+      {checked && <Check className="h-3.5 w-3.5 text-accent" />}
+    </button>
+  );
+}
+
+interface OrderRowProps {
+  label: string;
+  checked: boolean;
+  onSelect: () => void;
+}
+
+function OrderRow({ label, checked, onSelect }: OrderRowProps) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      onClick={onSelect}
       className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs text-fg-muted hover:bg-bg-inset hover:text-fg"
     >
       <span>{label}</span>

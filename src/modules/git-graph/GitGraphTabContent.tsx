@@ -31,7 +31,7 @@ import { filterCommits } from "./lib/filterCommits";
 import { buildCommitMenu, buildRefMenu } from "./lib/contextMenuItems";
 import { splitRemoteRef } from "./lib/remoteRef";
 import { withMinDuration } from "@/lib/withMinDuration";
-import type { Branch, CommitNode, CommitRef, GraphOptions } from "./types";
+import type { Branch, CommitNode, CommitRef, CommitOrder, GraphOptions } from "./types";
 
 const PAGE_SIZE = 200;
 // Local git reloads finish almost instantly; keep the busy spinner up at least
@@ -86,6 +86,9 @@ export function GitGraphTabContent() {
   const [includeRemotes, setIncludeRemotes] = useState(true);
   const [includeTags, setIncludeTags] = useState(true);
   const [includeStashes, setIncludeStashes] = useState(false);
+  const [commitOrder, setCommitOrder] = useState<CommitOrder>(() =>
+    localStorage.getItem("tempoterm-gitgraph-commit-order") === "topo" ? "topo" : "date",
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [fetching, setFetching] = useState(false);
   // Any action that reloads the graph (refresh button + context-menu git ops)
@@ -97,6 +100,7 @@ export function GitGraphTabContent() {
     includeRemotes,
     includeTags,
     includeStashes,
+    order: commitOrder,
   };
 
   const visibleCommits = filterCommits(commits, searchQuery);
@@ -162,8 +166,9 @@ export function GitGraphTabContent() {
       includeRemotes,
       includeTags,
       includeStashes,
+      order: commitOrder,
     });
-  }, [repo, selectedBranch, includeRemotes, includeTags, includeStashes, reload]);
+  }, [repo, selectedBranch, includeRemotes, includeTags, includeStashes, commitOrder, reload]);
 
   // Run an action then refresh the graph; surface any failure inline.
   const runAction = useCallback(
@@ -187,7 +192,7 @@ export function GitGraphTabContent() {
         setBusy(false);
       }
     },
-    [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes],
+    [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes, options.order],
   );
 
   const loadMore = useCallback(() => {
@@ -197,7 +202,7 @@ export function GitGraphTabContent() {
     const next = limit + PAGE_SIZE;
     setLimit(next);
     void reload(repo, next, options);
-  }, [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes]);
+  }, [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes, options.order]);
 
   // Turning remotes off hides remote branches; if one was selected, fall back
   // to Show All so the dropdown value and selectedBranch stay in sync.
@@ -214,6 +219,12 @@ export function GitGraphTabContent() {
     [branches, selectedBranch],
   );
 
+  // Remember the chosen order so it survives reopening the graph tab.
+  const handleChangeOrder = useCallback((order: CommitOrder) => {
+    setCommitOrder(order);
+    localStorage.setItem("tempoterm-gitgraph-commit-order", order);
+  }, []);
+
   const handleFetch = useCallback(async () => {
     if (!repo) {
       return;
@@ -228,7 +239,7 @@ export function GitGraphTabContent() {
     } finally {
       setFetching(false);
     }
-  }, [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes]);
+  }, [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes, options.order]);
 
   const toolbarLabels: GitGraphToolbarLabels = {
     branches: t("toolbar.branches"),
@@ -245,6 +256,9 @@ export function GitGraphTabContent() {
     matches: t("toolbar.matches"),
     head: t("toolbar.head"),
     more: t("toolbar.more"),
+    commitOrder: t("toolbar.commitOrder"),
+    orderDate: t("toolbar.orderDate"),
+    orderTopo: t("toolbar.orderTopo"),
   };
 
   const persistDetailsHeight = useCallback(() => {
@@ -440,6 +454,8 @@ export function GitGraphTabContent() {
           onToggleTags={setIncludeTags}
           includeStashes={includeStashes}
           onToggleStashes={setIncludeStashes}
+          commitOrder={commitOrder}
+          onChangeOrder={handleChangeOrder}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           matchCount={visibleCommits.length}

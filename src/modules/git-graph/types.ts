@@ -28,12 +28,20 @@ export interface Branch {
   isRemote: boolean;
 }
 
+/**
+ * Commit ordering for the graph. "date" interleaves branches chronologically
+ * (more parallel lanes, matches VSCode's default); "topo" groups each branch's
+ * commits together (fewer lanes).
+ */
+export type CommitOrder = "date" | "topo";
+
 /** Display options sent to the backend graph log. `branch` null means Show All. */
 export interface GraphOptions {
   branch: string | null;
   includeRemotes: boolean;
   includeTags: boolean;
   includeStashes: boolean;
+  order: CommitOrder;
 }
 
 /** One file changed by a commit. */

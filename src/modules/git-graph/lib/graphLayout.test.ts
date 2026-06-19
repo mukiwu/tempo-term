@@ -90,6 +90,48 @@ describe("computeGraphLayout", () => {
   });
 });
 
+describe("computeGraphLayout colouring", () => {
+  it("keeps a single branch on one colour", () => {
+    const commits = [commit("c", ["b"]), commit("b", ["a"]), commit("a", [])];
+    const { layouts } = computeGraphLayout(commits);
+
+    expect(layouts["c"].colorIndex).toBe(0);
+    expect(layouts["b"].colorIndex).toBe(0);
+    expect(layouts["a"].colorIndex).toBe(0);
+  });
+
+  it("gives a merge's second-parent branch a different colour from the trunk", () => {
+    const commits = [commit("m", ["a", "b"]), commit("b", ["a"]), commit("a", [])];
+    const { layouts } = computeGraphLayout(commits);
+
+    expect(layouts["m"].colorIndex).toBe(0);
+    expect(layouts["b"].colorIndex).not.toBe(layouts["m"].colorIndex);
+  });
+
+  it("gives a reused lane a fresh colour so it does not repeat the previous branch", () => {
+    const commits = [
+      commit("x", ["root"]),
+      commit("y", ["root"]),
+      commit("root", []),
+      commit("z", []),
+    ];
+    const { layouts } = computeGraphLayout(commits);
+
+    // z reuses lane 0 (geometry) but is a new branch line, so its colour must
+    // not collide with the earlier occupant of lane 0.
+    expect(layouts["z"].lane).toBe(0);
+    expect(layouts["z"].colorIndex).not.toBe(layouts["x"].colorIndex);
+  });
+
+  it("colours a merge bend by the merged branch, not the trunk", () => {
+    const commits = [commit("m", ["a", "b"]), commit("b", ["a"]), commit("a", [])];
+    const { layouts, edges } = computeGraphLayout(commits);
+
+    const mergeBend = edges.find((e) => e.childIndex === 0 && e.parentIndex === 1);
+    expect(mergeBend?.colorIndex).toBe(layouts["b"].colorIndex);
+  });
+});
+
 describe("laneX", () => {
   it("clamps lanes past maxLane onto the last column", () => {
     const beyond = laneX(DEFAULT_GEOMETRY.maxLane + 3, DEFAULT_GEOMETRY);
@@ -108,6 +150,7 @@ describe("edgePath", () => {
       lane: 0,
       childIndex: 0,
       parentIndex: 1,
+      colorIndex: 0,
     };
     expect(edgePath(edge, 36)).toBe("M 20 20 L 20 56");
   });
@@ -121,6 +164,7 @@ describe("edgePath", () => {
       lane: 0,
       childIndex: 0,
       parentIndex: 2,
+      colorIndex: 0,
     };
     const path = edgePath(edge, 36);
     expect(path.startsWith("M 20 20 C")).toBe(true);

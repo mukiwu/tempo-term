@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitGraphToolbar, type GitGraphToolbarLabels } from "./GitGraphToolbar";
 import type { Branch } from "./types";
@@ -53,6 +53,9 @@ const labels: GitGraphToolbarLabels = {
   matches: "{{count}} matches",
   head: "HEAD",
   more: "More",
+  commitOrder: "Commit order",
+  orderDate: "Date order",
+  orderTopo: "Topological order",
 };
 
 const branches: Branch[] = [
@@ -71,6 +74,8 @@ function renderToolbar(overrides: Partial<Parameters<typeof GitGraphToolbar>[0]>
     onToggleTags: vi.fn(),
     includeStashes: false,
     onToggleStashes: vi.fn(),
+    commitOrder: "date" as const,
+    onChangeOrder: vi.fn(),
     searchQuery: "",
     onSearchChange: vi.fn(),
     matchCount: 0,
@@ -167,5 +172,44 @@ describe("GitGraphToolbar responsive layout", () => {
     const row = screen.getByText(labels.refresh).closest("button");
     expect(row).toBeDisabled();
     expect(row?.querySelector(".animate-spin")).not.toBeNull();
+  });
+});
+
+describe("GitGraphToolbar commit ordering", () => {
+  it("changes the order from the display-options popover (roomy)", () => {
+    const props = renderToolbar({ commitOrder: "date" });
+
+    fireEvent.click(screen.getByTitle(labels.displayOptions));
+
+    expect(screen.getByText(labels.orderDate)).toBeInTheDocument();
+    fireEvent.click(screen.getByText(labels.orderTopo));
+    expect(props.onChangeOrder).toHaveBeenCalledWith("topo");
+  });
+
+  it("marks the active order so the current choice is visible", () => {
+    renderToolbar({ commitOrder: "topo" });
+
+    fireEvent.click(screen.getByTitle(labels.displayOptions));
+
+    expect(screen.getByRole("radio", { name: labels.orderTopo })).toBeChecked();
+    expect(screen.getByRole("radio", { name: labels.orderDate })).not.toBeChecked();
+  });
+
+  it("groups the order options as a labelled radiogroup for screen readers", () => {
+    renderToolbar({ commitOrder: "date" });
+
+    fireEvent.click(screen.getByTitle(labels.displayOptions));
+
+    const group = screen.getByRole("radiogroup", { name: labels.commitOrder });
+    expect(within(group).getAllByRole("radio")).toHaveLength(2);
+  });
+
+  it("changes the order from the overflow menu (compact)", () => {
+    const props = renderToolbar({ commitOrder: "date" });
+    setToolbarWidth(360);
+    fireEvent.click(screen.getByTitle(labels.more));
+
+    fireEvent.click(screen.getByText(labels.orderTopo));
+    expect(props.onChangeOrder).toHaveBeenCalledWith("topo");
   });
 });

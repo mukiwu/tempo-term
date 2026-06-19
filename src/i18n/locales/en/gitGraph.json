@@ -21,7 +21,10 @@
     "fetching": "Fetching…",
     "matches": "{{count}} matches",
     "head": "HEAD",
-    "more": "More"
+    "more": "More",
+    "commitOrder": "Commit order",
+    "orderDate": "Date order",
+    "orderTopo": "Topological order"
   },
   "details": {
     "author": "Author",
