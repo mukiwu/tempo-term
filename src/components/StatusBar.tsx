@@ -1,14 +1,14 @@
 import { useTranslation } from "react-i18next";
 import { Activity, Circle, Settings } from "lucide-react";
 import { useUiStore } from "@/stores/uiStore";
-import { activeCount, useProgressStore } from "@/modules/claude-progress/lib/progressStore";
+import { totalActiveCount, useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 
 export function StatusBar() {
   const { t } = useTranslation();
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
-  const progress = useProgressStore((s) => s.progress);
+  const sessions = useProgressStore((s) => s.sessions);
   const togglePanel = useProgressStore((s) => s.togglePanel);
-  const count = activeCount(progress);
+  const count = totalActiveCount(sessions);
   const active = count > 0;
 
   return (

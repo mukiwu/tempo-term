@@ -1,17 +1,25 @@
-//! Watches a Claude Code session transcript and streams newly appended lines to
-//! the frontend. The tailing core (which complete lines were added since we last
-//! read) is a pure function so it can be tested without touching the filesystem
-//! or the notify watcher.
+//! Watches Claude Code session transcripts and streams newly appended lines to
+//! the frontend, one independent watcher per project directory (cwd). The
+//! tailing core (which complete lines were added since we last read) is a pure
+//! function so it can be tested without the filesystem or the notify watcher.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-/// Event name carrying freshly appended transcript lines (a `string[]`) to the
-/// frontend.
+/// Event name carrying a freshly appended batch of transcript lines to the
+/// frontend, tagged with the cwd they belong to.
 const PROGRESS_EVENT: &str = "claude-progress:lines";
+
+/// Payload emitted to the frontend: which project (cwd) produced these lines.
+#[derive(Clone, serde::Serialize)]
+struct ProgressBatch {
+    cwd: String,
+    lines: Vec<String>,
+}
 
 /// Splits out the complete lines that appear after `from_offset` (a byte index
 /// into `contents`). A trailing line with no newline yet is left unconsumed, so
@@ -70,61 +78,24 @@ fn latest_transcript(dir: &Path) -> Option<PathBuf> {
     newest.map(|(_, path)| path)
 }
 
-/// Which transcript we are tailing and how far we have read. Shared with the
+/// Which transcript a watcher is tailing and how far it has read. Shared with the
 /// notify callback so it can follow the directory's newest session over time.
 struct WatchCursor {
     current: Option<PathBuf>,
     offset: usize,
 }
 
-/// Holds the active directory watcher. Dropping it (replacing with `None`) stops
-/// the OS-level subscription, so only one project directory is watched at a time.
-pub struct ClaudeProgressState {
-    watcher: Mutex<Option<RecommendedWatcher>>,
-}
-
-impl ClaudeProgressState {
-    pub fn new() -> Self {
-        Self {
-            watcher: Mutex::new(None),
-        }
-    }
-}
-
-impl Default for ClaudeProgressState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Stream Claude progress for `cwd`. Watches that project's transcript directory
-/// and follows its newest session: tailing only lines appended from now on, and
-/// switching (reading from the start) whenever a newer session file appears.
-/// Returns the transcript currently being followed, or `None` if there is none.
-#[tauri::command]
-pub fn claude_progress_watch(
-    app: AppHandle,
-    state: State<ClaudeProgressState>,
-    cwd: String,
-) -> Result<Option<String>, String> {
-    let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    let dir = home.join(".claude").join("projects").join(mangle_cwd(&cwd));
-    if !dir.is_dir() {
-        // No project history yet; stop any previous watch and report nothing.
-        *state.watcher.lock().unwrap() = None;
-        return Ok(None);
-    }
-
-    // Start at the END of the current newest transcript so an old, already
-    // finished session is never replayed into the panel. Only progress that
-    // happens from now on is streamed.
-    let current = latest_transcript(&dir);
+/// Build a watcher for one project directory. It follows the directory's newest
+/// session: tailing only lines appended from now on, and switching (reading from
+/// the start) whenever a newer session file appears. Each emitted batch is
+/// tagged with `cwd`.
+fn build_watcher(app: &AppHandle, dir: &Path, cwd: String) -> Result<RecommendedWatcher, String> {
+    let current = latest_transcript(dir);
     let offset = current.as_deref().map(byte_len).unwrap_or(0);
-    let watched = current.as_ref().map(|p| p.to_string_lossy().into_owned());
     let cursor = Arc::new(Mutex::new(WatchCursor { current, offset }));
 
     let app_cb = app.clone();
-    let dir_cb = dir.clone();
+    let dir_cb = dir.to_path_buf();
     let cursor_cb = Arc::clone(&cursor);
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -137,30 +108,83 @@ pub fn claude_progress_watch(
         };
         let mut cursor = cursor_cb.lock().unwrap();
         if cursor.current.as_ref() != Some(&latest) {
-            // A newer session started: follow it from the beginning.
             cursor.current = Some(latest.clone());
             cursor.offset = 0;
         }
         let (lines, new_offset) = read_new_lines(&latest, cursor.offset);
         cursor.offset = new_offset;
         if !lines.is_empty() {
-            let _ = app_cb.emit(PROGRESS_EVENT, &lines);
+            let _ = app_cb.emit(
+                PROGRESS_EVENT,
+                ProgressBatch {
+                    cwd: cwd.clone(),
+                    lines,
+                },
+            );
         }
     })
     .map_err(|e| e.to_string())?;
 
     watcher
-        .watch(&dir, RecursiveMode::NonRecursive)
+        .watch(dir, RecursiveMode::NonRecursive)
         .map_err(|e| e.to_string())?;
-
-    *state.watcher.lock().unwrap() = Some(watcher);
-    Ok(watched)
+    Ok(watcher)
 }
 
-/// Stop streaming the current transcript (if any).
+/// Holds one active watcher per watched project directory (keyed by cwd).
+/// Dropping a watcher stops its OS-level subscription.
+pub struct ClaudeProgressState {
+    watchers: Mutex<HashMap<String, RecommendedWatcher>>,
+}
+
+impl ClaudeProgressState {
+    pub fn new() -> Self {
+        Self {
+            watchers: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl Default for ClaudeProgressState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Sync the set of watched project directories to exactly `cwds`: keep existing
+/// watchers, drop ones no longer present, and start watching new ones. Directories
+/// with no transcript yet are simply skipped (no watcher until a session exists).
+#[tauri::command]
+pub fn claude_progress_watch(
+    app: AppHandle,
+    state: State<ClaudeProgressState>,
+    cwds: Vec<String>,
+) -> Result<(), String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    let mut watchers = state.watchers.lock().unwrap();
+
+    watchers.retain(|cwd, _| cwds.contains(cwd));
+
+    for cwd in cwds {
+        if watchers.contains_key(&cwd) {
+            continue;
+        }
+        let dir = home.join(".claude").join("projects").join(mangle_cwd(&cwd));
+        if !dir.is_dir() {
+            continue;
+        }
+        if let Ok(watcher) = build_watcher(&app, &dir, cwd.clone()) {
+            watchers.insert(cwd, watcher);
+        }
+    }
+
+    Ok(())
+}
+
+/// Stop streaming all transcripts.
 #[tauri::command]
 pub fn claude_progress_unwatch(state: State<ClaudeProgressState>) {
-    *state.watcher.lock().unwrap() = None;
+    state.watchers.lock().unwrap().clear();
 }
 
 #[cfg(test)]

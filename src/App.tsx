@@ -17,7 +17,7 @@ import { applyTheme, getTheme } from "@/themes/themes";
 import { listen } from "@tauri-apps/api/event";
 import { ClaudeProgressPanel } from "@/modules/claude-progress/ClaudeProgressPanel";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
-import { useWatchActiveSession } from "@/modules/claude-progress/lib/useWatchActiveSession";
+import { useWatchSessions } from "@/modules/claude-progress/lib/useWatchSessions";
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 640;
@@ -32,7 +32,7 @@ function App() {
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const [sidebarWidth, setSidebarWidth] = useState(260);
 
-  useWatchActiveSession();
+  useWatchSessions();
 
   useEffect(() => {
     applyTheme(getTheme(themeId), document.documentElement);
@@ -63,9 +63,12 @@ function App() {
   useEffect(() => {
     // listen() rejects when there is no Tauri runtime (unit tests, web preview);
     // swallow it so it never surfaces as an unhandled rejection.
-    const unlisten = listen<string[]>("claude-progress:lines", (event) => {
-      useProgressStore.getState().pushLines(event.payload);
-    }).catch(() => undefined);
+    const unlisten = listen<{ cwd: string; lines: string[] }>(
+      "claude-progress:lines",
+      (event) => {
+        useProgressStore.getState().pushLines(event.payload.cwd, event.payload.lines);
+      },
+    ).catch(() => undefined);
     return () => {
       void unlisten.then((off) => off?.());
     };
