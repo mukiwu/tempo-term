@@ -3,11 +3,11 @@
 //! read) is a pure function so it can be tested without touching the filesystem
 //! or the notify watcher.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Event name carrying freshly appended transcript lines (a `string[]`) to the
 /// frontend.
@@ -31,11 +31,37 @@ pub fn split_new_lines(contents: &str, from_offset: usize) -> (Vec<String>, usiz
 
 /// Read the file and return the lines appended since `from_offset`. A read error
 /// (file missing, mid-rename) yields nothing and leaves the offset untouched.
-fn read_new_lines(path: &PathBuf, from_offset: usize) -> (Vec<String>, usize) {
+fn read_new_lines(path: &Path, from_offset: usize) -> (Vec<String>, usize) {
     match std::fs::read_to_string(path) {
         Ok(contents) => split_new_lines(&contents, from_offset),
         Err(_) => (Vec::new(), from_offset),
     }
+}
+
+/// Mangle a working directory into the folder name Claude Code stores its
+/// transcripts under (every non-alphanumeric character becomes a dash), e.g.
+/// `/Users/me/01.project` -> `-Users-me-01-project`.
+fn mangle_cwd(cwd: &str) -> String {
+    cwd.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// The most recently modified `.jsonl` transcript in `dir`, if any.
+fn latest_transcript(dir: &Path) -> Option<PathBuf> {
+    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+            continue;
+        }
+        if let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) {
+            if newest.as_ref().map_or(true, |(time, _)| modified > *time) {
+                newest = Some((modified, path));
+            }
+        }
+    }
+    newest.map(|(_, path)| path)
 }
 
 /// Holds the active transcript watcher. Dropping the watcher (replacing it with
@@ -59,15 +85,25 @@ impl Default for ClaudeProgressState {
     }
 }
 
-/// Start streaming a session transcript to the frontend: emit everything already
-/// in the file, then watch it and emit each batch of newly appended lines.
+/// Start streaming the most recent transcript for `cwd`: emit everything already
+/// in it, then watch it and emit each batch of newly appended lines. Returns the
+/// watched transcript path, or `None` if that project has no session yet.
 #[tauri::command]
 pub fn claude_progress_watch(
     app: AppHandle,
     state: State<ClaudeProgressState>,
-    path: String,
-) -> Result<(), String> {
-    let path = PathBuf::from(path);
+    cwd: String,
+) -> Result<Option<String>, String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    let dir = home.join(".claude").join("projects").join(mangle_cwd(&cwd));
+    let path = match latest_transcript(&dir) {
+        Some(path) => path,
+        None => {
+            // No session for this directory yet; stop any previous watch.
+            *state.watcher.lock().unwrap() = None;
+            return Ok(None);
+        }
+    };
 
     // Catch up on everything already written before watching for changes.
     let (initial_lines, initial_offset) = read_new_lines(&path, 0);
@@ -97,7 +133,7 @@ pub fn claude_progress_watch(
         .map_err(|e| e.to_string())?;
 
     *state.watcher.lock().unwrap() = Some(watcher);
-    Ok(())
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 /// Stop streaming the current transcript (if any).
@@ -136,5 +172,10 @@ mod tests {
         let (lines, offset) = split_new_lines("x\n", 100);
         assert_eq!(lines, vec!["x"]);
         assert_eq!(offset, 2);
+    }
+
+    #[test]
+    fn mangles_a_cwd_into_a_projects_folder_name() {
+        assert_eq!(mangle_cwd("/Users/me/01.project"), "-Users-me-01-project");
     }
 }

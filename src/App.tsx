@@ -17,6 +17,7 @@ import { applyTheme, getTheme } from "@/themes/themes";
 import { listen } from "@tauri-apps/api/event";
 import { ClaudeProgressPanel } from "@/modules/claude-progress/ClaudeProgressPanel";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
+import { useWatchActiveSession } from "@/modules/claude-progress/lib/useWatchActiveSession";
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 640;
@@ -30,6 +31,8 @@ function App() {
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const [sidebarWidth, setSidebarWidth] = useState(260);
+
+  useWatchActiveSession();
 
   useEffect(() => {
     applyTheme(getTheme(themeId), document.documentElement);
