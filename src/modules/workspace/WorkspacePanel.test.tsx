@@ -9,6 +9,7 @@ import { emptyProgressState, reduceProgress } from "@/modules/claude-progress/li
 import { useWorktreeStore } from "./lib/worktreeStore";
 import { useTitlesStore } from "./lib/titlesStore";
 import { usePrStore } from "./lib/prStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 function activeSession() {
   return reduceProgress(emptyProgressState(), { kind: "tool:start", id: "t1", name: "Bash" });
@@ -19,6 +20,10 @@ beforeEach(() => {
   useWorktreeStore.setState({ infos: {} });
   useTitlesStore.setState({ titles: {} });
   usePrStore.setState({ prs: {}, fetchedAt: {} });
+  useSettingsStore.setState({
+    workspaceCard: { status: true, branch: true, cwd: true, pr: true },
+    prSource: "auto",
+  });
   useTabsStore.setState({
     spaces: [{ id: "s1", name: "Salon" }],
     activeSpaceId: "s1",
@@ -140,5 +145,37 @@ describe("WorkspacePanel", () => {
     render(<WorkspacePanel />);
     const card = screen.getByRole("button", { name: /alpha/ });
     expect(within(card).getByText(/#42/)).toBeInTheDocument();
+  });
+
+  it("hides the status badge when the status block is disabled", () => {
+    useProgressStore.setState({ sessions: { "/a": activeSession() } });
+    useSettingsStore.setState({
+      workspaceCard: { status: false, branch: true, cwd: true, pr: true },
+    });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /alpha/ });
+    expect(within(card).queryByText("Running")).toBeNull();
+  });
+
+  it("hides the PR badge when the PR block is disabled", () => {
+    usePrStore.setState({
+      prs: { "/a": { number: 42, state: "open", url: "u", title: null } },
+      fetchedAt: { "/a": Date.now() },
+    });
+    useSettingsStore.setState({
+      workspaceCard: { status: true, branch: true, cwd: true, pr: false },
+    });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /alpha/ });
+    expect(within(card).queryByText(/#42/)).toBeNull();
+  });
+
+  it("hides the cwd path when the cwd block is disabled", () => {
+    useSettingsStore.setState({
+      workspaceCard: { status: true, branch: true, cwd: false, pr: true },
+    });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /alpha/ });
+    expect(within(card).queryByText("/a")).toBeNull();
   });
 });

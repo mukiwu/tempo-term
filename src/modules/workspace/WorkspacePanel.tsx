@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTabsStore, type Tab, type TabKind } from "@/stores/tabsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { deriveStatus } from "@/modules/claude-progress/lib/progressState";
 import { deriveTabCwd } from "./lib/tabCwd";
@@ -76,12 +77,27 @@ function StatusBadge({ status }: { status: ClaudeStatus }) {
   );
 }
 
-function BranchLine({ branch, path }: { branch: string | null; path: string | null }) {
+interface BranchFlags {
+  showBranch: boolean;
+  showCwd: boolean;
+}
+
+function BranchLine({
+  branch,
+  path,
+  showBranch,
+  showCwd,
+}: { branch: string | null; path: string | null } & BranchFlags) {
+  const shownBranch = showBranch ? branch : null;
+  const shownPath = showCwd ? path : null;
+  if (!shownBranch && !shownPath) {
+    return null;
+  }
   return (
     <span className="flex items-center gap-1 text-[11px] text-fg-subtle">
       <GitBranch size={11} className="shrink-0" />
-      {branch && <span className="shrink-0 text-fg-muted">{branch}</span>}
-      {path && <span className="min-w-0 truncate">{path}</span>}
+      {shownBranch && <span className="shrink-0 text-fg-muted">{shownBranch}</span>}
+      {shownPath && <span className="min-w-0 truncate">{shownPath}</span>}
     </span>
   );
 }
@@ -89,23 +105,43 @@ function BranchLine({ branch, path }: { branch: string | null; path: string | nu
 /**
  * The branch/cwd block under a card title. A linked worktree shows two lines
  * (main repo, then worktree); a normal repo shows one. Before info loads, it
- * falls back to the plain cwd.
+ * falls back to the plain cwd. Branch and cwd visibility follow settings.
  */
-function BranchBlock({ info, cwd }: { info: WorktreeInfo | undefined; cwd: string | null }) {
+function BranchBlock({
+  info,
+  cwd,
+  showBranch,
+  showCwd,
+}: { info: WorktreeInfo | undefined; cwd: string | null } & BranchFlags) {
+  if (!showBranch && !showCwd) {
+    return null;
+  }
   if (!info) {
-    return cwd ? (
+    return showCwd && cwd ? (
       <span className="block truncate text-[11px] text-fg-subtle">{cwd}</span>
     ) : null;
   }
   if (info.isWorktree) {
     return (
       <span className="block space-y-0.5">
-        <BranchLine branch={info.mainBranch} path={info.mainPath} />
-        <BranchLine branch={info.branch} path={info.cwd} />
+        <BranchLine
+          branch={info.mainBranch}
+          path={info.mainPath}
+          showBranch={showBranch}
+          showCwd={showCwd}
+        />
+        <BranchLine
+          branch={info.branch}
+          path={info.cwd}
+          showBranch={showBranch}
+          showCwd={showCwd}
+        />
       </span>
     );
   }
-  return <BranchLine branch={info.branch} path={info.cwd} />;
+  return (
+    <BranchLine branch={info.branch} path={info.cwd} showBranch={showBranch} showCwd={showCwd} />
+  );
 }
 
 const PR_STATE_STYLE: Record<string, string> = {
@@ -133,6 +169,7 @@ function TabCard({ tab }: { tab: Tab }) {
   const infos = useWorktreeStore((s) => s.infos);
   const titles = useTitlesStore((s) => s.titles);
   const prs = usePrStore((s) => s.prs);
+  const card = useSettingsStore((s) => s.workspaceCard);
   const active = tab.id === activeId;
   const cwd = deriveTabCwd(tab);
   const status = tabClaudeStatus(tab, sessions);
@@ -155,10 +192,10 @@ function TabCard({ tab }: { tab: Tab }) {
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{title}</span>
-          {status && <StatusBadge status={status} />}
+          {card.status && status && <StatusBadge status={status} />}
         </span>
-        <BranchBlock info={info} cwd={cwd} />
-        {pr && (
+        <BranchBlock info={info} cwd={cwd} showBranch={card.branch} showCwd={card.cwd} />
+        {card.pr && pr && (
           <span className="mt-0.5 block">
             <PrBadge pr={pr} />
           </span>
@@ -220,6 +257,8 @@ export function WorkspacePanel() {
   const [filter, setFilter] = useState<StatusFilter>("all");
 
   const infos = useWorktreeStore((s) => s.infos);
+  const showPr = useSettingsStore((s) => s.workspaceCard.pr);
+  const prSource = useSettingsStore((s) => s.prSource);
   const cwds = tabs
     .map((tab) => deriveTabCwd(tab))
     .filter((cwd): cwd is string => cwd !== null);
@@ -227,10 +266,11 @@ export function WorkspacePanel() {
   useWorkspaceTitles(cwds);
 
   // PR lookups need a branch, which comes from the worktree info fetched above.
+  // Skip fetching entirely when the PR block is hidden.
   const prPairs = cwds
     .map((cwd) => ({ cwd, branch: infos[cwd]?.branch ?? "" }))
     .filter((pair) => pair.branch !== "");
-  useWorkspacePrs(prPairs, "auto");
+  useWorkspacePrs(prPairs, showPr ? prSource : "off");
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
