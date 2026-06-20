@@ -8,6 +8,7 @@ import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { emptyProgressState, reduceProgress } from "@/modules/claude-progress/lib/progressState";
 import { useWorktreeStore } from "./lib/worktreeStore";
 import { useTitlesStore } from "./lib/titlesStore";
+import { usePrStore } from "./lib/prStore";
 
 function activeSession() {
   return reduceProgress(emptyProgressState(), { kind: "tool:start", id: "t1", name: "Bash" });
@@ -17,6 +18,7 @@ beforeEach(() => {
   useProgressStore.setState({ sessions: {} });
   useWorktreeStore.setState({ infos: {} });
   useTitlesStore.setState({ titles: {} });
+  usePrStore.setState({ prs: {}, fetchedAt: {} });
   useTabsStore.setState({
     spaces: [{ id: "s1", name: "Salon" }],
     activeSpaceId: "s1",
@@ -128,5 +130,15 @@ describe("WorkspacePanel", () => {
     render(<WorkspacePanel />);
     expect(screen.getByText("Auto Alpha")).toBeInTheDocument();
     expect(screen.queryByText("alpha")).toBeNull();
+  });
+
+  it("shows a PR badge on a card whose cwd has a tracked PR", () => {
+    usePrStore.setState({
+      prs: { "/a": { number: 42, state: "open", url: "u", title: "Add thing" } },
+      fetchedAt: { "/a": Date.now() },
+    });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /alpha/ });
+    expect(within(card).getByText(/#42/)).toBeInTheDocument();
   });
 });

@@ -7,6 +7,7 @@ import {
   FileText,
   Folder,
   GitBranch,
+  GitPullRequest,
   Globe,
   LayoutGrid,
   Plus,
@@ -22,7 +23,10 @@ import { useWorktreeStore } from "./lib/worktreeStore";
 import { useWorktreeInfos } from "./lib/useWorktreeInfos";
 import { useTitlesStore } from "./lib/titlesStore";
 import { useWorkspaceTitles } from "./lib/useWorkspaceTitles";
+import { usePrStore } from "./lib/prStore";
+import { useWorkspacePrs } from "./lib/useWorkspacePrs";
 import type { WorktreeInfo } from "./lib/worktreeBridge";
+import type { PrInfo } from "./lib/prBridge";
 
 function tabIcon(kind: TabKind): LucideIcon {
   switch (kind) {
@@ -104,17 +108,37 @@ function BranchBlock({ info, cwd }: { info: WorktreeInfo | undefined; cwd: strin
   return <BranchLine branch={info.branch} path={info.cwd} />;
 }
 
+const PR_STATE_STYLE: Record<string, string> = {
+  open: "text-success",
+  draft: "text-fg-muted",
+  merged: "text-accent",
+  closed: "text-danger",
+};
+
+function PrBadge({ pr }: { pr: PrInfo }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] ${PR_STATE_STYLE[pr.state] ?? "text-fg-subtle"}`}
+      title={pr.title ?? undefined}
+    >
+      <GitPullRequest size={11} className="shrink-0" />#{pr.number} {pr.state}
+    </span>
+  );
+}
+
 function TabCard({ tab }: { tab: Tab }) {
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
   const sessions = useProgressStore((s) => s.sessions);
   const infos = useWorktreeStore((s) => s.infos);
   const titles = useTitlesStore((s) => s.titles);
+  const prs = usePrStore((s) => s.prs);
   const active = tab.id === activeId;
   const cwd = deriveTabCwd(tab);
   const status = tabClaudeStatus(tab, sessions);
   const info = cwd ? infos[cwd] : undefined;
   const title = selectCardTitle(tab, titles);
+  const pr = cwd ? prs[cwd] : undefined;
   const Icon = tabIcon(tab.kind);
 
   return (
@@ -134,6 +158,11 @@ function TabCard({ tab }: { tab: Tab }) {
           {status && <StatusBadge status={status} />}
         </span>
         <BranchBlock info={info} cwd={cwd} />
+        {pr && (
+          <span className="mt-0.5 block">
+            <PrBadge pr={pr} />
+          </span>
+        )}
       </span>
     </button>
   );
@@ -190,11 +219,18 @@ export function WorkspacePanel() {
   const newSpace = useTabsStore((s) => s.newSpace);
   const [filter, setFilter] = useState<StatusFilter>("all");
 
+  const infos = useWorktreeStore((s) => s.infos);
   const cwds = tabs
     .map((tab) => deriveTabCwd(tab))
     .filter((cwd): cwd is string => cwd !== null);
   useWorktreeInfos(cwds);
   useWorkspaceTitles(cwds);
+
+  // PR lookups need a branch, which comes from the worktree info fetched above.
+  const prPairs = cwds
+    .map((cwd) => ({ cwd, branch: infos[cwd]?.branch ?? "" }))
+    .filter((pair) => pair.branch !== "");
+  useWorkspacePrs(prPairs, "auto");
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
