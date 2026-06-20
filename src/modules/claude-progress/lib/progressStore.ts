@@ -85,18 +85,6 @@ export const useProgressStore = create<ProgressStoreState>((set) => ({
     }),
 }));
 
-/** In-flight work for one session, used to badge the panel section. */
-export function activeCount(progress: ProgressState): number {
-  const runningTools = progress.activities.filter((activity) => activity.status === "running").length;
-  const runningSubagents = progress.subagents.filter((sub) => sub.status === "running").length;
-  return runningTools + runningSubagents;
-}
-
-/** Total in-flight work across all sessions, used to badge the status-bar icon. */
-export function totalActiveCount(sessions: Record<string, ProgressState>): number {
-  return Object.values(sessions).reduce((sum, progress) => sum + activeCount(progress), 0);
-}
-
 /** True when a session has nothing worth showing (no activities, subagents, or todos). */
 export function isEmptyProgress(progress: ProgressState): boolean {
   return (
