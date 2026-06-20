@@ -12,6 +12,21 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
 import { useTabsStore, type Tab } from "@/stores/tabsStore";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
@@ -42,6 +57,8 @@ function TabItem({ id }: { id: string }) {
   const setActive = useTabsStore((s) => s.setActive);
   const closeTab = useTabsStore((s) => s.closeTab);
   const setTabTitle = useTabsStore((s) => s.setTabTitle);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
   // A tab is dirty when any of its editor panes has unsaved changes.
   const dirty = useEditorStore((s) => {
     if (!tab) {
@@ -72,6 +89,13 @@ function TabItem({ id }: { id: string }) {
 
   return (
     <div
+      ref={setNodeRef}
+      style={{
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        transition,
+      }}
+      {...attributes}
+      {...listeners}
       role="tab"
       aria-selected={active}
       onClick={() => setActive(tab.id)}
@@ -82,7 +106,7 @@ function TabItem({ id }: { id: string }) {
       title={tab.title}
       className={`group flex h-7 cursor-pointer items-center gap-2 rounded-md px-3 text-xs transition-colors ${
         active ? "bg-bg-elevated text-fg" : "text-fg-muted hover:bg-bg-elevated/60"
-      }`}
+      } ${isDragging ? "opacity-40" : ""}`}
     >
       <Icon size={13} className="shrink-0" />
       {editing ? (
@@ -92,6 +116,7 @@ function TabItem({ id }: { id: string }) {
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === "Enter") commit();
             if (e.key === "Escape") setEditing(false);
@@ -105,6 +130,7 @@ function TabItem({ id }: { id: string }) {
       <button
         type="button"
         aria-label={t("actions.closeTab")}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
           closeTab(tab.id);
@@ -117,6 +143,16 @@ function TabItem({ id }: { id: string }) {
   );
 }
 
+function TabOverlay({ tab }: { tab: Tab }) {
+  const Icon = tabIcon(tab.kind);
+  return (
+    <div className="flex h-7 items-center gap-2 rounded-md bg-bg-elevated px-3 text-xs text-fg shadow-lg">
+      <Icon size={13} className="shrink-0" />
+      <span className="max-w-[160px] truncate">{tab.title}</span>
+    </div>
+  );
+}
+
 export function TabBar() {
   const { t } = useTranslation();
   const tabs = useTabsStore((s) => s.tabs);
@@ -125,6 +161,28 @@ export function TabBar() {
   const openLauncherTab = useTabsStore((s) => s.openLauncherTab);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
+  const reorderTab = useTabsStore((s) => s.reorderTab);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+  const draggingTab = visibleTabs.find((tab) => tab.id === draggingId);
+
+  function handleDragStart(event: DragStartEvent) {
+    setDraggingId(String(event.active.id));
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setDraggingId(null);
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      reorderTab(String(active.id), String(over.id));
+    }
+  }
+
+  function handleDragCancel() {
+    setDraggingId(null);
+  }
 
   return (
     <header
@@ -145,14 +203,25 @@ export function TabBar() {
       </button>
       <SpaceDropdown />
       <div className="mx-1 h-4 w-px shrink-0 bg-border" />
-      <div
-        data-tauri-drag-region
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
-        {visibleTabs.map((tab) => (
-          <TabItem key={tab.id} id={tab.id} />
-        ))}
-      </div>
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          <SortableContext
+            items={visibleTabs.map((tab) => tab.id)}
+            strategy={horizontalListSortingStrategy}
+          >
+            {visibleTabs.map((tab) => (
+              <TabItem key={tab.id} id={tab.id} />
+            ))}
+          </SortableContext>
+        </div>
+        <DragOverlay>{draggingTab ? <TabOverlay tab={draggingTab} /> : null}</DragOverlay>
+      </DndContext>
 
       <button
         type="button"
