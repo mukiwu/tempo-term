@@ -5,6 +5,10 @@
  * out false positives like bare domains.
  */
 
+import type { ILink, IBufferRange } from "@xterm/xterm";
+import { hideLinkTooltip, showLinkTooltip } from "./linkTooltip";
+import { matchesOpenModifier } from "@/lib/platform";
+
 export interface FilePathMatch {
   /** The raw matched text, including any :line(:col) suffix. */
   text: string;
@@ -71,4 +75,41 @@ export function resolveFilePath(
   const base = (cwd ?? "").replace(/\/$/, "");
   const rel = path.replace(/^\.\//, "");
   return base ? `${base}/${rel}` : rel;
+}
+
+interface BuildFileLinkParams {
+  text: string;
+  range: IBufferRange;
+  hint: string;
+  isMac: boolean;
+  onOpen: (text: string) => void;
+}
+
+/**
+ * Build an xterm ILink for a detected file path. activate honours the
+ * platform open-modifier; hover/leave drive the shared link tooltip so file
+ * links get the same hover hint as web links.
+ */
+export function buildFileLink({
+  text,
+  range,
+  hint,
+  isMac,
+  onOpen,
+}: BuildFileLinkParams): ILink {
+  return {
+    range,
+    text,
+    activate: (event: MouseEvent) => {
+      if (matchesOpenModifier(event, isMac)) {
+        onOpen(text);
+      }
+    },
+    hover: (event: MouseEvent) => {
+      showLinkTooltip(hint, event.clientX, event.clientY);
+    },
+    leave: () => {
+      hideLinkTooltip();
+    },
+  };
 }

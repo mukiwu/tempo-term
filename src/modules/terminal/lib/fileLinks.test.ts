@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { findFilePaths, resolveFilePath } from "./fileLinks";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { findFilePaths, resolveFilePath, buildFileLink } from "./fileLinks";
+import { showLinkTooltip, hideLinkTooltip } from "./linkTooltip";
+
+vi.mock("./linkTooltip", () => ({
+  showLinkTooltip: vi.fn(),
+  hideLinkTooltip: vi.fn(),
+}));
 
 describe("findFilePaths", () => {
   it("finds a relative path with a line number", () => {
@@ -76,5 +82,39 @@ describe("resolveFilePath", () => {
 
   it("expands a leading ~ when home is known", () => {
     expect(resolveFilePath("~/notes/a.md", null, "/Users/me")).toBe("/Users/me/notes/a.md");
+  });
+});
+
+const range = { start: { x: 1, y: 1 }, end: { x: 5, y: 1 } };
+const mouse = (m: Partial<MouseEvent>) =>
+  ({ altKey: false, metaKey: false, ctrlKey: false, clientX: 10, clientY: 20, ...m }) as MouseEvent;
+
+describe("buildFileLink", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("hover shows the tooltip with the hint and cursor position", () => {
+    const link = buildFileLink({ text: "a.ts", range, hint: "Alt / Cmd", isMac: true, onOpen: vi.fn() });
+    link.hover?.(mouse({ clientX: 30, clientY: 40 }), "a.ts");
+    expect(showLinkTooltip).toHaveBeenCalledWith("Alt / Cmd", 30, 40);
+  });
+
+  it("leave hides the tooltip", () => {
+    const link = buildFileLink({ text: "a.ts", range, hint: "Alt / Cmd", isMac: true, onOpen: vi.fn() });
+    link.leave?.(mouse({}), "a.ts");
+    expect(hideLinkTooltip).toHaveBeenCalled();
+  });
+
+  it("activate with the platform modifier opens the file", () => {
+    const onOpen = vi.fn();
+    const link = buildFileLink({ text: "a.ts", range, hint: "Alt / Cmd", isMac: true, onOpen });
+    link.activate(mouse({ metaKey: true }), "a.ts");
+    expect(onOpen).toHaveBeenCalledWith("a.ts");
+  });
+
+  it("activate without a modifier does not open", () => {
+    const onOpen = vi.fn();
+    const link = buildFileLink({ text: "a.ts", range, hint: "Alt / Cmd", isMac: true, onOpen });
+    link.activate(mouse({}), "a.ts");
+    expect(onOpen).not.toHaveBeenCalled();
   });
 });
