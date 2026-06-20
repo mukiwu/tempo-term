@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeCount, isEmptyProgress } from "./progressStore";
+import { activeCount, isEmptyProgress, useProgressStore } from "./progressStore";
 import { emptyProgressState, reduceProgress } from "./progressState";
 
 describe("isEmptyProgress", () => {
@@ -28,5 +28,21 @@ describe("activeCount", () => {
     });
 
     expect(activeCount(state)).toBe(2);
+  });
+});
+
+describe("sessionEpochs", () => {
+  it("increments a cwd's epoch each time its session resets", () => {
+    useProgressStore.setState({ sessions: {}, sessionEpochs: {} });
+    useProgressStore.getState().pushLines("/a", [], true);
+    expect(useProgressStore.getState().sessionEpochs["/a"]).toBe(1);
+    useProgressStore.getState().pushLines("/a", [], true);
+    expect(useProgressStore.getState().sessionEpochs["/a"]).toBe(2);
+  });
+
+  it("does not bump the epoch on a non-reset append", () => {
+    useProgressStore.setState({ sessions: {}, sessionEpochs: { "/a": 1 } });
+    useProgressStore.getState().pushLines("/a", [], false);
+    expect(useProgressStore.getState().sessionEpochs["/a"]).toBe(1);
   });
 });

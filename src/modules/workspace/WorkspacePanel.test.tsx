@@ -7,6 +7,7 @@ import { leaf } from "@/modules/terminal/lib/terminalLayout";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { emptyProgressState, reduceProgress } from "@/modules/claude-progress/lib/progressState";
 import { useWorktreeStore } from "./lib/worktreeStore";
+import { useTitlesStore } from "./lib/titlesStore";
 
 function activeSession() {
   return reduceProgress(emptyProgressState(), { kind: "tool:start", id: "t1", name: "Bash" });
@@ -15,6 +16,7 @@ function activeSession() {
 beforeEach(() => {
   useProgressStore.setState({ sessions: {} });
   useWorktreeStore.setState({ infos: {} });
+  useTitlesStore.setState({ titles: {} });
   useTabsStore.setState({
     spaces: [{ id: "s1", name: "Salon" }],
     activeSpaceId: "s1",
@@ -119,5 +121,12 @@ describe("WorkspacePanel", () => {
     const card = screen.getByRole("button", { name: /beta/ });
     expect(within(card).getByText("main")).toBeInTheDocument();
     expect(within(card).getByText("feature")).toBeInTheDocument();
+  });
+
+  it("shows the auto session title instead of the tab title", () => {
+    useTitlesStore.setState({ titles: { "/a": "Auto Alpha" } });
+    render(<WorkspacePanel />);
+    expect(screen.getByText("Auto Alpha")).toBeInTheDocument();
+    expect(screen.queryByText("alpha")).toBeNull();
   });
 });

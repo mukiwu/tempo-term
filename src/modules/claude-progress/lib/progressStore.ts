@@ -6,6 +6,12 @@ interface ProgressStoreState {
   /** Accumulated progress per watched project directory (keyed by cwd). */
   sessions: Record<string, ProgressState>;
   /**
+   * A per-cwd counter bumped whenever that directory switches to a new session
+   * (a reset). Consumers watch it to know when to refetch derived data like the
+   * session title.
+   */
+  sessionEpochs: Record<string, number>;
+  /**
    * Feed raw transcript lines (from the backend watcher) for one cwd. `reset`
    * marks the first batch of a newly started session, clearing prior progress.
    */
@@ -29,6 +35,7 @@ function normalizerFor(cwd: string): Normalizer {
 
 export const useProgressStore = create<ProgressStoreState>((set) => ({
   sessions: {},
+  sessionEpochs: {},
 
   pushLines: (cwd, lines, reset) =>
     set((state) => {
@@ -38,6 +45,10 @@ export const useProgressStore = create<ProgressStoreState>((set) => ({
       if (reset) {
         normalizers.set(cwd, createNormalizer());
       }
+      // A new session for this cwd: bump its epoch so title consumers refetch.
+      const sessionEpochs = reset
+        ? { ...state.sessionEpochs, [cwd]: (state.sessionEpochs[cwd] ?? 0) + 1 }
+        : state.sessionEpochs;
       const normalizer = normalizerFor(cwd);
       const previous = reset ? undefined : state.sessions[cwd];
       let next = previous ?? emptyProgressState();
@@ -47,13 +58,13 @@ export const useProgressStore = create<ProgressStoreState>((set) => ({
         }
       }
       if (next === previous) {
-        return {};
+        return { sessionEpochs };
       }
       // Don't materialize an empty session for a cwd whose lines produced nothing.
       if (!reset && previous === undefined && isEmptyProgress(next)) {
-        return {};
+        return { sessionEpochs };
       }
-      return { sessions: { ...state.sessions, [cwd]: next } };
+      return { sessions: { ...state.sessions, [cwd]: next }, sessionEpochs };
     }),
 
   syncSessions: (cwds) =>

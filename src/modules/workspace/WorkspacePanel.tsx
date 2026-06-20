@@ -17,8 +17,11 @@ import { useTabsStore, type Tab, type TabKind } from "@/stores/tabsStore";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { deriveStatus } from "@/modules/claude-progress/lib/progressState";
 import { deriveTabCwd } from "./lib/tabCwd";
+import { selectCardTitle } from "./lib/cardTitle";
 import { useWorktreeStore } from "./lib/worktreeStore";
 import { useWorktreeInfos } from "./lib/useWorktreeInfos";
+import { useTitlesStore } from "./lib/titlesStore";
+import { useWorkspaceTitles } from "./lib/useWorkspaceTitles";
 import type { WorktreeInfo } from "./lib/worktreeBridge";
 
 function tabIcon(kind: TabKind): LucideIcon {
@@ -106,10 +109,12 @@ function TabCard({ tab }: { tab: Tab }) {
   const setActive = useTabsStore((s) => s.setActive);
   const sessions = useProgressStore((s) => s.sessions);
   const infos = useWorktreeStore((s) => s.infos);
+  const titles = useTitlesStore((s) => s.titles);
   const active = tab.id === activeId;
   const cwd = deriveTabCwd(tab);
   const status = tabClaudeStatus(tab, sessions);
   const info = cwd ? infos[cwd] : undefined;
+  const title = selectCardTitle(tab, titles);
   const Icon = tabIcon(tab.kind);
 
   return (
@@ -125,7 +130,7 @@ function TabCard({ tab }: { tab: Tab }) {
       <Icon size={14} className="mt-0.5 shrink-0 text-fg-subtle" />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{tab.title}</span>
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{title}</span>
           {status && <StatusBadge status={status} />}
         </span>
         <BranchBlock info={info} cwd={cwd} />
@@ -189,6 +194,7 @@ export function WorkspacePanel() {
     .map((tab) => deriveTabCwd(tab))
     .filter((cwd): cwd is string => cwd !== null);
   useWorktreeInfos(cwds);
+  useWorkspaceTitles(cwds);
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
