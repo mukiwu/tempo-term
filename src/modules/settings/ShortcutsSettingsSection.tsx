@@ -1,7 +1,5 @@
 import { useTranslation } from "react-i18next";
-
-const IS_MAC =
-  typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac");
+import { IS_MAC } from "@/lib/platform";
 const MOD = IS_MAC ? "⌘" : "Ctrl";
 const SHIFT = IS_MAC ? "⇧" : "Shift";
 const ENTER = IS_MAC ? "↵" : "Enter";

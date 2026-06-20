@@ -15,12 +15,11 @@ import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { pickNotesFolder } from "@/modules/notes/lib/pickNotesFolder";
 import { pickFile, pickFolder } from "@/lib/dialog";
+import { IS_MAC } from "@/lib/platform";
 import type { PaneContent } from "@/modules/terminal/lib/terminalLayout";
 
 const DEFAULT_PREVIEW_URL = "http://localhost:3000";
 
-const IS_MAC =
-  typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac");
 const MOD = IS_MAC ? "⌘" : "Ctrl";
 const SHIFT = IS_MAC ? "⇧" : "Shift";
 const TERMINAL_SHORTCUT = `${MOD} ${SHIFT} T`;
