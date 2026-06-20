@@ -115,12 +115,26 @@ function todosEqual(a: TodoItem[], b: TodoItem[]): boolean {
 }
 
 /**
+ * Tools that hand control back to the user and block until they answer, so a
+ * session paused on one is waiting for input, not actively working. Claude Code
+ * still records them as an unfinished tool_use in the transcript, which would
+ * otherwise read as "active".
+ */
+const INTERACTIVE_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode"]);
+
+/**
  * The session's coarse state for the panel header: actively running a tool or
  * subagent, finished and waiting for input (idle), or thinking between actions.
  */
 export function deriveStatus(progress: ProgressState): "active" | "thinking" | "idle" {
+  const runningActivities = progress.activities.filter((activity) => activity.status === "running");
+  // A pending interactive prompt blocks the turn on the user, so report it as
+  // waiting for input even though the tool_use is technically still open.
+  if (runningActivities.some((activity) => INTERACTIVE_TOOLS.has(activity.name))) {
+    return "idle";
+  }
   const running =
-    progress.activities.some((activity) => activity.status === "running") ||
+    runningActivities.length > 0 ||
     progress.subagents.some((subagent) => subagent.status === "running");
   if (running) {
     return "active";
