@@ -288,6 +288,55 @@ describe("tabsStore", () => {
     useTabsStore.getState().setTerminalCwd(id, leafId, "/work/dir");
     expect(useTabsStore.getState().tabs).toBe(before);
   });
+
+  it("reorders tabs within the same space", () => {
+    const a = useTabsStore.getState().newTerminalTab();
+    const b = useTabsStore.getState().newTerminalTab();
+    const c = useTabsStore.getState().newTerminalTab();
+    // initial order in this space: [a, b, c]
+    useTabsStore.getState().reorderTab(c, a);
+    expect(useTabsStore.getState().tabs.map((t) => t.id)).toEqual([c, a, b]);
+  });
+
+  it("reordering one space leaves other spaces' tabs in place", () => {
+    const a1 = useTabsStore.getState().newTerminalTab();
+    const space1 = useTabsStore.getState().activeSpaceId!;
+    useTabsStore.getState().newSpace();
+    const b1 = useTabsStore.getState().newTerminalTab();
+    useTabsStore.getState().setActiveSpace(space1);
+    const a2 = useTabsStore.getState().newTerminalTab();
+    const a3 = useTabsStore.getState().newTerminalTab();
+    // Flat order is [a1, b1, a2, a3]; space1 subsequence is [a1, a2, a3].
+    useTabsStore.getState().reorderTab(a3, a1);
+    expect(useTabsStore.getState().tabs.map((t) => t.id)).toEqual([a3, b1, a1, a2]);
+  });
+
+  it("reordering does not change the active tab", () => {
+    const a = useTabsStore.getState().newTerminalTab();
+    const b = useTabsStore.getState().newTerminalTab();
+    useTabsStore.getState().setActive(a);
+    useTabsStore.getState().reorderTab(b, a);
+    expect(useTabsStore.getState().activeId).toBe(a);
+  });
+
+  it("is a no-op when dropping on itself or onto an unknown tab", () => {
+    const a = useTabsStore.getState().newTerminalTab();
+    useTabsStore.getState().newTerminalTab();
+    const before = useTabsStore.getState().tabs;
+    useTabsStore.getState().reorderTab(a, a);
+    expect(useTabsStore.getState().tabs).toBe(before);
+    useTabsStore.getState().reorderTab(a, "nope");
+    expect(useTabsStore.getState().tabs).toBe(before);
+  });
+
+  it("is a no-op when the two tabs are in different spaces", () => {
+    const a = useTabsStore.getState().newTerminalTab(); // space1
+    useTabsStore.getState().newSpace(); // space2 becomes active
+    const c = useTabsStore.getState().newTerminalTab(); // space2
+    const before = useTabsStore.getState().tabs;
+    useTabsStore.getState().reorderTab(a, c);
+    expect(useTabsStore.getState().tabs).toBe(before);
+  });
 });
 
 describe("migratePersistedTabs", () => {

@@ -75,6 +75,8 @@ interface TabsState {
    */
   closePaneOrTab: () => void;
   setActive: (id: string) => void;
+  /** Move `activeId` to `overId`'s slot within the same space. No-op across spaces. */
+  reorderTab: (activeId: string, overId: string) => void;
   splitActivePane: (direction: SplitDirection) => void;
   setActiveLeaf: (tabId: string, leafId: string) => void;
   resizePane: (tabId: string, splitId: string, sizes: [number, number]) => void;
@@ -103,6 +105,14 @@ function basename(path: string): string {
 
 function neighbourId(tabs: Tab[], index: number): string | null {
   return tabs[index - 1]?.id ?? tabs[index]?.id ?? null;
+}
+
+/** Return a copy of `items` with the element at `from` moved to `to`. */
+function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
+  const next = items.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
 }
 
 /** True when a tab is a single, unsplit leaf showing exactly `content`. */
@@ -442,6 +452,36 @@ export const useTabsStore = create<TabsState>()(
     set((state) => {
       const tab = state.tabs.find((t) => t.id === id);
       return tab ? { activeId: id, activeSpaceId: tab.spaceId } : { activeId: id };
+    }),
+
+  reorderTab: (activeId, overId) =>
+    set((state) => {
+      if (activeId === overId) {
+        return state;
+      }
+      const moving = state.tabs.find((t) => t.id === activeId);
+      const over = state.tabs.find((t) => t.id === overId);
+      if (!moving || !over || moving.spaceId !== over.spaceId) {
+        return state;
+      }
+      // Slots are the indices this space's tabs occupy in the flat array;
+      // we reorder only the subsequence and write it back into those slots,
+      // so tabs from other spaces never move.
+      const slots: number[] = [];
+      state.tabs.forEach((tab, index) => {
+        if (tab.spaceId === moving.spaceId) {
+          slots.push(index);
+        }
+      });
+      const subsequence = slots.map((index) => state.tabs[index]);
+      const from = subsequence.findIndex((t) => t.id === activeId);
+      const to = subsequence.findIndex((t) => t.id === overId);
+      const reordered = moveItem(subsequence, from, to);
+      const tabs = state.tabs.slice();
+      slots.forEach((slotIndex, k) => {
+        tabs[slotIndex] = reordered[k];
+      });
+      return { tabs };
     }),
 
   splitActivePane: (direction) =>
