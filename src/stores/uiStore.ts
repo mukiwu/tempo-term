@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type SidebarView = "explorer" | "sourceControl" | "ai" | "notes";
+export type SidebarView = "workspaces" | "explorer" | "sourceControl" | "ai" | "notes";
 
 interface UiState {
   sidebarView: SidebarView;
@@ -20,7 +20,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  sidebarView: "explorer",
+  sidebarView: "workspaces",
   sidebarVisible: true,
   settingsOpen: false,
   terminalOpen: true,

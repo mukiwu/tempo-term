@@ -15,7 +15,6 @@ import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { applyTheme, getTheme } from "@/themes/themes";
 import { listen } from "@tauri-apps/api/event";
-import { ClaudeProgressPanel } from "@/modules/claude-progress/ClaudeProgressPanel";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { useWatchSessions } from "@/modules/claude-progress/lib/useWatchSessions";
 import { useWatchNotes } from "@/modules/notes/lib/useWatchNotes";
@@ -139,7 +138,6 @@ function App() {
       </div>
 
       <StatusBar />
-      <ClaudeProgressPanel />
       {settingsOpen && <SettingsModal />}
       <UpdateModal />
     </div>

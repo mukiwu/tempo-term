@@ -11,7 +11,71 @@ use std::sync::{Arc, Mutex};
 
 use notify::event::ModifyKind;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
+
+/// Longest session title we keep; longer text is truncated for display.
+const MAX_TITLE_CHARS: usize = 80;
+
+/// Derive a human-readable title for a session from its transcript JSONL: the
+/// latest `ai-title` record's title, else the first user text message. Returns
+/// trimmed text truncated to MAX_TITLE_CHARS characters, or None when neither
+/// source exists.
+pub fn extract_session_title(contents: &str) -> Option<String> {
+    let mut ai_title: Option<String> = None;
+    let mut first_user: Option<String> = None;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let value: Value = match serde_json::from_str(line) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        match value.get("type").and_then(Value::as_str) {
+            Some("ai-title") => {
+                if let Some(title) = value.get("aiTitle").and_then(Value::as_str) {
+                    ai_title = Some(title.to_string());
+                }
+            }
+            Some("user") if first_user.is_none() => {
+                first_user = user_message_text(&value);
+            }
+            _ => {}
+        }
+    }
+    let raw = ai_title.or(first_user)?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.chars().take(MAX_TITLE_CHARS).collect())
+}
+
+/// The text of a user message whose content is a plain string or a list holding
+/// a text item; None for tool-result-only messages.
+fn user_message_text(value: &Value) -> Option<String> {
+    let content = value.get("message")?.get("content")?;
+    if let Some(text) = content.as_str() {
+        return Some(text.to_string());
+    }
+    for item in content.as_array()? {
+        if item.get("type").and_then(Value::as_str) == Some("text") {
+            if let Some(text) = item.get("text").and_then(Value::as_str) {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// The title of the newest transcript in `dir`, read from disk, or None.
+pub fn latest_session_title(dir: &Path) -> Option<String> {
+    let path = latest_transcript(dir)?;
+    let contents = std::fs::read_to_string(path).ok()?;
+    extract_session_title(&contents)
+}
 
 /// Event name carrying a freshly appended batch of transcript lines to the
 /// frontend, tagged with the cwd they belong to.
@@ -299,9 +363,76 @@ pub fn claude_progress_unwatch(state: State<ClaudeProgressState>) {
     state.watchers.lock().unwrap().clear();
 }
 
+/// The title of the newest Claude session for `cwd`, derived from its
+/// transcript. Returns None when the project has no transcript yet.
+#[tauri::command]
+pub fn claude_session_title(app: AppHandle, cwd: String) -> Option<String> {
+    let home = app.path().home_dir().ok()?;
+    let env_value = std::env::var("CLAUDE_CONFIG_DIR").ok();
+    let base = config_base_dir(&home, env_value.as_deref());
+    let dir = base.join("projects").join(mangle_cwd(&cwd));
+    if !dir.is_dir() {
+        return None;
+    }
+    latest_session_title(&dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn title_prefers_the_latest_ai_title() {
+        let contents = concat!(
+            r#"{"type":"user","message":{"content":[{"type":"text","text":"do a thing"}]}}"#,
+            "\n",
+            r#"{"type":"ai-title","aiTitle":"First title"}"#,
+            "\n",
+            r#"{"type":"ai-title","aiTitle":"Refined title"}"#,
+            "\n",
+        );
+        assert_eq!(extract_session_title(contents).as_deref(), Some("Refined title"));
+    }
+
+    #[test]
+    fn title_falls_back_to_first_user_text_in_a_list() {
+        let contents = concat!(
+            r#"{"type":"system","subtype":"x"}"#,
+            "\n",
+            r#"{"type":"user","message":{"content":[{"type":"text","text":"the first prompt"}]}}"#,
+            "\n",
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}"#,
+            "\n",
+        );
+        assert_eq!(extract_session_title(contents).as_deref(), Some("the first prompt"));
+    }
+
+    #[test]
+    fn title_falls_back_to_a_plain_string_user_message() {
+        let contents = r#"{"type":"user","message":{"content":"plain prompt"}}"#;
+        assert_eq!(extract_session_title(contents).as_deref(), Some("plain prompt"));
+    }
+
+    #[test]
+    fn title_trims_and_truncates_long_text() {
+        let long = "x".repeat(200);
+        let contents = format!(r#"{{"type":"ai-title","aiTitle":"  {long}  "}}"#);
+        let title = extract_session_title(&contents).unwrap();
+        assert_eq!(title.chars().count(), 80);
+    }
+
+    #[test]
+    fn title_is_none_without_usable_content() {
+        let contents = concat!(
+            r#"{"type":"system","subtype":"x"}"#,
+            "\n",
+            "not json at all",
+            "\n",
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}"#,
+            "\n",
+        );
+        assert_eq!(extract_session_title(contents), None);
+    }
 
     #[test]
     fn returns_complete_lines_and_leaves_a_partial_line_unconsumed() {

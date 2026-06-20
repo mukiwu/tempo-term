@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeCount, isEmptyProgress } from "./progressStore";
+import { isEmptyProgress, useProgressStore } from "./progressStore";
 import { emptyProgressState, reduceProgress } from "./progressState";
 
 describe("isEmptyProgress", () => {
@@ -15,18 +15,18 @@ describe("isEmptyProgress", () => {
   });
 });
 
-describe("activeCount", () => {
-  it("counts only running activities and subagents, not finished ones", () => {
-    let state = reduceProgress(emptyProgressState(), { kind: "tool:start", id: "t1", name: "Bash" });
-    state = reduceProgress(state, { kind: "tool:start", id: "t2", name: "Read" });
-    state = reduceProgress(state, { kind: "tool:end", id: "t1", name: "Bash", ok: true });
-    state = reduceProgress(state, {
-      kind: "subagent:start",
-      id: "a1",
-      agentType: "explorer",
-      description: "x",
-    });
+describe("sessionEpochs", () => {
+  it("increments a cwd's epoch each time its session resets", () => {
+    useProgressStore.setState({ sessions: {}, sessionEpochs: {} });
+    useProgressStore.getState().pushLines("/a", [], true);
+    expect(useProgressStore.getState().sessionEpochs["/a"]).toBe(1);
+    useProgressStore.getState().pushLines("/a", [], true);
+    expect(useProgressStore.getState().sessionEpochs["/a"]).toBe(2);
+  });
 
-    expect(activeCount(state)).toBe(2);
+  it("does not bump the epoch on a non-reset append", () => {
+    useProgressStore.setState({ sessions: {}, sessionEpochs: { "/a": 1 } });
+    useProgressStore.getState().pushLines("/a", [], false);
+    expect(useProgressStore.getState().sessionEpochs["/a"]).toBe(1);
   });
 });

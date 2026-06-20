@@ -5,10 +5,12 @@ import { emptyProgressState, reduceProgress, type ProgressState } from "./progre
 interface ProgressStoreState {
   /** Accumulated progress per watched project directory (keyed by cwd). */
   sessions: Record<string, ProgressState>;
-  /** Whether the floating progress panel is expanded. */
-  panelOpen: boolean;
-  setPanelOpen: (open: boolean) => void;
-  togglePanel: () => void;
+  /**
+   * A per-cwd counter bumped whenever that directory switches to a new session
+   * (a reset). Consumers watch it to know when to refetch derived data like the
+   * session title.
+   */
+  sessionEpochs: Record<string, number>;
   /**
    * Feed raw transcript lines (from the backend watcher) for one cwd. `reset`
    * marks the first batch of a newly started session, clearing prior progress.
@@ -33,10 +35,7 @@ function normalizerFor(cwd: string): Normalizer {
 
 export const useProgressStore = create<ProgressStoreState>((set) => ({
   sessions: {},
-  panelOpen: false,
-
-  setPanelOpen: (panelOpen) => set({ panelOpen }),
-  togglePanel: () => set((state) => ({ panelOpen: !state.panelOpen })),
+  sessionEpochs: {},
 
   pushLines: (cwd, lines, reset) =>
     set((state) => {
@@ -46,6 +45,10 @@ export const useProgressStore = create<ProgressStoreState>((set) => ({
       if (reset) {
         normalizers.set(cwd, createNormalizer());
       }
+      // A new session for this cwd: bump its epoch so title consumers refetch.
+      const sessionEpochs = reset
+        ? { ...state.sessionEpochs, [cwd]: (state.sessionEpochs[cwd] ?? 0) + 1 }
+        : state.sessionEpochs;
       const normalizer = normalizerFor(cwd);
       const previous = reset ? undefined : state.sessions[cwd];
       let next = previous ?? emptyProgressState();
@@ -55,13 +58,13 @@ export const useProgressStore = create<ProgressStoreState>((set) => ({
         }
       }
       if (next === previous) {
-        return {};
+        return { sessionEpochs };
       }
       // Don't materialize an empty session for a cwd whose lines produced nothing.
       if (!reset && previous === undefined && isEmptyProgress(next)) {
-        return {};
+        return { sessionEpochs };
       }
-      return { sessions: { ...state.sessions, [cwd]: next } };
+      return { sessions: { ...state.sessions, [cwd]: next }, sessionEpochs };
     }),
 
   syncSessions: (cwds) =>
@@ -81,18 +84,6 @@ export const useProgressStore = create<ProgressStoreState>((set) => ({
       return { sessions };
     }),
 }));
-
-/** In-flight work for one session, used to badge the panel section. */
-export function activeCount(progress: ProgressState): number {
-  const runningTools = progress.activities.filter((activity) => activity.status === "running").length;
-  const runningSubagents = progress.subagents.filter((sub) => sub.status === "running").length;
-  return runningTools + runningSubagents;
-}
-
-/** Total in-flight work across all sessions, used to badge the status-bar icon. */
-export function totalActiveCount(sessions: Record<string, ProgressState>): number {
-  return Object.values(sessions).reduce((sum, progress) => sum + activeCount(progress), 0);
-}
 
 /** True when a session has nothing worth showing (no activities, subagents, or todos). */
 export function isEmptyProgress(progress: ProgressState): boolean {

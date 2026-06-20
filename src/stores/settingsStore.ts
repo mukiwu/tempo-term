@@ -7,6 +7,24 @@ export const MIN_TERMINAL_PADDING = 0;
 export const MAX_TERMINAL_PADDING = 40;
 export const DEFAULT_TERMINAL_PADDING = 10;
 
+/** Which info blocks each workspace card shows; all on by default. */
+export interface WorkspaceCardBlocks {
+  status: boolean;
+  branch: boolean;
+  cwd: boolean;
+  pr: boolean;
+}
+
+/** Where PR data comes from; "auto" detects gh, else falls back to a token. */
+export type WorkspacePrSource = "auto" | "gh" | "token" | "off";
+
+const DEFAULT_WORKSPACE_CARD: WorkspaceCardBlocks = {
+  status: true,
+  branch: true,
+  cwd: true,
+  pr: true,
+};
+
 interface SettingsState {
   language: SupportedLanguage;
   themeId: string;
@@ -17,12 +35,18 @@ interface SettingsState {
   restoreTerminalHistory: boolean;
   /** Folder that backs global notes; null until the user picks one. */
   notesFolderPath: string | null;
+  /** Which info blocks the workspace cards show. */
+  workspaceCard: WorkspaceCardBlocks;
+  /** Where workspace cards source PR data. */
+  prSource: WorkspacePrSource;
   setLanguage: (language: SupportedLanguage) => void;
   setThemeId: (themeId: string) => void;
   setTerminalPadding: (padding: number) => void;
   toggleWordWrap: () => void;
   setRestoreTerminalHistory: (value: boolean) => void;
   setNotesFolderPath: (path: string | null) => void;
+  setWorkspaceCardBlock: (key: keyof WorkspaceCardBlocks, value: boolean) => void;
+  setPrSource: (source: WorkspacePrSource) => void;
 }
 
 export const SETTINGS_STORAGE_KEY = "tempoterm-settings";
@@ -43,12 +67,17 @@ export const useSettingsStore = create<SettingsState>()(
       wordWrap: false,
       restoreTerminalHistory: true,
       notesFolderPath: null,
+      workspaceCard: DEFAULT_WORKSPACE_CARD,
+      prSource: "auto",
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
       toggleWordWrap: () => set((s) => ({ wordWrap: !s.wordWrap })),
       setRestoreTerminalHistory: (value) => set({ restoreTerminalHistory: value }),
       setNotesFolderPath: (path) => set({ notesFolderPath: path }),
+      setWorkspaceCardBlock: (key, value) =>
+        set((state) => ({ workspaceCard: { ...state.workspaceCard, [key]: value } })),
+      setPrSource: (prSource) => set({ prSource }),
     }),
     {
       name: SETTINGS_STORAGE_KEY,

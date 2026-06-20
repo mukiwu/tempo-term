@@ -1,9 +1,10 @@
 import { useTranslation } from "react-i18next";
-import { Bot, FolderTree, GitBranch, NotebookPen, type LucideIcon } from "lucide-react";
+import { Bot, FolderTree, GitBranch, LayoutGrid, NotebookPen, type LucideIcon } from "lucide-react";
 import { ExplorerView } from "@/modules/explorer/ExplorerView";
 import { SourceControlView } from "@/modules/source-control/SourceControlView";
 import { AIView } from "@/modules/ai/AIView";
 import { NotesSidebar } from "@/modules/notes/NotesSidebar";
+import { WorkspacePanel } from "@/modules/workspace/WorkspacePanel";
 import { Tooltip } from "@/components/Tooltip";
 import { useUiStore, type SidebarView } from "@/stores/uiStore";
 
@@ -14,6 +15,7 @@ interface SidebarTab {
 }
 
 const SIDEBAR_TABS: SidebarTab[] = [
+  { id: "workspaces", icon: LayoutGrid, labelKey: "nav.workspaces" },
   { id: "explorer", icon: FolderTree, labelKey: "nav.explorer" },
   { id: "sourceControl", icon: GitBranch, labelKey: "nav.git" },
   { id: "notes", icon: NotebookPen, labelKey: "nav.notes" },
@@ -49,6 +51,7 @@ export function Sidebar() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
+        {sidebarView === "workspaces" && <WorkspacePanel />}
         {sidebarView === "explorer" && <ExplorerView />}
         {sidebarView === "sourceControl" && <SourceControlView />}
         {sidebarView === "notes" && <NotesSidebar />}

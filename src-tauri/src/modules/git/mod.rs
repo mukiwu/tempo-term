@@ -218,6 +218,83 @@ pub fn status(repo_path: &str) -> Result<GitStatus, String> {
     })
 }
 
+/// Branch and worktree context for a directory's repository. For a linked
+/// worktree, `main_branch`/`main_path` describe the primary working tree so the
+/// UI can show both the main repo and the worktree on a card.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorktreeInfo {
+    pub branch: Option<String>,
+    pub cwd: String,
+    #[serde(rename = "isWorktree")]
+    pub is_worktree: bool,
+    #[serde(rename = "mainBranch")]
+    pub main_branch: Option<String>,
+    #[serde(rename = "mainPath")]
+    pub main_path: Option<String>,
+}
+
+/// The current branch shorthand (e.g. "main"). Falls back to HEAD's symbolic
+/// target so a fresh repo with no commits (an unborn branch) still reports its
+/// name; None only on a truly detached HEAD.
+fn head_shorthand(repo: &Repository) -> Option<String> {
+    repo.head()
+        .ok()
+        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .or_else(|| {
+            repo.find_reference("HEAD")
+                .ok()
+                .and_then(|r| r.symbolic_target().map(str::to_string))
+                .map(|t| t.strip_prefix("refs/heads/").unwrap_or(&t).to_string())
+        })
+}
+
+/// A workdir path as a clean string, without a trailing slash.
+fn workdir_string(p: &Path) -> String {
+    p.to_string_lossy().trim_end_matches('/').to_string()
+}
+
+pub fn worktree_info(path: &str) -> Result<WorktreeInfo, String> {
+    let repo = Repository::discover(path).map_err(|e| e.message().to_string())?;
+    let branch = head_shorthand(&repo);
+    let cwd = repo
+        .workdir()
+        .map(workdir_string)
+        .unwrap_or_else(|| path.to_string());
+
+    if !repo.is_worktree() {
+        return Ok(WorktreeInfo {
+            branch,
+            cwd,
+            is_worktree: false,
+            main_branch: None,
+            main_path: None,
+        });
+    }
+
+    // A linked worktree's git dir is <main>/.git/worktrees/<name>; the ".git"
+    // ancestor's parent is the main working tree. Open it to read the main branch.
+    let (main_branch, main_path) = repo
+        .path()
+        .ancestors()
+        .find(|a| a.file_name().and_then(|n| n.to_str()) == Some(".git"))
+        .and_then(|git_dir| git_dir.parent())
+        .and_then(|parent| Repository::open(parent).ok())
+        .map(|main_repo| {
+            let branch = head_shorthand(&main_repo);
+            let path = main_repo.workdir().map(workdir_string);
+            (branch, path)
+        })
+        .unwrap_or((None, None));
+
+    Ok(WorktreeInfo {
+        branch,
+        cwd,
+        is_worktree: true,
+        main_branch,
+        main_path,
+    })
+}
+
 pub fn stage(repo_path: &str, path: &str) -> Result<(), String> {
     let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
     let mut index = repo.index().map_err(|e| e.message().to_string())?;
@@ -302,6 +379,11 @@ pub fn git_resolve_repo(path: String) -> Option<String> {
 #[tauri::command]
 pub fn git_status(repo_path: String) -> Result<GitStatus, String> {
     status(&repo_path)
+}
+
+#[tauri::command]
+pub fn git_worktree_info(path: String) -> Result<WorktreeInfo, String> {
+    worktree_info(&path)
 }
 
 #[tauri::command]
@@ -925,6 +1007,70 @@ pub fn git_commit_file_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worktree_info_reports_branch_for_a_plain_repo() {
+        let dir = temp_repo_dir("wt-plain");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "hi").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+
+        let info = worktree_info(&path).unwrap();
+        assert_eq!(info.branch.as_deref(), Some("main"));
+        assert!(!info.is_worktree);
+        assert!(info.main_branch.is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn worktree_info_reports_the_unborn_branch_before_any_commit() {
+        let dir = temp_repo_dir("wt-unborn");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+
+        // No commit yet: HEAD is unborn, but the branch name should still show.
+        let info = worktree_info(&path).unwrap();
+        assert_eq!(info.branch.as_deref(), Some("main"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn worktree_info_reports_main_and_worktree_branches() {
+        let root = temp_repo_dir("wt-linked");
+        let main = root.join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        let main_path = main.to_string_lossy().to_string();
+        run_git(&main_path, &["init", "-b", "main"]).unwrap();
+        run_git(&main_path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&main_path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(main.join("a.txt"), "hi").unwrap();
+        run_git(&main_path, &["add", "."]).unwrap();
+        run_git(&main_path, &["commit", "-m", "init"]).unwrap();
+        let wt = root.join("wt");
+        let wt_path = wt.to_string_lossy().to_string();
+        run_git(&main_path, &["worktree", "add", &wt_path, "-b", "feature"]).unwrap();
+
+        let info = worktree_info(&wt_path).unwrap();
+        assert!(info.is_worktree);
+        assert_eq!(info.branch.as_deref(), Some("feature"));
+        assert_eq!(info.main_branch.as_deref(), Some("main"));
+        assert!(info.main_path.is_some());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_info_errors_outside_a_repo() {
+        let dir = temp_repo_dir("wt-norepo");
+        assert!(worktree_info(&dir.to_string_lossy()).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn index_status_codes() {

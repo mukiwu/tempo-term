@@ -151,6 +151,36 @@ describe("reduceProgress", () => {
     expect(deriveStatus(state)).toBe("active");
   });
 
+  it("derives idle (waiting for input) when a pending tool is an interactive prompt", () => {
+    // AskUserQuestion / ExitPlanMode block on the user, so a session paused on one
+    // is waiting for input, not actively working.
+    const asking = reduceProgress(emptyProgressState(), {
+      kind: "tool:start",
+      id: "q1",
+      name: "AskUserQuestion",
+    });
+    expect(deriveStatus(asking)).toBe("idle");
+
+    const planning = reduceProgress(emptyProgressState(), {
+      kind: "tool:start",
+      id: "p1",
+      name: "ExitPlanMode",
+    });
+    expect(deriveStatus(planning)).toBe("idle");
+  });
+
+  it("derives active again once the interactive prompt is answered", () => {
+    let state = reduceProgress(emptyProgressState(), {
+      kind: "tool:start",
+      id: "q1",
+      name: "AskUserQuestion",
+    });
+    state = reduceProgress(state, { kind: "tool:start", id: "t2", name: "Bash" });
+    state = reduceProgress(state, { kind: "tool:end", id: "q1", name: "AskUserQuestion", ok: true });
+    // The prompt is answered (done) but Bash is still running, so back to active.
+    expect(deriveStatus(state)).toBe("active");
+  });
+
   it("derives idle when idle and nothing is running", () => {
     let state = reduceProgress(emptyProgressState(), { kind: "tool:start", id: "t1", name: "Bash" });
     state = reduceProgress(state, { kind: "tool:end", id: "t1", name: "Bash", ok: true });

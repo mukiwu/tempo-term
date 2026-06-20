@@ -9,7 +9,7 @@ use modules::fs::{
 };
 use modules::ai::ai_chat;
 use modules::claude_progress::{
-    claude_progress_unwatch, claude_progress_watch, ClaudeProgressState,
+    claude_progress_unwatch, claude_progress_watch, claude_session_title, ClaudeProgressState,
 };
 use modules::notes::{notes_unwatch, notes_watch, NotesWatchState};
 use modules::clipboard::{
@@ -21,8 +21,9 @@ use modules::git::{
     git_branches, git_cherry_pick, git_commit, git_commit_details, git_commit_file_diff, git_diff,
     git_fetch, git_graph_log, git_log, git_merge, git_pull, git_push, git_push_delete, git_rebase,
     git_reset, git_resolve_repo, git_revert, git_stage, git_status, git_tag_create, git_tag_delete,
-    git_unstage,
+    git_unstage, git_worktree_info,
 };
+use modules::pr::{gh_available, pr_via_api, pr_via_gh};
 use modules::secrets::{secrets_delete_key, secrets_has_key, secrets_set_key};
 use modules::pty::{
     pty_close, pty_close_all, pty_cwd, pty_foreground_command, pty_open, pty_resize,
@@ -117,6 +118,7 @@ pub fn run() {
             fs_reveal,
             git_resolve_repo,
             git_status,
+            git_worktree_info,
             git_stage,
             git_unstage,
             git_commit,
@@ -144,6 +146,9 @@ pub fn run() {
             secrets_set_key,
             secrets_delete_key,
             secrets_has_key,
+            gh_available,
+            pr_via_gh,
+            pr_via_api,
             ai_chat,
             terminal_history_save,
             terminal_history_load,
@@ -152,6 +157,7 @@ pub fn run() {
             terminal_history_prune,
             claude_progress_watch,
             claude_progress_unwatch,
+            claude_session_title,
             notes_watch,
             notes_unwatch
         ])

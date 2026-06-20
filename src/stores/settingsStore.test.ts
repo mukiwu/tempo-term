@@ -17,6 +17,8 @@ describe("settingsStore", () => {
       themeId: initialState.themeId,
       terminalPadding: initialState.terminalPadding,
       wordWrap: initialState.wordWrap,
+      workspaceCard: { status: true, branch: true, cwd: true, pr: true },
+      prSource: "auto",
     });
   });
 
@@ -77,5 +79,26 @@ describe("settingsStore", () => {
     useSettingsStore.getState().setNotesFolderPath("/Users/me/Notes");
     const persisted = localStorage.getItem("tempoterm-settings");
     expect(persisted).toContain("/Users/me/Notes");
+  });
+
+  it("defaults all workspace card blocks on and the PR source to auto", () => {
+    expect(useSettingsStore.getState().workspaceCard).toEqual({
+      status: true,
+      branch: true,
+      cwd: true,
+      pr: true,
+    });
+    expect(useSettingsStore.getState().prSource).toBe("auto");
+  });
+
+  it("toggles a single workspace card block without touching the others", () => {
+    useSettingsStore.getState().setWorkspaceCardBlock("pr", false);
+    expect(useSettingsStore.getState().workspaceCard.pr).toBe(false);
+    expect(useSettingsStore.getState().workspaceCard.status).toBe(true);
+  });
+
+  it("updates the PR source through setPrSource", () => {
+    useSettingsStore.getState().setPrSource("token");
+    expect(useSettingsStore.getState().prSource).toBe("token");
   });
 });

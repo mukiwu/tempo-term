@@ -7,11 +7,12 @@ import { getTheme, THEMES, type AppTheme } from "@/themes/themes";
 import { FontsSettingsSection } from "./FontsSettingsSection";
 import { TerminalSettingsSection } from "./TerminalSettingsSection";
 import { AiSettingsSection } from "./AiSettingsSection";
+import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 import { AboutSettingsSection } from "./AboutSettingsSection";
 
-type SectionId = "appearance" | "ai" | "shortcuts" | "about";
-const SECTIONS: SectionId[] = ["appearance", "ai", "shortcuts", "about"];
+type SectionId = "appearance" | "ai" | "workspace" | "shortcuts" | "about";
+const SECTIONS: SectionId[] = ["appearance", "ai", "workspace", "shortcuts", "about"];
 
 /**
  * A read-only code snippet painted in the active theme's own colours, so its
@@ -199,6 +200,7 @@ export function SettingsView() {
         >
           {section === "appearance" && <AppearanceSection />}
           {section === "ai" && <AiSettingsSection />}
+          {section === "workspace" && <WorkspaceSettingsSection />}
           {section === "shortcuts" && <ShortcutsSettingsSection />}
           {section === "about" && <AboutSettingsSection />}
         </div>

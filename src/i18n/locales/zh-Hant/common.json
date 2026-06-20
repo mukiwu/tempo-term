@@ -4,6 +4,7 @@
   "terminalConnecting": "啟動中…",
   "openLinkHint": "{{mods}} + 點擊開啟",
   "nav": {
+    "workspaces": "工作區",
     "terminal": "終端機",
     "explorer": "檔案總管",
     "editor": "編輯器",
@@ -65,6 +66,17 @@
     "newSpace": "新增工作空間",
     "renameSpace": "重新命名工作空間",
     "deleteSpace": "刪除工作空間",
-    "addTab": "新增分頁"
+    "addTab": "新增分頁",
+    "status": {
+      "active": "執行中",
+      "thinking": "思考中",
+      "idle": "等待輸入"
+    },
+    "filter": {
+      "all": "全部",
+      "active": "執行中",
+      "idle": "等待輸入",
+      "thinking": "思考中"
+    }
   }
 }
