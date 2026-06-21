@@ -87,11 +87,21 @@ function BranchLine({
   if (!shownBranch && !shownPath) {
     return null;
   }
+  // Branch name and path each get their own line and wrap in full (no
+  // truncation) so a long repo or path is always readable. The path is indented
+  // to sit under the branch text, so it stays visually paired with its repo when
+  // a card lists more than one (e.g. a worktree's main repo plus the worktree).
   return (
-    <span className="flex min-w-0 items-center gap-1 text-[11px] text-fg-subtle">
-      <GitBranch size={11} className="shrink-0" />
-      {shownBranch && <span className="min-w-0 truncate text-fg-muted">{shownBranch}</span>}
-      {shownPath && <span className="min-w-0 truncate">{shownPath}</span>}
+    <span className="block text-[11px] leading-snug text-fg-subtle">
+      {shownBranch && (
+        <span className="flex items-start gap-1 text-fg-muted">
+          <GitBranch size={11} className="mt-[3px] shrink-0" />
+          <span className="min-w-0 break-all">{shownBranch}</span>
+        </span>
+      )}
+      {shownPath && (
+        <span className={`block break-all ${shownBranch ? "pl-[15px]" : ""}`}>{shownPath}</span>
+      )}
     </span>
   );
 }
@@ -112,12 +122,14 @@ function BranchBlock({
   }
   if (!info) {
     return showCwd && cwd ? (
-      <span className="block truncate text-[11px] text-fg-subtle">{cwd}</span>
+      <span className="block break-all text-[11px] leading-snug text-fg-subtle">{cwd}</span>
     ) : null;
   }
   if (info.isWorktree) {
+    // Extra space between the two repo groups so each branch stays visually
+    // paired with its own path.
     return (
-      <span className="block space-y-0.5">
+      <span className="block space-y-1.5">
         <BranchLine
           branch={info.mainBranch}
           path={info.mainPath}
