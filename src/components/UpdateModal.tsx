@@ -1,6 +1,8 @@
-import { Sparkles, Loader2, ExternalLink, X } from "lucide-react";
+import { Sparkles, Loader2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useUpdaterStore } from "@/stores/updaterStore";
+import { MarkdownView } from "./MarkdownView";
+import { separateLanguageSections } from "./releaseNotes";
 
 const NOTES_PREVIEW_CHARS = 600;
 
@@ -14,7 +16,6 @@ export function UpdateModal() {
   const status = useUpdaterStore((s) => s.status);
   const version = useUpdaterStore((s) => s.version);
   const notes = useUpdaterStore((s) => s.notes);
-  const releaseUrl = useUpdaterStore((s) => s.releaseUrl);
   const installing = useUpdaterStore((s) => s.installing);
   const installUpdate = useUpdaterStore((s) => s.installUpdate);
   const dismiss = useUpdaterStore((s) => s.dismiss);
@@ -23,8 +24,9 @@ export function UpdateModal() {
     return null;
   }
 
-  const truncated = notes.length > NOTES_PREVIEW_CHARS;
-  const preview = truncated ? `${notes.slice(0, NOTES_PREVIEW_CHARS).trimEnd()}…` : notes;
+  const divided = separateLanguageSections(notes);
+  const truncated = divided.length > NOTES_PREVIEW_CHARS;
+  const preview = truncated ? `${divided.slice(0, NOTES_PREVIEW_CHARS).trimEnd()}…` : divided;
 
   return (
     <>
@@ -54,20 +56,9 @@ export function UpdateModal() {
           <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-subtle">
             {t("update.notes")}
           </div>
-          <pre className="max-h-[260px] overflow-auto whitespace-pre-wrap rounded border border-border bg-bg-inset p-3 font-sans text-xs leading-relaxed text-fg-muted">
-            {preview || "—"}
-          </pre>
-          {releaseUrl && (
-            <a
-              href={releaseUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1.5 inline-flex items-center gap-1 text-xs text-accent hover:underline"
-            >
-              <ExternalLink size={12} />
-              {t("update.viewFullNotes")}
-            </a>
-          )}
+          <div className="max-h-[260px] overflow-auto rounded border border-border bg-bg-inset p-3">
+            <MarkdownView content={preview || "—"} />
+          </div>
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">

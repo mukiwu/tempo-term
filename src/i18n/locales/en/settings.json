@@ -47,7 +47,6 @@
   "update": {
     "available": "Update available: v{{version}}",
     "notes": "What's new",
-    "viewFullNotes": "View full release notes",
     "install": "Update now",
     "later": "Later",
     "installing": "Updating…",
