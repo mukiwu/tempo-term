@@ -9,7 +9,8 @@ tty=""
 for _ in 1 2 3 4 5 6 7 8; do
   { [ -z "$p" ] || [ "$p" = "0" ] || [ "$p" = "1" ]; } && break
   t=$(ps -o tty= -p "$p" 2>/dev/null | tr -d ' ')
-  if [ -n "$t" ] && [ "$t" != "??" ]; then
+  # No controlling tty shows as ?? on macOS and ? (or -) on Linux; skip those.
+  if [ -n "$t" ] && [ "$t" != "??" ] && [ "$t" != "?" ] && [ "$t" != "-" ]; then
     tty=$t
     break
   fi

@@ -115,7 +115,11 @@ fn read_settings(settings_path: &PathBuf) -> Result<Value, String> {
 
 fn write_settings(settings_path: &PathBuf, value: &Value) -> Result<(), String> {
     let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
-    std::fs::write(settings_path, text + "\n").map_err(|e| e.to_string())
+    // Write to a sibling temp file then rename, so an interrupted write can
+    // never leave the user's settings.json half-written.
+    let tmp_path = settings_path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, text + "\n").map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp_path, settings_path).map_err(|e| e.to_string())
 }
 
 /// Write the hook script and register its entries in settings.json. Idempotent.

@@ -102,7 +102,9 @@ export function WorkspaceSettingsSection() {
     try {
       await (checked ? installStatusHook() : uninstallStatusHook());
     } catch {
-      // The toggle still reflects intent; install retries on next launch.
+      // Keep the toggle in sync with the real system state: if install or
+      // uninstall failed, the hook is in the opposite state from what we set.
+      setStatusTracking(!checked);
     }
   }
 
