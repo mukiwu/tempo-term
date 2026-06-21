@@ -24,7 +24,24 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": ["**", "/**"],
+          "deny": [
+            "**/.ssh/**",
+            "**/.aws/**",
+            "**/.gnupg/**",
+            "**/.env",
+            "**/.env.*",
+            "**/*.pem",
+            "**/*.key",
+            "**/id_rsa*"
+          ],
+          "requireLiteralLeadingDot": true
+        }
+      }
     }
   },
   "plugins": {

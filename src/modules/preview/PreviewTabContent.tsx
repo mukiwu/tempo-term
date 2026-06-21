@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RotateCw } from "lucide-react";
+import { resolvePreviewSrc } from "./lib/resolvePreviewSrc";
 
 export function PreviewTabContent({ url }: { url: string }) {
   const { t } = useTranslation("preview");
@@ -45,7 +46,7 @@ export function PreviewTabContent({ url }: { url: string }) {
       <iframe
         ref={frameRef}
         key={reloadKey}
-        src={current}
+        src={resolvePreviewSrc(current)}
         title={t("title")}
         className="min-h-0 flex-1 w-full border-0 bg-white"
       />

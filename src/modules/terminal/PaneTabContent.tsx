@@ -79,6 +79,11 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const panes = computeLayout(tab.paneTree);
   const splitters = computeSplitters(tab.paneTree);
   const multiple = panes.length > 1;
+  // The splitter currently being dragged, used to drive the drag overlay's
+  // resize cursor (see the overlay below).
+  const draggingSplitter = draggingSplitterId
+    ? splitters.find((s) => s.id === draggingSplitterId)
+    : undefined;
 
   // Single-file panes reject folders; terminal/note take both. Dropping a file
   // onto a launcher pane opens it, so a launcher accepts a file too.
@@ -326,6 +331,22 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
             </div>
           );
         })}
+
+        {/* While a divider is dragged, a transparent overlay sits above every
+            pane so the pointer can't slip into a preview iframe (or any other
+            embedded document) and swallow the mouseup — which leaves the drag
+            stuck to the cursor. Keeping the pointer in this document also makes
+            the resize track smoothly instead of stalling over the iframe. */}
+        {draggingSplitterId && (
+          <div
+            data-testid="pane-drag-overlay"
+            className={`absolute inset-0 z-30 ${
+              draggingSplitter?.direction === "row"
+                ? "cursor-col-resize"
+                : "cursor-row-resize"
+            }`}
+          />
+        )}
       </div>
     </div>
   );
