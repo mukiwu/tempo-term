@@ -40,6 +40,8 @@ import { debounce } from "@/lib/debounce";
 import { dropOverlayClassName } from "@/components/EntryDropOverlay";
 import { fsHomeDir, fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { getDraggedEntry } from "@/modules/explorer/lib/dragEntry";
+import { STATUS_OSC_CODE, parseStatusOsc } from "@/modules/claude-progress/lib/sessionStatus";
+import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 
 import { IS_MAC, openModifierLabel } from "@/lib/platform";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
@@ -131,6 +133,22 @@ export function TerminalView({
     handleRef.current = handle;
     const { term, fit } = handle;
     term.open(container);
+
+    // The session-status hook (see claude_status_hook) emits OSC 6973 on this
+    // pane's tty when Claude changes state. Capture it here, where we know the
+    // leaf id, and feed the per-leaf status store that drives the card badge.
+    const statusOscHandler = term.parser.registerOscHandler(STATUS_OSC_CODE, (payload) => {
+      const leaf = leafIdRef.current;
+      if (leaf) {
+        const parsed = parseStatusOsc(payload);
+        if (parsed?.kind === "status") {
+          useSessionStatusStore.getState().setStatus(leaf, parsed.status);
+        } else if (parsed?.kind === "end") {
+          useSessionStatusStore.getState().clear(leaf);
+        }
+      }
+      return true; // consume so the sequence never reaches the screen
+    });
 
     async function handleTerminalPaste(kind: "ctrl" | "cmd") {
       const session = sessionRef.current;
@@ -475,9 +493,11 @@ export function TerminalView({
       pushPtySize.cancel();
       document.removeEventListener("keydown", onKeyDownCapture, true);
       document.removeEventListener("paste", onPasteCapture, true);
+      statusOscHandler.dispose();
       if (leafIdRef.current) {
         unregisterTerminal(leafIdRef.current);
         unregisterTerminalPathDrop(leafIdRef.current);
+        useSessionStatusStore.getState().clear(leafIdRef.current);
       }
       void sessionRef.current?.close();
       term.dispose();
