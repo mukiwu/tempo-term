@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { perWindowStorage } from "@/lib/window";
 
 export const WORKSPACE_STORAGE_KEY = "tempoterm-workspace";
 
@@ -49,6 +50,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     }),
     {
       name: WORKSPACE_STORAGE_KEY,
+      storage: createJSONStorage(() => perWindowStorage()),
       // Restore the explorer root and open-file list; the setters and any
       // transient state are derived at runtime.
       partialize: (state) => ({

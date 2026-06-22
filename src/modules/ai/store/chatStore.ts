@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { perWindowStorage } from "@/lib/window";
 import { aiChat } from "../lib/aiBridge";
 import { composeMessages, type ChatMessage } from "../lib/chat";
 import { providerById, PROVIDERS } from "../lib/providers";
@@ -100,6 +101,7 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: CHAT_STORAGE_KEY,
+      storage: createJSONStorage(() => perWindowStorage()),
       partialize: (state) => ({
         providerId: state.providerId,
         model: state.model,

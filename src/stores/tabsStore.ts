@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { uid } from "@/lib/id";
+import { perWindowStorage } from "@/lib/window";
 import {
   computeLayout,
   findPaneContent,
@@ -592,6 +593,7 @@ export const useTabsStore = create<TabsState>()(
     }),
     {
       name: TABS_STORAGE_KEY,
+      storage: createJSONStorage(() => perWindowStorage()),
       version: 1,
       migrate: migratePersistedTabs,
       partialize: (state) => ({
