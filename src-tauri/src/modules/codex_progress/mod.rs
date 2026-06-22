@@ -181,10 +181,9 @@ pub fn set_watched_cwds(app: &AppHandle, state: &CodexProgressState, cwds: &[Str
     let base_cb = base.clone();
     let route_cb = Arc::clone(&state.route);
     let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if res.is_err() {
-            return;
+        if let Ok(event) = res {
+            route_event(&app_cb, &base_cb, &route_cb, Some(event));
         }
-        route_event(&app_cb, &base_cb, &route_cb);
     });
     if let Ok(mut w) = watcher {
         if w.watch(&base, RecursiveMode::Recursive).is_ok() {
@@ -193,15 +192,36 @@ pub fn set_watched_cwds(app: &AppHandle, state: &CodexProgressState, cwds: &[Str
     }
 }
 
-/// On any change under the sessions base: for each watched cwd, find its newest
-/// current rollout, switch (reset) if it changed, then tail appended lines and
-/// emit them tagged with agent "codex".
-fn route_event(app: &AppHandle, base: &Path, route: &Arc<Mutex<RouteState>>) {
-    let candidates = scan_recent_rollouts(base, &recent_days());
+/// On a change under the sessions base: for each watched cwd, find its current
+/// rollout, switch (reset) if it changed, then tail appended lines and emit them
+/// tagged with agent "codex".
+///
+/// Scanning the sessions tree (one first-line read per rollout) is only needed
+/// when a new file might have appeared: a Create / rename, or a cwd that has no
+/// tracked file yet. Plain appends (`Modify(Data)`) just tail the already-tracked
+/// file, mirroring how the Claude watcher avoids rescanning on every write.
+fn route_event(app: &AppHandle, base: &Path, route: &Arc<Mutex<RouteState>>, event: Option<notify::Event>) {
     let mut route = route.lock().unwrap();
     let watched = route.watched.clone();
+    let needs_scan = event.as_ref().map_or(true, |e| {
+        matches!(
+            e.kind,
+            notify::EventKind::Create(_) | notify::EventKind::Modify(notify::event::ModifyKind::Name(_))
+        )
+    }) || watched
+        .iter()
+        .any(|cwd| route.cursors.get(cwd).and_then(|c| c.current.as_ref()).is_none());
+    let candidates = if needs_scan {
+        scan_recent_rollouts(base, &recent_days())
+    } else {
+        Vec::new()
+    };
     for cwd in watched {
-        let newest = select_newest_for_cwd(&candidates, &cwd);
+        let newest = if needs_scan {
+            select_newest_for_cwd(&candidates, &cwd)
+        } else {
+            route.cursors.get(&cwd).and_then(|c| c.current.clone())
+        };
         let cursor = route.cursors.entry(cwd.clone()).or_insert_with(|| CwdCursor {
             current: None,
             offset: 0,
