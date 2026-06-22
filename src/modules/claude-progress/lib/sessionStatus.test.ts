@@ -88,6 +88,7 @@ describe("isCodexForeground", () => {
     expect(isCodexForeground("codex")).toBe(true);
     expect(isCodexForeground("/Users/me/.nvm/versions/node/v22.15.1/bin/codex")).toBe(true);
     expect(isCodexForeground("node /opt/homebrew/lib/node_modules/@openai/codex/cli.js")).toBe(true);
+    expect(isCodexForeground("node /usr/local/lib/node_modules/openai-codex/cli.js")).toBe(true);
     expect(isCodexForeground("npx codex")).toBe(true);
   });
   it("does not match a shell or codex as a mere argument", () => {
