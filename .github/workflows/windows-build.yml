@@ -1,0 +1,86 @@
+name: Build Windows
+
+# Builds the Windows version of TempoTerm on a Windows runner.
+#
+# The Linux/macOS dev box can't reliably cross-compile the Windows installer
+# (git2 / font-kit / portable-pty all pull in native code), so the build runs
+# on `windows-latest`, which is the supported path for Tauri Windows bundles.
+#
+# Triggers:
+#   • workflow_dispatch — build on demand, installers land as workflow artifacts.
+#   • push of a `v*` tag — also uploads the installers to the matching GitHub release.
+#
+# Required repository secret (Settings → Secrets and variables → Actions):
+#   • TAURI_SIGNING_PRIVATE_KEY          — contents of ~/.tauri/tempo-term.key
+#                                          (matches the pubkey in tauri.conf.json).
+#   • TAURI_SIGNING_PRIVATE_KEY_PASSWORD — the key was generated without a
+#                                          password, so set this secret to an
+#                                          empty string.
+# These are mandatory: tauri.conf.json sets `createUpdaterArtifacts: true`, so the
+# build fails if it can't sign the updater bundle.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        # Version comes from package.json's "packageManager" field (single source
+        # of truth); pinning it here too triggers ERR_PNPM_BAD_PM_VERSION.
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # Empty tagName ⇒ build only (no release upload), used by workflow_dispatch.
+          # On a v* tag push, attach the installers to that release.
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: "TempoTerm __VERSION__"
+          releaseDraft: false
+          prerelease: false
+          args: "--target x86_64-pc-windows-msvc"
+
+      - name: Upload installers as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tempoterm-windows-x86_64
+          if-no-files-found: error
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.sig
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
