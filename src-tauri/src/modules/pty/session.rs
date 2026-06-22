@@ -191,16 +191,28 @@ pub fn shell_name(state: &PtyState, id: u32) -> Result<String, String> {
 
 pub fn foreground_command(state: &PtyState, id: u32) -> Result<Option<String>, String> {
     let session = state.get(id)?;
-    let pid = session.master.lock().unwrap().process_group_leader();
-    Ok(pid.and_then(read_process_command))
+    Ok(foreground_pid(&session).and_then(read_process_command))
 }
 
 /// The working directory of the terminal's foreground process (the shell when
 /// sitting at a prompt). Lets the file explorer follow `cd`.
 pub fn cwd(state: &PtyState, id: u32) -> Result<Option<String>, String> {
     let session = state.get(id)?;
-    let pid = session.master.lock().unwrap().process_group_leader();
-    Ok(pid.and_then(read_process_cwd))
+    Ok(foreground_pid(&session).and_then(read_process_cwd))
+}
+
+/// PID of the terminal's foreground process group. `portable-pty` exposes
+/// `process_group_leader` only on Unix (Windows has no process-group concept),
+/// so on other platforms this returns `None` and the cwd / foreground-command
+/// features simply report nothing there.
+#[cfg(unix)]
+fn foreground_pid(session: &Session) -> Option<i32> {
+    session.master.lock().unwrap().process_group_leader()
+}
+
+#[cfg(not(unix))]
+fn foreground_pid(_session: &Session) -> Option<i32> {
+    None
 }
 
 /// lsof `-Fn` escapes non-printable/non-ASCII bytes as literal `\xHH` text (and
