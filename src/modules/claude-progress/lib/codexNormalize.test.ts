@@ -95,4 +95,32 @@ describe("createCodexNormalizer", () => {
     expect(n.push("not json")).toEqual([]);
     expect(n.push("")).toEqual([]);
   });
+
+  it("does not crash on a JSON null line", () => {
+    // JSON.parse("null") yields null, not a throw, so the payload access must be
+    // null-safe or it would TypeError outside the parse try/catch.
+    const n = createCodexNormalizer();
+    expect(n.push("null")).toEqual([]);
+  });
+
+  it("tolerates a null element in an update_plan plan array", () => {
+    const n = createCodexNormalizer();
+    const events = n.push(
+      JSON.stringify({
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "update_plan",
+          call_id: "p",
+          arguments: JSON.stringify({ plan: [{ step: "A", status: "x" }, null] }),
+        },
+      }),
+    );
+    expect(events).toEqual([
+      { kind: "todo", items: [
+        { text: "A", status: "x" },
+        { text: "", status: "" },
+      ] },
+    ]);
+  });
 });

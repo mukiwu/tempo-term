@@ -35,8 +35,8 @@ function parsePlan(argsJson: string | undefined): TodoItem[] {
     return [];
   }
   try {
-    const parsed = JSON.parse(argsJson) as { plan?: { step?: string; status?: string }[] };
-    return (parsed.plan ?? []).map((s) => ({ text: s.step ?? "", status: s.status ?? "" }));
+    const parsed = JSON.parse(argsJson) as { plan?: ({ step?: string; status?: string } | null)[] };
+    return (parsed.plan ?? []).map((s) => ({ text: s?.step ?? "", status: s?.status ?? "" }));
   } catch {
     return [];
   }
@@ -68,7 +68,7 @@ export function createCodexNormalizer(): Normalizer {
       } catch {
         return [];
       }
-      const payload = record.payload;
+      const payload = record?.payload;
       if (!payload) {
         return [];
       }
