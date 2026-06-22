@@ -46,4 +46,22 @@ mod tests {
         assert!(out.contains("[features]"));
         assert!(out.contains("hooks = true"));
     }
+
+    #[test]
+    fn ensure_hooks_feature_flips_false_to_true_keeping_other_keys() {
+        let input = "[features]\nmulti_agent = true\nhooks = false\n";
+        let out = ensure_hooks_feature(input).unwrap();
+        assert!(out.contains("hooks = true"));
+        assert!(!out.contains("hooks = false"));
+        assert!(out.contains("multi_agent = true"));
+    }
+
+    #[test]
+    fn ensure_hooks_feature_preserves_a_comment_inside_features() {
+        let input = "[features]\n# flag for multi-agent\nmulti_agent = true\n";
+        let out = ensure_hooks_feature(input).unwrap();
+        assert!(out.contains("# flag for multi-agent"));
+        assert!(out.contains("multi_agent = true"));
+        assert!(out.contains("hooks = true"));
+    }
 }
