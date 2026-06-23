@@ -35,6 +35,35 @@
     "terminalArea": "終端機工作階段會顯示在這裡",
     "search": "搜尋檔案、指令與設定"
   },
+  "sshPrompt": {
+    "hostKeyUnknown": {
+      "title": "未知主機金鑰",
+      "body": "無法確認此主機的真實性。指紋：",
+      "trust": "信任",
+      "cancel": "取消"
+    },
+    "hostKeyChanged": {
+      "title": "主機金鑰已變更",
+      "warning": "警告：主機金鑰已變更。這可能表示有人正在攔截您的連線（中間人攻擊）。請只在確認主機金鑰是正當更新的情況下繼續。",
+      "body": "新指紋：",
+      "replace": "取代",
+      "cancel": "取消"
+    },
+    "password": {
+      "title": "需要密碼",
+      "label": "密碼",
+      "remember": "記住密碼",
+      "connect": "連線",
+      "cancel": "取消"
+    },
+    "passphrase": {
+      "title": "需要金鑰密碼",
+      "label": "金鑰密碼",
+      "remember": "記住金鑰密碼",
+      "ok": "確定",
+      "cancel": "取消"
+    }
+  },
   "workspace": {
     "openFolder": "開啟資料夾",
     "openFile": "開啟檔案",

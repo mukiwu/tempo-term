@@ -35,6 +35,35 @@
     "terminalArea": "Terminal sessions will appear here",
     "search": "Search files, commands and settings"
   },
+  "sshPrompt": {
+    "hostKeyUnknown": {
+      "title": "Unknown Host Key",
+      "body": "The authenticity of this host cannot be established. Fingerprint:",
+      "trust": "Trust",
+      "cancel": "Cancel"
+    },
+    "hostKeyChanged": {
+      "title": "Host Key Changed",
+      "warning": "WARNING: The host key has changed. This could mean someone is intercepting your connection (man-in-the-middle attack). Only proceed if you are certain the host key was legitimately updated.",
+      "body": "New fingerprint:",
+      "replace": "Replace",
+      "cancel": "Cancel"
+    },
+    "password": {
+      "title": "Password Required",
+      "label": "Password",
+      "remember": "Remember password",
+      "connect": "Connect",
+      "cancel": "Cancel"
+    },
+    "passphrase": {
+      "title": "Passphrase Required",
+      "label": "Passphrase",
+      "remember": "Remember passphrase",
+      "ok": "OK",
+      "cancel": "Cancel"
+    }
+  },
   "workspace": {
     "openFolder": "Open Folder",
     "openFile": "Open File",

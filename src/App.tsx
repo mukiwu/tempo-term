@@ -20,6 +20,7 @@ import { useWatchSessions } from "@/modules/claude-progress/lib/useWatchSessions
 import { installStatusHook, installCodexStatusHook } from "@/modules/claude-progress/lib/statusHookBridge";
 import { useWatchNotes } from "@/modules/notes/lib/useWatchNotes";
 import { registerSecondaryWindowCleanup } from "@/lib/windowLifecycle";
+import { SshPromptDialog } from "@/modules/ssh/SshPromptDialog";
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 640;
@@ -163,6 +164,7 @@ function App() {
       <StatusBar />
       {settingsOpen && <SettingsModal />}
       <UpdateModal />
+      <SshPromptDialog />
     </div>
   );
 }
