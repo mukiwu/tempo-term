@@ -7,6 +7,7 @@ import { fsReadDir, type DirEntry } from "./lib/fsBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useUiStore } from "@/stores/uiStore";
 import { pickFolder } from "@/lib/dialog";
+import { isRemoteUri, parseRemoteUri } from "@/modules/ssh/lib/remotePath";
 
 export function ExplorerView() {
   const { t } = useTranslation("explorer");
@@ -16,6 +17,11 @@ export function ExplorerView() {
   const setFinderOpen = useUiStore((s) => s.setFileFinderOpen);
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // A remote (SFTP) root hides local-only controls and shows the remote path
+  // rather than the raw ssh:// uri.
+  const remote = rootPath ? isRemoteUri(rootPath) : false;
+  const displayRoot = rootPath ? (parseRemoteUri(rootPath)?.path ?? rootPath) : null;
 
   async function openFolder() {
     const folder = await pickFolder();
@@ -49,34 +55,36 @@ export function ExplorerView() {
         <span className="truncate text-xs font-semibold uppercase tracking-wide text-fg-subtle">
           {t("title")}
         </span>
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            aria-label={t("openFolder")}
-            title={t("openFolder")}
-            onClick={() => void openFolder()}
-            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-          >
-            <FolderOpen size={15} />
-          </button>
-          <button
-            type="button"
-            aria-label={t("findFiles")}
-            title={t("findFiles")}
-            onClick={() => setFinderOpen(true)}
-            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-          >
-            <Search size={15} />
-          </button>
-        </div>
+        {!remote && (
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              aria-label={t("openFolder")}
+              title={t("openFolder")}
+              onClick={() => void openFolder()}
+              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+            >
+              <FolderOpen size={15} />
+            </button>
+            <button
+              type="button"
+              aria-label={t("findFiles")}
+              title={t("findFiles")}
+              onClick={() => setFinderOpen(true)}
+              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+            >
+              <Search size={15} />
+            </button>
+          </div>
+        )}
       </div>
 
       {rootPath && (
         <div
           className="truncate border-b border-border px-3 py-1 text-[11px] text-fg-subtle"
-          title={rootPath}
+          title={displayRoot ?? rootPath}
         >
-          {rootPath}
+          {displayRoot}
         </div>
       )}
 
@@ -90,7 +98,7 @@ export function ExplorerView() {
         )}
       </div>
 
-      {finderOpen && rootPath && (
+      {finderOpen && rootPath && !remote && (
         <FileFinder root={rootPath} onClose={() => setFinderOpen(false)} />
       )}
     </div>
