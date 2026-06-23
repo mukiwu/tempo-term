@@ -64,6 +64,34 @@
       "cancel": "Cancel"
     }
   },
+  "connectionForm": {
+    "titleCreate": "New SSH Connection",
+    "titleEdit": "Edit SSH Connection",
+    "pasteLabel": "Paste ssh command",
+    "pastePlaceholder": "ssh user@host -p 2222 -i ~/.ssh/id_ed25519",
+    "pasteHint": "Paste an ssh command to auto-fill the fields below",
+    "ignoredPrefix": "Ignored:",
+    "fields": {
+      "name": "Name",
+      "host": "Host",
+      "port": "Port",
+      "user": "Username",
+      "authMethod": "Auth method",
+      "keyPath": "Private key path",
+      "secret": "Password",
+      "passphrase": "Passphrase",
+      "remember": "Remember password",
+      "rememberPassphrase": "Remember passphrase"
+    },
+    "authMethod": {
+      "password": "Password",
+      "keyFile": "Key file",
+      "agent": "SSH agent"
+    },
+    "save": "Save",
+    "connect": "Connect",
+    "cancel": "Cancel"
+  },
   "workspace": {
     "openFolder": "Open Folder",
     "openFile": "Open File",

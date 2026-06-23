@@ -64,6 +64,34 @@
       "cancel": "取消"
     }
   },
+  "connectionForm": {
+    "titleCreate": "新增 SSH 連線",
+    "titleEdit": "編輯 SSH 連線",
+    "pasteLabel": "貼上 ssh 指令",
+    "pastePlaceholder": "ssh user@host -p 2222 -i ~/.ssh/id_ed25519",
+    "pasteHint": "貼上 ssh 指令可自動填入以下欄位",
+    "ignoredPrefix": "已略過：",
+    "fields": {
+      "name": "名稱",
+      "host": "主機",
+      "port": "埠號",
+      "user": "使用者名稱",
+      "authMethod": "驗證方式",
+      "keyPath": "私鑰路徑",
+      "secret": "密碼",
+      "passphrase": "金鑰密碼",
+      "remember": "記住密碼",
+      "rememberPassphrase": "記住金鑰密碼"
+    },
+    "authMethod": {
+      "password": "密碼",
+      "keyFile": "金鑰檔案",
+      "agent": "SSH Agent"
+    },
+    "save": "儲存",
+    "connect": "連線",
+    "cancel": "取消"
+  },
   "workspace": {
     "openFolder": "開啟資料夾",
     "openFile": "開啟檔案",
