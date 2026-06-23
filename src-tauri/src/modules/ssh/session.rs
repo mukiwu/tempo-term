@@ -14,10 +14,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tauri::ipc::{Channel, Response};
-use tauri::{AppHandle, Manager, State};
-use tokio::sync::mpsc;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::sync::{mpsc, watch};
 
 use super::client::{self, AuthArgs, ConnectArgs, VerifyingClient};
+use super::forward::{self, ForwardSpec};
 use super::prompt::{PromptRegistry, PromptReply};
 use super::SshOpenRequest;
 
@@ -28,6 +29,10 @@ pub enum SshControl {
     Input(Vec<u8>),
     /// The terminal was resized; tell the remote pty.
     Resize { cols: u16, rows: u16 },
+    /// Start a local port forward on this live session.
+    StartForward(ForwardSpec),
+    /// Stop a running port forward by its id.
+    StopForward(String),
     /// Tear the session down.
     Close,
 }
@@ -222,6 +227,16 @@ async fn run_session(
         }
     }
 
+    // Auth is done with `handle` consumed mutably; from here the handle is only
+    // used through `&self` methods (channel opens), so share it via `Arc`. Both
+    // the shell channel and every port-forward listener clone this same `Arc`.
+    let handle = Arc::new(handle);
+
+    // Live port forwards: id → cancel sender. Sending `true` makes the matching
+    // `run_forward` task return `Ok(())` and stop its accept loop. We always
+    // drain + cancel on loop exit so no listener outlives the session.
+    let mut forwards: HashMap<String, watch::Sender<bool>> = HashMap::new();
+
     // 3. Open a session channel and request an interactive shell on a pty.
     let channel = match handle.channel_open_session().await {
         Ok(channel) => channel,
@@ -254,6 +269,26 @@ async fn run_session(
     // (`data`/`window_change`, &) can run in the same select! without a borrow
     // conflict — `wait` needs `&mut`, the writers need `&`.
     let (mut read_half, write_half) = channel.split();
+
+    // 5. Auto-start the forwards the request asked for. Invalid specs are
+    // reported on the terminal stream and skipped, never aborting the session.
+    for input in &req.forwards {
+        let spec = ForwardSpec::from(input);
+        if let Err(e) = forward::validate(&spec) {
+            emit_line(on_data, &format!("port-forward {}: {e}", spec.local_port));
+            continue;
+        }
+        emit_line(
+            on_data,
+            &format!(
+                "forwarding {}:{} -> {}:{}",
+                spec.bind_host, spec.local_port, spec.dest_host, spec.dest_port
+            ),
+        );
+        let fid = spec.id.clone();
+        let tx = start_one(spec, handle.clone(), &app, &window_label, session_id);
+        forwards.insert(fid, tx);
+    }
 
     loop {
         tokio::select! {
@@ -298,11 +333,37 @@ async fn run_session(
                             .window_change(cols as u32, rows as u32, 0, 0)
                             .await;
                     }
+                    Some(SshControl::StartForward(spec)) => {
+                        let fid = spec.id.clone();
+                        let tx = start_one(spec, handle.clone(), &app, &window_label, session_id);
+                        forwards.insert(fid, tx);
+                    }
+                    Some(SshControl::StopForward(fid)) => {
+                        if let Some(tx) = forwards.remove(&fid) {
+                            // Cancel the listener task, then drop its sender.
+                            let _ = tx.send(true);
+                            emit_forward_status(
+                                &app,
+                                &window_label,
+                                session_id,
+                                &fid,
+                                "stopped",
+                                None,
+                            );
+                        }
+                    }
                     // Close requested, or every sender dropped (session removed).
                     Some(SshControl::Close) | None => break,
                 }
             }
         }
+    }
+
+    // Cancel every remaining forward before its sender drops. Sending `true`
+    // first is required: if the watch sender is dropped without sending, the
+    // task's `cancel.changed()` returns Err and its accept loop never exits.
+    for (_, tx) in forwards.drain() {
+        let _ = tx.send(true);
     }
 
     registry.discard_session(session_id);
@@ -315,6 +376,70 @@ async fn run_session(
 fn emit_line(on_data: &Channel<Response>, message: &str) {
     let line = format!("\r\n{message}\r\n");
     let _ = on_data.send(Response::new(line.into_bytes()));
+}
+
+/// Emit a `ssh-forward-status` event to the window that owns the session, so a
+/// forward's lifecycle (`starting` → `active` → `stopped`/`failed`) only reaches
+/// the pane that requested it instead of being broadcast to every window.
+fn emit_forward_status(
+    app: &AppHandle,
+    window_label: &str,
+    session_id: u32,
+    forward_id: &str,
+    state: &str,
+    error: Option<&str>,
+) {
+    #[derive(serde::Serialize, Clone)]
+    #[serde(rename_all = "camelCase")]
+    struct Payload<'a> {
+        session_id: u32,
+        forward_id: &'a str,
+        state: &'a str,
+        error: Option<&'a str>,
+    }
+    let _ = app.emit_to(
+        window_label,
+        "ssh-forward-status",
+        Payload {
+            session_id,
+            forward_id,
+            state,
+            error,
+        },
+    );
+}
+
+/// Spin up one port forward: emit `starting` then `active`, spawn the bridge
+/// task, and return the cancel sender so the caller can stop it later. The task
+/// emits `stopped` on a clean cancel or `failed` (with the reason) on a bind
+/// error; a later `failed` overrides the optimistic `active` in the frontend.
+fn start_one(
+    spec: ForwardSpec,
+    handle: Arc<russh::client::Handle<VerifyingClient>>,
+    app: &AppHandle,
+    window_label: &str,
+    session_id: u32,
+) -> watch::Sender<bool> {
+    let (cancel_tx, cancel_rx) = watch::channel(false);
+    let fid = spec.id.clone();
+
+    emit_forward_status(app, window_label, session_id, &fid, "starting", None);
+    emit_forward_status(app, window_label, session_id, &fid, "active", None);
+
+    let app = app.clone();
+    let window_label = window_label.to_string();
+    tokio::spawn(async move {
+        match forward::run_forward(handle, spec, cancel_rx).await {
+            Ok(()) => {
+                emit_forward_status(&app, &window_label, session_id, &fid, "stopped", None)
+            }
+            Err(e) => {
+                emit_forward_status(&app, &window_label, session_id, &fid, "failed", Some(&e))
+            }
+        }
+    });
+
+    cancel_tx
 }
 
 // ---------------------------------------------------------------------------
@@ -372,27 +497,30 @@ fn remove_session(app: &AppHandle, id: u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Forward control — stubs (Task 6 fills in the real bodies).
+// Forward control — validate up front, then hand the spec to the worker.
 // ---------------------------------------------------------------------------
 
-/// Start a port forward on an existing session. Stub: Task 6 will send the
-/// spec to the worker thread and wire up the `direct-tcpip` accept loop.
+/// Start a port forward on an existing session. Validates the spec up front so a
+/// bad rule fails the command synchronously, then sends it to the worker thread
+/// which binds the local port and runs the `direct-tcpip` accept loop.
 pub fn forward_start(
-    _state: &State<'_, SshState>,
-    _id: u32,
-    _input: super::ForwardSpecInput,
+    state: &State<'_, SshState>,
+    id: u32,
+    input: super::ForwardSpecInput,
 ) -> Result<(), String> {
-    Ok(())
+    let spec = ForwardSpec::from(&input);
+    forward::validate(&spec)?;
+    send_inner(state, id, SshControl::StartForward(spec))
 }
 
-/// Stop a running port forward by its id. Stub: Task 6 will cancel the
-/// `run_forward` task via the per-forward `watch::Sender`.
+/// Stop a running port forward by its id. The worker cancels the matching
+/// `run_forward` task via its per-forward `watch::Sender`.
 pub fn forward_stop(
-    _state: &State<'_, SshState>,
-    _id: u32,
-    _forward_id: String,
+    state: &State<'_, SshState>,
+    id: u32,
+    forward_id: String,
 ) -> Result<(), String> {
-    Ok(())
+    send_inner(state, id, SshControl::StopForward(forward_id))
 }
 
 #[cfg(test)]

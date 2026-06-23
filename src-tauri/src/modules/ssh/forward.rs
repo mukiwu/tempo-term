@@ -50,7 +50,6 @@ pub fn validate(spec: &ForwardSpec) -> Result<(), String> {
 ///
 /// **Send note**: `Channel<Msg>` and `ChannelStream<Msg>` are `Send` (all inner
 /// types are `Send`), so `tokio::spawn` accepts the per-connection future.
-#[allow(dead_code)] // wired up in Task 6
 pub async fn run_forward(
     handle: Arc<russh::client::Handle<VerifyingClient>>,
     spec: ForwardSpec,
