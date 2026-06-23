@@ -34,6 +34,15 @@ pub enum SftpControl {
     Home {
         reply: oneshot::Sender<Result<String, String>>,
     },
+    ReadFile {
+        path: String,
+        reply: oneshot::Sender<Result<String, String>>,
+    },
+    WriteFile {
+        path: String,
+        contents: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
     Close,
 }
 
@@ -170,6 +179,16 @@ async fn run(
                         .map_err(|e| e.to_string()),
                 );
             }
+            SftpControl::ReadFile { path, reply } => {
+                let _ = reply.send(read_file(&sftp, &path).await);
+            }
+            SftpControl::WriteFile {
+                path,
+                contents,
+                reply,
+            } => {
+                let _ = reply.send(write_file(&sftp, &path, &contents).await);
+            }
             SftpControl::Close => break,
         }
     }
@@ -184,6 +203,12 @@ async fn fail(mut rx: mpsc::UnboundedReceiver<SftpControl>, reason: String) {
                 let _ = reply.send(Err(reason.clone()));
             }
             SftpControl::Home { reply } => {
+                let _ = reply.send(Err(reason.clone()));
+            }
+            SftpControl::ReadFile { reply, .. } => {
+                let _ = reply.send(Err(reason.clone()));
+            }
+            SftpControl::WriteFile { reply, .. } => {
                 let _ = reply.send(Err(reason.clone()));
             }
             SftpControl::Close => break,
@@ -219,6 +244,31 @@ async fn read_dir(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>, Stri
     Ok(out)
 }
 
+async fn read_file(sftp: &SftpSession, path: &str) -> Result<String, String> {
+    use tokio::io::AsyncReadExt;
+    let mut file = sftp.open(path.to_string()).await.map_err(|e| e.to_string())?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).await.map_err(|e| e.to_string())?;
+    String::from_utf8(buf).map_err(|_| "file is not valid UTF-8".to_string())
+}
+
+async fn write_file(sftp: &SftpSession, path: &str, contents: &str) -> Result<(), String> {
+    use russh_sftp::protocol::OpenFlags;
+    use tokio::io::AsyncWriteExt;
+    let mut file = sftp
+        .open_with_flags(
+            path.to_string(),
+            OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::TRUNCATE,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    file.write_all(contents.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    file.shutdown().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn send(state: &State<'_, SftpState>, id: u32, msg: SftpControl) -> Result<(), String> {
     let sessions = state.sessions.lock().unwrap();
     let handle = sessions
@@ -243,6 +293,35 @@ pub async fn read_dir_cmd(
 ) -> Result<Vec<SftpEntry>, String> {
     let (tx, rx) = oneshot::channel();
     send(state, id, SftpControl::ReadDir { path, reply: tx })?;
+    rx.await.map_err(|_| "sftp session closed".to_string())?
+}
+
+pub async fn read_file_cmd(
+    state: &State<'_, SftpState>,
+    id: u32,
+    path: String,
+) -> Result<String, String> {
+    let (tx, rx) = oneshot::channel();
+    send(state, id, SftpControl::ReadFile { path, reply: tx })?;
+    rx.await.map_err(|_| "sftp session closed".to_string())?
+}
+
+pub async fn write_file_cmd(
+    state: &State<'_, SftpState>,
+    id: u32,
+    path: String,
+    contents: String,
+) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    send(
+        state,
+        id,
+        SftpControl::WriteFile {
+            path,
+            contents,
+            reply: tx,
+        },
+    )?;
     rx.await.map_err(|_| "sftp session closed".to_string())?
 }
 

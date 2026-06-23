@@ -33,6 +33,25 @@ pub async fn sftp_read_dir(
 }
 
 #[tauri::command]
+pub async fn sftp_read_file(
+    state: State<'_, SftpState>,
+    id: u32,
+    path: String,
+) -> Result<String, String> {
+    session::read_file_cmd(&state, id, path).await
+}
+
+#[tauri::command]
+pub async fn sftp_write_file(
+    state: State<'_, SftpState>,
+    id: u32,
+    path: String,
+    contents: String,
+) -> Result<(), String> {
+    session::write_file_cmd(&state, id, path, contents).await
+}
+
+#[tauri::command]
 pub fn sftp_close(state: State<'_, SftpState>, id: u32) {
     session::close(&state, id)
 }
