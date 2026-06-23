@@ -77,7 +77,15 @@
     "confirmDelete": "確認刪除？",
     "cancelDelete": "取消",
     "emptyTitle": "尚無已儲存的連線",
-    "emptyHint": "在這裡儲存 SSH 連線，即可一鍵連線"
+    "emptyHint": "在這裡儲存 SSH 連線，即可一鍵連線",
+    "forwards": {
+      "session": "工作階段 {{id}}",
+      "statusActive": "作用中",
+      "statusFailed": "失敗",
+      "statusStopped": "已停止",
+      "toggleOff": "停止轉發",
+      "toggleOn": "啟動轉發"
+    }
   },
   "connectionForm": {
     "titleCreate": "新增 SSH 連線",

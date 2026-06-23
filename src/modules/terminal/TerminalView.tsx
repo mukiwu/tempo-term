@@ -7,6 +7,7 @@ import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
+import { liveSessionsStore } from "@/modules/ssh/lib/liveSessionsStore";
 
 /** Narrows a session to PtySession (which has cwd/foregroundCommand). */
 function isPtySession(s: PtySession | SshSession): s is PtySession {
@@ -460,6 +461,7 @@ export function TerminalView({
               void sessionRef.current?.close();
               if (sshSession) {
                 useForwardStatusStore.getState().clearSession(sshSession.id);
+                liveSessionsStore.getState().unregister(sshSession.id);
               }
               setSshDisconnected(true);
               setConnecting(false);
@@ -502,6 +504,11 @@ export function TerminalView({
           return;
         }
         sessionRef.current = session;
+        // Register live SSH session so ConnectionsPanel can show forwarding status.
+        const paneSshConn = sshRef.current;
+        if (paneSshConn && !isPtySession(session)) {
+          liveSessionsStore.getState().register(paneSshConn.connectionId, session.id);
+        }
         term.onData((data) => void session.write(data));
         if (leafIdRef.current) {
           registerTerminal(leafIdRef.current, (text) => void session.write(text));
@@ -614,6 +621,12 @@ export function TerminalView({
         unregisterTerminal(leafIdRef.current);
         unregisterTerminalPathDrop(leafIdRef.current);
         useSessionStatusStore.getState().clear(leafIdRef.current);
+      }
+      // Unregister live SSH session on pane close so the connections panel
+      // no longer shows forwarding rows for this session.
+      const closingSession = sessionRef.current;
+      if (closingSession && !isPtySession(closingSession)) {
+        liveSessionsStore.getState().unregister(closingSession.id);
       }
       void sessionRef.current?.close();
       term.dispose();

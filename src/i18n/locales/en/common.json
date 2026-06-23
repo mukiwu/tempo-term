@@ -77,7 +77,15 @@
     "confirmDelete": "Delete?",
     "cancelDelete": "Cancel",
     "emptyTitle": "No saved connections",
-    "emptyHint": "Save SSH connections here to connect with one click"
+    "emptyHint": "Save SSH connections here to connect with one click",
+    "forwards": {
+      "session": "Session {{id}}",
+      "statusActive": "Active",
+      "statusFailed": "Failed",
+      "statusStopped": "Stopped",
+      "toggleOff": "Stop forward",
+      "toggleOn": "Start forward"
+    }
   },
   "connectionForm": {
     "titleCreate": "New SSH Connection",
