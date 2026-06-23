@@ -1,4 +1,5 @@
 mod client;
+mod forward;
 mod known_hosts;
 mod prompt;
 mod session;
