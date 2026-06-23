@@ -9,6 +9,14 @@ export interface SshSession {
   close: () => Promise<void>;
 }
 
+export interface ForwardInput {
+  id: string;
+  bindHost: string;
+  localPort: number;
+  destHost: string;
+  destPort: number;
+}
+
 export interface OpenSshOptions {
   connectionId: string;
   host: string;
@@ -18,6 +26,7 @@ export interface OpenSshOptions {
   keyPath?: string;
   cols: number;
   rows: number;
+  forwards?: ForwardInput[];
   onData: (bytes: Uint8Array) => void;
   onExit: (code: number) => void;
 }
@@ -38,6 +47,7 @@ export async function openSsh(opts: OpenSshOptions): Promise<SshSession> {
       keyPath: opts.keyPath,
       cols: opts.cols,
       rows: opts.rows,
+      forwards: opts.forwards ?? [],
     },
     onData,
     onExit,
@@ -49,4 +59,12 @@ export async function openSsh(opts: OpenSshOptions): Promise<SshSession> {
     resize: (cols, rows) => invoke("ssh_resize", { id, cols, rows }),
     close: () => invoke("ssh_close", { id }),
   };
+}
+
+export function startForward(sessionId: number, forward: ForwardInput): Promise<void> {
+  return invoke("ssh_forward_start", { id: sessionId, forward });
+}
+
+export function stopForward(sessionId: number, forwardId: string): Promise<void> {
+  return invoke("ssh_forward_stop", { id: sessionId, forwardId });
 }

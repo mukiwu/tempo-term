@@ -429,6 +429,15 @@ export function TerminalView({
         if (!conn) {
           throw new Error(`SSH connection "${paneSsh.connectionId}" not found — it may have been deleted.`);
         }
+        const forwards = conn.portForwards
+          ?.filter((pf) => pf.enabled)
+          .map((pf) => ({
+            id: pf.id,
+            bindHost: pf.bindHost,
+            localPort: pf.localPort,
+            destHost: pf.destHost,
+            destPort: pf.destPort,
+          }));
         return openSsh({
           connectionId: conn.id,
           host: conn.host,
@@ -438,6 +447,7 @@ export function TerminalView({
           keyPath: conn.keyPath,
           cols: term.cols,
           rows: term.rows,
+          forwards,
           onData: (bytes) => term.write(bytes),
           // Only treat an exit as user-facing when we did not tear the session
           // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
