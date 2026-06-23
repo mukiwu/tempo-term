@@ -1,4 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { buildRemoteUri, parseRemoteUri } from "@/modules/ssh/lib/remotePath";
+import { sftpReadDir, sftpReadFile, sftpWriteFile } from "@/modules/ssh/lib/sftp-bridge";
+import { sftpSessionStore } from "@/modules/ssh/lib/sftpSessionStore";
 
 export interface DirEntry {
   name: string;
@@ -17,15 +20,31 @@ export function fsHomeDir(): Promise<string> {
   return invoke<string>("fs_home_dir");
 }
 
-export function fsReadDir(path: string): Promise<DirEntry[]> {
+export async function fsReadDir(path: string): Promise<DirEntry[]> {
+  const remote = parseRemoteUri(path);
+  if (remote) {
+    const id = await sftpSessionStore.getState().ensure(remote.connectionId);
+    const entries = await sftpReadDir(id, remote.path);
+    return entries.map((e) => ({ ...e, path: buildRemoteUri(remote.connectionId, e.path) }));
+  }
   return invoke<DirEntry[]>("fs_read_dir", { path });
 }
 
-export function fsReadFile(path: string): Promise<string> {
+export async function fsReadFile(path: string): Promise<string> {
+  const remote = parseRemoteUri(path);
+  if (remote) {
+    const id = await sftpSessionStore.getState().ensure(remote.connectionId);
+    return sftpReadFile(id, remote.path);
+  }
   return invoke<string>("fs_read_file", { path });
 }
 
-export function fsWriteFile(path: string, contents: string): Promise<void> {
+export async function fsWriteFile(path: string, contents: string): Promise<void> {
+  const remote = parseRemoteUri(path);
+  if (remote) {
+    const id = await sftpSessionStore.getState().ensure(remote.connectionId);
+    return sftpWriteFile(id, remote.path, contents);
+  }
   return invoke("fs_write_file", { path, contents });
 }
 
