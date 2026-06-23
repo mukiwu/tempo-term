@@ -359,6 +359,28 @@ describe("openSshTab", () => {
     const tabId = useTabsStore.getState().openSshTab("c2", "staging");
     expect(useTabsStore.getState().activeId).toBe(tabId);
   });
+
+  it("focuses the existing tab instead of opening a duplicate for the same connection", () => {
+    const first = useTabsStore.getState().openSshTab("c1", "prod-box");
+    // Move focus away so we can prove the second call re-focuses the first tab.
+    useTabsStore.getState().newTerminalTab();
+    const second = useTabsStore.getState().openSshTab("c1", "prod-box");
+    expect(second).toBe(first);
+    expect(useTabsStore.getState().activeId).toBe(first);
+    const sshTabs = useTabsStore
+      .getState()
+      .tabs.filter((t) => {
+        const pane = firstLeafContent(t);
+        return pane.kind === "terminal" && pane.ssh?.connectionId === "c1";
+      });
+    expect(sshTabs).toHaveLength(1);
+  });
+
+  it("opens a separate tab for a different connection", () => {
+    const first = useTabsStore.getState().openSshTab("c1", "prod-box");
+    const second = useTabsStore.getState().openSshTab("c2", "staging");
+    expect(second).not.toBe(first);
+  });
 });
 
 describe("migratePersistedTabs", () => {

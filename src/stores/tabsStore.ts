@@ -280,6 +280,21 @@ export const useTabsStore = create<TabsState>()(
 
   openSshTab: (connectionId, name) => {
     const spaceId = get().ensureSpace();
+    // Re-opening a connection that's already showing in this space focuses that
+    // tab instead of spawning a duplicate session (two sessions would race for
+    // the same forwarded local port). Matches openLauncherTab's reuse.
+    const existing = get().tabs.find(
+      (t) =>
+        t.spaceId === spaceId &&
+        computeLayout(t.paneTree).some(
+          (p) =>
+            p.content.kind === "terminal" && p.content.ssh?.connectionId === connectionId,
+        ),
+    );
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
     const id = nextTabId();
     const paneId = nextPaneId();
     const tab: Tab = {
