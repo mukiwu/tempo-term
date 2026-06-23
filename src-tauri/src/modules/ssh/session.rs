@@ -108,6 +108,9 @@ pub fn open(
         .join("ssh_known_hosts");
 
     std::thread::spawn(move || {
+        // Keep a handle to drop the registry entry ourselves when the worker
+        // ends. `app` is moved into `run_session`, so clone for the cleanup.
+        let cleanup_app = app.clone();
         let rt = match tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -117,6 +120,7 @@ pub fn open(
                 // Couldn't even build the runtime; report a non-zero exit so the
                 // frontend tears the pane down rather than waiting forever.
                 emit_line(&on_data, "ssh: could not start session runtime");
+                remove_session(&cleanup_app, id);
                 let _ = on_exit.send(-1);
                 return;
             }
@@ -132,6 +136,13 @@ pub fn open(
             &on_data,
             control_rx,
         ));
+
+        // Drop our own registry entry on exit. A connection that fails async
+        // (the frontend's openSsh resolved but the worker then errored) would
+        // otherwise leak the handle, since the frontend never calls ssh_close
+        // for a session it never saw succeed. close() from the frontend is a
+        // harmless no-op once the entry is gone.
+        remove_session(&cleanup_app, id);
 
         // `on_exit` fires exactly once, on every exit path of the worker
         // (auth failure, channel close, control Close, or error).
@@ -350,6 +361,14 @@ fn close_inner(state: &SshState, id: u32) {
 /// remove the (now stale) entry either way so the id doesn't leak.
 pub fn close(state: &State<'_, SshState>, id: u32) {
     close_inner(state, id)
+}
+
+/// Drop a session's registry entry, looked up from the app's managed `SshState`.
+/// Called by the worker thread on exit so a connection that fails before the
+/// frontend ever calls `ssh_close` does not leak its handle.
+fn remove_session(app: &AppHandle, id: u32) {
+    let state = app.state::<SshState>();
+    state.sessions.lock().unwrap().remove(&id);
 }
 
 #[cfg(test)]

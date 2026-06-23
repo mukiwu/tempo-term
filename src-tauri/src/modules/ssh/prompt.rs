@@ -52,6 +52,13 @@ impl PromptRegistry {
         }
     }
 
+    /// Drop a single pending prompt by id. Used by `request_prompt`'s cleanup
+    /// guard so a prompt whose future is dropped (cancelled, emit failed) does
+    /// not linger in the map until the coarser per-session sweep runs.
+    pub fn remove(&self, id: &str) {
+        self.pending.lock().unwrap().remove(id);
+    }
+
     /// Remove every pending prompt whose id starts with `"{session_id}-"`.
     /// The hyphen suffix prevents session 1 from accidentally matching session 12.
     pub fn discard_session(&self, session_id: u32) {

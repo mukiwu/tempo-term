@@ -44,19 +44,30 @@ export function useSshPrompts(): {
   const [state, dispatch] = useReducer(promptReducer, INITIAL_STATE);
 
   useEffect(() => {
+    // `listen` is async: the component can unmount before it resolves. The
+    // `active` flag makes cleanup safe — if we've already unmounted by the time
+    // the listener registers, detach it immediately instead of leaking it.
+    let active = true;
     let unlisten: (() => void) | undefined;
 
     listen<PromptRequest>("ssh-prompt", (event) => {
-      dispatch({ type: "incoming", req: event.payload });
+      if (active) {
+        dispatch({ type: "incoming", req: event.payload });
+      }
     })
       .then((off) => {
-        unlisten = off;
+        if (active) {
+          unlisten = off;
+        } else {
+          off();
+        }
       })
       .catch(() => {
         // No Tauri runtime in tests/web preview; swallow silently.
       });
 
     return () => {
+      active = false;
       unlisten?.();
     };
   }, []);

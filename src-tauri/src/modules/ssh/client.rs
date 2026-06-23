@@ -39,7 +39,25 @@ async fn request_prompt(
     kind: PromptKind,
     message: String,
 ) -> Result<PromptReply, String> {
+    // Ensure the pending entry is removed no matter how we leave this function —
+    // a failed emit, a dropped receiver, or the whole future being cancelled when
+    // the connection unwinds. Without this the id would linger in the registry.
+    struct CleanupGuard {
+        registry: Arc<PromptRegistry>,
+        id: String,
+    }
+    impl Drop for CleanupGuard {
+        fn drop(&mut self) {
+            self.registry.remove(&self.id);
+        }
+    }
+
     let rx = registry.register(&id);
+    let _guard = CleanupGuard {
+        registry: registry.clone(),
+        id: id.clone(),
+    };
+
     app.emit_to(window_label, "ssh-prompt", PromptRequest { id, kind, message })
         .map_err(|e| e.to_string())?;
     rx.await.map_err(|_| "prompt cancelled".to_string())
@@ -244,9 +262,14 @@ fn expand_tilde_with(path: &str, home: &str) -> String {
 /// an `ssh -i ~/...` command) arrives literal, so the backend must do it here.
 /// Mirrors the `$HOME` lookup used elsewhere (see `modules::fs::dir::home_dir`).
 fn expand_tilde(path: &str) -> String {
-    match std::env::var("HOME") {
-        Ok(home) if !home.is_empty() => expand_tilde_with(path, &home),
-        _ => path.to_string(),
+    // `HOME` on Unix; Windows sets `USERPROFILE` instead, so fall back to it.
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    if home.is_empty() {
+        path.to_string()
+    } else {
+        expand_tilde_with(path, &home)
     }
 }
 
