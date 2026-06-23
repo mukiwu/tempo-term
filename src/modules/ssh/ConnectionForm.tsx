@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { Combobox } from "@/components/Combobox";
 import { parseSshCommand } from "@/modules/ssh/lib/parseSshCommand";
-import { useConnectionsStore, type SshConnection } from "@/stores/connectionsStore";
+import { useConnectionsStore, type SshConnection, type PortForward } from "@/stores/connectionsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import type { SshAuthMethod } from "@/modules/ssh/lib/parseSshCommand";
 import { pickFile } from "@/lib/dialog";
@@ -23,6 +23,7 @@ interface FormState {
   keyPath: string;
   secret: string;
   remember: boolean;
+  portForwards: PortForward[];
 }
 
 function blankForm(): FormState {
@@ -35,6 +36,7 @@ function blankForm(): FormState {
     keyPath: "",
     secret: "",
     remember: false,
+    portForwards: [],
   };
 }
 
@@ -48,6 +50,7 @@ function fromConnection(conn: SshConnection): FormState {
     keyPath: conn.keyPath ?? "",
     secret: "",
     remember: conn.rememberSecret,
+    portForwards: conn.portForwards ?? [],
   };
 }
 
@@ -66,6 +69,7 @@ async function persistConnection(
     authMethod: form.authMethod,
     keyPath: form.authMethod === "keyFile" ? form.keyPath.trim() || undefined : undefined,
     rememberSecret: form.remember,
+    portForwards: form.portForwards,
   };
 
   if (existingId) {
@@ -200,6 +204,35 @@ export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
     if (idx !== -1) {
       setField("authMethod", AUTH_METHOD_OPTIONS[idx]);
     }
+  }
+
+  function addForward() {
+    const newForward: PortForward = {
+      id: crypto.randomUUID(),
+      mode: "local",
+      bindHost: "127.0.0.1",
+      localPort: 0,
+      destHost: "",
+      destPort: 0,
+      enabled: true,
+    };
+    setForm((prev) => ({ ...prev, portForwards: [...prev.portForwards, newForward] }));
+  }
+
+  function removeForward(id: string) {
+    setForm((prev) => ({
+      ...prev,
+      portForwards: prev.portForwards.filter((pf) => pf.id !== id),
+    }));
+  }
+
+  function updateForward<K extends keyof PortForward>(id: string, key: K, value: PortForward[K]) {
+    setForm((prev) => ({
+      ...prev,
+      portForwards: prev.portForwards.map((pf) =>
+        pf.id === id ? { ...pf, [key]: value } : pf,
+      ),
+    }));
   }
 
   const hasPasteNotes = pasteIgnored.length > 0 || pasteWarnings.length > 0;
@@ -373,6 +406,115 @@ export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
               </label>
             </div>
           )}
+
+          <div className="border-t border-border" />
+
+          {/* Port forwarding */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-medium text-fg-muted">
+                {t("connectionForm.portForwards.sectionLabel")}
+              </span>
+              <button
+                type="button"
+                onClick={addForward}
+                className="rounded border border-border px-2 py-1 text-xs text-fg-muted hover:bg-bg-inset hover:text-fg"
+              >
+                {t("connectionForm.portForwards.addButton")}
+              </button>
+            </div>
+
+            {form.portForwards.length > 0 && (
+              <div className="space-y-2">
+                {form.portForwards.map((pf) => (
+                  <div
+                    key={pf.id}
+                    className="rounded border border-border bg-bg-inset p-2 space-y-2"
+                  >
+                    {/* Row 1: bindHost + localPort */}
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="mb-1 block text-xs text-fg-subtle">
+                          {t("connectionForm.portForwards.bindHost")}
+                        </label>
+                        <input
+                          type="text"
+                          value={pf.bindHost}
+                          onChange={(e) => updateForward(pf.id, "bindHost", e.target.value)}
+                          className="w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none focus:border-accent font-mono"
+                        />
+                      </div>
+                      <div className="w-24">
+                        <label className="mb-1 block text-xs text-fg-subtle">
+                          {t("connectionForm.portForwards.localPort")}
+                        </label>
+                        <input
+                          type="number"
+                          value={pf.localPort}
+                          min={0}
+                          max={65535}
+                          onChange={(e) =>
+                            updateForward(pf.id, "localPort", parseInt(e.target.value, 10) || 0)
+                          }
+                          className="w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none focus:border-accent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 2: destHost + destPort */}
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="mb-1 block text-xs text-fg-subtle">
+                          {t("connectionForm.portForwards.destHost")}
+                        </label>
+                        <input
+                          type="text"
+                          value={pf.destHost}
+                          onChange={(e) => updateForward(pf.id, "destHost", e.target.value)}
+                          className="w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none focus:border-accent font-mono"
+                        />
+                      </div>
+                      <div className="w-24">
+                        <label className="mb-1 block text-xs text-fg-subtle">
+                          {t("connectionForm.portForwards.destPort")}
+                        </label>
+                        <input
+                          type="number"
+                          value={pf.destPort}
+                          min={0}
+                          max={65535}
+                          onChange={(e) =>
+                            updateForward(pf.id, "destPort", parseInt(e.target.value, 10) || 0)
+                          }
+                          className="w-full rounded border border-border bg-bg px-2 py-1 text-xs text-fg outline-none focus:border-accent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 3: enabled + remove */}
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs text-fg-muted select-none cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={pf.enabled}
+                          onChange={(e) => updateForward(pf.id, "enabled", e.target.checked)}
+                          className="accent-accent"
+                        />
+                        {t("connectionForm.portForwards.enabled")}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => removeForward(pf.id)}
+                        className="rounded px-2 py-0.5 text-xs text-fg-muted hover:bg-bg hover:text-fg"
+                      >
+                        {t("connectionForm.portForwards.removeButton")}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer */}

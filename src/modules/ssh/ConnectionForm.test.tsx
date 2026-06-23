@@ -54,7 +54,8 @@ describe("ConnectionForm", () => {
     render(<ConnectionForm onClose={() => {}} />);
     expect(screen.getByPlaceholderText(/ssh user@host/i)).toBeInTheDocument();
     expect(screen.getByText(/Host/i)).toBeInTheDocument();
-    expect(screen.getByText(/Port/i)).toBeInTheDocument();
+    // "Port" label matches "Port forwarding" too — use exact text match
+    expect(screen.getByText("Port")).toBeInTheDocument();
     expect(screen.getByText(/Username/i)).toBeInTheDocument();
   });
 
@@ -246,5 +247,95 @@ describe("ConnectionForm", () => {
     const addOrder = mockAddConnection.mock.invocationCallOrder[0];
     const openOrder = mockOpenSshTab.mock.invocationCallOrder[0];
     expect(addOrder).toBeLessThan(openOrder);
+  });
+
+  // ──────────────────────────────────────────────
+  // Port forwarding section
+  // ──────────────────────────────────────────────
+
+  it("renders the Port forwarding section header", () => {
+    render(<ConnectionForm onClose={() => {}} />);
+    expect(screen.getByText(/port forwarding/i)).toBeInTheDocument();
+  });
+
+  it("clicking Add forward appends a row with 127.0.0.1 as the bind host default", () => {
+    render(<ConnectionForm onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /add forward/i }));
+
+    // The new row should have a bind host input pre-filled with 127.0.0.1
+    const bindHostInputs = screen.getAllByDisplayValue("127.0.0.1");
+    expect(bindHostInputs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("clicking Remove on a port-forward row removes it", () => {
+    render(<ConnectionForm onClose={() => {}} />);
+
+    // Add a row
+    fireEvent.click(screen.getByRole("button", { name: /add forward/i }));
+    expect(screen.getAllByDisplayValue("127.0.0.1").length).toBe(1);
+
+    // Remove it
+    fireEvent.click(screen.getByRole("button", { name: /remove/i }));
+    expect(screen.queryAllByDisplayValue("127.0.0.1").length).toBe(0);
+  });
+
+  it("persists portForwards when Save is clicked", async () => {
+    render(<ConnectionForm onClose={() => {}} />);
+
+    fireEvent.change(screen.getByPlaceholderText("example.com"), {
+      target: { value: "myserver.io" },
+    });
+
+    // Add a forward rule
+    fireEvent.click(screen.getByRole("button", { name: /add forward/i }));
+
+    // Fill in localPort
+    const localPortInputs = screen.getAllByRole("spinbutton");
+    // localPort input (spinbutton) — find the one labeled Local port
+    const localPortInput = localPortInputs.find((el) => {
+      const label = el.closest("div")?.querySelector("label");
+      return label && /local port/i.test(label.textContent ?? "");
+    });
+    if (localPortInput) {
+      fireEvent.change(localPortInput, { target: { value: "3000" } });
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(mockAddConnection).toHaveBeenCalledTimes(1);
+    });
+
+    const profile = mockAddConnection.mock.calls[0][0] as Record<string, unknown>;
+    expect(Array.isArray(profile.portForwards)).toBe(true);
+    expect((profile.portForwards as unknown[]).length).toBe(1);
+  });
+
+  it("pre-fills portForwards from existing connection in edit mode", () => {
+    const existing = {
+      id: "abc-123",
+      name: "My Server",
+      host: "server.example.com",
+      port: 22,
+      user: "admin",
+      authMethod: "password" as const,
+      rememberSecret: false,
+      portForwards: [
+        {
+          id: "pf-1",
+          mode: "local" as const,
+          bindHost: "127.0.0.1",
+          localPort: 8080,
+          destHost: "internal.server",
+          destPort: 80,
+          enabled: true,
+        },
+      ],
+    };
+    render(<ConnectionForm connection={existing} onClose={() => {}} />);
+
+    // The row should be pre-filled with the saved destHost
+    expect(screen.getByDisplayValue("internal.server")).toBeInTheDocument();
   });
 });

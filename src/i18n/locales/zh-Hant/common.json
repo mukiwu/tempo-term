@@ -106,7 +106,17 @@
     "save": "儲存",
     "connect": "連線",
     "cancel": "取消",
-    "browse": "瀏覽"
+    "browse": "瀏覽",
+    "portForwards": {
+      "sectionLabel": "連接埠轉發",
+      "addButton": "新增轉發規則",
+      "removeButton": "移除",
+      "bindHost": "綁定主機",
+      "localPort": "本地埠號",
+      "destHost": "目標主機",
+      "destPort": "目標埠號",
+      "enabled": "啟用"
+    }
   },
   "workspace": {
     "openFolder": "開啟資料夾",

@@ -106,7 +106,17 @@
     "save": "Save",
     "connect": "Connect",
     "cancel": "Cancel",
-    "browse": "Browse"
+    "browse": "Browse",
+    "portForwards": {
+      "sectionLabel": "Port forwarding",
+      "addButton": "Add forward",
+      "removeButton": "Remove",
+      "bindHost": "Bind host",
+      "localPort": "Local port",
+      "destHost": "Destination host",
+      "destPort": "Destination port",
+      "enabled": "Enabled"
+    }
   },
   "workspace": {
     "openFolder": "Open Folder",
