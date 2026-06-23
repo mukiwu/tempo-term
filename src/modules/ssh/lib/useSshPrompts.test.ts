@@ -13,4 +13,12 @@ describe("promptReducer", () => {
     const s2 = promptReducer(s1, { type: "answered", id: "1" });
     expect(s2.queue).toHaveLength(0);
   });
+
+  it("removes only the answered prompt when multiple are queued", () => {
+    const s1 = promptReducer(empty, { type: "incoming", req: { id: "1", kind: "hostKeyUnknown", message: "fp1" } });
+    const s2 = promptReducer(s1, { type: "incoming", req: { id: "2", kind: "password", message: "" } });
+    const s3 = promptReducer(s2, { type: "answered", id: "1" });
+    expect(s3.queue).toHaveLength(1);
+    expect(s3.queue[0].id).toBe("2");
+  });
 });

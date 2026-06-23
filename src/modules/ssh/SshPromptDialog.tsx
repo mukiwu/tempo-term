@@ -37,12 +37,7 @@ export function SshPromptDialog() {
     setRemember(false);
   }
 
-  function handleHostKeyTrust() {
-    if (!current) return;
-    reply(current.id, { approved: true, secret: null, remember: false });
-  }
-
-  function handleHostKeyReplace() {
+  function handleHostKeyApprove() {
     if (!current) return;
     reply(current.id, { approved: true, secret: null, remember: false });
   }
@@ -86,7 +81,7 @@ export function SshPromptDialog() {
               </button>
               <button
                 type="button"
-                onClick={handleHostKeyTrust}
+                onClick={handleHostKeyApprove}
                 className="rounded-md bg-accent px-4 py-1.5 text-xs font-medium text-white"
               >
                 {t("sshPrompt.hostKeyUnknown.trust")}
@@ -123,7 +118,7 @@ export function SshPromptDialog() {
               </button>
               <button
                 type="button"
-                onClick={handleHostKeyReplace}
+                onClick={handleHostKeyApprove}
                 className="rounded-md bg-red-500 px-4 py-1.5 text-xs font-medium text-white hover:bg-red-600"
               >
                 {t("sshPrompt.hostKeyChanged.replace")}

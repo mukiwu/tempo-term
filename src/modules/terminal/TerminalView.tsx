@@ -6,6 +6,11 @@ import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
+
+/** Narrows a session to PtySession (which has cwd/foregroundCommand). */
+function isPtySession(s: PtySession | SshSession): s is PtySession {
+  return "cwd" in s;
+}
 import { useConnectionsStore } from "@/stores/connectionsStore";
 import {
   deleteTerminalHistory,
@@ -196,7 +201,9 @@ export function TerminalView({
           imagePaths = await terminalClipboardImagePaths().catch(() => []);
         }
         if (filePaths.length === 1 || imagePaths.length === 1) {
-          command = await (session as PtySession).foregroundCommand?.().catch(() => null) ?? null;
+          command = isPtySession(session)
+            ? await session.foregroundCommand().catch(() => null)
+            : null;
         }
       }
       const action = resolvePasteAction({
@@ -326,7 +333,8 @@ export function TerminalView({
     async function openFromTerminal(raw: string) {
       let resolvedCwd: string | null = cwdRef.current ?? null;
       try {
-        const live = await (sessionRef.current as PtySession | null)?.cwd();
+        const s = sessionRef.current;
+        const live = s && isPtySession(s) ? await s.cwd() : null;
         if (live) {
           resolvedCwd = live;
         }
@@ -676,7 +684,8 @@ export function TerminalView({
     let cancelled = false;
     let last = "";
     const poll = async () => {
-      const session = sessionRef.current as PtySession | null;
+      const raw = sessionRef.current;
+      const session = raw && isPtySession(raw) ? raw : null;
       if (!session) {
         return;
       }
@@ -750,7 +759,8 @@ export function TerminalView({
     if (active || sshRef.current) {
       return;
     }
-    const session = sessionRef.current as PtySession | null;
+    const raw = sessionRef.current;
+    const session = raw && isPtySession(raw) ? raw : null;
     if (!session) {
       return;
     }
@@ -876,7 +886,9 @@ export function TerminalView({
     if (filePaths.length === 0) {
       return false;
     }
-    const command = await (session as PtySession).foregroundCommand?.().catch(() => null) ?? null;
+    const command = isPtySession(session)
+      ? await session.foregroundCommand().catch(() => null)
+      : null;
     if (shouldAttachImage(command, filePaths)) {
       await prepareClipboardImageAttachment(filePaths[0]).catch(() => {});
       await session.write("\x16");
@@ -964,8 +976,9 @@ export function TerminalView({
           <span className="text-sm">{t("ssh.disconnected")}</span>
           <button
             type="button"
+            disabled={connecting}
             onClick={() => setReconnectTrigger((n) => n + 1)}
-            className="rounded-md border border-border px-4 py-1.5 text-sm text-fg-muted hover:bg-bg-elevated hover:text-fg"
+            className="rounded-md border border-border px-4 py-1.5 text-sm text-fg-muted hover:bg-bg-elevated hover:text-fg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {t("ssh.reconnect")}
           </button>

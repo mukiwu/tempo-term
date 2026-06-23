@@ -35,4 +35,21 @@ describe("parseSshCommand", () => {
     expect(parseSshCommand("hello world").draft).toEqual({});
     expect(parseSshCommand("hello world").warnings.length).toBeGreaterThan(0);
   });
+
+  // B10(a): unrecognized flag + missing host → both warnings always reported
+  it("reports both unrecognized-flag and no-host warnings when host is absent", () => {
+    const r = parseSshCommand("ssh -X");
+    const joined = r.warnings.join("\n");
+    expect(joined).toMatch(/unrecognized flag/i);
+    expect(joined).toMatch(/no host found/i);
+  });
+
+  // B10(b): -p with no following token → clean message, no dangling colon
+  it("reports a clean message when -p has no value", () => {
+    const r = parseSshCommand("ssh host -p");
+    expect(r.warnings.length).toBeGreaterThan(0);
+    const msg = r.warnings.join(" ");
+    expect(msg).toMatch(/missing port after -p/i);
+    expect(msg).not.toMatch(/:\s*$/); // no trailing colon
+  });
 });

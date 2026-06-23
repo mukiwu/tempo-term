@@ -21,4 +21,39 @@ describe("openSsh", () => {
     await s.resize(100, 30);
     expect(invoke).toHaveBeenCalledWith("ssh_resize", { id: 7, cols: 100, rows: 30 });
   });
+
+  it("passes the correct req shape to ssh_open", async () => {
+    invoke.mockClear();
+    await openSsh({
+      connectionId: "conn-42", host: "example.com", port: 2222, user: "alice",
+      authMethod: "keyFile", keyPath: "~/.ssh/id_ed25519", cols: 120, rows: 40,
+      onData: () => {}, onExit: () => {},
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      "ssh_open",
+      expect.objectContaining({
+        req: {
+          connectionId: "conn-42",
+          host: "example.com",
+          port: 2222,
+          user: "alice",
+          authMethod: "keyFile",
+          keyPath: "~/.ssh/id_ed25519",
+          cols: 120,
+          rows: 40,
+        },
+      }),
+    );
+  });
+
+  it("close() calls ssh_close with the session id", async () => {
+    invoke.mockClear();
+    const s = await openSsh({
+      connectionId: "c2", host: "h2", port: 22, user: "bob",
+      authMethod: "password", cols: 80, rows: 24,
+      onData: () => {}, onExit: () => {},
+    });
+    await s.close();
+    expect(invoke).toHaveBeenCalledWith("ssh_close", { id: s.id });
+  });
 });

@@ -45,11 +45,15 @@ export function parseSshCommand(input: string): ParsedSshCommand {
     const tok = tokens[i];
     if (tok === "-p") {
       const v = tokens[++i];
-      const port = Number(v);
-      if (Number.isInteger(port) && port > 0) {
-        draft.port = port;
+      if (v === undefined) {
+        warnings.push("missing port after -p");
       } else {
-        warnings.push(`invalid port: ${v ?? ""}`.trim());
+        const port = Number(v);
+        if (Number.isInteger(port) && port > 0) {
+          draft.port = port;
+        } else {
+          warnings.push(`invalid port: ${v}`);
+        }
       }
     } else if (tok === "-i") {
       const v = tokens[++i];
@@ -91,7 +95,7 @@ export function parseSshCommand(input: string): ParsedSshCommand {
   if (draft.host && draft.authMethod === undefined) {
     draft.authMethod = "password";
   }
-  if (!draft.host && warnings.length === 0) {
+  if (!draft.host) {
     warnings.push("no host found in command");
   }
 
