@@ -22,6 +22,7 @@ import { useWatchNotes } from "@/modules/notes/lib/useWatchNotes";
 import { registerSecondaryWindowCleanup } from "@/lib/windowLifecycle";
 import { SshPromptDialog } from "@/modules/ssh/SshPromptDialog";
 import { useForwardStatusListener } from "@/modules/ssh/lib/useForwardStatus";
+import { sftpSessionStore } from "@/modules/ssh/lib/sftpSessionStore";
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 640;
@@ -65,6 +66,12 @@ function App() {
       })
       .catch(() => {});
     return () => unlisten?.();
+  }, []);
+
+  // Close any open SFTP connections when this window goes away so no remote
+  // connection leaks.
+  useEffect(() => {
+    return () => sftpSessionStore.getState().closeAll();
   }, []);
 
   // Keep the Claude session-status hook installed when tracking is enabled, so
