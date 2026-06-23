@@ -170,6 +170,10 @@ async fn run_session(
         session_id,
     };
 
+    // Give the user immediate feedback — the connect can take a moment, and the
+    // pane would otherwise sit blank until output (or an error) arrives.
+    emit_line(on_data, &format!("Connecting to {}:{}...", req.host, req.port));
+
     // 1. Transport handshake + host-key verification.
     let mut handle = match client::connect(ConnectArgs {
         handler,

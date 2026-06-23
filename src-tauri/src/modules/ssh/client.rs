@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
@@ -211,11 +212,37 @@ pub struct ConnectArgs {
 /// Open a TCP connection and run the SSH transport handshake, verifying the
 /// host key via `VerifyingClient::check_server_key`. Returns the connected
 /// handle (authentication is performed by the caller in a later task).
+/// How long to wait for the TCP connection before giving up. Only the TCP
+/// connect is bounded by this — the SSH handshake that follows includes the
+/// interactive host-key prompt, which legitimately waits on the user, so it must
+/// NOT be under a timeout. An unreachable host or a filtered port is exactly what
+/// would otherwise hang here (~75s on the OS SYN-retry timeout).
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
 pub async fn connect(
     args: ConnectArgs,
 ) -> Result<russh::client::Handle<VerifyingClient>, String> {
     let config = Arc::new(russh::client::Config::default());
-    russh::client::connect(config, (args.host.as_str(), args.port), args.handler)
+
+    // Do the TCP connect ourselves with a timeout, then hand the live stream to
+    // russh. Wrapping `russh::client::connect` directly would also time out the
+    // host-key prompt, which must be allowed to wait for the user.
+    let stream = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        tokio::net::TcpStream::connect((args.host.as_str(), args.port)),
+    )
+    .await
+    .map_err(|_| {
+        format!(
+            "timed out after {}s connecting to {}:{}",
+            CONNECT_TIMEOUT.as_secs(),
+            args.host,
+            args.port
+        )
+    })?
+    .map_err(|e| format!("could not reach {}:{}: {e}", args.host, args.port))?;
+
+    russh::client::connect_stream(config, stream, args.handler)
         .await
         .map_err(|e| e.to_string())
 }
