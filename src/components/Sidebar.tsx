@@ -1,10 +1,11 @@
 import { useTranslation } from "react-i18next";
-import { Bot, FolderTree, GitBranch, LayoutGrid, NotebookPen, type LucideIcon } from "lucide-react";
+import { Bot, FolderTree, GitBranch, LayoutGrid, NotebookPen, Server, type LucideIcon } from "lucide-react";
 import { ExplorerView } from "@/modules/explorer/ExplorerView";
 import { SourceControlView } from "@/modules/source-control/SourceControlView";
 import { AIView } from "@/modules/ai/AIView";
 import { NotesSidebar } from "@/modules/notes/NotesSidebar";
 import { WorkspacePanel } from "@/modules/workspace/WorkspacePanel";
+import { ConnectionsPanel } from "@/modules/ssh/ConnectionsPanel";
 import { Tooltip } from "@/components/Tooltip";
 import { useUiStore, type SidebarView } from "@/stores/uiStore";
 
@@ -20,6 +21,7 @@ const SIDEBAR_TABS: SidebarTab[] = [
   { id: "sourceControl", icon: GitBranch, labelKey: "nav.git" },
   { id: "notes", icon: NotebookPen, labelKey: "nav.notes" },
   { id: "ai", icon: Bot, labelKey: "nav.ai" },
+  { id: "connections", icon: Server, labelKey: "nav.connections" },
 ];
 
 export function Sidebar() {
@@ -56,6 +58,7 @@ export function Sidebar() {
         {sidebarView === "sourceControl" && <SourceControlView />}
         {sidebarView === "notes" && <NotesSidebar />}
         {sidebarView === "ai" && <AIView />}
+        {sidebarView === "connections" && <ConnectionsPanel />}
       </div>
     </div>
   );

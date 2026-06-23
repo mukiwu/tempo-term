@@ -13,7 +13,8 @@
     "ai": "AI 助手",
     "notes": "筆記",
     "gitGraph": "Git 線圖",
-    "settings": "設定"
+    "settings": "設定",
+    "connections": "SSH 連線"
   },
   "statusBar": {
     "ready": "就緒",
@@ -63,6 +64,16 @@
       "ok": "確定",
       "cancel": "取消"
     }
+  },
+  "connectionsPanel": {
+    "title": "SSH 連線",
+    "newConnection": "新增連線",
+    "edit": "編輯",
+    "delete": "刪除",
+    "confirmDelete": "確認刪除？",
+    "cancelDelete": "取消",
+    "emptyTitle": "尚無已儲存的連線",
+    "emptyHint": "在這裡儲存 SSH 連線，即可一鍵連線"
   },
   "connectionForm": {
     "titleCreate": "新增 SSH 連線",

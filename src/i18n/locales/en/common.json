@@ -13,7 +13,8 @@
     "ai": "AI Assistant",
     "notes": "Notes",
     "gitGraph": "Git Graph",
-    "settings": "Settings"
+    "settings": "Settings",
+    "connections": "Connections"
   },
   "statusBar": {
     "ready": "Ready",
@@ -63,6 +64,16 @@
       "ok": "OK",
       "cancel": "Cancel"
     }
+  },
+  "connectionsPanel": {
+    "title": "Connections",
+    "newConnection": "New connection",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirmDelete": "Delete?",
+    "cancelDelete": "Cancel",
+    "emptyTitle": "No saved connections",
+    "emptyHint": "Save SSH connections here to connect with one click"
   },
   "connectionForm": {
     "titleCreate": "New SSH Connection",
