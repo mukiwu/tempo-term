@@ -13,8 +13,12 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
-use super::known_hosts::{classify, known_hosts_line, HostKeyStatus};
+use super::known_hosts::{classify, host_token, known_hosts_line, rewrite_lines, HostKeyStatus};
 use super::prompt::{PromptKind, PromptRegistry, PromptReply, PromptRequest};
+
+/// Guards concurrent writes to the app-managed known_hosts file.
+/// Held only across the sync read+rewrite in `persist_host_key`.
+static KNOWN_HOSTS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Emit an `ssh-prompt` to the frontend, register the request id, and await the
 /// user's reply. This is the single emit+register+await primitive shared by the
@@ -131,7 +135,6 @@ impl russh::client::Handler for VerifyingClient {
                     // lines for the host token before appending the new one.
                     persist_host_key(
                         &self.known_hosts_path,
-                        &lines,
                         &self.host,
                         self.port,
                         &presented,
@@ -155,48 +158,24 @@ impl russh::client::Handler for VerifyingClient {
 /// created so the very first write succeeds.
 fn persist_host_key(
     path: &Path,
-    lines: &[String],
     host: &str,
     port: u16,
     key: &str,
 ) -> std::io::Result<()> {
-    let token = host_token(host, port);
-    let mut kept: Vec<String> = lines
-        .iter()
-        .filter(|raw| {
-            let trimmed = raw.trim();
-            // Keep comments / blanks untouched.
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                return true;
-            }
-            // Drop only entries whose first field is exactly this host token,
-            // matching how `classify` keys entries (avoids prefix false matches
-            // like "host" vs "host2").
-            let entry_host = trimmed
-                .split(char::is_whitespace)
-                .next()
-                .unwrap_or("");
-            entry_host != token
-        })
+    let _guard = KNOWN_HOSTS_LOCK.lock().unwrap();
+    let lines: Vec<String> = std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
         .map(|l| l.to_string())
         .collect();
-
-    kept.push(known_hosts_line(host, port, key));
+    let token = host_token(host, port);
+    let new_line = known_hosts_line(host, port, key);
+    let kept = rewrite_lines(lines.as_slice(), &token, &new_line);
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(path, kept.join("\n") + "\n")
-}
-
-/// The known_hosts token for a host: bare host on port 22, `[host]:port`
-/// otherwise (OpenSSH convention; mirrors `known_hosts::host_token`).
-fn host_token(host: &str, port: u16) -> String {
-    if port == 22 {
-        host.to_string()
-    } else {
-        format!("[{host}]:{port}")
-    }
 }
 
 /// Inputs needed to open a verified SSH connection.
@@ -293,6 +272,16 @@ pub struct AuthArgs {
     pub connection_id: String,
 }
 
+/// Validate that the requested auth method is one we support.
+/// Returns `Ok(())` for `"password"`, `"keyFile"`, `"agent"`, and
+/// `Err("unsupported auth method: {method}")` for anything else.
+fn validate_auth_method(method: &str) -> Result<(), String> {
+    match method {
+        "password" | "keyFile" | "agent" => Ok(()),
+        other => Err(format!("unsupported auth method: {other}")),
+    }
+}
+
 /// Authenticate the (already host-key-verified) connection using the method the
 /// user selected. Returns `Ok(true)` if the server accepted the credentials,
 /// `Ok(false)` if it rejected them, and `Err` on an operational failure (key
@@ -305,6 +294,7 @@ pub async fn authenticate(
     window_label: &str,
     session_id: u32,
 ) -> Result<bool, String> {
+    validate_auth_method(&args.auth_method)?;
     match args.auth_method.as_str() {
         "password" => {
             authenticate_password(handle, args, registry, app, window_label, session_id).await
@@ -658,5 +648,20 @@ mod tests {
             expand_tilde_with("~other/key.pem", "/Users/muki"),
             "~other/key.pem"
         );
+    }
+
+    #[test]
+    fn valid_auth_methods_return_ok() {
+        assert!(validate_auth_method("password").is_ok());
+        assert!(validate_auth_method("keyFile").is_ok());
+        assert!(validate_auth_method("agent").is_ok());
+    }
+
+    #[test]
+    fn unknown_auth_method_returns_err_with_unsupported() {
+        let result = validate_auth_method("ftp");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("unsupported"), "expected 'unsupported' in: {msg}");
     }
 }

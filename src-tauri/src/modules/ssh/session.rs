@@ -116,6 +116,7 @@ pub fn open(
             Err(_) => {
                 // Couldn't even build the runtime; report a non-zero exit so the
                 // frontend tears the pane down rather than waiting forever.
+                emit_line(&on_data, "ssh: could not start session runtime");
                 let _ = on_exit.send(-1);
                 return;
             }
@@ -293,6 +294,7 @@ async fn run_session(
         }
     }
 
+    registry.discard_session(session_id);
     0
 }
 
@@ -316,18 +318,9 @@ pub fn resize(state: &State<'_, SshState>, id: u32, cols: u16, rows: u16) -> Res
     send(state, id, SshControl::Resize { cols, rows })
 }
 
-/// Tear a session down: signal the worker to stop, then drop the registry entry.
-/// Sending may fail if the worker already exited (natural EOF) — that's fine, we
-/// remove the (now stale) entry either way so the id doesn't leak.
-pub fn close(state: &State<'_, SshState>, id: u32) {
-    let _ = send(state, id, SshControl::Close);
-    state.sessions.lock().unwrap().remove(&id);
-}
-
-/// Look up a session and forward a control message. Returns a readable error if
-/// the session is unknown (never opened, or already closed). The lock is only
-/// held to clone the sender — never across an `.await`.
-fn send(state: &State<'_, SshState>, id: u32, msg: SshControl) -> Result<(), String> {
+/// Inner implementation of `send` that operates on `&SshState` directly
+/// so it can be called from unit tests without constructing `State<'_, SshState>`.
+fn send_inner(state: &SshState, id: u32, msg: SshControl) -> Result<(), String> {
     let sessions = state.sessions.lock().unwrap();
     let handle = sessions
         .get(&id)
@@ -336,6 +329,27 @@ fn send(state: &State<'_, SshState>, id: u32, msg: SshControl) -> Result<(), Str
         .control
         .send(msg)
         .map_err(|_| "ssh session closed".to_string())
+}
+
+/// Look up a session and forward a control message. Returns a readable error if
+/// the session is unknown (never opened, or already closed). The lock is only
+/// held to clone the sender — never across an `.await`.
+fn send(state: &State<'_, SshState>, id: u32, msg: SshControl) -> Result<(), String> {
+    send_inner(state, id, msg)
+}
+
+/// Inner implementation of `close` that operates on `&SshState` directly
+/// for unit testing.
+fn close_inner(state: &SshState, id: u32) {
+    let _ = send_inner(state, id, SshControl::Close);
+    state.sessions.lock().unwrap().remove(&id);
+}
+
+/// Tear a session down: signal the worker to stop, then drop the registry entry.
+/// Sending may fail if the worker already exited (natural EOF) — that's fine, we
+/// remove the (now stale) entry either way so the id doesn't leak.
+pub fn close(state: &State<'_, SshState>, id: u32) {
+    close_inner(state, id)
 }
 
 #[cfg(test)]
@@ -353,5 +367,28 @@ mod tests {
                 remember: false,
             }
         ));
+    }
+
+    #[test]
+    fn send_inner_unknown_id_returns_err() {
+        let state = SshState::new();
+        let result = send_inner(&state, 99, SshControl::Input(vec![]));
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("not found"), "expected 'not found' in: {msg}");
+    }
+
+    #[test]
+    fn write_input_equivalent_unknown_id_returns_err() {
+        let state = SshState::new();
+        let result = send_inner(&state, 99, SshControl::Input(vec![]));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn close_inner_unknown_id_is_noop() {
+        let state = SshState::new();
+        // Should not panic
+        close_inner(&state, 99);
     }
 }

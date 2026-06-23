@@ -10,7 +10,7 @@ pub enum HostKeyStatus {
 
 /// The host token an entry is keyed by: bare host on port 22, `[host]:port`
 /// otherwise (OpenSSH convention).
-fn host_token(host: &str, port: u16) -> String {
+pub(crate) fn host_token(host: &str, port: u16) -> String {
     if port == 22 {
         host.to_string()
     } else {
@@ -44,6 +44,30 @@ pub fn classify(lines: &[String], host: &str, port: u16, presented_key: &str) ->
     } else {
         HostKeyStatus::Unknown
     }
+}
+
+/// Remove every existing entry for `token` and append `new_line`.
+/// Comments and blank lines are preserved. This is the filter+append
+/// primitive for both the Unknown (new host) and Changed (stale key)
+/// cases in `persist_host_key`.
+pub(crate) fn rewrite_lines(lines: &[String], token: &str, new_line: &str) -> Vec<String> {
+    let mut kept: Vec<String> = lines
+        .iter()
+        .filter(|raw| {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                return true;
+            }
+            let entry_host = trimmed
+                .split(char::is_whitespace)
+                .next()
+                .unwrap_or("");
+            entry_host != token
+        })
+        .map(|l| l.to_string())
+        .collect();
+    kept.push(new_line.to_string());
+    kept
 }
 
 /// The line to append when the user trusts a key.
@@ -81,5 +105,44 @@ mod tests {
         assert!(matches!(classify(&lines, "h", 2222, "ssh-ed25519 BBBB"), HostKeyStatus::Trusted));
         assert_eq!(known_hosts_line("h", 2222, "ssh-ed25519 BBBB"), "[h]:2222 ssh-ed25519 BBBB");
         assert_eq!(known_hosts_line("h", 22, "ssh-ed25519 BBBB"), "h ssh-ed25519 BBBB");
+    }
+
+    // --- rewrite_lines tests ---
+
+    #[test]
+    fn append_when_absent() {
+        let lines: Vec<String> = vec![];
+        let result = rewrite_lines(&lines, "h", "h ssh-ed25519 NEWKEY");
+        assert_eq!(result, vec!["h ssh-ed25519 NEWKEY".to_string()]);
+    }
+
+    #[test]
+    fn replace_single() {
+        let lines = vec!["h ssh-ed25519 OLDKEY".to_string()];
+        let result = rewrite_lines(&lines, "h", "h ssh-ed25519 NEWKEY");
+        assert_eq!(result, vec!["h ssh-ed25519 NEWKEY".to_string()]);
+    }
+
+    #[test]
+    fn replace_duplicates() {
+        let lines = vec![
+            "h ssh-ed25519 STALE1".to_string(),
+            "h ssh-ed25519 STALE2".to_string(),
+        ];
+        let result = rewrite_lines(&lines, "h", "h ssh-ed25519 NEWKEY");
+        assert_eq!(result, vec!["h ssh-ed25519 NEWKEY".to_string()]);
+    }
+
+    #[test]
+    fn do_not_touch_look_alike() {
+        let lines = vec![
+            "h ssh-ed25519 KEEP".to_string(),
+            "h2 ssh-ed25519 ALSO_KEEP".to_string(),
+        ];
+        let result = rewrite_lines(&lines, "h", "h ssh-ed25519 NEWKEY");
+        assert_eq!(result, vec![
+            "h2 ssh-ed25519 ALSO_KEEP".to_string(),
+            "h ssh-ed25519 NEWKEY".to_string(),
+        ]);
     }
 }

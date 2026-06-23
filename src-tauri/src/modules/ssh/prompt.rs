@@ -51,6 +51,16 @@ impl PromptRegistry {
             false
         }
     }
+
+    /// Remove every pending prompt whose id starts with `"{session_id}-"`.
+    /// The hyphen suffix prevents session 1 from accidentally matching session 12.
+    pub fn discard_session(&self, session_id: u32) {
+        let prefix = format!("{session_id}-");
+        self.pending
+            .lock()
+            .unwrap()
+            .retain(|id, _| !id.starts_with(&prefix));
+    }
 }
 
 #[cfg(test)]
@@ -70,5 +80,27 @@ mod tests {
     fn resolve_unknown_id_returns_false() {
         let reg = PromptRegistry::new();
         assert!(!reg.resolve("nope", PromptReply { approved: false, secret: None, remember: false }));
+    }
+
+    #[test]
+    fn discard_session_removes_all_entries_for_that_session() {
+        let reg = PromptRegistry::new();
+        reg.register("1-hostkey");
+        reg.register("1-password");
+        reg.discard_session(1);
+        assert!(!reg.resolve("1-hostkey", PromptReply { approved: false, secret: None, remember: false }));
+        assert!(!reg.resolve("1-password", PromptReply { approved: false, secret: None, remember: false }));
+    }
+
+    #[test]
+    fn discard_session_does_not_remove_other_sessions() {
+        let reg = PromptRegistry::new();
+        reg.register("1-hostkey");
+        let _rx12 = reg.register("12-hostkey");
+        reg.discard_session(1);
+        // session 1 gone
+        assert!(!reg.resolve("1-hostkey", PromptReply { approved: false, secret: None, remember: false }));
+        // session 12 still there (prefix "12-" does not start with "1-")
+        assert!(reg.resolve("12-hostkey", PromptReply { approved: true, secret: None, remember: false }));
     }
 }
