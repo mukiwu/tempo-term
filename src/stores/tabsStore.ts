@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { uid } from "@/lib/id";
 import { perWindowStorage } from "@/lib/window";
+import { markFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import {
   computeLayout,
   findPaneContent,
@@ -290,6 +291,10 @@ export const useTabsStore = create<TabsState>()(
       activeLeafId: paneId,
       renamed: true,
     };
+    // Mark this leaf as freshly user-opened so TerminalView auto-connects on mount.
+    // Restored panes (after app relaunch) never reach this path, so their leaf ids
+    // will NOT be in the set and TerminalView will show the Reconnect state instead.
+    markFreshSshLeaf(paneId);
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
   },

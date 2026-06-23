@@ -3,6 +3,10 @@
   "tagline": "AI 驅動的終端機工作區",
   "terminalConnecting": "啟動中…",
   "openLinkHint": "{{mods}} + 點擊開啟",
+  "ssh": {
+    "disconnected": "已斷線，點擊重新連線",
+    "reconnect": "重新連線"
+  },
   "nav": {
     "workspaces": "工作區",
     "terminal": "終端機",
@@ -114,6 +118,7 @@
     "terminal": "終端機",
     "note": "筆記",
     "newTerminal": "新增終端機",
+    "connectSsh": "SSH 連線",
     "launcherHint": "選擇要開啟的內容",
     "launcherGroup": {
       "workspace": "工作區",

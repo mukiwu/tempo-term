@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   FilePlus,
   FileText,
   FolderOpen,
   Globe,
+  Server,
   SquareTerminal,
   Waypoints,
   type LucideIcon,
@@ -17,6 +19,7 @@ import { pickNotesFolder } from "@/modules/notes/lib/pickNotesFolder";
 import { pickFile, pickFolder } from "@/lib/dialog";
 import { IS_MAC } from "@/lib/platform";
 import type { PaneContent } from "@/modules/terminal/lib/terminalLayout";
+import { ConnectionForm } from "@/modules/ssh/ConnectionForm";
 
 const DEFAULT_PREVIEW_URL = "http://localhost:3000";
 
@@ -54,6 +57,7 @@ interface LauncherGroup {
 
 export function LauncherPanel({ target }: LauncherPanelProps) {
   const { t } = useTranslation();
+  const [sshFormOpen, setSshFormOpen] = useState(false);
   const newTerminalTab = useTabsStore((s) => s.newTerminalTab);
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
@@ -138,6 +142,12 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
             apply({ kind: "editor", path: file });
           },
         },
+        {
+          key: "connect-ssh",
+          label: t("workspace.connectSsh"),
+          icon: Server,
+          run: () => setSshFormOpen(true),
+        },
       ],
     },
     {
@@ -181,36 +191,41 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
   ];
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 px-4 bg-bg text-fg-subtle">
-      <p className="text-center text-sm">{t("workspace.launcherHint")}</p>
-      <div className="flex w-full max-w-72 flex-col gap-5">
-        {groups.map((group) => (
-          <div key={group.key}>
-            <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-subtle">
-              {group.label}
-            </h3>
-            <ul className="divide-y divide-border">
-              {group.actions.map(({ key, label, icon: Icon, shortcut, run }) => (
-                <li key={key}>
-                  <button
-                    type="button"
-                    onClick={() => void run()}
-                    className="flex w-full items-center gap-2.5 rounded-md px-2 py-2.5 text-sm text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
-                  >
-                    <Icon size={16} className="shrink-0" />
-                    <span className="flex-1 text-left">{label}</span>
-                    {shortcut && (
-                      <kbd className="shrink-0 rounded border border-border-strong bg-bg-inset px-2 py-0.5 font-mono text-xs text-fg">
-                        {shortcut}
-                      </kbd>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+    <>
+      <div className="flex h-full flex-col items-center justify-center gap-6 px-4 bg-bg text-fg-subtle">
+        <p className="text-center text-sm">{t("workspace.launcherHint")}</p>
+        <div className="flex w-full max-w-72 flex-col gap-5">
+          {groups.map((group) => (
+            <div key={group.key}>
+              <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-subtle">
+                {group.label}
+              </h3>
+              <ul className="divide-y divide-border">
+                {group.actions.map(({ key, label, icon: Icon, shortcut, run }) => (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      onClick={() => void run()}
+                      className="flex w-full items-center gap-2.5 rounded-md px-2 py-2.5 text-sm text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+                    >
+                      <Icon size={16} className="shrink-0" />
+                      <span className="flex-1 text-left">{label}</span>
+                      {shortcut && (
+                        <kbd className="shrink-0 rounded border border-border-strong bg-bg-inset px-2 py-0.5 font-mono text-xs text-fg">
+                          {shortcut}
+                        </kbd>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+      {sshFormOpen && (
+        <ConnectionForm onClose={() => setSshFormOpen(false)} />
+      )}
+    </>
   );
 }

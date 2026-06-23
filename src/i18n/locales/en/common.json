@@ -3,6 +3,10 @@
   "tagline": "AI-powered terminal workspace",
   "terminalConnecting": "Starting shell…",
   "openLinkHint": "{{mods}}-click to open",
+  "ssh": {
+    "disconnected": "Disconnected — click to reconnect",
+    "reconnect": "Reconnect"
+  },
   "nav": {
     "workspaces": "Workspaces",
     "terminal": "Terminal",
@@ -114,6 +118,7 @@
     "terminal": "Terminal",
     "note": "Note",
     "newTerminal": "New terminal",
+    "connectSsh": "Connect SSH",
     "launcherHint": "Choose what to open",
     "launcherGroup": {
       "workspace": "Workspace",

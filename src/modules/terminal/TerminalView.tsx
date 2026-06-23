@@ -1,7 +1,8 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2 } from "lucide-react";
+import { Loader2, WifiOff } from "lucide-react";
+import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
@@ -115,6 +116,9 @@ export function TerminalView({
   onCwdChangeRef.current = onCwdChange;
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
+  // Holds a deferred "start the SSH session now" function that is set inside the
+  // main mount effect and called by the reconnect button for restored panes.
+  const connectNowRef = useRef<(() => void) | null>(null);
   const { t } = useTranslation();
   const linkHintRef = useRef(t("openLinkHint", { mods: openModifierLabel(IS_MAC) }));
   linkHintRef.current = t("openLinkHint", { mods: openModifierLabel(IS_MAC) });
@@ -124,6 +128,12 @@ export function TerminalView({
   const themeId = useSettingsStore((s) => s.themeId);
   const terminalPadding = useSettingsStore((s) => s.terminalPadding);
   const [connecting, setConnecting] = useState(true);
+  // For SSH panes restored after an app relaunch: the freshSshLeaves set is empty,
+  // so those panes must not auto-connect. This flag shows the Reconnect UI instead.
+  const [sshDisconnected, setSshDisconnected] = useState(false);
+  // Incrementing this counter (via the Reconnect button) re-triggers the connect
+  // effect for restored SSH panes without touching any other path.
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
   const [externalFileDragging, setExternalFileDragging] = useState(false);
   const dragDepthRef = useRef(0);
   const nativeDragPathsRef = useRef<string[]>([]);
@@ -456,10 +466,10 @@ export function TerminalView({
     // History restore only applies to local PTY sessions.
     const beforeOpen = sshRef.current ? Promise.resolve() : restoreHistory();
 
-    void beforeOpen.then(() => {
-      if (disposed) {
-        return;
-      }
+    // Shared "open session and wire it up" logic, used both on first mount
+    // (for fresh SSH and all PTY panes) and by the Reconnect button (for
+    // restored SSH panes that skipped auto-connect on relaunch).
+    function startSession() {
       void openSession()
       .then((session) => {
         if (disposed) {
@@ -478,6 +488,7 @@ export function TerminalView({
         if (cwdTracking && cwdRef.current) {
           useWorkspaceStore.getState().setRoot(cwdRef.current);
         }
+        setSshDisconnected(false);
         setConnecting(false);
       })
       .catch((error: unknown) => {
@@ -490,6 +501,36 @@ export function TerminalView({
         term.write(`\r\n\x1b[31mFailed to open shell: ${message}\x1b[0m\r\n`);
         setConnecting(false);
       });
+    }
+
+    // Expose the connect function so the Reconnect button can call it after mount.
+    connectNowRef.current = () => {
+      if (disposed) {
+        return;
+      }
+      setConnecting(true);
+      startSession();
+    };
+
+    void beforeOpen.then(() => {
+      if (disposed) {
+        return;
+      }
+      // For SSH panes: only auto-connect if this leaf was freshly opened this
+      // session (i.e. the user just clicked "Connect"). Restored panes after a
+      // relaunch will not be in the set, so they show the Reconnect UI instead.
+      if (sshRef.current) {
+        const isFresh = leafIdRef.current
+          ? consumeFreshSshLeaf(leafIdRef.current)
+          : false;
+        if (!isFresh) {
+          // Restored SSH pane — show the Disconnected / Reconnect state.
+          setSshDisconnected(true);
+          setConnecting(false);
+          return;
+        }
+      }
+      startSession();
     });
 
     // Snapshot the scrollback periodically so a crash/quit loses at most a few
@@ -797,6 +838,16 @@ export function TerminalView({
     };
   }, []);
 
+  // When the user clicks Reconnect on a restored SSH pane, reconnectTrigger is
+  // incremented. This effect wakes up and calls the deferred connect function
+  // that was stored in connectNowRef during the main mount effect.
+  useEffect(() => {
+    if (reconnectTrigger === 0) {
+      return;
+    }
+    connectNowRef.current?.();
+  }, [reconnectTrigger]);
+
   // Match the padding gutter to the terminal's own background so the inset
   // reads as breathing room rather than a different-coloured frame.
   function isExternalFileDrag(data: DataTransfer): boolean {
@@ -905,6 +956,19 @@ export function TerminalView({
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-fg-subtle">
           <Loader2 size={15} className="animate-spin" />
           <span className="text-xs">{t("terminalConnecting")}</span>
+        </div>
+      )}
+      {sshDisconnected && !connecting && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-fg-subtle">
+          <WifiOff size={24} />
+          <span className="text-sm">{t("ssh.disconnected")}</span>
+          <button
+            type="button"
+            onClick={() => setReconnectTrigger((n) => n + 1)}
+            className="rounded-md border border-border px-4 py-1.5 text-sm text-fg-muted hover:bg-bg-elevated hover:text-fg"
+          >
+            {t("ssh.reconnect")}
+          </button>
         </div>
       )}
     </div>
