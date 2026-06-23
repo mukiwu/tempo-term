@@ -10,6 +10,31 @@ pub use session::SshState;
 use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, State};
 
+/// Frontend-facing port-forward spec, deserialized from camelCase JSON.
+/// Mirrors `forward::ForwardSpec` but lives here so Tauri commands can
+/// accept it directly without exposing `ForwardSpec`'s internal type.
+#[derive(serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardSpecInput {
+    pub id: String,
+    pub bind_host: String,
+    pub local_port: u16,
+    pub dest_host: String,
+    pub dest_port: u16,
+}
+
+impl From<&ForwardSpecInput> for forward::ForwardSpec {
+    fn from(input: &ForwardSpecInput) -> Self {
+        forward::ForwardSpec {
+            id: input.id.clone(),
+            bind_host: input.bind_host.clone(),
+            local_port: input.local_port,
+            dest_host: input.dest_host.clone(),
+            dest_port: input.dest_port,
+        }
+    }
+}
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshOpenRequest {
@@ -21,6 +46,10 @@ pub struct SshOpenRequest {
     pub key_path: Option<String>,
     pub cols: u16,
     pub rows: u16,
+    /// Port forwards to set up after the session authenticates.
+    /// Defaults to an empty list when the field is absent.
+    #[serde(default)]
+    pub forwards: Vec<ForwardSpecInput>,
 }
 
 #[tauri::command]
@@ -67,4 +96,22 @@ pub fn ssh_prompt_reply(
 ) -> Result<(), String> {
     state.resolve_prompt(&id, reply);
     Ok(())
+}
+
+#[tauri::command]
+pub fn ssh_forward_start(
+    state: State<'_, SshState>,
+    id: u32,
+    forward: ForwardSpecInput,
+) -> Result<(), String> {
+    session::forward_start(&state, id, forward)
+}
+
+#[tauri::command]
+pub fn ssh_forward_stop(
+    state: State<'_, SshState>,
+    id: u32,
+    forward_id: String,
+) -> Result<(), String> {
+    session::forward_stop(&state, id, forward_id)
 }

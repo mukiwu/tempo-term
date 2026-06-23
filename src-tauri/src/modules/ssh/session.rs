@@ -371,6 +371,30 @@ fn remove_session(app: &AppHandle, id: u32) {
     state.sessions.lock().unwrap().remove(&id);
 }
 
+// ---------------------------------------------------------------------------
+// Forward control — stubs (Task 6 fills in the real bodies).
+// ---------------------------------------------------------------------------
+
+/// Start a port forward on an existing session. Stub: Task 6 will send the
+/// spec to the worker thread and wire up the `direct-tcpip` accept loop.
+pub fn forward_start(
+    _state: &State<'_, SshState>,
+    _id: u32,
+    _input: super::ForwardSpecInput,
+) -> Result<(), String> {
+    Ok(())
+}
+
+/// Stop a running port forward by its id. Stub: Task 6 will cancel the
+/// `run_forward` task via the per-forward `watch::Sender`.
+pub fn forward_stop(
+    _state: &State<'_, SshState>,
+    _id: u32,
+    _forward_id: String,
+) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

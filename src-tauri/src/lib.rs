@@ -34,7 +34,10 @@ use modules::pty::{
     pty_close, pty_close_all, pty_cwd, pty_foreground_command, pty_open, pty_resize,
     pty_shell_name, pty_write, PtyState,
 };
-use modules::ssh::{ssh_close, ssh_open, ssh_prompt_reply, ssh_resize, ssh_write, SshState};
+use modules::ssh::{
+    ssh_close, ssh_forward_start, ssh_forward_stop, ssh_open, ssh_prompt_reply, ssh_resize,
+    ssh_write, SshState,
+};
 use modules::terminal_history::{
     terminal_history_clear, terminal_history_delete, terminal_history_load,
     terminal_history_prune, terminal_history_save,
@@ -179,6 +182,8 @@ pub fn run() {
             ssh_resize,
             ssh_close,
             ssh_prompt_reply,
+            ssh_forward_start,
+            ssh_forward_stop,
             ssh_secret_set,
             ssh_secret_delete
         ])
