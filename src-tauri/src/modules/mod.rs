@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod ssh;
 pub mod claude_progress;
 pub mod claude_status_hook;
 pub mod codex_progress;
