@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
+import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
+import { useConnectionsStore } from "@/stores/connectionsStore";
 import {
   deleteTerminalHistory,
   dropRestoredPrefix,
@@ -75,6 +77,8 @@ interface TerminalViewProps {
   cwdTracking?: boolean;
   /** Directory the shell starts in. */
   cwd?: string;
+  /** SSH connection info, when this pane hosts an SSH session instead of a local PTY. */
+  ssh?: { connectionId: string };
   /** Pane id, so notes/workflows can run commands into this terminal. */
   leafId?: string;
   onExit?: () => void;
@@ -88,6 +92,7 @@ export function TerminalView({
   active,
   cwdTracking = false,
   cwd,
+  ssh,
   leafId,
   onExit,
   onCwdChange,
@@ -101,7 +106,9 @@ export function TerminalView({
   cwdRef.current = cwd;
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<TerminalHandle | null>(null);
-  const sessionRef = useRef<PtySession | null>(null);
+  const sessionRef = useRef<PtySession | SshSession | null>(null);
+  const sshRef = useRef(ssh);
+  sshRef.current = ssh;
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
   const onCwdChangeRef = useRef(onCwdChange);
@@ -179,7 +186,7 @@ export function TerminalView({
           imagePaths = await terminalClipboardImagePaths().catch(() => []);
         }
         if (filePaths.length === 1 || imagePaths.length === 1) {
-          command = await session.foregroundCommand().catch(() => null);
+          command = await (session as PtySession).foregroundCommand?.().catch(() => null) ?? null;
         }
       }
       const action = resolvePasteAction({
@@ -309,7 +316,7 @@ export function TerminalView({
     async function openFromTerminal(raw: string) {
       let resolvedCwd: string | null = cwdRef.current ?? null;
       try {
-        const live = await sessionRef.current?.cwd();
+        const live = await (sessionRef.current as PtySession | null)?.cwd();
         if (live) {
           resolvedCwd = live;
         }
@@ -397,29 +404,63 @@ export function TerminalView({
       term.write(`\x1b[90m${SESSION_SEPARATOR}\x1b[0m\r\n`);
     };
 
-    void restoreHistory().then(() => {
+    const openSession = async (): Promise<PtySession | SshSession> => {
+      const paneSsh = sshRef.current;
+      if (paneSsh) {
+        const conn = useConnectionsStore.getState().getConnection(paneSsh.connectionId);
+        if (!conn) {
+          throw new Error(`SSH connection "${paneSsh.connectionId}" not found — it may have been deleted.`);
+        }
+        return openSsh({
+          connectionId: conn.id,
+          host: conn.host,
+          port: conn.port,
+          user: conn.user,
+          authMethod: conn.authMethod,
+          keyPath: conn.keyPath,
+          cols: term.cols,
+          rows: term.rows,
+          onData: (bytes) => term.write(bytes),
+          // Only treat an exit as user-facing when we did not tear the session
+          // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
+          onExit: (_code) => {
+            if (!disposed) {
+              onExitRef.current?.();
+              // SSH session ended naturally; close the backend registry entry.
+              void sessionRef.current?.close();
+            }
+          },
+        });
+      }
+      return openPty({
+        cols: term.cols,
+        rows: term.rows,
+        cwd: cwdRef.current,
+        onData: (bytes) => term.write(bytes),
+        // Only treat an exit as user-facing when we did not tear the session
+        // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
+        onExit: () => {
+          if (!disposed) {
+            onExitRef.current?.();
+            // The shell ended while the app is running (e.g. the user typed
+            // `exit`), so its history is no longer wanted. An app teardown sets
+            // `disposed` first, so that path keeps the history for next launch.
+            if (leafIdRef.current) {
+              void deleteTerminalHistory(leafIdRef.current);
+            }
+          }
+        },
+      });
+    };
+
+    // History restore only applies to local PTY sessions.
+    const beforeOpen = sshRef.current ? Promise.resolve() : restoreHistory();
+
+    void beforeOpen.then(() => {
       if (disposed) {
         return;
       }
-      void openPty({
-      cols: term.cols,
-      rows: term.rows,
-      cwd: cwdRef.current,
-      onData: (bytes) => term.write(bytes),
-      // Only treat an exit as user-facing when we did not tear the session
-      // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
-      onExit: () => {
-        if (!disposed) {
-          onExitRef.current?.();
-          // The shell ended while the app is running (e.g. the user typed
-          // `exit`), so its history is no longer wanted. An app teardown sets
-          // `disposed` first, so that path keeps the history for next launch.
-          if (leafIdRef.current) {
-            void deleteTerminalHistory(leafIdRef.current);
-          }
-        }
-      },
-    })
+      void openSession()
       .then((session) => {
         if (disposed) {
           void session.close();
@@ -585,15 +626,16 @@ export function TerminalView({
   }, [terminalPadding]);
 
   // While this pane is the live one, follow its shell's working directory so
-  // the file explorer tracks `cd`.
+  // the file explorer tracks `cd`. SSH panes skip this entirely — they have no
+  // cwd() or foregroundCommand() methods.
   useEffect(() => {
-    if (!cwdTracking) {
+    if (!cwdTracking || sshRef.current) {
       return;
     }
     let cancelled = false;
     let last = "";
     const poll = async () => {
-      const session = sessionRef.current;
+      const session = sessionRef.current as PtySession | null;
       if (!session) {
         return;
       }
@@ -662,12 +704,12 @@ export function TerminalView({
   }, [cwdTracking]);
 
   // Snapshot the cwd when this pane stops being active (e.g. switching tabs), so
-  // its last directory is saved between polls. Event-driven, no extra polling.
+  // its last directory is saved between polls. SSH panes skip this — no cwd() method.
   useEffect(() => {
-    if (active) {
+    if (active || sshRef.current) {
       return;
     }
-    const session = sessionRef.current;
+    const session = sessionRef.current as PtySession | null;
     if (!session) {
       return;
     }
@@ -783,7 +825,7 @@ export function TerminalView({
     if (filePaths.length === 0) {
       return false;
     }
-    const command = await session.foregroundCommand().catch(() => null);
+    const command = await (session as PtySession).foregroundCommand?.().catch(() => null) ?? null;
     if (shouldAttachImage(command, filePaths)) {
       await prepareClipboardImageAttachment(filePaths[0]).catch(() => {});
       await session.write("\x16");

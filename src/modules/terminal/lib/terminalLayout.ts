@@ -12,7 +12,7 @@ export type SplitDirection = "row" | "col";
  * graph, or the launcher (a freshly split pane that hasn't been chosen yet).
  */
 export type PaneContent =
-  | { kind: "terminal"; cwd?: string }
+  | { kind: "terminal"; cwd?: string; ssh?: { connectionId: string } }
   | { kind: "editor"; path: string }
   | { kind: "note"; noteId: string }
   | { kind: "preview"; url: string }

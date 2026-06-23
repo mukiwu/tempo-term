@@ -249,12 +249,18 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                 ) : (
                   <TerminalView
                     active={active}
-                    cwdTracking={active && isActiveTab}
+                    cwdTracking={
+                      active &&
+                      isActiveTab &&
+                      // SSH panes have no cwd; skip cwd tracking for them.
+                      (pane.content.kind !== "terminal" || !pane.content.ssh)
+                    }
                     cwd={resolveTerminalCwd(
                       pane.content.kind === "terminal" ? pane.content.cwd : undefined,
                       rootPath,
                       tab.cwd,
                     )}
+                    ssh={pane.content.kind === "terminal" ? pane.content.ssh : undefined}
                     leafId={pane.id}
                     onExit={() => closePane(tab.id, pane.id)}
                     onCwdChange={(dir) => setTerminalCwd(tab.id, pane.id, dir)}

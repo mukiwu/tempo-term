@@ -339,6 +339,28 @@ describe("tabsStore", () => {
   });
 });
 
+describe("openSshTab", () => {
+  beforeEach(reset);
+
+  it("opens a terminal tab whose pane carries the ssh connectionId and titles it by name", () => {
+    const tabId = useTabsStore.getState().openSshTab("c1", "prod-box");
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(tab).toBeDefined();
+    expect(tab.title).toBe("prod-box");
+    expect(tab.kind).toBe("terminal");
+    // The tab is user-named so cwd sync won't overwrite the title.
+    expect(tab.renamed).toBe(true);
+    // The single leaf pane carries the ssh connectionId.
+    const pane = firstLeafContent(tab);
+    expect(pane).toMatchObject({ kind: "terminal", ssh: { connectionId: "c1" } });
+  });
+
+  it("activates the new ssh tab", () => {
+    const tabId = useTabsStore.getState().openSshTab("c2", "staging");
+    expect(useTabsStore.getState().activeId).toBe(tabId);
+  });
+});
+
 describe("migratePersistedTabs", () => {
   it("migrates v0 simple tabs into single-leaf pane tabs", () => {
     const v0 = {

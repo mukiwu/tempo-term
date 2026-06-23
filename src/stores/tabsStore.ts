@@ -60,6 +60,8 @@ interface TabsState {
   renameSpace: (id: string, name: string) => void;
   deleteSpace: (id: string) => void;
   newTerminalTab: (cwd?: string) => string;
+  /** Open a terminal tab wired to an SSH connection. The tab is user-named (renamed=true) so cwd sync never overwrites the title. */
+  openSshTab: (connectionId: string, name: string) => string;
   /** A blank "new tab" showing the launcher; reused if one already exists. */
   openLauncherTab: () => string;
   openEditorTab: (path: string) => string;
@@ -270,6 +272,23 @@ export const useTabsStore = create<TabsState>()(
       paneTree: leaf(paneId, { kind: "terminal" }),
       activeLeafId: paneId,
       cwd,
+    };
+    set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+    return id;
+  },
+
+  openSshTab: (connectionId, name) => {
+    const spaceId = get().ensureSpace();
+    const id = nextTabId();
+    const paneId = nextPaneId();
+    const tab: Tab = {
+      id,
+      spaceId,
+      kind: "terminal",
+      title: name,
+      paneTree: leaf(paneId, { kind: "terminal", ssh: { connectionId } }),
+      activeLeafId: paneId,
+      renamed: true,
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -558,7 +577,14 @@ export const useTabsStore = create<TabsState>()(
       return {
         tabs: state.tabs.map((t) =>
           t.id === tabId
-            ? { ...t, paneTree: setLeafPane(t.paneTree, leafId, { kind: "terminal", cwd }) }
+            ? {
+                ...t,
+                paneTree: setLeafPane(t.paneTree, leafId, {
+                  kind: "terminal",
+                  cwd,
+                  ssh: current.ssh,
+                }),
+              }
             : t,
         ),
       };
