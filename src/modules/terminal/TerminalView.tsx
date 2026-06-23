@@ -6,6 +6,7 @@ import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
+import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
 
 /** Narrows a session to PtySession (which has cwd/foregroundCommand). */
 function isPtySession(s: PtySession | SshSession): s is PtySession {
@@ -455,7 +456,11 @@ export function TerminalView({
             if (!disposed) {
               // Do NOT call onExitRef (which closes the pane). Instead, show the
               // Reconnect card so the user can retry after a failed/dropped connection.
+              const sshSession = sessionRef.current as SshSession | null;
               void sessionRef.current?.close();
+              if (sshSession) {
+                useForwardStatusStore.getState().clearSession(sshSession.id);
+              }
               setSshDisconnected(true);
               setConnecting(false);
             }

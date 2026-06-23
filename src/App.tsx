@@ -21,6 +21,7 @@ import { installStatusHook, installCodexStatusHook } from "@/modules/claude-prog
 import { useWatchNotes } from "@/modules/notes/lib/useWatchNotes";
 import { registerSecondaryWindowCleanup } from "@/lib/windowLifecycle";
 import { SshPromptDialog } from "@/modules/ssh/SshPromptDialog";
+import { useForwardStatusListener } from "@/modules/ssh/lib/useForwardStatus";
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 640;
@@ -37,6 +38,7 @@ function App() {
 
   useWatchSessions();
   useWatchNotes();
+  useForwardStatusListener();
 
   useEffect(() => {
     applyTheme(getTheme(themeId), document.documentElement);
