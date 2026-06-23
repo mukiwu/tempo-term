@@ -13,7 +13,27 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 use super::known_hosts::{classify, known_hosts_line, HostKeyStatus};
-use super::prompt::{PromptKind, PromptRegistry, PromptRequest};
+use super::prompt::{PromptKind, PromptRegistry, PromptReply, PromptRequest};
+
+/// Emit an `ssh-prompt` to the frontend, register the request id, and await the
+/// user's reply. This is the single emit+register+await primitive shared by the
+/// host-key check and every interactive auth prompt.
+///
+/// The caller owns the `id` (so it can be made unique per prompt). A dropped
+/// sender — registry gone, session torn down — surfaces as an `Err`, so an
+/// abandoned prompt fails closed rather than silently succeeding.
+async fn request_prompt(
+    app: &AppHandle,
+    registry: &Arc<PromptRegistry>,
+    id: String,
+    kind: PromptKind,
+    message: String,
+) -> Result<PromptReply, String> {
+    let rx = registry.register(&id);
+    app.emit("ssh-prompt", PromptRequest { id, kind, message })
+        .map_err(|e| e.to_string())?;
+    rx.await.map_err(|_| "prompt cancelled".to_string())
+}
 
 /// The russh `Handler` that verifies the server's host key before the session
 /// is allowed to proceed. Carries everything `check_server_key` needs to read
@@ -82,22 +102,18 @@ impl russh::client::Handler for VerifyingClient {
                     _ => PromptKind::HostKeyUnknown,
                 };
 
-                let id = self.new_request_id();
-                let rx = self.registry.register(&id);
-                self.app
-                    .emit(
-                        "ssh-prompt",
-                        PromptRequest {
-                            id,
-                            kind,
-                            message: fingerprint,
-                        },
-                    )
-                    .map_err(|_| russh::Error::Disconnect)?;
-
-                // Await the user's decision. A dropped sender (registry gone /
-                // session torn down) aborts the connection.
-                let reply = rx.await.map_err(|_| russh::Error::Disconnect)?;
+                // Emit the host-key prompt and await the user's decision. Any
+                // failure (emit error or dropped sender — registry gone /
+                // session torn down) aborts the connection, exactly as before.
+                let reply = request_prompt(
+                    &self.app,
+                    &self.registry,
+                    self.new_request_id(),
+                    kind,
+                    fingerprint,
+                )
+                .await
+                .map_err(|_| russh::Error::Disconnect)?;
 
                 if reply.approved {
                     // Unknown -> append; Changed -> replace this host's lines.
@@ -193,4 +209,326 @@ pub async fn connect(
     russh::client::connect(config, (args.host.as_str(), args.port), args.handler)
         .await
         .map_err(|e| e.to_string())
+}
+
+// ===========================================================================
+// Authentication
+//
+// `authenticate` runs after `connect` on the returned handle and dispatches on
+// the user's chosen method. Secrets (passwords / key passphrases) are read from
+// the OS keyring (backend-only) or obtained through an `ssh-prompt`, and are
+// never logged or returned to the webview. A prompt that is cancelled or fails
+// fails the auth attempt (`Err`) — it never silently reports success.
+// ===========================================================================
+
+/// Everything the auth dispatch needs that isn't the transport handle itself.
+pub struct AuthArgs {
+    /// SSH username.
+    pub user: String,
+    /// `"password"` | `"keyFile"` | `"agent"`.
+    pub auth_method: String,
+    /// Path to the private key file (only used by `"keyFile"`).
+    pub key_path: Option<String>,
+    /// Stable id used to key this connection's stored secret in the keyring.
+    pub connection_id: String,
+}
+
+/// Authenticate the (already host-key-verified) connection using the method the
+/// user selected. Returns `Ok(true)` if the server accepted the credentials,
+/// `Ok(false)` if it rejected them, and `Err` on an operational failure (key
+/// load error, cancelled prompt, transport error, unknown method).
+pub async fn authenticate(
+    handle: &mut russh::client::Handle<VerifyingClient>,
+    args: &AuthArgs,
+    registry: &Arc<PromptRegistry>,
+    app: &AppHandle,
+    session_id: u32,
+) -> Result<bool, String> {
+    match args.auth_method.as_str() {
+        "password" => authenticate_password(handle, args, registry, app, session_id).await,
+        "keyFile" => authenticate_key_file(handle, args, registry, app, session_id).await,
+        "agent" => authenticate_agent(handle, args).await,
+        other => Err(format!("unsupported auth method: {other}")),
+    }
+}
+
+/// Prompt the user for a secret (password or passphrase) and return their reply.
+/// Wraps `request_prompt` with an auth-specific, per-session prompt id so the
+/// reply routes back to this exact request.
+async fn request_secret(
+    app: &AppHandle,
+    registry: &Arc<PromptRegistry>,
+    session_id: u32,
+    kind: PromptKind,
+    message: String,
+) -> Result<PromptReply, String> {
+    let tag = match kind {
+        PromptKind::Password => "password",
+        PromptKind::Passphrase => "passphrase",
+        // Host-key kinds don't flow through here, but give them a stable id
+        // rather than panicking if the set ever grows.
+        PromptKind::HostKeyUnknown | PromptKind::HostKeyChanged => "hostkey",
+    };
+    request_prompt(app, registry, format!("{session_id}-{tag}"), kind, message).await
+}
+
+/// Password auth: try the stored secret first, then fall back to prompting.
+/// On a successful prompt with `remember` set, persist the password to the
+/// keyring. If the server only offers keyboard-interactive, satisfy it with the
+/// same password.
+async fn authenticate_password(
+    handle: &mut russh::client::Handle<VerifyingClient>,
+    args: &AuthArgs,
+    registry: &Arc<PromptRegistry>,
+    app: &AppHandle,
+    session_id: u32,
+) -> Result<bool, String> {
+    // 1. Try a previously stored password without bothering the user.
+    if let Some(stored) = crate::modules::secrets::ssh_get_secret(&args.connection_id)? {
+        let result = handle
+            .authenticate_password(args.user.clone(), stored.clone())
+            .await
+            .map_err(|e| e.to_string())?;
+        if result.success() {
+            return Ok(true);
+        }
+        if let Some(true) =
+            try_keyboard_interactive(handle, &args.user, &stored, &result).await?
+        {
+            return Ok(true);
+        }
+        // Stored password rejected — fall through to prompting.
+    }
+
+    // 2. Prompt the user for a password and retry.
+    let reply = request_secret(
+        app,
+        registry,
+        session_id,
+        PromptKind::Password,
+        "Enter password".to_string(),
+    )
+    .await?;
+    if !reply.approved {
+        return Ok(false);
+    }
+    let password = match reply.secret {
+        Some(secret) => secret,
+        // Approved with no secret can't authenticate; treat as a failed attempt.
+        None => return Ok(false),
+    };
+
+    let result = handle
+        .authenticate_password(args.user.clone(), password.clone())
+        .await
+        .map_err(|e| e.to_string())?;
+    let ok = if result.success() {
+        true
+    } else {
+        matches!(
+            try_keyboard_interactive(handle, &args.user, &password, &result).await?,
+            Some(true)
+        )
+    };
+
+    // Only persist a password the server actually accepted, and only if the
+    // user opted in.
+    if ok && reply.remember {
+        crate::modules::secrets::ssh_secret_set(
+            args.connection_id.clone(),
+            password,
+        )?;
+    }
+    Ok(ok)
+}
+
+/// If the failed password attempt left keyboard-interactive on the table, try
+/// it with the same password (the common single-prompt PAM case). Returns
+/// `Ok(None)` when the server didn't offer keyboard-interactive, `Ok(Some(ok))`
+/// otherwise.
+async fn try_keyboard_interactive(
+    handle: &mut russh::client::Handle<VerifyingClient>,
+    user: &str,
+    password: &str,
+    last: &russh::client::AuthResult,
+) -> Result<Option<bool>, String> {
+    use russh::client::KeyboardInteractiveAuthResponse;
+    use russh::MethodKind;
+
+    // Only proceed if the server's failure response still lists
+    // keyboard-interactive as an available method.
+    let offered = match last {
+        russh::client::AuthResult::Failure {
+            remaining_methods, ..
+        } => remaining_methods.contains(&MethodKind::KeyboardInteractive),
+        russh::client::AuthResult::Success => return Ok(Some(true)),
+    };
+    if !offered {
+        return Ok(None);
+    }
+
+    let mut response = handle
+        .authenticate_keyboard_interactive_start(user.to_string(), None)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Answer every prompt round with the password until the server resolves the
+    // attempt one way or the other. Bounded so a server that keeps sending info
+    // requests can't spin this loop forever — give up (fail) after a few rounds.
+    for _ in 0..16 {
+        match response {
+            KeyboardInteractiveAuthResponse::Success => return Ok(Some(true)),
+            KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(Some(false)),
+            KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
+                let answers = vec![password.to_string(); prompts.len()];
+                response = handle
+                    .authenticate_keyboard_interactive_respond(answers)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(Some(false))
+}
+
+/// Key-file auth: load the private key, decrypting with the stored passphrase or
+/// a prompted one if it's encrypted, then authenticate with publickey. On a
+/// successful prompt with `remember` set, persist the passphrase.
+async fn authenticate_key_file(
+    handle: &mut russh::client::Handle<VerifyingClient>,
+    args: &AuthArgs,
+    registry: &Arc<PromptRegistry>,
+    app: &AppHandle,
+    session_id: u32,
+) -> Result<bool, String> {
+    let key_path = args
+        .key_path
+        .as_deref()
+        .ok_or_else(|| "key file auth requires a key path".to_string())?;
+
+    // Try unencrypted first. If the key is encrypted, russh signals it with
+    // `Error::KeyIsEncrypted`, which is our cue to obtain a passphrase.
+    let key = match russh::keys::load_secret_key(key_path, None) {
+        Ok(key) => key,
+        Err(russh::keys::Error::KeyIsEncrypted) => {
+            load_encrypted_key(key_path, args, registry, app, session_id).await?
+        }
+        Err(e) => return Err(format!("failed to load key file: {e}")),
+    };
+
+    authenticate_with_private_key(handle, &args.user, key).await
+}
+
+/// Decrypt an encrypted private key: try the stored passphrase first, otherwise
+/// prompt. On a successful prompt with `remember` set, persist the passphrase.
+async fn load_encrypted_key(
+    key_path: &str,
+    args: &AuthArgs,
+    registry: &Arc<PromptRegistry>,
+    app: &AppHandle,
+    session_id: u32,
+) -> Result<russh::keys::PrivateKey, String> {
+    // 1. Stored passphrase, if any.
+    if let Some(stored) = crate::modules::secrets::ssh_get_secret(&args.connection_id)? {
+        if let Ok(key) = russh::keys::load_secret_key(key_path, Some(&stored)) {
+            return Ok(key);
+        }
+        // Stored passphrase is stale — fall through to prompting.
+    }
+
+    // 2. Prompt for the passphrase.
+    let reply = request_secret(
+        app,
+        registry,
+        session_id,
+        PromptKind::Passphrase,
+        "Enter key passphrase".to_string(),
+    )
+    .await?;
+    if !reply.approved {
+        return Err("passphrase prompt cancelled".to_string());
+    }
+    let passphrase = reply
+        .secret
+        .ok_or_else(|| "no passphrase provided".to_string())?;
+
+    let key = russh::keys::load_secret_key(key_path, Some(&passphrase))
+        .map_err(|e| format!("failed to decrypt key: {e}"))?;
+
+    if reply.remember {
+        crate::modules::secrets::ssh_secret_set(
+            args.connection_id.clone(),
+            passphrase,
+        )?;
+    }
+    Ok(key)
+}
+
+/// Authenticate with a loaded private key, choosing the best RSA hash the server
+/// advertises (so RSA keys aren't forced onto legacy SHA-1).
+async fn authenticate_with_private_key(
+    handle: &mut russh::client::Handle<VerifyingClient>,
+    user: &str,
+    key: russh::keys::PrivateKey,
+) -> Result<bool, String> {
+    // For RSA keys, ask the server which hash it prefers; non-RSA keys ignore
+    // the hash. `best_supported_rsa_hash` returns Some(hash) when the server
+    // advertised its sig-algs, None otherwise — fall back to None (legacy) only
+    // when the server told us nothing.
+    let hash_alg = if key.algorithm().is_rsa() {
+        handle
+            .best_supported_rsa_hash()
+            .await
+            .map_err(|e| e.to_string())?
+            .flatten()
+    } else {
+        None
+    };
+
+    let key_with_hash =
+        russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
+    let result = handle
+        .authenticate_publickey(user.to_string(), key_with_hash)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(result.success())
+}
+
+/// Agent auth: connect to the running ssh-agent, then try each identity it
+/// holds until one authenticates (the agent does the signing — no private key
+/// material ever reaches this process).
+async fn authenticate_agent(
+    handle: &mut russh::client::Handle<VerifyingClient>,
+    args: &AuthArgs,
+) -> Result<bool, String> {
+    use russh::keys::agent::client::AgentClient;
+    use russh::keys::agent::AgentIdentity;
+
+    let mut agent = AgentClient::connect_env()
+        .await
+        .map_err(|e| format!("could not connect to ssh-agent: {e}"))?;
+
+    let identities = agent
+        .request_identities()
+        .await
+        .map_err(|e| format!("could not list agent identities: {e}"))?;
+
+    for identity in identities {
+        // Only plain public keys are tried here; certificate identities need a
+        // different auth call and aren't part of this task's scope.
+        let public_key = match identity {
+            AgentIdentity::PublicKey { key, .. } => key,
+            AgentIdentity::Certificate { .. } => continue,
+        };
+
+        let result = handle
+            .authenticate_publickey_with(args.user.clone(), public_key, None, &mut agent)
+            .await
+            .map_err(|e| e.to_string())?;
+        if result.success() {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }

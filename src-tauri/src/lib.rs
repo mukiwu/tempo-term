@@ -27,7 +27,9 @@ use modules::git::{
     git_unstage, git_worktree_info,
 };
 use modules::pr::{gh_available, pr_via_api, pr_via_gh};
-use modules::secrets::{secrets_delete_key, secrets_has_key, secrets_set_key};
+use modules::secrets::{
+    secrets_delete_key, secrets_has_key, secrets_set_key, ssh_secret_delete, ssh_secret_set,
+};
 use modules::pty::{
     pty_close, pty_close_all, pty_cwd, pty_foreground_command, pty_open, pty_resize,
     pty_shell_name, pty_write, PtyState,
@@ -176,7 +178,9 @@ pub fn run() {
             ssh_write,
             ssh_resize,
             ssh_close,
-            ssh_prompt_reply
+            ssh_prompt_reply,
+            ssh_secret_set,
+            ssh_secret_delete
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
