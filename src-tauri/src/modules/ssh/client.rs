@@ -630,6 +630,70 @@ async fn authenticate_agent(
     Ok(false)
 }
 
+/// Public alias for the shared prompt registry handle, so sibling modules can
+/// name the type of `SshState.registry` without touching `prompt`'s internals.
+pub type PromptRegistryHandle = PromptRegistry;
+
+/// Everything needed to open a fresh, fully-authenticated SSH connection that
+/// reuses the same host-key verification and keyring secret lookup the shell
+/// uses. Used by the sftp module so SFTP rides its own connection without
+/// duplicating auth.
+pub struct AuthedConnectArgs {
+    pub app: AppHandle,
+    pub window_label: String,
+    pub registry: Arc<PromptRegistry>,
+    pub known_hosts_path: PathBuf,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth_method: String,
+    pub key_path: Option<String>,
+    pub connection_id: String,
+    pub session_id: u32,
+}
+
+/// Connect, verify the host key, and authenticate in one call. Returns the live
+/// handle on success; `Err` on connect failure, rejected credentials, or a
+/// cancelled prompt.
+pub async fn connect_authenticated(
+    args: AuthedConnectArgs,
+) -> Result<russh::client::Handle<VerifyingClient>, String> {
+    let handler = VerifyingClient {
+        app: args.app.clone(),
+        window_label: args.window_label.clone(),
+        registry: args.registry.clone(),
+        known_hosts_path: args.known_hosts_path,
+        host: args.host.clone(),
+        port: args.port,
+        session_id: args.session_id,
+    };
+    let mut handle = connect(ConnectArgs {
+        handler,
+        host: args.host.clone(),
+        port: args.port,
+    })
+    .await?;
+    let auth = AuthArgs {
+        user: args.user,
+        auth_method: args.auth_method,
+        key_path: args.key_path,
+        connection_id: args.connection_id,
+    };
+    match authenticate(
+        &mut handle,
+        &auth,
+        &args.registry,
+        &args.app,
+        &args.window_label,
+        args.session_id,
+    )
+    .await?
+    {
+        true => Ok(handle),
+        false => Err("authentication failed".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
