@@ -220,6 +220,30 @@ pub async fn connect(
         .map_err(|e| e.to_string())
 }
 
+/// Expand a leading `~` or `~/` in `path` to `home`. A bare `~` becomes `home`;
+/// `~/x` becomes `home/x`. Other shapes (absolute, relative, `~other/...`) are
+/// returned unchanged. Pure so it can be unit-tested without touching the env.
+fn expand_tilde_with(path: &str, home: &str) -> String {
+    if path == "~" {
+        return home.to_string();
+    }
+    match path.strip_prefix("~/") {
+        Some(rest) => format!("{}/{}", home.trim_end_matches('/'), rest),
+        None => path.to_string(),
+    }
+}
+
+/// Expand a leading `~`/`~/` against `$HOME`. Shells expand the tilde before a
+/// path ever reaches a program, but a key path typed into the UI (or pasted from
+/// an `ssh -i ~/...` command) arrives literal, so the backend must do it here.
+/// Mirrors the `$HOME` lookup used elsewhere (see `modules::fs::dir::home_dir`).
+fn expand_tilde(path: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(home) if !home.is_empty() => expand_tilde_with(path, &home),
+        _ => path.to_string(),
+    }
+}
+
 // ===========================================================================
 // Authentication
 //
@@ -427,10 +451,15 @@ async fn authenticate_key_file(
     window_label: &str,
     session_id: u32,
 ) -> Result<bool, String> {
-    let key_path = args
+    let key_path_raw = args
         .key_path
         .as_deref()
         .ok_or_else(|| "key file auth requires a key path".to_string())?;
+    // The path may be typed or pasted with a leading `~` (e.g. from an
+    // `ssh -i ~/.ssh/id_ed25519` command); russh reads the file as-is and would
+    // not find it, so expand the tilde against `$HOME` first.
+    let key_path = expand_tilde(key_path_raw);
+    let key_path = key_path.as_str();
 
     // Try unencrypted first. If the key is encrypted, russh signals it with
     // `Error::KeyIsEncrypted`, which is our cue to obtain a passphrase.
@@ -559,4 +588,48 @@ async fn authenticate_agent(
     }
 
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expands_leading_tilde_slash_to_home() {
+        assert_eq!(
+            expand_tilde_with("~/Documents/key.pem", "/Users/muki"),
+            "/Users/muki/Documents/key.pem"
+        );
+    }
+
+    #[test]
+    fn expands_bare_tilde_to_home() {
+        assert_eq!(expand_tilde_with("~", "/Users/muki"), "/Users/muki");
+    }
+
+    #[test]
+    fn tolerates_a_home_with_a_trailing_slash() {
+        assert_eq!(
+            expand_tilde_with("~/key.pem", "/Users/muki/"),
+            "/Users/muki/key.pem"
+        );
+    }
+
+    #[test]
+    fn leaves_absolute_and_relative_paths_untouched() {
+        assert_eq!(
+            expand_tilde_with("/abs/key.pem", "/Users/muki"),
+            "/abs/key.pem"
+        );
+        assert_eq!(expand_tilde_with("key.pem", "/Users/muki"), "key.pem");
+    }
+
+    #[test]
+    fn does_not_expand_other_users_home() {
+        // `~other/x` is a different user's home — out of scope; leave it as-is.
+        assert_eq!(
+            expand_tilde_with("~other/key.pem", "/Users/muki"),
+            "~other/key.pem"
+        );
+    }
 }
