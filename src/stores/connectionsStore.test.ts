@@ -33,4 +33,16 @@ describe("connectionsStore", () => {
     expect(Object.keys(conn)).not.toContain("password");
     expect(Object.keys(conn)).not.toContain("passphrase");
   });
+
+  it("round-trips portForwards and still has no secret field", () => {
+    const id = useConnectionsStore.getState().addConnection({
+      ...base,
+      portForwards: [
+        { id: "f1", mode: "local", bindHost: "127.0.0.1", localPort: 5432, destHost: "localhost", destPort: 5432, enabled: true },
+      ],
+    });
+    const conn = useConnectionsStore.getState().getConnection(id)!;
+    expect(conn.portForwards?.[0]).toMatchObject({ localPort: 5432, destPort: 5432, enabled: true });
+    expect(Object.keys(conn)).not.toContain("password");
+  });
 });

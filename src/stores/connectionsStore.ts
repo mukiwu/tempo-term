@@ -2,6 +2,16 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { SshAuthMethod } from "@/modules/ssh/lib/parseSshCommand";
 
+export interface PortForward {
+  id: string;
+  mode: "local";
+  bindHost: string;
+  localPort: number;
+  destHost: string;
+  destPort: number;
+  enabled: boolean;
+}
+
 export interface SshConnection {
   id: string;
   name: string;
@@ -11,6 +21,7 @@ export interface SshConnection {
   authMethod: SshAuthMethod;
   keyPath?: string;
   rememberSecret: boolean;
+  portForwards?: PortForward[];
 }
 
 interface ConnectionsState {
