@@ -81,6 +81,7 @@ impl SshState {
 /// arrives on `on_data`, and `on_exit` fires exactly once when the worker ends.
 pub fn open(
     app: &AppHandle,
+    window_label: String,
     state: &State<'_, SshState>,
     req: SshOpenRequest,
     on_data: Channel<Response>,
@@ -122,6 +123,7 @@ pub fn open(
 
         let code = rt.block_on(run_session(
             app,
+            window_label,
             registry,
             known_hosts_path,
             req,
@@ -150,6 +152,7 @@ pub fn open(
 /// pane closed (e.g. `ssh: authentication failed`) instead of a silent blank.
 async fn run_session(
     app: AppHandle,
+    window_label: String,
     registry: Arc<PromptRegistry>,
     known_hosts_path: std::path::PathBuf,
     req: SshOpenRequest,
@@ -159,6 +162,7 @@ async fn run_session(
 ) -> i32 {
     let handler = VerifyingClient {
         app: app.clone(),
+        window_label: window_label.clone(),
         registry: registry.clone(),
         known_hosts_path,
         host: req.host.clone(),
@@ -188,7 +192,9 @@ async fn run_session(
         key_path: req.key_path.clone(),
         connection_id: req.connection_id.clone(),
     };
-    match client::authenticate(&mut handle, &auth_args, &registry, &app, session_id).await {
+    match client::authenticate(&mut handle, &auth_args, &registry, &app, &window_label, session_id)
+        .await
+    {
         Ok(true) => {}
         Ok(false) => {
             emit_line(on_data, "ssh: authentication failed");

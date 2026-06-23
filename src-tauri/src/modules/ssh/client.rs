@@ -19,18 +19,23 @@ use super::prompt::{PromptKind, PromptRegistry, PromptReply, PromptRequest};
 /// user's reply. This is the single emit+register+await primitive shared by the
 /// host-key check and every interactive auth prompt.
 ///
+/// The event is scoped to `window_label` (the window that initiated the
+/// connection) with `emit_to`, so the prompt appears only there instead of being
+/// broadcast to every open window.
+///
 /// The caller owns the `id` (so it can be made unique per prompt). A dropped
 /// sender — registry gone, session torn down — surfaces as an `Err`, so an
 /// abandoned prompt fails closed rather than silently succeeding.
 async fn request_prompt(
     app: &AppHandle,
+    window_label: &str,
     registry: &Arc<PromptRegistry>,
     id: String,
     kind: PromptKind,
     message: String,
 ) -> Result<PromptReply, String> {
     let rx = registry.register(&id);
-    app.emit("ssh-prompt", PromptRequest { id, kind, message })
+    app.emit_to(window_label, "ssh-prompt", PromptRequest { id, kind, message })
         .map_err(|e| e.to_string())?;
     rx.await.map_err(|_| "prompt cancelled".to_string())
 }
@@ -41,6 +46,9 @@ async fn request_prompt(
 pub struct VerifyingClient {
     /// Used to emit the `ssh-prompt` Tauri event to the frontend.
     pub app: AppHandle,
+    /// Label of the window that initiated this connection. The `ssh-prompt`
+    /// event is scoped to this window so it doesn't broadcast to every window.
+    pub window_label: String,
     /// Shared registry that pairs a prompt id with the oneshot that the
     /// `ssh_prompt_reply` command resolves.
     pub registry: Arc<PromptRegistry>,
@@ -107,6 +115,7 @@ impl russh::client::Handler for VerifyingClient {
                 // session torn down) aborts the connection, exactly as before.
                 let reply = request_prompt(
                     &self.app,
+                    &self.window_label,
                     &self.registry,
                     self.new_request_id(),
                     kind,
@@ -242,11 +251,16 @@ pub async fn authenticate(
     args: &AuthArgs,
     registry: &Arc<PromptRegistry>,
     app: &AppHandle,
+    window_label: &str,
     session_id: u32,
 ) -> Result<bool, String> {
     match args.auth_method.as_str() {
-        "password" => authenticate_password(handle, args, registry, app, session_id).await,
-        "keyFile" => authenticate_key_file(handle, args, registry, app, session_id).await,
+        "password" => {
+            authenticate_password(handle, args, registry, app, window_label, session_id).await
+        }
+        "keyFile" => {
+            authenticate_key_file(handle, args, registry, app, window_label, session_id).await
+        }
         "agent" => authenticate_agent(handle, args).await,
         other => Err(format!("unsupported auth method: {other}")),
     }
@@ -257,6 +271,7 @@ pub async fn authenticate(
 /// reply routes back to this exact request.
 async fn request_secret(
     app: &AppHandle,
+    window_label: &str,
     registry: &Arc<PromptRegistry>,
     session_id: u32,
     kind: PromptKind,
@@ -269,7 +284,15 @@ async fn request_secret(
         // rather than panicking if the set ever grows.
         PromptKind::HostKeyUnknown | PromptKind::HostKeyChanged => "hostkey",
     };
-    request_prompt(app, registry, format!("{session_id}-{tag}"), kind, message).await
+    request_prompt(
+        app,
+        window_label,
+        registry,
+        format!("{session_id}-{tag}"),
+        kind,
+        message,
+    )
+    .await
 }
 
 /// Password auth: try the stored secret first, then fall back to prompting.
@@ -281,6 +304,7 @@ async fn authenticate_password(
     args: &AuthArgs,
     registry: &Arc<PromptRegistry>,
     app: &AppHandle,
+    window_label: &str,
     session_id: u32,
 ) -> Result<bool, String> {
     // 1. Try a previously stored password without bothering the user.
@@ -303,6 +327,7 @@ async fn authenticate_password(
     // 2. Prompt the user for a password and retry.
     let reply = request_secret(
         app,
+        window_label,
         registry,
         session_id,
         PromptKind::Password,
@@ -399,6 +424,7 @@ async fn authenticate_key_file(
     args: &AuthArgs,
     registry: &Arc<PromptRegistry>,
     app: &AppHandle,
+    window_label: &str,
     session_id: u32,
 ) -> Result<bool, String> {
     let key_path = args
@@ -411,7 +437,7 @@ async fn authenticate_key_file(
     let key = match russh::keys::load_secret_key(key_path, None) {
         Ok(key) => key,
         Err(russh::keys::Error::KeyIsEncrypted) => {
-            load_encrypted_key(key_path, args, registry, app, session_id).await?
+            load_encrypted_key(key_path, args, registry, app, window_label, session_id).await?
         }
         Err(e) => return Err(format!("failed to load key file: {e}")),
     };
@@ -426,6 +452,7 @@ async fn load_encrypted_key(
     args: &AuthArgs,
     registry: &Arc<PromptRegistry>,
     app: &AppHandle,
+    window_label: &str,
     session_id: u32,
 ) -> Result<russh::keys::PrivateKey, String> {
     // 1. Stored passphrase, if any.
@@ -439,6 +466,7 @@ async fn load_encrypted_key(
     // 2. Prompt for the passphrase.
     let reply = request_secret(
         app,
+        window_label,
         registry,
         session_id,
         PromptKind::Passphrase,

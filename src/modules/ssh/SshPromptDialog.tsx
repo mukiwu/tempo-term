@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Lock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useSshPrompts } from "./lib/useSshPrompts";
@@ -18,6 +18,13 @@ export function SshPromptDialog() {
   const { current, reply } = useSshPrompts();
   const [secret, setSecret] = useState("");
   const [remember, setRemember] = useState(false);
+
+  // Reset the secret/remember inputs whenever the displayed prompt changes, so a
+  // new prompt never shows stale input carried over from a previous one.
+  useEffect(() => {
+    setSecret("");
+    setRemember(false);
+  }, [current?.id]);
 
   if (!current) {
     return null;

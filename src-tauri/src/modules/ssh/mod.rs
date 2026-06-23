@@ -25,12 +25,17 @@ pub struct SshOpenRequest {
 #[tauri::command]
 pub fn ssh_open(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     state: State<'_, SshState>,
     req: SshOpenRequest,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
-    session::open(&app, &state, req, on_data, on_exit)
+    // Capture the label of the window that initiated this connection so the
+    // interactive `ssh-prompt` event is delivered only there, not broadcast to
+    // every open window.
+    let window_label = window.label().to_string();
+    session::open(&app, window_label, &state, req, on_data, on_exit)
 }
 
 #[tauri::command]
