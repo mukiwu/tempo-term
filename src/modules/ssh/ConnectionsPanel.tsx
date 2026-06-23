@@ -116,6 +116,10 @@ function SessionForwards({ sessionId, forwards, showSessionLabel }: SessionForwa
   );
 }
 
+// Stable empty array — returned by the selector when a connection has no live
+// sessions, so zustand's Object.is check doesn't see a new [] on every render.
+const EMPTY_SESSIONS: number[] = [];
+
 // ─── Connection row ────────────────────────────────────────────────────────────
 
 interface ConnectionRowProps {
@@ -129,8 +133,10 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const openSshTab = useTabsStore((s) => s.openSshTab);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  // Subscribe to live sessions for this connection
-  const sessionIds = useLiveSessionsStore((s) => s.sessionsFor(connection.id));
+  // Subscribe to live sessions for this connection. Use a direct field lookup
+  // with a stable EMPTY_SESSIONS fallback so the selector returns the same
+  // reference when unchanged, avoiding spurious re-renders on every store update.
+  const sessionIds = useLiveSessionsStore((s) => s.sessions[connection.id] ?? EMPTY_SESSIONS);
   const hasLiveSessions = sessionIds.length > 0;
   const hasForwards = (connection.portForwards?.length ?? 0) > 0;
   const showForwards = hasLiveSessions && hasForwards;

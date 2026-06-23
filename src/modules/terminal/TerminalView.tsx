@@ -626,6 +626,7 @@ export function TerminalView({
       // no longer shows forwarding rows for this session.
       const closingSession = sessionRef.current;
       if (closingSession && !isPtySession(closingSession)) {
+        useForwardStatusStore.getState().clearSession(closingSession.id);
         liveSessionsStore.getState().unregister(closingSession.id);
       }
       void sessionRef.current?.close();
