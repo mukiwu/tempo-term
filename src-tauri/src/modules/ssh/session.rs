@@ -286,6 +286,9 @@ async fn run_session(
             ),
         );
         let fid = spec.id.clone();
+        if let Some(old) = forwards.remove(&fid) {
+            let _ = old.send(true); // cancel the previous forward holding this id before replacing it
+        }
         let tx = start_one(spec, handle.clone(), &app, &window_label, session_id);
         forwards.insert(fid, tx);
     }
@@ -335,6 +338,9 @@ async fn run_session(
                     }
                     Some(SshControl::StartForward(spec)) => {
                         let fid = spec.id.clone();
+                        if let Some(old) = forwards.remove(&fid) {
+                            let _ = old.send(true); // cancel the previous forward holding this id before replacing it
+                        }
                         let tx = start_one(spec, handle.clone(), &app, &window_label, session_id);
                         forwards.insert(fid, tx);
                     }
