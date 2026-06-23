@@ -443,9 +443,11 @@ export function TerminalView({
           // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
           onExit: (_code) => {
             if (!disposed) {
-              onExitRef.current?.();
-              // SSH session ended naturally; close the backend registry entry.
+              // Do NOT call onExitRef (which closes the pane). Instead, show the
+              // Reconnect card so the user can retry after a failed/dropped connection.
               void sessionRef.current?.close();
+              setSshDisconnected(true);
+              setConnecting(false);
             }
           },
         });

@@ -105,7 +105,8 @@
     },
     "save": "儲存",
     "connect": "連線",
-    "cancel": "取消"
+    "cancel": "取消",
+    "browse": "瀏覽"
   },
   "workspace": {
     "openFolder": "開啟資料夾",

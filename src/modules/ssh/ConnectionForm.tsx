@@ -6,6 +6,7 @@ import { parseSshCommand } from "@/modules/ssh/lib/parseSshCommand";
 import { useConnectionsStore, type SshConnection } from "@/stores/connectionsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import type { SshAuthMethod } from "@/modules/ssh/lib/parseSshCommand";
+import { pickFile } from "@/lib/dialog";
 
 interface ConnectionFormProps {
   /** When provided, the form is in edit mode pre-filled from this connection. */
@@ -326,13 +327,26 @@ export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
               <label className="mb-1 block text-xs font-medium text-fg-muted">
                 {t("connectionForm.fields.keyPath")}
               </label>
-              <input
-                type="text"
-                value={form.keyPath}
-                onChange={(e) => setField("keyPath", e.target.value)}
-                placeholder="~/.ssh/id_ed25519"
-                className="w-full rounded border border-border bg-bg-inset px-3 py-1.5 text-sm text-fg outline-none focus:border-accent font-mono"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={form.keyPath}
+                  onChange={(e) => setField("keyPath", e.target.value)}
+                  placeholder="~/.ssh/id_ed25519"
+                  className="min-w-0 flex-1 rounded border border-border bg-bg-inset px-3 py-1.5 text-sm text-fg outline-none focus:border-accent font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void pickFile().then((file) => {
+                      if (file) setField("keyPath", file);
+                    });
+                  }}
+                  className="shrink-0 rounded border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-bg-inset hover:text-fg"
+                >
+                  {t("connectionForm.browse")}
+                </button>
+              </div>
             </div>
           )}
 

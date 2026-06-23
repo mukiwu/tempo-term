@@ -105,7 +105,8 @@
     },
     "save": "Save",
     "connect": "Connect",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "browse": "Browse"
   },
   "workspace": {
     "openFolder": "Open Folder",
