@@ -60,4 +60,62 @@ describe("sftpSessionStore", () => {
     expect(sftpClose).toHaveBeenCalledWith(7);
     expect(sftpSessionStore.getState().sessions.c1).toBeUndefined();
   });
+
+  it("closes a session that finishes opening after closeAll", async () => {
+    let resolveStart!: (id: number) => void;
+    sftpStart.mockReturnValue(
+      new Promise<number>((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const open = sftpSessionStore.getState().ensure("c1");
+    // Tear everything down while the connect is still in flight.
+    sftpSessionStore.getState().closeAll();
+    resolveStart(7);
+    await expect(open).rejects.toThrow();
+    expect(sftpClose).toHaveBeenCalledWith(7);
+    expect(sftpSessionStore.getState().sessions.c1).toBeUndefined();
+  });
+
+  it("closes a session that finishes opening after closeFor", async () => {
+    let resolveStart!: (id: number) => void;
+    sftpStart.mockReturnValue(
+      new Promise<number>((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const open = sftpSessionStore.getState().ensure("c1");
+    sftpSessionStore.getState().closeFor("c1");
+    resolveStart(7);
+    await expect(open).rejects.toThrow();
+    expect(sftpClose).toHaveBeenCalledWith(7);
+    expect(sftpSessionStore.getState().sessions.c1).toBeUndefined();
+  });
+
+  it("keeps only the latest open when a connection is reopened mid-flight", async () => {
+    let resolveStale!: (id: number) => void;
+    let resolveFresh!: (id: number) => void;
+    sftpStart
+      .mockReturnValueOnce(
+        new Promise<number>((resolve) => {
+          resolveStale = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise<number>((resolve) => {
+          resolveFresh = resolve;
+        }),
+      );
+    const stale = sftpSessionStore.getState().ensure("c1");
+    sftpSessionStore.getState().closeFor("c1");
+    const fresh = sftpSessionStore.getState().ensure("c1");
+    // The discarded open resolves first, then the one we actually want.
+    resolveStale(1);
+    resolveFresh(2);
+    await expect(stale).rejects.toThrow();
+    await expect(fresh).resolves.toBe(2);
+    expect(sftpClose).toHaveBeenCalledWith(1);
+    expect(sftpClose).not.toHaveBeenCalledWith(2);
+    expect(sftpSessionStore.getState().sessions.c1).toBe(2);
+  });
 });
