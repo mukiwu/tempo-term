@@ -13,6 +13,7 @@ import { useUpdaterStore } from "@/stores/updaterStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore, tabHasDirtyEditor } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
+import { installEditorBufferSync } from "@/modules/editor/lib/syncBuffers";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
@@ -62,6 +63,10 @@ function App() {
     const keep = useTabsStore.getState().tabs.flatMap((t) => leafIds(t.paneTree));
     void pruneTerminalHistory(keep).catch(() => {});
   }, []);
+
+  // Forget an editor buffer once its file leaves every tab/pane, so closing a
+  // file without saving discards the edit instead of resurrecting it on reopen.
+  useEffect(() => installEditorBufferSync(), []);
 
   // In a secondary window, close this window's PTY sessions before it is
   // destroyed so no background shells leak. No-op in the main window.

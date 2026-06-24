@@ -13,6 +13,9 @@ interface EditorState {
   setContent: (path: string, content: string) => void;
   /** Reset the baseline to the current content after a successful save. */
   markSaved: (path: string) => void;
+  /** Drop a buffer entirely, e.g. when its file is closed, so reopening the
+   *  file reads fresh from disk instead of resurrecting discarded edits. */
+  forget: (path: string) => void;
   isDirty: (path: string) => boolean;
   contentOf: (path: string) => string;
 }
@@ -46,6 +49,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           [path]: { content: existing.content, baseline: existing.content },
         },
       };
+    }),
+
+  forget: (path) =>
+    set((state) => {
+      if (!(path in state.buffers)) {
+        return state;
+      }
+      const { [path]: _removed, ...rest } = state.buffers;
+      return { buffers: rest };
     }),
 
   isDirty: (path) => {

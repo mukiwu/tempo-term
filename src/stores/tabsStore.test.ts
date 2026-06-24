@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { activeEditorPath, tabHasDirtyEditor, useTabsStore, migratePersistedTabs, type Tab } from "./tabsStore";
+import {
+  activeEditorPath,
+  openEditorPaths,
+  tabHasDirtyEditor,
+  useTabsStore,
+  migratePersistedTabs,
+  type Tab,
+} from "./tabsStore";
 import {
   computeLayout,
   leaf,
@@ -26,6 +33,30 @@ function firstLeafContent(tab: Tab) {
   const node = tab.paneTree as Extract<LayoutNode, { kind: "leaf" }>;
   return paneOf(node);
 }
+
+describe("openEditorPaths", () => {
+  beforeEach(reset);
+
+  it("collects editor paths across tabs and split panes", () => {
+    const store = useTabsStore.getState();
+    const t1 = store.openEditorTab("/a.ts");
+    store.openEditorTab("/b.ts");
+    const tab1 = useTabsStore.getState().tabs.find((t) => t.id === t1)!;
+    useTabsStore
+      .getState()
+      .splitPaneWith(t1, tab1.activeLeafId, { kind: "editor", path: "/c.ts" }, "row");
+    expect(openEditorPaths(useTabsStore.getState().tabs).sort()).toEqual([
+      "/a.ts",
+      "/b.ts",
+      "/c.ts",
+    ]);
+  });
+
+  it("ignores non-editor panes", () => {
+    useTabsStore.getState().newTerminalTab();
+    expect(openEditorPaths(useTabsStore.getState().tabs)).toEqual([]);
+  });
+});
 
 describe("tabsStore", () => {
   beforeEach(reset);

@@ -40,4 +40,13 @@ describe("editorStore", () => {
     expect(useEditorStore.getState().isDirty("/missing.ts")).toBe(false);
     expect(useEditorStore.getState().contentOf("/missing.ts")).toBe("");
   });
+
+  it("forgets a buffer so a discarded edit no longer lingers", () => {
+    const store = useEditorStore.getState();
+    store.setBaseline("/a.ts", "hello");
+    store.setContent("/a.ts", "edited but never saved");
+    store.forget("/a.ts");
+    expect("/a.ts" in useEditorStore.getState().buffers).toBe(false);
+    expect(useEditorStore.getState().isDirty("/a.ts")).toBe(false);
+  });
 });

@@ -149,6 +149,19 @@ export function tabHasDirtyEditor(
   });
 }
 
+/** Every distinct file path currently shown in an editor pane, across all tabs. */
+export function openEditorPaths(tabs: Tab[]): string[] {
+  const paths = new Set<string>();
+  for (const tab of tabs) {
+    for (const pane of computeLayout(tab.paneTree)) {
+      if (pane.content.kind === "editor") {
+        paths.add(pane.content.path);
+      }
+    }
+  }
+  return [...paths];
+}
+
 /** True when a tab is a single, unsplit leaf showing exactly `content`. */
 function singleLeafContentEquals(tab: Tab, content: PaneContent): boolean {
   if (tab.paneTree.kind !== "leaf") {
