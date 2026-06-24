@@ -403,9 +403,20 @@ export function TerminalView({
       }
     };
 
-    safeFit();
-
     let disposed = false;
+
+    // Defer the initial fit to the next animation frame so the WebGL renderer
+    // has time to compute cell dimensions. FitAddon returns early (no-op) when
+    // cell.width is 0, which leaves the terminal at the default 80×24 and the
+    // PTY spawns at 80 cols regardless of the actual pane width. The "tab
+    // becomes active" useEffect already uses rAF for the same reason.
+    let initialFitFrame: number;
+    const initialFit = new Promise<void>((resolve) => {
+      initialFitFrame = requestAnimationFrame(() => {
+        safeFit();
+        resolve();
+      });
+    });
 
     // Restore the saved scrollback (read-only history) before the shell starts,
     // so it appears above a fresh prompt. Gated on the user setting.
@@ -549,7 +560,7 @@ export function TerminalView({
       startSession();
     };
 
-    void beforeOpen.then(() => {
+    void Promise.all([beforeOpen, initialFit]).then(() => {
       if (disposed) {
         return;
       }
@@ -615,6 +626,7 @@ export function TerminalView({
 
     return () => {
       disposed = true;
+      cancelAnimationFrame(initialFitFrame);
       clearInterval(snapshotTimer);
       writeListener.dispose();
       observer.disconnect();
