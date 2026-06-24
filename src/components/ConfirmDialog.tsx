@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 interface ConfirmDialogProps {
   title: string;
   message: string;
@@ -15,8 +17,18 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel]);
+
   return (
-    <>
+    <div onPointerDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
       <div className="fixed inset-0 z-[95] bg-black/60" onClick={onCancel} />
       <div className="fixed left-1/2 top-1/2 z-[100] w-[400px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-bg-elevated shadow-2xl">
         <div className="border-b border-border px-4 py-3">
@@ -40,6 +52,6 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }

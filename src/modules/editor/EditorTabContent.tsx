@@ -108,12 +108,18 @@ export function EditorTabContent({ path }: { path: string }) {
   // already navigated away from is dropped.
   useEffect(() => {
     let cancelled = false;
+    // Clear immediately so the new file doesn't flash with the previous
+    // file's grammar while the async load is in flight.
+    const view = cmRef.current?.view;
+    if (view) {
+      view.dispatch({ effects: languageCompartment.current.reconfigure([]) });
+    }
     void loadLanguageExtension(path).then((extension) => {
-      const view = cmRef.current?.view;
-      if (cancelled || !view) {
+      const currentView = cmRef.current?.view;
+      if (cancelled || !currentView) {
         return;
       }
-      view.dispatch({ effects: languageCompartment.current.reconfigure(extension) });
+      currentView.dispatch({ effects: languageCompartment.current.reconfigure(extension) });
     });
     return () => {
       cancelled = true;

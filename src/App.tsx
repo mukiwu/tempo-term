@@ -42,7 +42,7 @@ function App() {
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
+  const [pendingCloseAction, setPendingCloseAction] = useState<(() => void) | null>(null);
 
   useWatchSessions();
   useWatchNotes();
@@ -147,10 +147,31 @@ function App() {
         e.preventDefault();
         const tabsState = useTabsStore.getState();
         const tab = tabsState.tabs.find((t) => t.id === tabsState.activeId);
-        if (tab && computeLayout(tab.paneTree).length <= 1 && tabHasDirtyEditor(tab, useEditorStore.getState().buffers)) {
-          setPendingCloseTabId(tab.id);
+        if (!tab) {
+          return;
+        }
+        const panes = computeLayout(tab.paneTree);
+        const buffers = useEditorStore.getState().buffers;
+        if (panes.length <= 1) {
+          if (tabHasDirtyEditor(tab, buffers)) {
+            setPendingCloseAction(() => () => tabsState.closeTab(tab.id));
+          } else {
+            tabsState.closePaneOrTab();
+          }
         } else {
-          tabsState.closePaneOrTab();
+          // Closing the bottom-right pane (same selection as closePaneOrTab).
+          const target = panes.reduce((a, b) => {
+            if (b.rect.top !== a.rect.top) return b.rect.top > a.rect.top ? b : a;
+            return b.rect.left > a.rect.left ? b : a;
+          });
+          const targetBuf =
+            target.content.kind === "editor" ? buffers[target.content.path] : undefined;
+          const targetDirty = targetBuf ? targetBuf.content !== targetBuf.baseline : false;
+          if (targetDirty) {
+            setPendingCloseAction(() => () => tabsState.closePane(tab.id, target.id));
+          } else {
+            tabsState.closePaneOrTab();
+          }
         }
       } else if (key === "p") {
         e.preventDefault();
@@ -198,17 +219,17 @@ function App() {
       <UpdateModal />
       <UpdateToast />
       <SshPromptDialog />
-      {pendingCloseTabId && (
+      {pendingCloseAction && (
         <ConfirmDialog
           title={t("editor:closeUnsavedTitle")}
           message={t("editor:closeUnsavedMessage")}
           confirmLabel={t("editor:discardClose")}
           cancelLabel={t("actions.cancel")}
           onConfirm={() => {
-            useTabsStore.getState().closeTab(pendingCloseTabId);
-            setPendingCloseTabId(null);
+            pendingCloseAction();
+            setPendingCloseAction(null);
           }}
-          onCancel={() => setPendingCloseTabId(null)}
+          onCancel={() => setPendingCloseAction(null)}
         />
       )}
     </div>
