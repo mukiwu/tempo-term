@@ -94,6 +94,10 @@
     "model": "模型",
     "customPlaceholder": "輸入自訂模型名稱"
   },
+  "aiInline": {
+    "label": "行內程式碼補完",
+    "description": "在編輯器打字時顯示 AI 灰字建議，Tab 接受、Esc 取消。使用你的預設模型，會計入該模型的用量。"
+  },
   "aiKeys": {
     "title": "API 金鑰",
     "description": "金鑰存在你的系統 keychain，只由後端讀取，不會回傳到 app 視窗",

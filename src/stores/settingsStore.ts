@@ -41,6 +41,8 @@ interface SettingsState {
   prSource: WorkspacePrSource;
   /** Install the Claude Code hook that reports live session status to cards. */
   claudeStatusTracking: boolean;
+  /** Show AI ghost-text completions while typing in the code editor. */
+  aiInlineCompletion: boolean;
   setLanguage: (language: SupportedLanguage) => void;
   setThemeId: (themeId: string) => void;
   setTerminalPadding: (padding: number) => void;
@@ -50,6 +52,7 @@ interface SettingsState {
   setWorkspaceCardBlock: (key: keyof WorkspaceCardBlocks, value: boolean) => void;
   setPrSource: (source: WorkspacePrSource) => void;
   setClaudeStatusTracking: (value: boolean) => void;
+  setAiInlineCompletion: (value: boolean) => void;
 }
 
 export const SETTINGS_STORAGE_KEY = "tempoterm-settings";
@@ -73,6 +76,7 @@ export const useSettingsStore = create<SettingsState>()(
       workspaceCard: DEFAULT_WORKSPACE_CARD,
       prSource: "auto",
       claudeStatusTracking: true,
+      aiInlineCompletion: false,
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
@@ -83,6 +87,7 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({ workspaceCard: { ...state.workspaceCard, [key]: value } })),
       setPrSource: (prSource) => set({ prSource }),
       setClaudeStatusTracking: (value) => set({ claudeStatusTracking: value }),
+      setAiInlineCompletion: (value) => set({ aiInlineCompletion: value }),
     }),
     {
       name: SETTINGS_STORAGE_KEY,

@@ -94,6 +94,10 @@
     "model": "Model",
     "customPlaceholder": "Type a custom model name"
   },
+  "aiInline": {
+    "label": "Inline code completion",
+    "description": "Show AI ghost-text suggestions while typing in the editor. Tab accepts, Escape dismisses. Uses your default model and counts against its usage."
+  },
   "aiKeys": {
     "title": "API keys",
     "description": "Keys are stored in your OS keychain and read only by the backend, never returned to the app window",

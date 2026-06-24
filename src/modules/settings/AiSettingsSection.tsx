@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Check, KeyRound } from "lucide-react";
 import { PROVIDERS, providerById } from "@/modules/ai/lib/providers";
 import { useChatStore } from "@/modules/ai/store/chatStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { Combobox } from "@/components/Combobox";
 import {
   secretsDeleteKey,
@@ -43,6 +44,27 @@ function DefaultModelRow() {
           className="w-56"
         />
       </div>
+    </div>
+  );
+}
+
+function InlineCompletionRow() {
+  const { t } = useTranslation("settings");
+  const enabled = useSettingsStore((s) => s.aiInlineCompletion);
+  const setEnabled = useSettingsStore((s) => s.setAiInlineCompletion);
+
+  return (
+    <div className="mb-6">
+      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          className="accent-accent"
+        />
+        {t("aiInline.label")}
+      </label>
+      <p className="mt-1 text-xs text-fg-muted">{t("aiInline.description")}</p>
     </div>
   );
 }
@@ -143,6 +165,8 @@ export function AiSettingsSection() {
       </h2>
 
       <DefaultModelRow />
+
+      <InlineCompletionRow />
 
       <label className="mb-1 block text-sm font-medium text-fg">{t("aiKeys.title")}</label>
       <p className="mb-2 text-xs text-fg-muted">{t("aiKeys.description")}</p>
