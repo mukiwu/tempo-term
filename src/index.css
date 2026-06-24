@@ -249,6 +249,17 @@ button:disabled {
 .note-md--chat > :first-child { margin-top: 0; }
 .note-md--chat > :last-child { margin-bottom: 0; }
 
+/* Chat bubbles are narrow; wrap long code and unbroken tokens (file paths,
+   URLs) instead of clipping or forcing a horizontal scroll. Scoped to chat so
+   the notes editor keeps its horizontal-scroll code blocks. */
+.note-md--chat pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.note-md--chat :not(pre) > code {
+  overflow-wrap: anywhere;
+}
+
 /* TipTap WYSIWYG editor */
 .tiptap { outline: none; min-height: 12rem; }
 .tiptap p.is-editor-empty:first-child::before {
