@@ -132,6 +132,16 @@ describe("updaterStore", () => {
     expect(s.toast).toBeNull();
   });
 
+  it("runPeriodicCheck does nothing while an install is in progress", async () => {
+    check.mockResolvedValue(FOUND);
+    useUpdaterStore.setState({ installing: true });
+
+    await useUpdaterStore.getState().runPeriodicCheck();
+
+    expect(check).not.toHaveBeenCalled();
+    expect(useUpdaterStore.getState().toast).toBeNull();
+  });
+
   it("dismissModal keeps the available update so the indicator stays", async () => {
     check.mockResolvedValue(FOUND);
     await useUpdaterStore.getState().runLaunchCheck();

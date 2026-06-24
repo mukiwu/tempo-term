@@ -15,11 +15,12 @@ describe("UpdateModal release notes", () => {
         update: null as never,
       },
       installing: false,
+      errorMessage: "",
     });
   });
 
   afterEach(() => {
-    useUpdaterStore.setState({ modalOpen: false, available: null });
+    useUpdaterStore.setState({ modalOpen: false, available: null, errorMessage: "" });
   });
 
   it("renders markdown notes as real heading and list elements", () => {
@@ -30,5 +31,13 @@ describe("UpdateModal release notes", () => {
     expect(screen.getByText("Second item").tagName).toBe("LI");
     // The raw markdown markers must not leak through as plain text.
     expect(screen.queryByText(/## What's new/)).not.toBeInTheDocument();
+  });
+
+  it("shows the install error message when one is set", () => {
+    useUpdaterStore.setState({ errorMessage: "disk full" });
+
+    render(<UpdateModal />);
+
+    expect(screen.getByText("disk full")).toBeInTheDocument();
   });
 });

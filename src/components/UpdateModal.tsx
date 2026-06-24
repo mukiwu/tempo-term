@@ -16,6 +16,7 @@ export function UpdateModal() {
   const available = useUpdaterStore((s) => s.available);
   const modalOpen = useUpdaterStore((s) => s.modalOpen);
   const installing = useUpdaterStore((s) => s.installing);
+  const errorMessage = useUpdaterStore((s) => s.errorMessage);
   const installUpdate = useUpdaterStore((s) => s.installUpdate);
   const dismiss = useUpdaterStore((s) => s.dismissModal);
 
@@ -64,6 +65,9 @@ export function UpdateModal() {
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          {errorMessage && (
+            <span className="mr-auto text-xs text-danger">{errorMessage}</span>
+          )}
           <button
             type="button"
             onClick={dismiss}

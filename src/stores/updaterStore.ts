@@ -96,6 +96,11 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
   },
 
   runPeriodicCheck: async () => {
+    // An install is mid-flight (download + relaunch); a background check then is
+    // redundant and could toast over the install.
+    if (get().installing) {
+      return;
+    }
     const found = await runCheck((p) => set(p), true);
     if (found && !get().notifiedVersions.includes(found.version)) {
       set((s) => ({
