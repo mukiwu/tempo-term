@@ -24,7 +24,8 @@
     "ready": "就緒",
     "shell": "Shell",
     "encoding": "UTF-8",
-    "language": "語言"
+    "language": "語言",
+    "updateAvailable": "有可用更新"
   },
   "actions": {
     "newTab": "新增分頁",

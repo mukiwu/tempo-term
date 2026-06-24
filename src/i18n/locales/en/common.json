@@ -24,7 +24,8 @@
     "ready": "Ready",
     "shell": "Shell",
     "encoding": "UTF-8",
-    "language": "Language"
+    "language": "Language",
+    "updateAvailable": "Update available"
   },
   "actions": {
     "newTab": "New Tab",
