@@ -594,6 +594,7 @@ async fn authenticate_with_private_key(
 /// Agent auth: connect to the running ssh-agent, then try each identity it
 /// holds until one authenticates (the agent does the signing — no private key
 /// material ever reaches this process).
+#[cfg(unix)]
 async fn authenticate_agent(
     handle: &mut russh::client::Handle<VerifyingClient>,
     args: &AuthArgs,
@@ -601,6 +602,9 @@ async fn authenticate_agent(
     use russh::keys::agent::client::AgentClient;
     use russh::keys::agent::AgentIdentity;
 
+    // `connect_env` reaches the agent over the unix-domain socket named by
+    // SSH_AUTH_SOCK and is unix-only in russh. Windows agents (the OpenSSH
+    // named pipe / Pageant) use a different transport; see the Windows arm.
     let mut agent = AgentClient::connect_env()
         .await
         .map_err(|e| format!("could not connect to ssh-agent: {e}"))?;
@@ -628,6 +632,18 @@ async fn authenticate_agent(
     }
 
     Ok(false)
+}
+
+// Windows ssh-agent auth needs a separate transport (OpenSSH named pipe or
+// Pageant) because russh's `connect_env` is unix-only. Until that path is
+// wired up, fail clearly so the Windows build compiles and the other auth
+// methods (password, key file) keep working.
+#[cfg(not(unix))]
+async fn authenticate_agent(
+    _handle: &mut russh::client::Handle<VerifyingClient>,
+    _args: &AuthArgs,
+) -> Result<bool, String> {
+    Err("ssh-agent authentication is not supported on Windows yet; use password or a key file".to_string())
 }
 
 /// Public alias for the shared prompt registry handle, so sibling modules can
