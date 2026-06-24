@@ -2,17 +2,47 @@
 //! Keys are written and cleared from the frontend, but only read inside the
 //! backend (the ai module) so they never travel back to the webview.
 
-use keyring::Entry;
+mod file_store;
 
-const SERVICE: &str = "tempoterm-ai";
+use std::path::PathBuf;
+use std::sync::OnceLock;
+
+use keyring::Entry;
+use orion::aead::SecretKey;
+
 const SSH_SERVICE: &str = "tempoterm-ssh";
+
+/// Domain-separation salt mixed with the machine id before hashing into the
+/// file-store key. Bumping this invalidates every stored value.
+const APP_SALT: &str = "tempoterm.secrets.v1";
+
+/// Absolute path to the encrypted secrets file, resolved once at app startup.
+static SECRETS_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// Wire the encrypted secrets file path from the Tauri setup hook
+/// (`app_data_dir()/secrets.enc`).
+pub fn init_store_path(path: PathBuf) {
+    let _ = SECRETS_PATH.set(path);
+}
+
+fn secrets_path() -> Result<PathBuf, String> {
+    SECRETS_PATH
+        .get()
+        .cloned()
+        .ok_or_else(|| "secrets store not initialized".to_string())
+}
+
+/// Derive the file-store encryption key from this machine's id. The key only
+/// lives in memory; a file copied to another machine will not decrypt.
+fn machine_key() -> Result<SecretKey, String> {
+    let id = machine_uid::get().map_err(|e| e.to_string())?;
+    let digest =
+        orion::hash::digest(format!("{APP_SALT}:{id}").as_bytes()).map_err(|e| e.to_string())?;
+    SecretKey::from_slice(digest.as_ref()).map_err(|e| e.to_string())
+}
 
 fn account_for(provider: &str) -> String {
     format!("provider:{provider}")
-}
-
-fn entry(provider: &str) -> Result<Entry, String> {
-    Entry::new(SERVICE, &account_for(provider)).map_err(|e| e.to_string())
 }
 
 fn ssh_account_for(connection_id: &str) -> String {
@@ -24,29 +54,28 @@ fn ssh_entry(connection_id: &str) -> Result<Entry, String> {
 }
 
 pub fn set_key(provider: &str, key: &str) -> Result<(), String> {
-    entry(provider)?
-        .set_password(key)
-        .map_err(|e| e.to_string())
+    file_store::set(&secrets_path()?, &machine_key()?, &account_for(provider), key)
 }
 
 pub fn get_key(provider: &str) -> Result<Option<String>, String> {
-    match entry(provider)?.get_password() {
-        Ok(password) => Ok(Some(password)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e.to_string()),
-    }
+    // A missing machine id (or an undecryptable file) reads as "no key" so the
+    // UI prompts for re-entry rather than surfacing a cryptic error.
+    let key = match machine_key() {
+        Ok(k) => k,
+        Err(_) => return Ok(None),
+    };
+    file_store::get(&secrets_path()?, &key, &account_for(provider))
 }
 
 pub fn delete_key(provider: &str) -> Result<(), String> {
-    match entry(provider)?.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
-    }
+    file_store::delete(&secrets_path()?, &account_for(provider))
 }
 
 pub fn has_key(provider: &str) -> bool {
-    matches!(get_key(provider), Ok(Some(_)))
+    match (secrets_path(), machine_key()) {
+        (Ok(path), Ok(key)) => file_store::has(&path, &key, &account_for(provider)),
+        _ => false,
+    }
 }
 
 #[tauri::command]

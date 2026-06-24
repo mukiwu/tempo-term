@@ -102,6 +102,12 @@ pub fn run() {
                     }
                 }
             }
+            // Resolve the encrypted secrets file once; create the data dir so
+            // the first write succeeds on a fresh install.
+            if let Ok(dir) = app.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(&dir);
+                modules::secrets::init_store_path(dir.join("secrets.enc"));
+            }
             modules::menu::init(app)?;
             Ok(())
         })
