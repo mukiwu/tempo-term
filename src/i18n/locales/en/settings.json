@@ -46,6 +46,7 @@
   },
   "update": {
     "available": "Update available: v{{version}}",
+    "toast": "New version v{{version}} available",
     "notes": "What's new",
     "install": "Update now",
     "later": "Later",
