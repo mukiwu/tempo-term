@@ -1,4 +1,4 @@
-mod client;
+pub(crate) mod client;
 mod forward;
 mod known_hosts;
 mod prompt;
@@ -6,6 +6,7 @@ mod session;
 
 pub use prompt::PromptReply;
 pub use session::SshState;
+pub(crate) use client::{connect_authenticated, AuthedConnectArgs, PromptRegistryHandle};
 
 use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, State};

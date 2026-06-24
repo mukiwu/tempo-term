@@ -10,7 +10,11 @@ import { useTabsStore } from "@/stores/tabsStore";
  * session restored with many tabs does not spawn every shell and read every
  * file at once. Once a tab has been activated it stays mounted (kept hidden
  * when inactive) so its terminals keep running for the rest of the session.
- * With no tabs at all, the launcher takes over the whole area.
+ *
+ * When there is no active tab (a fresh launch, or after opening a new, empty
+ * workspace) the launcher is shown as an overlay on top of the still-mounted
+ * tabs — it must NOT replace the tab subtree, or every space's terminals would
+ * unmount and their shells (e.g. a running Claude session) would be killed.
  */
 export function TabsArea() {
   const tabs = useTabsStore((s) => s.tabs);
@@ -24,10 +28,6 @@ export function TabsArea() {
   );
   if (activeId && !mountedIds.has(activeId)) {
     setMountedIds((prev) => new Set(prev).add(activeId));
-  }
-
-  if (!activeId) {
-    return <LauncherPanel />;
   }
 
   return (
@@ -50,6 +50,14 @@ export function TabsArea() {
           </div>
         );
       })}
+
+      {/* No active tab: overlay the launcher without unmounting the tabs behind
+          it, so their terminal sessions keep running. */}
+      {!activeId && (
+        <div className="absolute inset-0">
+          <LauncherPanel />
+        </div>
+      )}
     </div>
   );
 }

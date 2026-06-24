@@ -40,6 +40,7 @@ import { insertLinkIntoNote } from "@/modules/notes/lib/noteBus";
 import { deleteTerminalHistory } from "./lib/terminalHistory";
 import { useTabsStore, type Tab } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useRemoteExplorerRoot } from "@/modules/ssh/lib/useRemoteExplorerRoot";
 
 const MIN_FRACTION = 0.1;
 const MAX_FRACTION = 0.9;
@@ -79,6 +80,16 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const panes = computeLayout(tab.paneTree);
   const splitters = computeSplitters(tab.paneTree);
   const multiple = panes.length > 1;
+
+  // When this tab's active pane is an SSH terminal, point the file explorer at
+  // that host's remote files. A local (or non-active) pane yields null, so the
+  // existing local cwd tracking keeps driving the root.
+  const activeLeaf = panes.find((p) => p.id === tab.activeLeafId);
+  const activeSshConnectionId =
+    isActiveTab && activeLeaf?.content.kind === "terminal" && activeLeaf.content.ssh
+      ? activeLeaf.content.ssh.connectionId
+      : null;
+  useRemoteExplorerRoot(activeSshConnectionId);
   // The splitter currently being dragged, used to drive the drag overlay's
   // resize cursor (see the overlay below).
   const draggingSplitter = draggingSplitterId
