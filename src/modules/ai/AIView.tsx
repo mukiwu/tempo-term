@@ -1,19 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Bot, KeyRound, Paperclip, SendHorizontal, Trash2, X } from "lucide-react";
+import { Bot, KeyRound, Paperclip, SendHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
 import { useChatStore } from "./store/chatStore";
 import { providerById, PROVIDERS } from "./lib/providers";
 import { secretsHasKey, secretsSetKey } from "./lib/aiBridge";
 import { buildAttachmentsBlock, type AttachedFile } from "./lib/attachments";
+import { buildActiveFileBlock, buildTerminalBlock } from "./lib/context";
+import { extractCommand, sanitizeForInsertion } from "./lib/command";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { Combobox } from "@/components/Combobox";
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { basename } from "@/modules/explorer/lib/paths";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useEditorStore } from "@/modules/editor/store/editorStore";
+import {
+  insertIntoActiveTerminal,
+  readActiveTerminalBuffer,
+} from "@/modules/terminal/lib/terminalBus";
 
 function buildSystemPrompt(
   rootPath: string | null,
   activeFile: string | null,
+  activeFileBlock: string,
+  terminalBlock: string,
   attachments: string,
 ): string {
   const parts = [
@@ -24,6 +33,12 @@ function buildSystemPrompt(
   }
   if (activeFile) {
     parts.push(`The user is currently looking at: ${activeFile}`);
+  }
+  if (activeFileBlock) {
+    parts.push(activeFileBlock);
+  }
+  if (terminalBlock) {
+    parts.push(terminalBlock);
   }
   if (attachments) {
     parts.push(attachments);
@@ -99,6 +114,8 @@ export function AIView() {
   const clear = useChatStore((s) => s.clear);
   const attachedPaths = useChatStore((s) => s.attachedPaths);
   const removeAttached = useChatStore((s) => s.removeAttached);
+  const terminalContext = useChatStore((s) => s.terminalContext);
+  const setTerminalContext = useChatStore((s) => s.setTerminalContext);
 
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const activeFile = useWorkspaceStore((s) => s.activeFile);
@@ -125,14 +142,25 @@ export function AIView() {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, sending]);
 
+  function grabTerminal() {
+    const raw = readActiveTerminalBuffer();
+    setTerminalContext(raw ? buildTerminalBlock(raw) || null : null);
+  }
+
   function submit() {
     if (!input.trim() || sending) {
       return;
     }
     const text = input;
     setInput("");
+    const activeFileBlock = activeFile
+      ? buildActiveFileBlock(activeFile, useEditorStore.getState().contentOf(activeFile))
+      : "";
     void buildAttachmentsContext(attachedPaths).then((attachments) =>
-      send(text, buildSystemPrompt(rootPath, activeFile, attachments)),
+      send(
+        text,
+        buildSystemPrompt(rootPath, activeFile, activeFileBlock, terminalContext ?? "", attachments),
+      ),
     );
   }
 
@@ -186,26 +214,45 @@ export function AIView() {
             <p className="mt-2 max-w-xs text-[11px]">{t("contextHint")}</p>
           </div>
         ) : (
-          messages.map((message, index) => (
-            <div
-              key={index}
-              className={message.role === "user" ? "flex justify-end" : "flex justify-start"}
-            >
+          messages.map((message, index) => {
+            const command =
+              message.role === "assistant" ? extractCommand(message.content) : null;
+            return (
               <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                key={index}
+                className={
                   message.role === "user"
-                    ? "whitespace-pre-wrap bg-accent text-white"
-                    : "bg-bg-elevated text-fg"
-                }`}
+                    ? "flex justify-end"
+                    : "flex flex-col items-start gap-1"
+                }
               >
-                {message.role === "assistant" ? (
-                  <ChatMarkdown content={message.content} />
-                ) : (
-                  message.content
+                <div
+                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                    message.role === "user"
+                      ? "whitespace-pre-wrap bg-accent text-white"
+                      : "bg-bg-elevated text-fg"
+                  }`}
+                >
+                  {message.role === "assistant" ? (
+                    <ChatMarkdown content={message.content} />
+                  ) : (
+                    message.content
+                  )}
+                </div>
+                {command && (
+                  <button
+                    type="button"
+                    title={t("insertCommand")}
+                    onClick={() => insertIntoActiveTerminal(sanitizeForInsertion(command))}
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+                  >
+                    <SquareTerminal size={12} className="shrink-0 text-accent" />
+                    {t("insertCommand")}
+                  </button>
                 )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
         {sending && (
           <div className="flex justify-start">
@@ -223,8 +270,26 @@ export function AIView() {
 
       {/* Input */}
       <div className="shrink-0 border-t border-border bg-bg-inset p-3">
-        {attachedPaths.length > 0 && (
+        {(attachedPaths.length > 0 || terminalContext) && (
           <div className="mb-2 flex flex-wrap gap-1.5">
+            {terminalContext && (
+              <span
+                title={t("terminalContextTitle")}
+                className="inline-flex max-w-[200px] items-center gap-1 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs text-fg-muted"
+              >
+                <SquareTerminal size={11} className="shrink-0 text-accent" />
+                <span className="truncate">{t("terminalContextChip")}</span>
+                <button
+                  type="button"
+                  aria-label={t("removeTerminalContext")}
+                  title={t("removeTerminalContext")}
+                  onClick={() => setTerminalContext(null)}
+                  className="shrink-0 rounded text-fg-subtle hover:text-fg"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
             {attachedPaths.map((path) => (
               <span
                 key={path}
@@ -247,6 +312,20 @@ export function AIView() {
           </div>
         )}
         <div className="flex items-end gap-2">
+          <button
+            type="button"
+            aria-pressed={Boolean(terminalContext)}
+            aria-label={terminalContext ? t("grabTerminalActive") : t("grabTerminal")}
+            title={terminalContext ? t("grabTerminalActive") : t("grabTerminal")}
+            onClick={grabTerminal}
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-colors ${
+              terminalContext
+                ? "border-accent bg-accent/10 text-accent hover:bg-accent/15"
+                : "border-border text-fg-muted hover:bg-bg-elevated hover:text-fg"
+            }`}
+          >
+            <SquareTerminal size={16} />
+          </button>
           <textarea
             value={input}
             rows={2}

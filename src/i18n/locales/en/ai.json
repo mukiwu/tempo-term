@@ -18,5 +18,11 @@
   "you": "You",
   "assistant": "Assistant",
   "contextHint": "The assistant sees your current folder and open file as context",
-  "removeAttachment": "Remove attachment"
+  "removeAttachment": "Remove attachment",
+  "grabTerminal": "Add active terminal output as context",
+  "grabTerminalActive": "Terminal output attached — click to refresh",
+  "insertCommand": "Insert into terminal",
+  "terminalContextChip": "Terminal output",
+  "terminalContextTitle": "The active terminal's recent output is attached as context",
+  "removeTerminalContext": "Remove terminal output"
 }

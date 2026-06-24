@@ -27,8 +27,10 @@ import {
 import {
   registerTerminal,
   registerTerminalPathDrop,
+  registerTerminalReader,
   unregisterTerminal,
   unregisterTerminalPathDrop,
+  unregisterTerminalReader,
 } from "./lib/terminalBus";
 import { imageFilesFromDrop, pathsFromDrop } from "./lib/terminalDrop";
 import {
@@ -513,6 +515,9 @@ export function TerminalView({
         if (leafIdRef.current) {
           registerTerminal(leafIdRef.current, (text) => void session.write(text));
           registerTerminalPathDrop(leafIdRef.current, (paths) => handlePathDrop(paths));
+          // Let the AI panel pull this pane's scrollback as context. Reads the
+          // tail so a long session does not serialize thousands of rows.
+          registerTerminalReader(leafIdRef.current, () => serializeBufferText(term, 300));
         }
         // A freshly opened tracking pane drives the explorer to its start dir
         // right away instead of waiting for the next cwd poll. (Lets "open in
@@ -620,6 +625,7 @@ export function TerminalView({
       if (leafIdRef.current) {
         unregisterTerminal(leafIdRef.current);
         unregisterTerminalPathDrop(leafIdRef.current);
+        unregisterTerminalReader(leafIdRef.current);
         useSessionStatusStore.getState().clear(leafIdRef.current);
       }
       // Unregister live SSH session on pane close so the connections panel

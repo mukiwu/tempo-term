@@ -18,5 +18,11 @@
   "you": "你",
   "assistant": "助手",
   "contextHint": "助手會把你目前的資料夾與開啟的檔案當作情境",
-  "removeAttachment": "移除附件"
+  "removeAttachment": "移除附件",
+  "grabTerminal": "把目前終端機的輸出加入情境",
+  "grabTerminalActive": "終端機輸出已加入，點擊可重新抓取",
+  "insertCommand": "插入終端機",
+  "terminalContextChip": "終端機輸出",
+  "terminalContextTitle": "目前終端機最近的輸出已加入情境",
+  "removeTerminalContext": "移除終端機輸出"
 }
