@@ -54,6 +54,9 @@ export const sftpSessionStore = create<SftpSessionState>()((set, get) => ({
         });
         if (dropped) {
           void sftpClose(id).catch(() => {});
+          // Reject rather than hand back a session id we just closed, so callers
+          // never operate on a dead session.
+          throw new Error(`sftp session for ${connectionId} was closed before it opened`);
         }
         return id;
       })

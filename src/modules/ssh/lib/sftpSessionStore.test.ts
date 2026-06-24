@@ -72,7 +72,7 @@ describe("sftpSessionStore", () => {
     // Tear everything down while the connect is still in flight.
     sftpSessionStore.getState().closeAll();
     resolveStart(7);
-    await open;
+    await expect(open).rejects.toThrow();
     expect(sftpClose).toHaveBeenCalledWith(7);
     expect(sftpSessionStore.getState().sessions.c1).toBeUndefined();
   });
@@ -87,7 +87,7 @@ describe("sftpSessionStore", () => {
     const open = sftpSessionStore.getState().ensure("c1");
     sftpSessionStore.getState().closeFor("c1");
     resolveStart(7);
-    await open;
+    await expect(open).rejects.toThrow();
     expect(sftpClose).toHaveBeenCalledWith(7);
     expect(sftpSessionStore.getState().sessions.c1).toBeUndefined();
   });
@@ -112,7 +112,8 @@ describe("sftpSessionStore", () => {
     // The discarded open resolves first, then the one we actually want.
     resolveStale(1);
     resolveFresh(2);
-    await Promise.all([stale, fresh]);
+    await expect(stale).rejects.toThrow();
+    await expect(fresh).resolves.toBe(2);
     expect(sftpClose).toHaveBeenCalledWith(1);
     expect(sftpClose).not.toHaveBeenCalledWith(2);
     expect(sftpSessionStore.getState().sessions.c1).toBe(2);
