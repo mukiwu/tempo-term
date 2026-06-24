@@ -38,15 +38,31 @@ export const sftpSessionStore = create<SftpSessionState>()((set, get) => ({
       keyPath: conn.keyPath,
     })
       .then((id) => {
+        let dropped = false;
         set((s) => {
+          // Only keep this session if our open is still the tracked one.
+          // closeAll/closeFor clears the entry, and a re-open replaces it with a
+          // newer promise; in both cases this result is stale and must be closed
+          // rather than added, or it leaks a background connection.
+          if (s.pending[connectionId] !== open) {
+            dropped = true;
+            return {};
+          }
           const pending = { ...s.pending };
           delete pending[connectionId];
           return { sessions: { ...s.sessions, [connectionId]: id }, pending };
         });
+        if (dropped) {
+          void sftpClose(id).catch(() => {});
+        }
         return id;
       })
       .catch((err: unknown) => {
         set((s) => {
+          // Don't clear a newer pending open that superseded this failed one.
+          if (s.pending[connectionId] !== open) {
+            return {};
+          }
           const pending = { ...s.pending };
           delete pending[connectionId];
           return { pending };
@@ -65,7 +81,9 @@ export const sftpSessionStore = create<SftpSessionState>()((set, get) => ({
     set((s) => {
       const sessions = { ...s.sessions };
       delete sessions[connectionId];
-      return { sessions };
+      const pending = { ...s.pending };
+      delete pending[connectionId];
+      return { sessions, pending };
     });
   },
 
