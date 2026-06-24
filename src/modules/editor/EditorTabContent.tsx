@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Columns2, Eye, SquarePen, WrapText, type LucideIcon } from "lucide-react";
-import CodeMirror from "@uiw/react-codemirror";
+import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView as CMView } from "@codemirror/view";
+import { Compartment } from "@codemirror/state";
 import { editorSyntaxTheme } from "@/themes/editorTheme";
-import { languageExtension, languageLabel } from "./lib/language";
+import { languageLabel, loadLanguageExtension } from "./lib/language";
 import { inlineCompletion, type CompletionRequest } from "./lib/inlineCompletion";
 import { useEditorStore } from "./store/editorStore";
 import { aiChat } from "@/modules/ai/lib/aiBridge";
@@ -68,6 +69,11 @@ export function EditorTabContent({ path }: { path: string }) {
   const [mode, setMode] = useState<EditorMode>("edit");
   const effectiveMode: EditorMode = isMarkdown ? mode : "edit";
 
+  const cmRef = useRef<ReactCodeMirrorRef>(null);
+  // The language grammar lives in its own compartment so we can swap it in
+  // after the async load resolves without rebuilding the whole editor config.
+  const languageCompartment = useRef(new Compartment());
+
   useEffect(() => {
     // Re-read from disk whenever the file (re)opens so external edits show up;
     // skip only when there are unsaved local edits, to avoid clobbering them.
@@ -86,7 +92,7 @@ export function EditorTabContent({ path }: { path: string }) {
         ".cm-content, .cm-gutters, .cm-scroller": { fontFamily },
       }),
       ...(wordWrap ? [CMView.lineWrapping] : []),
-      ...languageExtension(path),
+      languageCompartment.current.of([]),
     ];
     if (aiInlineCompletionEnabled) {
       const language = languageLabel(path);
@@ -96,6 +102,25 @@ export function EditorTabContent({ path }: { path: string }) {
     }
     return base;
   }, [path, fontFamily, fontSize, wordWrap, aiInlineCompletionEnabled]);
+
+  // Load the grammar for the current file (language-data fetches each on
+  // demand) and swap it into the editor once ready. A stale load for a file we
+  // already navigated away from is dropped.
+  useEffect(() => {
+    let cancelled = false;
+    void loadLanguageExtension(path).then((extension) => {
+      const view = cmRef.current?.view;
+      if (cancelled || !view) {
+        return;
+      }
+      view.dispatch({ effects: languageCompartment.current.reconfigure(extension) });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // effectiveMode is a dep because toggling markdown preview remounts the
+    // editor with a fresh view, which would otherwise lose its highlighting.
+  }, [path, effectiveMode]);
 
   async function save() {
     const current = useEditorStore.getState().contentOf(path);
@@ -109,6 +134,7 @@ export function EditorTabContent({ path }: { path: string }) {
 
   const editorPane = (
     <CodeMirror
+      ref={cmRef}
       value={content}
       theme={editorSyntaxTheme(themeId)}
       extensions={extensions}

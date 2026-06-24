@@ -1,35 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { languageIdForPath, languageLabel } from "./language";
+import {
+  languageDescriptionForPath,
+  languageLabel,
+  loadLanguageExtension,
+} from "./language";
 
-describe("languageIdForPath", () => {
-  it("maps JavaScript and TypeScript family extensions", () => {
-    expect(languageIdForPath("src/App.tsx")).toBe("javascript");
-    expect(languageIdForPath("a.ts")).toBe("javascript");
-    expect(languageIdForPath("b.jsx")).toBe("javascript");
-    expect(languageIdForPath("c.mjs")).toBe("javascript");
+describe("loadLanguageExtension", () => {
+  it("returns an empty extension list for unknown files", async () => {
+    expect(await loadLanguageExtension("notes.xyz")).toEqual([]);
   });
 
-  it("maps common data and markup formats", () => {
-    expect(languageIdForPath("package.json")).toBe("json");
-    expect(languageIdForPath("index.html")).toBe("html");
-    expect(languageIdForPath("styles.css")).toBe("css");
-    expect(languageIdForPath("README.md")).toBe("markdown");
+  it("loads a language support extension for a known file", async () => {
+    const ext = await loadLanguageExtension("a.ts");
+    expect(ext.length).toBeGreaterThan(0);
+  });
+});
+
+describe("languageDescriptionForPath", () => {
+  it("recognizes .vue via the bundled language registry", () => {
+    expect(languageDescriptionForPath("src/components/App.vue")?.name).toBe("Vue");
   });
 
-  it("maps systems and scripting languages", () => {
-    expect(languageIdForPath("main.rs")).toBe("rust");
-    expect(languageIdForPath("script.py")).toBe("python");
+  it("recognizes languages that the old static map never covered", () => {
+    expect(languageDescriptionForPath("main.go")?.name).toBe("Go");
+    expect(languageDescriptionForPath("schema.sql")?.name).toBe("SQL");
+    expect(languageDescriptionForPath("config.yaml")?.name).toBe("YAML");
   });
 
-  it("is case insensitive on the extension", () => {
-    expect(languageIdForPath("Component.TSX")).toBe("javascript");
-    expect(languageIdForPath("DATA.JSON")).toBe("json");
+  it("still resolves the languages bundled before", () => {
+    expect(languageDescriptionForPath("a.ts")?.name).toBe("TypeScript");
+    expect(languageDescriptionForPath("styles.css")?.name).toBe("CSS");
+    expect(languageDescriptionForPath("main.rs")?.name).toBe("Rust");
   });
 
-  it("falls back to plaintext for unknown or missing extensions", () => {
-    expect(languageIdForPath("Makefile")).toBe("plaintext");
-    expect(languageIdForPath("notes.xyz")).toBe("plaintext");
-    expect(languageIdForPath("/path/to/file")).toBe("plaintext");
+  it("returns null for unknown or extensionless paths", () => {
+    expect(languageDescriptionForPath("notes.xyz")).toBeNull();
+    expect(languageDescriptionForPath("Makefile")).toBeNull();
   });
 });
 
