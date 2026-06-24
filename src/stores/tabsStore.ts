@@ -138,6 +138,17 @@ export function activeEditorPath(
   return content?.kind === "editor" ? content.path : null;
 }
 
+export function tabHasDirtyEditor(
+  tab: Tab,
+  buffers: Record<string, { content: string; baseline: string }>,
+): boolean {
+  return computeLayout(tab.paneTree).some((p) => {
+    if (p.content.kind !== "editor") return false;
+    const buf = buffers[p.content.path];
+    return buf ? buf.content !== buf.baseline : false;
+  });
+}
+
 /** True when a tab is a single, unsplit leaf showing exactly `content`. */
 function singleLeafContentEquals(tab: Tab, content: PaneContent): boolean {
   if (tab.paneTree.kind !== "leaf") {

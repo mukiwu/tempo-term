@@ -4,6 +4,9 @@
   "save": "Save",
   "saved": "Saved",
   "unsaved": "Unsaved changes",
+  "closeUnsavedTitle": "Unsaved changes",
+  "closeUnsavedMessage": "This tab has unsaved changes. Close without saving?",
+  "discardClose": "Close without saving",
   "wrap": "Word wrap",
   "mode": {
     "edit": "Edit",

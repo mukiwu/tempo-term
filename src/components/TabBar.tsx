@@ -27,11 +27,11 @@ import {
   horizontalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
-import { useTabsStore, type Tab } from "@/stores/tabsStore";
-import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
+import { useTabsStore, tabHasDirtyEditor, type Tab } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
 import { useUiStore } from "@/stores/uiStore";
 import { SpaceDropdown } from "./SpaceDropdown";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 // Module-level so the reference stays stable across renders. Passing an inline
 // options object would make useSensor/useSensors return a new sensors array on
@@ -67,19 +67,12 @@ function TabItem({ id }: { id: string }) {
     useSortable({ id });
   // A tab is dirty when any of its editor panes has unsaved changes.
   const dirty = useEditorStore((s) => {
-    if (!tab) {
-      return false;
-    }
-    return computeLayout(tab.paneTree)
-      .map((p) => p.content)
-      .some(
-        (c) =>
-          c.kind === "editor" &&
-          (s.buffers[c.path]?.content ?? "") !== (s.buffers[c.path]?.baseline ?? ""),
-      );
+    if (!tab) return false;
+    return tabHasDirtyEditor(tab, s.buffers);
   });
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [confirmClose, setConfirmClose] = useState(false);
   if (!tab) {
     return null;
   }
@@ -132,19 +125,48 @@ function TabItem({ id }: { id: string }) {
       ) : (
         <span className="max-w-[160px] truncate">{tab.title}</span>
       )}
-      {dirty && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
       <button
         type="button"
-        aria-label={t("actions.closeTab")}
+        aria-label={dirty ? t("editor:unsaved") : t("actions.closeTab")}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
-          closeTab(tab.id);
+          if (dirty) {
+            setConfirmClose(true);
+          } else {
+            closeTab(tab.id);
+          }
         }}
-        className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
+        className="group/close rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
       >
-        <X size={13} />
+        {dirty ? (
+          <>
+            <span className="block h-3 w-3 group-hover/close:hidden">
+              <span className="flex h-full w-full items-center justify-center">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+              </span>
+            </span>
+            <span className="hidden h-3 w-3 items-center justify-center group-hover/close:flex">
+              <X size={13} />
+            </span>
+          </>
+        ) : (
+          <X size={13} />
+        )}
       </button>
+      {confirmClose && (
+        <ConfirmDialog
+          title={t("editor:closeUnsavedTitle")}
+          message={t("editor:closeUnsavedMessage")}
+          confirmLabel={t("editor:discardClose")}
+          cancelLabel={t("actions.cancel")}
+          onConfirm={() => {
+            setConfirmClose(false);
+            closeTab(tab.id);
+          }}
+          onCancel={() => setConfirmClose(false)}
+        />
+      )}
     </div>
   );
 }

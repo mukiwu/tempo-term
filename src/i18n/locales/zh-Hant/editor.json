@@ -4,6 +4,9 @@
   "save": "儲存",
   "saved": "已儲存",
   "unsaved": "尚未儲存的變更",
+  "closeUnsavedTitle": "尚未儲存的變更",
+  "closeUnsavedMessage": "這個分頁有未儲存的變更，確定要關閉嗎？",
+  "discardClose": "不儲存直接關閉",
   "wrap": "自動換行",
   "mode": {
     "edit": "編輯",

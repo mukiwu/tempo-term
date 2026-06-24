@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { TabBar } from "@/components/TabBar";
 import { Sidebar } from "@/components/Sidebar";
 import { Resizer } from "@/components/Resizer";
@@ -10,10 +11,13 @@ import { TabsArea } from "@/components/TabsArea";
 import { useUiStore } from "@/stores/uiStore";
 import { useUpdaterStore } from "@/stores/updaterStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useTabsStore } from "@/stores/tabsStore";
+import { useTabsStore, tabHasDirtyEditor } from "@/stores/tabsStore";
+import { useEditorStore } from "@/modules/editor/store/editorStore";
+import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { leafIds } from "@/modules/terminal/lib/terminalLayout";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { applyTheme, getTheme } from "@/themes/themes";
 import { listen } from "@tauri-apps/api/event";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
@@ -33,10 +37,12 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function App() {
+  const { t } = useTranslation();
   const themeId = useSettingsStore((s) => s.themeId);
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
 
   useWatchSessions();
   useWatchNotes();
@@ -139,7 +145,13 @@ function App() {
         }
       } else if (key === "w") {
         e.preventDefault();
-        useTabsStore.getState().closePaneOrTab();
+        const tabsState = useTabsStore.getState();
+        const tab = tabsState.tabs.find((t) => t.id === tabsState.activeId);
+        if (tab && computeLayout(tab.paneTree).length <= 1 && tabHasDirtyEditor(tab, useEditorStore.getState().buffers)) {
+          setPendingCloseTabId(tab.id);
+        } else {
+          tabsState.closePaneOrTab();
+        }
       } else if (key === "p") {
         e.preventDefault();
         useUiStore.getState().openFileFinder();
@@ -186,6 +198,19 @@ function App() {
       <UpdateModal />
       <UpdateToast />
       <SshPromptDialog />
+      {pendingCloseTabId && (
+        <ConfirmDialog
+          title={t("editor:closeUnsavedTitle")}
+          message={t("editor:closeUnsavedMessage")}
+          confirmLabel={t("editor:discardClose")}
+          cancelLabel={t("actions.cancel")}
+          onConfirm={() => {
+            useTabsStore.getState().closeTab(pendingCloseTabId);
+            setPendingCloseTabId(null);
+          }}
+          onCancel={() => setPendingCloseTabId(null)}
+        />
+      )}
     </div>
   );
 }
