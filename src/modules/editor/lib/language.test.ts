@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { languageIdForPath } from "./language";
+import { languageIdForPath, languageLabel } from "./language";
 
 describe("languageIdForPath", () => {
   it("maps JavaScript and TypeScript family extensions", () => {
@@ -30,5 +30,25 @@ describe("languageIdForPath", () => {
     expect(languageIdForPath("Makefile")).toBe("plaintext");
     expect(languageIdForPath("notes.xyz")).toBe("plaintext");
     expect(languageIdForPath("/path/to/file")).toBe("plaintext");
+  });
+});
+
+describe("languageLabel", () => {
+  it("returns text for an extensionless path that contains uppercase letters", () => {
+    expect(languageLabel("/home/user/README")).toBe("text");
+  });
+
+  it("returns the lowercased extension for a normal path", () => {
+    expect(languageLabel("src/main.go")).toBe("go");
+    expect(languageLabel("src/Component.TSX")).toBe("tsx");
+  });
+
+  it("uses the last extension for multi-dot names", () => {
+    expect(languageLabel("archive.tar.gz")).toBe("gz");
+  });
+
+  it("returns text for dotfiles and trailing-dot names", () => {
+    expect(languageLabel(".bashrc")).toBe("text");
+    expect(languageLabel("weird.")).toBe("text");
   });
 });

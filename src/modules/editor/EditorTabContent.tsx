@@ -4,7 +4,7 @@ import { Columns2, Eye, SquarePen, WrapText, type LucideIcon } from "lucide-reac
 import CodeMirror from "@uiw/react-codemirror";
 import { EditorView as CMView } from "@codemirror/view";
 import { editorSyntaxTheme } from "@/themes/editorTheme";
-import { languageExtension } from "./lib/language";
+import { languageExtension, languageLabel } from "./lib/language";
 import { inlineCompletion, type CompletionRequest } from "./lib/inlineCompletion";
 import { useEditorStore } from "./store/editorStore";
 import { aiChat } from "@/modules/ai/lib/aiBridge";
@@ -29,12 +29,6 @@ const MODES: { key: EditorMode; icon: LucideIcon }[] = [
 
 function isMarkdownPath(path: string): boolean {
   return /\.(md|markdown|mdx)$/i.test(path);
-}
-
-/** Short language label from a file path, used to hint the completion model. */
-function languageLabel(path: string): string {
-  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
-  return ext.length > 0 && ext !== path ? ext : "text";
 }
 
 /** Ask the active chat provider to complete the code around the cursor. */

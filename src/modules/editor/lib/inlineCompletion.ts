@@ -63,6 +63,9 @@ class GhostWidget extends WidgetType {
     span.className = "cm-ghost-text";
     span.style.opacity = "0.4";
     span.style.whiteSpace = "pre-wrap";
+    // Let clicks fall through to the editor so tapping the ghost text never
+    // parks the cursor inside a suggestion that isn't real document content.
+    span.style.pointerEvents = "none";
     span.textContent = this.text;
     return span;
   }

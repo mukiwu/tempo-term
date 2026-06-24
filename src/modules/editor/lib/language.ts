@@ -45,6 +45,22 @@ export function languageIdForPath(path: string): LanguageId {
   return EXTENSION_MAP[ext] ?? "plaintext";
 }
 
+/**
+ * Short, freeform language hint from a file path's extension, used to prime the
+ * inline-completion model. Unlike {@link languageIdForPath} this keeps the raw
+ * extension (e.g. "go", "java"), so it is not limited to the grammars we bundle.
+ * Falls back to "text" when there is no extension (including dotfiles).
+ */
+export function languageLabel(path: string): string {
+  const name = path.split(/[\\/]/).pop() ?? "";
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) {
+    return "text";
+  }
+  const ext = name.slice(dot + 1).toLowerCase();
+  return ext.length > 0 ? ext : "text";
+}
+
 /** Resolve the CodeMirror language extension for a path (empty for plaintext). */
 export function languageExtension(path: string): Extension[] {
   switch (languageIdForPath(path)) {
