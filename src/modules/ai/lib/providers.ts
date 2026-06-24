@@ -16,7 +16,7 @@ export const PROVIDERS: ProviderPreset[] = [
     label: "OpenAI",
     kind: "openai",
     baseUrl: "https://api.openai.com/v1",
-    models: ["gpt-4o", "gpt-4o-mini", "o1", "o3", "o3-mini"],
+    models: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.1", "o3"],
     needsKey: true,
   },
   {
@@ -33,9 +33,11 @@ export const PROVIDERS: ProviderPreset[] = [
     kind: "google",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     models: [
+      "gemini-3.5-flash",
+      "gemini-3.1-pro",
+      "gemini-3-flash",
       "gemini-2.5-pro",
       "gemini-2.5-flash",
-      "gemini-2.0-flash",
     ],
     needsKey: true,
   },
