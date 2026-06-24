@@ -12,6 +12,7 @@ import { Combobox } from "@/components/Combobox";
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { basename } from "@/modules/explorer/lib/paths";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { activeEditorPath, useTabsStore } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
 import {
   insertIntoActiveTerminal,
@@ -118,7 +119,9 @@ export function AIView() {
   const setTerminalContext = useChatStore((s) => s.setTerminalContext);
 
   const rootPath = useWorkspaceStore((s) => s.rootPath);
-  const activeFile = useWorkspaceStore((s) => s.activeFile);
+  // Derive the file in focus from the active tab/pane: the editor uses the tabs
+  // store, while workspaceStore.activeFile was never updated on tab navigation.
+  const activeFile = useTabsStore((s) => activeEditorPath(s.tabs, s.activeId));
 
   const provider = providerById(providerId);
   const [hasKey, setHasKey] = useState(true);

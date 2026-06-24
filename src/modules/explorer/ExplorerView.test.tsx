@@ -8,7 +8,7 @@ import { ExplorerView } from "./ExplorerView";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 beforeEach(() => {
-  useWorkspaceStore.setState({ rootPath: null, openFiles: [], activeFile: null });
+  useWorkspaceStore.setState({ rootPath: null });
 });
 
 describe("ExplorerView remote root", () => {
