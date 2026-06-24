@@ -5,78 +5,140 @@ import { relaunch } from "@tauri-apps/plugin-process";
 // Where a given version's release notes live, so the modal can deep-link out.
 const RELEASE_TAG_BASE = "https://github.com/mukiwu/tempo-term/releases/tag/v";
 
-export type UpdaterStatus = "idle" | "checking" | "upToDate" | "available" | "error";
+export type UpdaterStatus = "idle" | "checking" | "upToDate" | "error";
 
-interface UpdaterState {
-  status: UpdaterStatus;
+export interface AvailableUpdate {
   version: string;
   notes: string;
   releaseUrl: string;
-  update: Update | null;
+  update: Update;
+}
+
+interface UpdaterState {
+  /** Feedback for the manual check only; never "available" (that is `available`). */
+  status: UpdaterStatus;
+  /** Single source of truth that a newer build exists; drives the status-bar dot. */
+  available: AvailableUpdate | null;
+  /** Whether the UpdateModal is shown. */
+  modalOpen: boolean;
+  /** Transient corner toast to render, or null. */
+  toast: { version: string } | null;
+  /** Versions already surfaced this session (modal or toast); resets on relaunch. */
+  notifiedVersions: string[];
   installing: boolean;
   errorMessage: string;
-  /**
-   * Ask the update server whether a newer build exists. A `silent` check (run
-   * in the background on launch) only ever flips to "available"; it never shows
-   * the "up to date" or error states, so the user isn't nagged on every start.
-   */
-  checkForUpdate: (opts?: { silent?: boolean }) => Promise<void>;
-  /** Download + install the pending update, then relaunch into it. */
+  /** Launch-time silent check: opens the modal directly on a hit. */
+  runLaunchCheck: () => Promise<void>;
+  /** Interval silent check: toasts once per session per version, never nags. */
+  runPeriodicCheck: () => Promise<void>;
+  /** Manual check from settings: surfaces checking/upToDate/error, opens modal on a hit. */
+  checkManually: () => Promise<void>;
+  openModal: () => void;
+  dismissModal: () => void;
+  clearToast: () => void;
   installUpdate: () => Promise<void>;
-  /** Close the update prompt without installing. */
-  dismiss: () => void;
 }
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : "unexpected error";
 }
 
+/**
+ * Ask the update server for a newer build. A silent check never touches `status`
+ * (no "up to date"/"error" nagging); a visible check drives it. Always sets
+ * `available` on a hit and returns it so callers decide how to present it.
+ */
+async function runCheck(
+  apply: (partial: Partial<UpdaterState>) => void,
+  silent: boolean,
+): Promise<AvailableUpdate | null> {
+  if (!silent) {
+    apply({ status: "checking", errorMessage: "" });
+  }
+  try {
+    const update = await check();
+    if (update) {
+      const found: AvailableUpdate = {
+        version: update.version,
+        notes: update.body ?? "",
+        releaseUrl: `${RELEASE_TAG_BASE}${update.version}`,
+        update,
+      };
+      apply({ available: found });
+      return found;
+    }
+    if (!silent) {
+      apply({ status: "upToDate" });
+    }
+    return null;
+  } catch (err: unknown) {
+    if (!silent) {
+      apply({ status: "error", errorMessage: messageOf(err) });
+    }
+    return null;
+  }
+}
+
 export const useUpdaterStore = create<UpdaterState>((set, get) => ({
   status: "idle",
-  version: "",
-  notes: "",
-  releaseUrl: "",
-  update: null,
+  available: null,
+  modalOpen: false,
+  toast: null,
+  notifiedVersions: [],
   installing: false,
   errorMessage: "",
 
-  checkForUpdate: async (opts) => {
-    if (!opts?.silent) {
-      set({ status: "checking", errorMessage: "" });
-    }
-    try {
-      const update = await check();
-      if (update) {
-        set({
-          status: "available",
-          version: update.version,
-          notes: update.body ?? "",
-          releaseUrl: `${RELEASE_TAG_BASE}${update.version}`,
-          update,
-        });
-      } else if (!opts?.silent) {
-        set({ status: "upToDate" });
-      }
-    } catch (err: unknown) {
-      if (!opts?.silent) {
-        set({ status: "error", errorMessage: messageOf(err) });
-      }
+  runLaunchCheck: async () => {
+    const found = await runCheck((p) => set(p), true);
+    if (found) {
+      get().openModal();
     }
   },
 
+  runPeriodicCheck: async () => {
+    const found = await runCheck((p) => set(p), true);
+    if (found && !get().notifiedVersions.includes(found.version)) {
+      set((s) => ({
+        toast: { version: found.version },
+        notifiedVersions: [...s.notifiedVersions, found.version],
+      }));
+    }
+  },
+
+  checkManually: async () => {
+    const found = await runCheck((p) => set(p), false);
+    if (found) {
+      get().openModal();
+    }
+  },
+
+  openModal: () => {
+    const a = get().available;
+    set((s) => ({
+      modalOpen: true,
+      toast: null,
+      notifiedVersions:
+        a && !s.notifiedVersions.includes(a.version)
+          ? [...s.notifiedVersions, a.version]
+          : s.notifiedVersions,
+    }));
+  },
+
+  dismissModal: () => set({ modalOpen: false }),
+
+  clearToast: () => set({ toast: null }),
+
   installUpdate: async () => {
-    const { update } = get();
-    if (!update) {
+    const a = get().available;
+    if (!a) {
       return;
     }
     set({ installing: true, errorMessage: "" });
     try {
-      await update.downloadAndInstall();
+      await a.update.downloadAndInstall();
       await relaunch();
     } catch (err: unknown) {
       set({ installing: false, status: "error", errorMessage: messageOf(err) });
     }
   },
-
-  dismiss: () => set({ status: "idle" }),
 }));

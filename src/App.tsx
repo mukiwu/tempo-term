@@ -83,11 +83,11 @@ function App() {
     }
   }, []);
 
-  // Quietly check for a new release a few seconds after launch; the prompt only
+  // Quietly check for a new release a few seconds after launch; the modal only
   // appears if one actually exists, so a normal start stays uninterrupted.
   useEffect(() => {
     const timer = setTimeout(() => {
-      void useUpdaterStore.getState().checkForUpdate({ silent: true });
+      void useUpdaterStore.getState().runLaunchCheck();
     }, 5000);
     return () => clearTimeout(timer);
   }, []);

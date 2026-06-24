@@ -23,9 +23,8 @@ export function AboutSettingsSection() {
   const [build, setBuild] = useState<AppBuildInfo | null>(null);
 
   const updaterStatus = useUpdaterStore((s) => s.status);
-  const updaterVersion = useUpdaterStore((s) => s.version);
   const updaterError = useUpdaterStore((s) => s.errorMessage);
-  const checkForUpdate = useUpdaterStore((s) => s.checkForUpdate);
+  const checkManually = useUpdaterStore((s) => s.checkManually);
 
   useEffect(() => {
     let active = true;
@@ -55,8 +54,6 @@ export function AboutSettingsSection() {
         return t("update.checking");
       case "upToDate":
         return t("update.upToDate");
-      case "available":
-        return t("update.available", { version: updaterVersion });
       case "error":
         return updaterError || t("update.checkFailed");
       default:
@@ -102,7 +99,7 @@ export function AboutSettingsSection() {
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => void checkForUpdate()}
+          onClick={() => void checkManually()}
           disabled={updaterStatus === "checking"}
           className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3.5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >

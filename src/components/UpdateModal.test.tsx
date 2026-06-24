@@ -7,16 +7,19 @@ import { useUpdaterStore } from "@/stores/updaterStore";
 describe("UpdateModal release notes", () => {
   beforeEach(() => {
     useUpdaterStore.setState({
-      status: "available",
-      version: "0.0.6",
-      notes: "## What's new\n\n- First item\n- Second item",
-      releaseUrl: "",
+      modalOpen: true,
+      available: {
+        version: "0.0.6",
+        notes: "## What's new\n\n- First item\n- Second item",
+        releaseUrl: "",
+        update: null as never,
+      },
       installing: false,
     });
   });
 
   afterEach(() => {
-    useUpdaterStore.setState({ status: "idle", notes: "", version: "" });
+    useUpdaterStore.setState({ modalOpen: false, available: null });
   });
 
   it("renders markdown notes as real heading and list elements", () => {
