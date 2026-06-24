@@ -194,6 +194,7 @@ export function AIView() {
           }}
           ariaLabel={t("provider")}
           className="min-w-0 flex-1"
+          textClassName="text-[13px]"
         />
         <Combobox
           value={model}
@@ -203,6 +204,7 @@ export function AIView() {
           editable
           placeholder={t("modelPlaceholder")}
           className="min-w-0 flex-1"
+          textClassName="text-[13px]"
         />
         <button
           type="button"

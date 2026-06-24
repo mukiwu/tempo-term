@@ -14,6 +14,8 @@ interface ComboboxProps {
   dropUp?: boolean;
   /** Compact trigger sizing for dense toolbars (e.g. a code block header). */
   size?: "sm" | "md";
+  /** Override the text size (trigger and options), e.g. "text-[13px]". */
+  textClassName?: string;
 }
 
 /**
@@ -31,12 +33,14 @@ export function Combobox({
   className,
   dropUp = false,
   size = "md",
+  textClassName,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const dense = size === "sm";
-  const fieldClass = dense ? "px-2 py-0.5 text-xs" : "px-3 py-2 text-sm";
-  const optionClass = dense ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm";
+  const textClass = textClassName ?? (dense ? "text-xs" : "text-sm");
+  const fieldClass = `${dense ? "px-2 py-0.5" : "px-3 py-2"} ${textClass}`;
+  const optionClass = `${dense ? "px-2 py-1" : "px-3 py-2"} ${textClass}`;
 
   useEffect(() => {
     if (!open) {
