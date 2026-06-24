@@ -1,4 +1,4 @@
-import { StateEffect, StateField, type Extension } from "@codemirror/state";
+import { Prec, StateEffect, StateField, type Extension } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -18,7 +18,9 @@ interface Suggestion {
   pos: number;
 }
 
-const setSuggestion = StateEffect.define<Suggestion | null>();
+/** Set or clear the current ghost suggestion. Exported so tests can arrange a
+ * suggestion directly without driving the debounced request pipeline. */
+export const setSuggestion = StateEffect.define<Suggestion | null>();
 
 /** Holds the ghost suggestion and renders it as a dim widget after the cursor.
  * Any edit or cursor move (that isn't the one setting the suggestion) clears it
@@ -160,9 +162,15 @@ export function inlineCompletion(request: CompletionRequest): Extension {
   return [
     suggestionField,
     plugin,
-    keymap.of([
-      { key: "Tab", run: acceptSuggestion },
-      { key: "Escape", run: dismissSuggestion },
-    ]),
+    // Prec.highest so accepting a suggestion beats editor setups (e.g.
+    // @uiw/react-codemirror's indentWithTab) that bind Tab to indentation.
+    // acceptSuggestion returns false when there is no ghost text, letting Tab
+    // fall through to indentation as usual.
+    Prec.highest(
+      keymap.of([
+        { key: "Tab", run: acceptSuggestion },
+        { key: "Escape", run: dismissSuggestion },
+      ]),
+    ),
   ];
 }
