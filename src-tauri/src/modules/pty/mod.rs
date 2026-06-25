@@ -1,7 +1,7 @@
 //! Pseudo-terminal module: spawns shells and bridges their IO to the frontend.
 
 mod session;
-mod shell;
+pub mod shell;
 
 pub use session::PtyState;
 
@@ -61,4 +61,11 @@ pub fn pty_close(state: State<'_, PtyState>, id: u32) {
 #[tauri::command]
 pub fn pty_close_all(state: State<'_, PtyState>) {
     session::close_all(&state);
+}
+
+/// Mirror the user's "suggest previous commands" setting into the backend, so
+/// shells opened afterwards load (or skip) the zsh-autosuggestions plugin.
+#[tauri::command]
+pub fn pty_set_suggestions(enabled: bool) {
+    shell::set_suggestions_enabled(enabled);
 }

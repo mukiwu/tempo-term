@@ -85,6 +85,8 @@
     "previewText": "$ tempo --version\nTempoTerm terminal padding preview",
     "restoreHistory": "Restore terminal history on relaunch",
     "restoreHistoryHint": "Reopen each terminal with its previous output (read-only), unless its shell was exited or the pane was closed",
+    "suggestions": "Suggest previous commands",
+    "suggestionsHint": "Show a dim completion from your shell history as you type; press → to accept",
     "clearHistory": "Clear saved history",
     "historyCleared": "Cleared"
   },

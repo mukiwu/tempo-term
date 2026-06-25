@@ -32,7 +32,7 @@ use modules::secrets::{
 };
 use modules::pty::{
     pty_close, pty_close_all, pty_cwd, pty_foreground_command, pty_open, pty_resize,
-    pty_shell_name, pty_write, PtyState,
+    pty_set_suggestions, pty_shell_name, pty_write, PtyState,
 };
 use modules::ssh::{
     ssh_close, ssh_forward_start, ssh_forward_stop, ssh_open, ssh_prompt_reply, ssh_resize,
@@ -107,6 +107,14 @@ pub fn run() {
             if let Ok(dir) = app.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(&dir);
                 modules::secrets::init_store_path(dir.join("secrets.enc"));
+                // Prepare the wrapper ZDOTDIR that loads the bundled
+                // zsh-autosuggestions plugin, if the resource resolves.
+                if let Ok(plugin) = app
+                    .path()
+                    .resolve("resources/zsh-autosuggestions.zsh", tauri::path::BaseDirectory::Resource)
+                {
+                    modules::pty::shell::init_autosuggest_zdotdir(&dir, &plugin);
+                }
             }
             modules::menu::init(app)?;
             Ok(())
@@ -168,6 +176,7 @@ pub fn run() {
             secrets_set_key,
             secrets_delete_key,
             secrets_has_key,
+            pty_set_suggestions,
             gh_available,
             pr_via_gh,
             pr_via_api,

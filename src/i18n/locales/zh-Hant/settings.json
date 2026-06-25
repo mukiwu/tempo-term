@@ -85,6 +85,8 @@
     "previewText": "$ tempo --version\nTempoTerm 終端機間距預覽",
     "restoreHistory": "重新啟動時還原終端機歷史",
     "restoreHistoryHint": "重開時把每個終端機的上次輸出以唯讀方式還原,除非該 shell 已結束或分頁已關閉",
+    "suggestions": "提示曾經輸入過的指令",
+    "suggestionsHint": "輸入時根據 shell 歷史以灰色顯示補完建議，按 → 接受",
     "clearHistory": "清除已儲存的歷史",
     "historyCleared": "已清除"
   },

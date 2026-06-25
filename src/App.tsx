@@ -21,6 +21,7 @@ import { leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { applyTheme, getTheme } from "@/themes/themes";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { useWatchSessions } from "@/modules/claude-progress/lib/useWatchSessions";
@@ -52,6 +53,7 @@ function App() {
   const { t } = useTranslation();
   const themeId = useSettingsStore((s) => s.themeId);
   const uiZoom = useSettingsStore((s) => s.uiZoom);
+  const terminalSuggestions = useSettingsStore((s) => s.terminalSuggestions);
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const [sidebarWidth, setSidebarWidth] = useState(260);
@@ -64,6 +66,13 @@ function App() {
   useEffect(() => {
     applyTheme(getTheme(themeId), document.documentElement);
   }, [themeId]);
+
+  // Mirror the terminal-suggestions setting into the backend so shells opened
+  // afterwards load (or skip) zsh-autosuggestions. invoke() rejects without a
+  // Tauri runtime (tests, web preview); ignore it.
+  useEffect(() => {
+    void invoke("pty_set_suggestions", { enabled: terminalSuggestions }).catch(() => {});
+  }, [terminalSuggestions]);
 
   // Scale the whole webview to the saved zoom (driven by ⌘+ / ⌘- / ⌘0). Native
   // webview zoom keeps the terminal's sizing math intact, unlike a CSS scale.

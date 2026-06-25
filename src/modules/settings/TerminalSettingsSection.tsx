@@ -14,6 +14,8 @@ export function TerminalSettingsSection() {
   const setTerminalPadding = useSettingsStore((s) => s.setTerminalPadding);
   const restoreTerminalHistory = useSettingsStore((s) => s.restoreTerminalHistory);
   const setRestoreTerminalHistory = useSettingsStore((s) => s.setRestoreTerminalHistory);
+  const terminalSuggestions = useSettingsStore((s) => s.terminalSuggestions);
+  const setTerminalSuggestions = useSettingsStore((s) => s.setTerminalSuggestions);
   const themeId = useSettingsStore((s) => s.themeId);
   const terminal = getTheme(themeId).terminal;
   const [cleared, setCleared] = useState(false);
@@ -56,6 +58,19 @@ export function TerminalSettingsSection() {
             {t("terminalSettings.previewText")}
           </pre>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
+          <input
+            type="checkbox"
+            checked={terminalSuggestions}
+            onChange={(e) => setTerminalSuggestions(e.target.checked)}
+            className="accent-accent"
+          />
+          {t("terminalSettings.suggestions")}
+        </label>
+        <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.suggestionsHint")}</p>
       </div>
 
       <div className="mb-6">

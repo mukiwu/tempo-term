@@ -3,6 +3,94 @@
 //! Kept free of side effects so the decision logic can be unit tested without
 //! spawning a real shell.
 
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
+
+/// Whether to enable fish-like command autosuggestions for new zsh shells. The
+/// frontend mirrors the user setting into this via `pty_set_suggestions`.
+static SUGGESTIONS_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// The prepared wrapper `ZDOTDIR` whose `.zshrc` sources the user's real config
+/// then the bundled zsh-autosuggestions plugin. Set once at app startup.
+static SUGGEST_ZDOTDIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+/// Mirror the user's "suggest previous commands" setting; read when spawning.
+pub fn set_suggestions_enabled(enabled: bool) {
+    SUGGESTIONS_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+fn suggestions_enabled() -> bool {
+    SUGGESTIONS_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Build the wrapper `ZDOTDIR` under `app_data_dir` whose startup files load the
+/// user's real zsh config and then `plugin_path`. Stores the result for later
+/// spawns. Idempotent and best-effort: a write failure simply disables the
+/// feature rather than blocking the shell. Call once during app setup.
+pub fn init_autosuggest_zdotdir(app_data_dir: &Path, plugin_path: &Path) {
+    SUGGEST_ZDOTDIR.get_or_init(|| build_wrapper_zdotdir(app_data_dir, plugin_path).ok());
+}
+
+fn build_wrapper_zdotdir(app_data_dir: &Path, plugin_path: &Path) -> std::io::Result<PathBuf> {
+    let dir = app_data_dir.join("zsh");
+    std::fs::create_dir_all(&dir)?;
+
+    // Each file falls back to the user's real ZDOTDIR ($_TEMPO_UZ, defaulting to
+    // $HOME) so the user's own config still loads. .zshrc then restores ZDOTDIR
+    // so the interactive session and .zlogin behave as if we were never here.
+    let user = r#"${_TEMPO_UZ:-$HOME}"#;
+    std::fs::write(
+        dir.join(".zshenv"),
+        format!("[[ -f \"{user}/.zshenv\" ]] && source \"{user}/.zshenv\"\n"),
+    )?;
+    std::fs::write(
+        dir.join(".zprofile"),
+        format!("[[ -f \"{user}/.zprofile\" ]] && source \"{user}/.zprofile\"\n"),
+    )?;
+    let plugin = plugin_path.to_string_lossy();
+    std::fs::write(
+        dir.join(".zshrc"),
+        format!(
+            "[[ -f \"{user}/.zshrc\" ]] && source \"{user}/.zshrc\"\n\
+             ZDOTDIR=\"{user}\"\n\
+             unset _TEMPO_UZ\n\
+             [[ -f \"{plugin}\" ]] && source \"{plugin}\"\n"
+        ),
+    )?;
+    Ok(dir)
+}
+
+/// The `(key, value)` environment pairs to inject so a freshly spawned `shell`
+/// loads zsh-autosuggestions. Empty unless the feature is enabled, the shell is
+/// zsh, and the wrapper was prepared — so non-zsh shells are untouched.
+pub fn autosuggest_env(shell: &str) -> Vec<(String, String)> {
+    if !suggestions_enabled() || !is_zsh(shell) {
+        return Vec::new();
+    }
+    let Some(Some(zdotdir)) = SUGGEST_ZDOTDIR.get() else {
+        return Vec::new();
+    };
+    // Remember the user's real ZDOTDIR (default $HOME) before we override it, so
+    // the wrapper can still source their config.
+    let user_zdotdir =
+        std::env::var("ZDOTDIR").unwrap_or_else(|_| std::env::var("HOME").unwrap_or_default());
+    vec![
+        ("_TEMPO_UZ".to_string(), user_zdotdir),
+        ("ZDOTDIR".to_string(), zdotdir.to_string_lossy().into_owned()),
+    ]
+}
+
+/// True when the shell path is some flavour of zsh (the only shell the bundled
+/// autosuggestions plugin supports).
+fn is_zsh(shell: &str) -> bool {
+    Path::new(shell)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|name| name == "zsh" || name == "-zsh")
+        .unwrap_or(false)
+}
+
 /// Pick the shell program. A non-empty `$SHELL` wins, otherwise fall back to a
 /// sensible per-platform default.
 pub fn resolve_shell_from(shell_env: Option<String>) -> String {
@@ -145,6 +233,23 @@ mod tests {
         let env = terminal_env(None, None, Some("en_US.UTF-8".to_string()));
         assert!(env.contains(&("TERM".to_string(), "xterm-256color".to_string())));
         assert!(env.contains(&("COLORTERM".to_string(), "truecolor".to_string())));
+    }
+
+    #[test]
+    fn detects_zsh_only() {
+        assert!(is_zsh("/bin/zsh"));
+        assert!(is_zsh("/opt/homebrew/bin/zsh"));
+        assert!(is_zsh("-zsh"));
+        assert!(!is_zsh("/bin/bash"));
+        assert!(!is_zsh("/usr/local/bin/fish"));
+    }
+
+    #[test]
+    fn autosuggest_env_is_empty_for_non_zsh() {
+        // Even with the feature toggled on, a non-zsh shell gets no env changes.
+        set_suggestions_enabled(true);
+        assert!(autosuggest_env("/bin/bash").is_empty());
+        set_suggestions_enabled(false);
     }
 
     fn has_utf8(env: &[(String, String)], key: &str) -> bool {

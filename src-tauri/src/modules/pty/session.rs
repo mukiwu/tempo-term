@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtyPair, PtySize};
 use tauri::ipc::{Channel, Response};
 
-use super::shell::{login_args, resolve_shell, terminal_env, usable_cwd};
+use super::shell::{autosuggest_env, login_args, resolve_shell, terminal_env, usable_cwd};
 
 /// A single live terminal session.
 pub struct Session {
@@ -79,6 +79,12 @@ fn build_shell_command(cwd: Option<String>) -> (CommandBuilder, String) {
     // inside tempo-term. The session-status hook only emits when it sees this,
     // so Claude sessions in other terminals never touch our UI.
     cmd.env("TEMPOTERM", "1");
+
+    // When enabled, point zsh at a wrapper ZDOTDIR that loads the user's config
+    // and then the bundled autosuggestions plugin. No-op for non-zsh shells.
+    for (key, value) in autosuggest_env(&shell) {
+        cmd.env(key, value);
+    }
 
     let shell_name = Path::new(&shell)
         .file_name()
