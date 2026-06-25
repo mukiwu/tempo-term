@@ -24,6 +24,13 @@ const SIDEBAR_TABS: SidebarTab[] = [
   { id: "connections", icon: Server, labelKey: "nav.connections" },
 ];
 
+/**
+ * The sidebar panels in their displayed left-to-right order, so ⌥1…⌥6 can map a
+ * number to the matching panel. Kept beside SIDEBAR_TABS so the order never
+ * drifts from what the icon bar renders.
+ */
+export const SIDEBAR_VIEW_ORDER: SidebarView[] = SIDEBAR_TABS.map((tab) => tab.id);
+
 export function Sidebar() {
   const { t } = useTranslation();
   const sidebarView = useUiStore((s) => s.sidebarView);

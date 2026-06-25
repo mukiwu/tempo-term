@@ -13,6 +13,26 @@ import { liveSessionsStore } from "@/modules/ssh/lib/liveSessionsStore";
 function isPtySession(s: PtySession | SshSession): s is PtySession {
   return "cwd" in s;
 }
+
+/**
+ * True for the global shortcuts the app handles at the window level (⌘/Ctrl+1-9
+ * switch tab, ⌥1-9 switch sidebar, ⌘/Ctrl +/-/0 zoom the UI). `code` is used
+ * over `key` so it still matches when a modifier rewrites the character (macOS
+ * ⌥1 yields "¡"). The terminal must let these pass through to the window handler
+ * rather than typing them into the shell.
+ */
+function isAppShortcut(event: KeyboardEvent): boolean {
+  const cmd = event.metaKey || event.ctrlKey;
+  if (/^(?:Digit|Numpad)[1-9]$/.test(event.code)) {
+    const switchTab = cmd && !event.shiftKey && !event.altKey;
+    const switchSidebar = event.altKey && !event.metaKey && !event.ctrlKey;
+    return switchTab || switchSidebar;
+  }
+  if (/^(?:Equal|Minus|Digit0|NumpadAdd|NumpadSubtract|Numpad0|Backquote)$/.test(event.code)) {
+    return cmd && !event.altKey;
+  }
+  return false;
+}
 import { useConnectionsStore } from "@/stores/connectionsStore";
 import {
   deleteTerminalHistory,
@@ -292,6 +312,14 @@ export function TerminalView({
     // method mid-composition sends the text to the PTY twice.
     term.attachCustomKeyEventHandler((event) => {
       if (event.type === "keydown" && (event.isComposing || event.keyCode === 229)) {
+        return false;
+      }
+      // App-level shortcuts (⌘/Ctrl+1-9 switch tab, ⌥1-9 switch sidebar,
+      // ⌘/Ctrl +/-/0 zoom) must not be typed into the shell. Returning false
+      // lets them bubble to the window handler instead; preventDefault stops
+      // xterm's hidden textarea from emitting the character (e.g. macOS ⌥-symbols).
+      if (event.type === "keydown" && isAppShortcut(event)) {
+        event.preventDefault();
         return false;
       }
       // Standard terminal editing shortcuts (Shift+Enter, word/line nav, word

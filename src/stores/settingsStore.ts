@@ -7,6 +7,11 @@ export const MIN_TERMINAL_PADDING = 0;
 export const MAX_TERMINAL_PADDING = 40;
 export const DEFAULT_TERMINAL_PADDING = 10;
 
+export const MIN_UI_ZOOM = 0.5;
+export const MAX_UI_ZOOM = 2;
+export const UI_ZOOM_STEP = 0.1;
+export const DEFAULT_UI_ZOOM = 1;
+
 /** Which info blocks each workspace card shows; all on by default. */
 export interface WorkspaceCardBlocks {
   status: boolean;
@@ -43,6 +48,8 @@ interface SettingsState {
   claudeStatusTracking: boolean;
   /** Show AI ghost-text completions while typing in the code editor. */
   aiInlineCompletion: boolean;
+  /** Webview zoom factor for the whole UI (1 = 100%); driven by ⌘+ / ⌘-. */
+  uiZoom: number;
   setLanguage: (language: SupportedLanguage) => void;
   setThemeId: (themeId: string) => void;
   setTerminalPadding: (padding: number) => void;
@@ -53,6 +60,9 @@ interface SettingsState {
   setPrSource: (source: WorkspacePrSource) => void;
   setClaudeStatusTracking: (value: boolean) => void;
   setAiInlineCompletion: (value: boolean) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetZoom: () => void;
 }
 
 export const SETTINGS_STORAGE_KEY = "tempoterm-settings";
@@ -62,6 +72,15 @@ function clampPadding(value: number): number {
     return DEFAULT_TERMINAL_PADDING;
   }
   return Math.min(MAX_TERMINAL_PADDING, Math.max(MIN_TERMINAL_PADDING, Math.round(value)));
+}
+
+function clampZoom(value: number): number {
+  if (Number.isNaN(value)) {
+    return DEFAULT_UI_ZOOM;
+  }
+  const clamped = Math.min(MAX_UI_ZOOM, Math.max(MIN_UI_ZOOM, value));
+  // Round to one decimal so repeated steps don't drift (1.1 + 0.1 = 1.2, not 1.2000001).
+  return Math.round(clamped * 10) / 10;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -77,6 +96,7 @@ export const useSettingsStore = create<SettingsState>()(
       prSource: "auto",
       claudeStatusTracking: true,
       aiInlineCompletion: false,
+      uiZoom: DEFAULT_UI_ZOOM,
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
@@ -88,6 +108,9 @@ export const useSettingsStore = create<SettingsState>()(
       setPrSource: (prSource) => set({ prSource }),
       setClaudeStatusTracking: (value) => set({ claudeStatusTracking: value }),
       setAiInlineCompletion: (value) => set({ aiInlineCompletion: value }),
+      zoomIn: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom + UI_ZOOM_STEP) })),
+      zoomOut: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom - UI_ZOOM_STEP) })),
+      resetZoom: () => set({ uiZoom: DEFAULT_UI_ZOOM }),
     }),
     {
       name: SETTINGS_STORAGE_KEY,

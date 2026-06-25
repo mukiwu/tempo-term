@@ -8,6 +8,7 @@ import {
   findPaneContent,
   firstLeafId,
   leaf,
+  leafIds,
   paneOf,
   removeLeaf,
   setLeafPane,
@@ -83,6 +84,8 @@ interface TabsState {
   reorderTab: (activeId: string, overId: string) => void;
   splitActivePane: (direction: SplitDirection) => void;
   setActiveLeaf: (tabId: string, leafId: string) => void;
+  /** Cycle the active tab's focused pane to the next leaf (⌘`); wraps around. */
+  focusNextPane: () => void;
   resizePane: (tabId: string, splitId: string, sizes: [number, number]) => void;
   /** Split a pane and show `content` (terminal/editor/note/preview) in the new half. */
   splitPaneWith: (
@@ -591,6 +594,27 @@ export const useTabsStore = create<TabsState>()(
         tab.id === tabId ? { ...tab, activeLeafId: leafId } : tab,
       ),
     })),
+
+  focusNextPane: () =>
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === state.activeId);
+      if (!tab) {
+        return state;
+      }
+      // Walk the leaves in their reading order; a single-pane tab has nothing
+      // to cycle to.
+      const ids = leafIds(tab.paneTree);
+      if (ids.length <= 1) {
+        return state;
+      }
+      const current = ids.indexOf(tab.activeLeafId);
+      const next = ids[(current + 1) % ids.length];
+      return {
+        tabs: state.tabs.map((t) =>
+          t.id === tab.id ? { ...t, activeLeafId: next } : t,
+        ),
+      };
+    }),
 
   resizePane: (tabId, splitId, sizes) =>
     set((state) => ({

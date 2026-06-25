@@ -111,6 +111,30 @@ describe("tabsStore", () => {
     expect(leafIds(activeTab().paneTree)).toHaveLength(2);
   });
 
+  it("cycles the active pane through the leaves and wraps around", () => {
+    useTabsStore.getState().newTerminalTab();
+    useTabsStore.getState().splitActivePane("row");
+    useTabsStore.getState().splitActivePane("col");
+    const ids = leafIds(activeTab().paneTree);
+    expect(ids).toHaveLength(3);
+
+    // Start from the first leaf, then step through every pane and back to start.
+    useTabsStore.getState().setActiveLeaf(activeTab().id, ids[0]);
+    useTabsStore.getState().focusNextPane();
+    expect(activeTab().activeLeafId).toBe(ids[1]);
+    useTabsStore.getState().focusNextPane();
+    expect(activeTab().activeLeafId).toBe(ids[2]);
+    useTabsStore.getState().focusNextPane();
+    expect(activeTab().activeLeafId).toBe(ids[0]);
+  });
+
+  it("leaves the active pane unchanged when the tab has a single pane", () => {
+    useTabsStore.getState().newTerminalTab();
+    const only = activeTab().activeLeafId;
+    useTabsStore.getState().focusNextPane();
+    expect(activeTab().activeLeafId).toBe(only);
+  });
+
   it("splits a pane with the given content and activates it", () => {
     useTabsStore.getState().newTerminalTab();
     const tab = activeTab();

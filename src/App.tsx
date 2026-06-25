@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TabBar } from "@/components/TabBar";
-import { Sidebar } from "@/components/Sidebar";
+import { Sidebar, SIDEBAR_VIEW_ORDER } from "@/components/Sidebar";
 import { Resizer } from "@/components/Resizer";
 import { StatusBar } from "@/components/StatusBar";
 import { SettingsModal } from "@/components/SettingsModal";
@@ -21,6 +21,7 @@ import { leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { applyTheme, getTheme } from "@/themes/themes";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { useWatchSessions } from "@/modules/claude-progress/lib/useWatchSessions";
 import { installStatusHook, installCodexStatusHook } from "@/modules/claude-progress/lib/statusHookBridge";
@@ -37,9 +38,20 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * The 1-9 a number-row key represents, read from `code` rather than `key` so it
+ * survives modifiers that rewrite the character — on macOS ⌥1 yields "¡", not
+ * "1". Returns null for any non-1-9 key.
+ */
+function digitFromCode(code: string): number | null {
+  const match = /^(?:Digit|Numpad)([1-9])$/.exec(code);
+  return match ? Number(match[1]) : null;
+}
+
 function App() {
   const { t } = useTranslation();
   const themeId = useSettingsStore((s) => s.themeId);
+  const uiZoom = useSettingsStore((s) => s.uiZoom);
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const [sidebarWidth, setSidebarWidth] = useState(260);
@@ -52,6 +64,18 @@ function App() {
   useEffect(() => {
     applyTheme(getTheme(themeId), document.documentElement);
   }, [themeId]);
+
+  // Scale the whole webview to the saved zoom (driven by ⌘+ / ⌘- / ⌘0). Native
+  // webview zoom keeps the terminal's sizing math intact, unlike a CSS scale.
+  // getCurrentWebview() throws without a Tauri runtime (tests, web preview), so
+  // guard the whole call.
+  useEffect(() => {
+    try {
+      void getCurrentWebview().setZoom(uiZoom).catch(() => {});
+    } catch {
+      // No Tauri webview available; nothing to zoom.
+    }
+  }, [uiZoom]);
 
   // The font report (enumerating every installed family) is loaded lazily by
   // the Fonts settings section when it opens, not at startup — the terminal's
@@ -134,9 +158,62 @@ function App() {
   // Global keyboard shortcuts.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      const digit = digitFromCode(e.code);
+
+      // ⌥1…⌥6 jump straight to a sidebar panel by its position in the icon bar.
+      if (digit !== null && e.altKey && !e.metaKey && !e.ctrlKey) {
+        const view = SIDEBAR_VIEW_ORDER[digit - 1];
+        if (view) {
+          e.preventDefault();
+          useUiStore.getState().selectSidebar(view);
+        }
+        return;
+      }
+
       if (!(e.metaKey || e.ctrlKey)) {
         return;
       }
+
+      // ⌘1…⌘9 switch to the Nth tab of the active space (matching the tab bar).
+      if (digit !== null && !e.shiftKey && !e.altKey) {
+        const state = useTabsStore.getState();
+        const spaceTabs = state.tabs.filter((t) => t.spaceId === state.activeSpaceId);
+        const target = spaceTabs[digit - 1];
+        if (target) {
+          e.preventDefault();
+          state.setActive(target.id);
+        }
+        return;
+      }
+
+      // ⌘` cycles focus through the panes of the active tab (⌘~ works too, since
+      // both sit on the Backquote key). No-op with one pane.
+      if (e.code === "Backquote" && !e.altKey) {
+        e.preventDefault();
+        useTabsStore.getState().focusNextPane();
+        return;
+      }
+
+      // Zoom the whole UI. `code` is used so it works regardless of layout/Shift:
+      // the "=" key (⌘= or ⌘+) zooms in, "-" zooms out, "0" resets to 100%.
+      if (!e.altKey) {
+        if (e.code === "Equal" || e.code === "NumpadAdd") {
+          e.preventDefault();
+          useSettingsStore.getState().zoomIn();
+          return;
+        }
+        if (e.code === "Minus" || e.code === "NumpadSubtract") {
+          e.preventDefault();
+          useSettingsStore.getState().zoomOut();
+          return;
+        }
+        if (e.code === "Digit0" || e.code === "Numpad0") {
+          e.preventDefault();
+          useSettingsStore.getState().resetZoom();
+          return;
+        }
+      }
+
       const key = e.key.toLowerCase();
       if (key === "t") {
         e.preventDefault();

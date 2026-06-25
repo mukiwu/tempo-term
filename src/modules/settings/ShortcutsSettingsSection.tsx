@@ -23,8 +23,13 @@ const GROUPS: ShortcutGroup[] = [
       { labelKey: "shortcutsList.newTab", keys: `${MOD} T` },
       { labelKey: "shortcutsList.newTerminalTab", keys: `${MOD} ${SHIFT} T` },
       { labelKey: "shortcutsList.closeTab", keys: `${MOD} W` },
+      { labelKey: "shortcutsList.switchTab", keys: `${MOD} 1–9` },
+      { labelKey: "shortcutsList.switchSidebar", keys: `${ALT} 1–6` },
       { labelKey: "shortcutsList.findFiles", keys: `${MOD} P` },
       { labelKey: "shortcutsList.toggleSidebar", keys: `${MOD} B` },
+      { labelKey: "shortcutsList.zoomIn", keys: `${MOD} +` },
+      { labelKey: "shortcutsList.zoomOut", keys: `${MOD} -` },
+      { labelKey: "shortcutsList.resetZoom", keys: `${MOD} 0` },
       { labelKey: "shortcutsList.settings", keys: `${MOD} ,` },
     ],
   },
@@ -33,6 +38,7 @@ const GROUPS: ShortcutGroup[] = [
     items: [
       { labelKey: "shortcutsList.splitRight", keys: `${MOD} D` },
       { labelKey: "shortcutsList.splitDown", keys: `${MOD} ${SHIFT} D` },
+      { labelKey: "shortcutsList.cyclePane", keys: `${MOD} \`` },
     ],
   },
   {

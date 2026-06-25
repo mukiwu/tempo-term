@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   FilePlus,
@@ -58,6 +58,8 @@ interface LauncherGroup {
 export function LauncherPanel({ target }: LauncherPanelProps) {
   const { t } = useTranslation();
   const [sshFormOpen, setSshFormOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
   const newTerminalTab = useTabsStore((s) => s.newTerminalTab);
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
@@ -70,6 +72,17 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
   const createNote = useNotesStore((s) => s.createNote);
 
   const resolved: LauncherTarget = target ?? { mode: "newTab" };
+
+  // Whether this launcher is the focused pane. A new-tab launcher is always
+  // "active"; a split launcher follows its tab's active leaf, so cycling panes
+  // with ⌘` moves keyboard focus into it.
+  const isActivePane = useTabsStore((s) => {
+    if (resolved.mode !== "replacePane") {
+      return true;
+    }
+    const tab = s.tabs.find((t) => t.id === resolved.tabId);
+    return tab?.activeLeafId === resolved.leafId;
+  });
 
   // Land the chosen content either by filling the split pane in place, or by
   // opening a new tab (and closing the launcher tab it replaces).
@@ -190,9 +203,44 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
     },
   ];
 
+  // All actions in display order, so the arrow keys can walk one flat list
+  // across both groups. Index into this for the highlighted row.
+  const flatActions = groups.flatMap((group) => group.actions);
+
+  // Take focus when this launcher becomes the active pane (a fresh ⌘D / ⌘⇧D
+  // split, or cycled into with ⌘`) so the arrow keys drive the list straight
+  // away without a click first.
+  useEffect(() => {
+    if (isActivePane) {
+      rootRef.current?.focus();
+    }
+  }, [isActivePane]);
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    // While the SSH form is open it owns the keyboard; let it through.
+    if (sshFormOpen || flatActions.length === 0) {
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex((i) => (i + 1) % flatActions.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex((i) => (i - 1 + flatActions.length) % flatActions.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      void flatActions[selectedIndex]?.run();
+    }
+  }
+
   return (
     <>
-      <div className="flex h-full flex-col items-center justify-center gap-6 px-4 bg-bg text-fg-subtle">
+      <div
+        ref={rootRef}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className="flex h-full flex-col items-center justify-center gap-6 px-4 bg-bg text-fg-subtle outline-none"
+      >
         <p className="text-center text-sm">{t("workspace.launcherHint")}</p>
         <div className="flex w-full max-w-72 flex-col gap-5">
           {groups.map((group) => (
@@ -201,23 +249,31 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
                 {group.label}
               </h3>
               <ul className="divide-y divide-border">
-                {group.actions.map(({ key, label, icon: Icon, shortcut, run }) => (
-                  <li key={key}>
-                    <button
-                      type="button"
-                      onClick={() => void run()}
-                      className="flex w-full items-center gap-2.5 rounded-md px-2 py-2.5 text-sm text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
-                    >
-                      <Icon size={16} className="shrink-0" />
-                      <span className="flex-1 text-left">{label}</span>
-                      {shortcut && (
-                        <kbd className="shrink-0 rounded border border-border-strong bg-bg-inset px-2 py-0.5 font-mono text-xs text-fg">
-                          {shortcut}
-                        </kbd>
-                      )}
-                    </button>
-                  </li>
-                ))}
+                {group.actions.map(({ key, label, icon: Icon, shortcut, run }) => {
+                  const index = flatActions.findIndex((a) => a.key === key);
+                  const selected = index === selectedIndex;
+                  return (
+                    <li key={key}>
+                      <button
+                        type="button"
+                        onClick={() => void run()}
+                        onMouseEnter={() => setSelectedIndex(index)}
+                        aria-selected={selected}
+                        className={`flex w-full items-center gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors ${
+                          selected ? "bg-bg-elevated text-fg" : "text-fg-muted"
+                        }`}
+                      >
+                        <Icon size={16} className="shrink-0" />
+                        <span className="flex-1 text-left">{label}</span>
+                        {shortcut && (
+                          <kbd className="shrink-0 rounded border border-border-strong bg-bg-inset px-2 py-0.5 font-mono text-xs text-fg">
+                            {shortcut}
+                          </kbd>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
