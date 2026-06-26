@@ -12,6 +12,16 @@ export const IS_MAC =
     navigator.userAgent?.toLowerCase().includes("mac") ||
     false);
 
+/**
+ * Windows detection, used to swap in a custom title bar (the native one is
+ * hidden via decorations) while macOS keeps its overlay title bar.
+ */
+export const IS_WINDOWS =
+  typeof navigator !== "undefined" &&
+  (navigator.platform?.toLowerCase().includes("win") ||
+    navigator.userAgent?.toLowerCase().includes("win") ||
+    false);
+
 type ModifierEvent = Pick<MouseEvent, "altKey" | "metaKey" | "ctrlKey">;
 
 /** Whether a click carries the platform's open-link modifier. */

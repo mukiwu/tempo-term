@@ -30,6 +30,7 @@ import {
 import { useTabsStore, tabHasDirtyEditor, type Tab } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
 import { useUiStore } from "@/stores/uiStore";
+import { IS_MAC } from "@/lib/platform";
 import { SpaceDropdown } from "./SpaceDropdown";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -213,7 +214,9 @@ export function TabBar() {
   return (
     <header
       data-tauri-drag-region
-      className="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-bg-inset pl-20 pr-2"
+      className={`flex h-9 shrink-0 items-center gap-1 border-b border-border bg-bg-inset pr-2 ${
+        IS_MAC ? "pl-20" : "pl-3"
+      }`}
     >
       <button
         type="button"

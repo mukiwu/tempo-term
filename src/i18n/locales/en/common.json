@@ -55,6 +55,11 @@
     "language": "Language",
     "updateAvailable": "Update available"
   },
+  "titleBar": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "close": "Close"
+  },
   "actions": {
     "newTab": "New Tab",
     "closeTab": "Close Tab",

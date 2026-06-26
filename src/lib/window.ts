@@ -14,6 +14,23 @@ export function isMainWindow(): boolean {
   }
 }
 
+/**
+ * Window-control actions for the custom Windows title bar. They drive the
+ * minimize / maximize-restore / close buttons; on macOS the native overlay
+ * title bar handles this, so these are only wired up in the Windows TitleBar.
+ */
+export function minimizeWindow(): Promise<void> {
+  return getCurrentWindow().minimize();
+}
+
+export function toggleMaximizeWindow(): Promise<void> {
+  return getCurrentWindow().toggleMaximize();
+}
+
+export function closeWindow(): Promise<void> {
+  return getCurrentWindow().close();
+}
+
 // Private to this webview, so each secondary window gets its own isolated copy
 // and never touches localStorage (which is shared across windows of the origin).
 const memoryBacking = new Map<string, string>();

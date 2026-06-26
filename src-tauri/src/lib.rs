@@ -102,6 +102,12 @@ pub fn run() {
                         let _ = window.center();
                     }
                 }
+                // Windows draws a custom React title bar (see TitleBar.tsx), so
+                // hide the native window frame. macOS keeps its overlay title bar.
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = window.set_decorations(false);
+                }
             }
             // Resolve the encrypted secrets file once; create the data dir so
             // the first write succeeds on a fresh install.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TabBar } from "@/components/TabBar";
+import { TitleBar } from "@/components/TitleBar";
 import { Sidebar, SIDEBAR_VIEW_ORDER } from "@/components/Sidebar";
 import { Resizer } from "@/components/Resizer";
 import { StatusBar } from "@/components/StatusBar";
@@ -313,6 +314,7 @@ function App() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-fg">
+      <TitleBar />
       <TabBar />
 
       <div className="flex min-h-0 flex-1">
