@@ -13,6 +13,10 @@ export function ActionCard({ actions, onRun }: ActionCardProps) {
   // The command awaiting a destructive-action confirmation, or null when the
   // plain action list is showing.
   const [pending, setPending] = useState<string | null>(null);
+  // Hover is tracked with JS mouse events rather than CSS :hover: this card pops
+  // up dynamically and Tauri's WKWebview doesn't reliably recompute :hover for
+  // elements that appear under the pointer, though mouse events still fire.
+  const [hovered, setHovered] = useState<string | null>(null);
 
   function handleClick(command: string) {
     if (isDangerousCommand(command)) {
@@ -58,25 +62,28 @@ export function ActionCard({ actions, onRun }: ActionCardProps) {
 
   return (
     <div className="flex flex-col rounded-md border border-border-strong bg-bg-elevated py-1 shadow-lg">
-      {actions.map((action) => (
-        <button
-          key={action.command}
-          type="button"
-          className="group flex items-center gap-2 px-2.5 py-1 text-left text-xs hover:bg-border"
-          onClick={() => handleClick(action.command)}
-        >
-          <span className="min-w-16 font-medium text-fg">{t(action.labelKey)}</span>
-          {/* command + arrow turn accent while the row is hovered, signalling it
-              is the runnable target */}
-          <code className="font-mono text-fg-subtle group-hover:text-accent">
-            {action.command}
-          </code>
-          <ArrowRight
-            size={13}
-            className="ml-auto shrink-0 text-fg-subtle group-hover:text-accent"
-          />
-        </button>
-      ))}
+      {actions.map((action) => {
+        // command + arrow turn accent while the row is hovered, signalling it is
+        // the runnable target.
+        const isHovered = hovered === action.command;
+        const accent = isHovered ? "text-accent" : "text-fg-subtle";
+        return (
+          <button
+            key={action.command}
+            type="button"
+            className={`flex items-center gap-2 px-2.5 py-1 text-left text-xs ${
+              isHovered ? "bg-border" : ""
+            }`}
+            onClick={() => handleClick(action.command)}
+            onMouseEnter={() => setHovered(action.command)}
+            onMouseLeave={() => setHovered((h) => (h === action.command ? null : h))}
+          >
+            <span className="min-w-16 font-medium text-fg">{t(action.labelKey)}</span>
+            <code className={`font-mono ${accent}`}>{action.command}</code>
+            <ArrowRight size={13} className={`ml-auto shrink-0 ${accent}`} />
+          </button>
+        );
+      })}
     </div>
   );
 }

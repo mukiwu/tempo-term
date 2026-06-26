@@ -18,6 +18,24 @@ describe("ActionCard", () => {
     expect(onRun).toHaveBeenCalledWith("ping 1.2.3.4");
   });
 
+  it("tints the command on hover via mouse events (not CSS :hover)", () => {
+    render(
+      <ActionCard actions={[{ labelKey: "actionLinks.ping", command: "ping 1.2.3.4" }]} onRun={vi.fn()} />,
+    );
+    const row = screen.getByRole("button", { name: /ping 1\.2\.3\.4/ });
+    const command = screen.getByText("ping 1.2.3.4");
+
+    expect(command.className).toContain("text-fg-subtle");
+    expect(command.className).not.toContain("text-accent");
+
+    fireEvent.mouseEnter(row);
+    expect(command.className).toContain("text-accent");
+    expect(command.className).not.toContain("text-fg-subtle");
+
+    fireEvent.mouseLeave(row);
+    expect(command.className).toContain("text-fg-subtle");
+  });
+
   it("asks for confirmation before running a dangerous command", () => {
     const onRun = vi.fn();
     render(
