@@ -2,6 +2,7 @@
   "appName": "TempoTerm",
   "tagline": "AI 驅動的終端機工作區",
   "terminalConnecting": "啟動中…",
+  "outputThrottled": "輸出太快，已略過 {{size}} 以維持介面流暢",
   "openLinkHint": "{{mods}} + 點擊開啟",
   "actionLinks": {
     "hoverHint": "可執行的動作",

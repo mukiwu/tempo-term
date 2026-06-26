@@ -2,6 +2,7 @@
   "appName": "TempoTerm",
   "tagline": "AI-powered terminal workspace",
   "terminalConnecting": "Starting shell…",
+  "outputThrottled": "Output throttled, skipped {{size}} to keep the UI responsive",
   "openLinkHint": "{{mods}}-click to open",
   "actionLinks": {
     "hoverHint": "Hover for actions",

@@ -12,6 +12,8 @@ export interface OutputWriterOptions {
   maxBytesPerFlush?: number;
   /** Max bytes allowed to sit in the queue; older bytes are dropped past this. */
   backlogCap?: number;
+  /** Called after output is dropped under overload, with the running dropped total. */
+  onDrop?: (droppedBytes: number) => void;
 }
 
 /** nyaterm's writeChunkChars: a comfortable per-frame write budget. */
@@ -47,10 +49,14 @@ export function createOutputWriter(options: OutputWriterOptions): TerminalOutput
   // Keep the queue under the cap by dropping the oldest chunks. Always keep the
   // most recent chunk so the newest output survives even a single huge write.
   function trim(): void {
+    const before = droppedBytes;
     while (queue.length > 1 && queuedBytes > backlogCap) {
       const dropped = queue.shift() as WriteChunk;
       queuedBytes -= dropped.length;
       droppedBytes += dropped.length;
+    }
+    if (droppedBytes > before) {
+      options.onDrop?.(droppedBytes);
     }
   }
 
