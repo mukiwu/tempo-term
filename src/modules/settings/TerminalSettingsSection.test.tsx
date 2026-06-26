@@ -8,8 +8,12 @@ vi.mock("@/modules/terminal/lib/terminalHistory", () => ({
   clearTerminalHistory: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Snapshot the store (actions included) at load so each test starts from a
+// complete, clean state rather than only resetting one field.
+const initialState = useSettingsStore.getState();
+
 beforeEach(() => {
-  useSettingsStore.setState({ customShellPath: "" });
+  useSettingsStore.setState(initialState, true);
 });
 
 describe("TerminalSettingsSection custom shell", () => {
