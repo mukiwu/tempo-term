@@ -289,6 +289,7 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
   const setActiveSpace = useTabsStore((s) => s.setActiveSpace);
   const renameSpace = useTabsStore((s) => s.renameSpace);
   const deleteSpace = useTabsStore((s) => s.deleteSpace);
+  const openLauncherTab = useTabsStore((s) => s.openLauncherTab);
   const [collapsed, setCollapsed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -344,7 +345,7 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
         )}
 
         {!editing && (
-          <>
+          <div className="flex shrink-0 items-center gap-0.5">
             <button
               type="button"
               aria-label={t("workspace.renameSpace")}
@@ -353,7 +354,7 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
                 setDraft(name);
                 setEditing(true);
               }}
-              className="shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity hover:text-fg group-hover:opacity-100"
+              className="shrink-0 rounded p-0.5 text-fg-subtle transition-colors hover:text-fg"
             >
               <Pencil size={12} />
             </button>
@@ -362,14 +363,26 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
               aria-label={t("workspace.deleteSpace")}
               title={t("workspace.deleteSpace")}
               onClick={() => deleteSpace(id)}
-              className="shrink-0 rounded p-0.5 text-fg-subtle opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
+              className="shrink-0 rounded p-0.5 text-fg-subtle transition-colors hover:text-danger"
             >
               <Trash2 size={12} />
+            </button>
+            <button
+              type="button"
+              aria-label={t("workspace.addTab")}
+              title={t("workspace.addTab")}
+              onClick={() => {
+                setActiveSpace(id);
+                openLauncherTab();
+              }}
+              className="shrink-0 rounded p-0.5 text-fg-subtle transition-colors hover:text-fg"
+            >
+              <Plus size={12} />
             </button>
             <span className="shrink-0 rounded-full bg-border px-1.5 py-0.5 text-[11px] leading-none text-fg-subtle">
               {tabs.length}
             </span>
-          </>
+          </div>
         )}
       </div>
 

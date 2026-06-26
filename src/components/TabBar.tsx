@@ -298,19 +298,18 @@ export function TabBar() {
               <TabItem key={tab.id} id={tab.id} />
             ))}
           </SortableContext>
+          <button
+            type="button"
+            aria-label={t("workspace.addTab")}
+            title={t("workspace.addTab")}
+            onClick={() => openLauncherTab()}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-bg-elevated hover:text-fg"
+          >
+            <Plus size={16} />
+          </button>
         </div>
         <DragOverlay>{draggingTab ? <TabOverlay tab={draggingTab} /> : null}</DragOverlay>
       </DndContext>
-
-      <button
-        type="button"
-        aria-label={t("workspace.addTab")}
-        title={t("workspace.addTab")}
-        onClick={() => openLauncherTab()}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-fg-muted hover:bg-bg-elevated hover:text-fg"
-      >
-        <Plus size={16} />
-      </button>
     </header>
   );
 }
