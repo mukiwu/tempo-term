@@ -15,18 +15,19 @@ export interface TerminalSearchController {
 }
 
 /**
- * High-contrast match colours so hits stand out on the dark terminal while the
- * light terminal text stays readable: a blue fill for every match and a warm
- * amber for the currently focused one.
+ * Bright match colours. Decorations only set the cell background (xterm can't
+ * recolour the matched text), so a bright fill is what keeps dark/dim terminal
+ * text readable and makes the hit obvious: amber for every match, a stronger
+ * orange for the currently focused one.
  */
 const SEARCH_OPTIONS: ISearchOptions = {
   decorations: {
-    matchBackground: "#3b5e8c",
-    matchBorder: "#5e8cd1",
-    matchOverviewRuler: "#5e8cd1",
-    activeMatchBackground: "#d7831e",
-    activeMatchBorder: "#ffb454",
-    activeMatchColorOverviewRuler: "#ffb454",
+    matchBackground: "#fbbf24",
+    matchBorder: "#fbbf24",
+    matchOverviewRuler: "#fbbf24",
+    activeMatchBackground: "#f97316",
+    activeMatchBorder: "#fdba74",
+    activeMatchColorOverviewRuler: "#fdba74",
   },
 };
 
