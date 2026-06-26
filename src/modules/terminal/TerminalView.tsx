@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Loader2, WifiOff } from "lucide-react";
 import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
+import { createOutputWriter } from "./lib/outputWriter";
 import { SearchBar } from "./SearchBar";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
@@ -243,6 +244,11 @@ export function TerminalView({
     // DOM renderer on its own if WebGL is unavailable; term.dispose() (cleanup
     // below) tears the addon down with the terminal.
     enableWebglRenderer(term);
+
+    // Batch live PTY/SSH output through a frame-scheduled writer so a flood
+    // (cat a huge file, runaway logs) can't block the UI thread. One-shot writes
+    // (restored history, error notices) still go straight to the terminal.
+    const outputWriter = createOutputWriter({ write: (chunk) => term.write(chunk) });
 
     // The session-status hook (see claude_status_hook) emits OSC 6973 on this
     // pane's tty when Claude changes state. Capture it here, where we know the
@@ -595,7 +601,7 @@ export function TerminalView({
           cols: term.cols,
           rows: term.rows,
           forwards,
-          onData: (bytes) => term.write(bytes),
+          onData: (bytes) => outputWriter.push(bytes),
           // Only treat an exit as user-facing when we did not tear the session
           // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
           onExit: (_code) => {
@@ -621,7 +627,7 @@ export function TerminalView({
         // Read the setting at spawn time so a restored pane reflects the current
         // value, instead of racing a global flag set after mount.
         suggestions: useSettingsStore.getState().terminalSuggestions,
-        onData: (bytes) => term.write(bytes),
+        onData: (bytes) => outputWriter.push(bytes),
         // Only treat an exit as user-facing when we did not tear the session
         // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
         onExit: () => {
@@ -761,6 +767,7 @@ export function TerminalView({
 
     return () => {
       disposed = true;
+      outputWriter.dispose();
       cancelAnimationFrame(initialFitFrame);
       clearInterval(snapshotTimer);
       writeListener.dispose();
