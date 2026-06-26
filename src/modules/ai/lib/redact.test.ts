@@ -74,4 +74,27 @@ describe("redactSecrets", () => {
     const input = "PWD=/Users/muki/Documents/project";
     expect(redactSecrets(input)).toBe(input);
   });
+
+  it("redacts a private key block even when the closing marker was truncated away", () => {
+    const input = [
+      "-----BEGIN OPENSSH PRIVATE KEY-----",
+      "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAAB",
+      "AAAAMwb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAA",
+      "…[truncated]",
+    ].join("\n");
+
+    const output = redactSecrets(input);
+
+    expect(output).toContain("[REDACTED]");
+    expect(output).not.toContain("b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ");
+  });
+
+  it("redacts the whole of a quoted password that contains spaces", () => {
+    const output = redactSecrets('mysql --password="super secret value" -u root');
+
+    expect(output).not.toContain("super secret value");
+    expect(output).not.toContain("secret value");
+    expect(output).toContain("[REDACTED]");
+    expect(output).toContain("-u root");
+  });
 });

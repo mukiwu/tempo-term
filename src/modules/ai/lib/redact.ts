@@ -9,7 +9,10 @@ const REDACTED = "[REDACTED]";
  */
 const RULES: ReadonlyArray<readonly [RegExp, string]> = [
   // PEM / OpenSSH key blocks, e.g. `-----BEGIN OPENSSH PRIVATE KEY----- ... -----END ...-----`.
-  [/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, REDACTED],
+  // The end alternates between the closing marker and end-of-string so a key
+  // whose tail was truncated away (context blocks are truncated before
+  // redaction) is still scrubbed instead of leaking.
+  [/-----BEGIN [^-]+-----[\s\S]*?(?:-----END [^-]+-----|$)/g, REDACTED],
   // OpenAI-style secret keys, e.g. `sk-...` and `sk-proj-...`.
   [/\bsk-[A-Za-z0-9_-]{20,}/g, REDACTED],
   // GitHub personal/OAuth/app tokens, e.g. `ghp_...`, `gho_...`.
@@ -19,9 +22,14 @@ const RULES: ReadonlyArray<readonly [RegExp, string]> = [
   // `Bearer <token>` auth headers — keep the scheme word, drop the token.
   [/\bBearer\s+[A-Za-z0-9._~+/=-]+/g, `Bearer ${REDACTED}`],
   // `password=...` / `passwd:...` assignments — keep the key, drop the value.
-  // `pwd` is deliberately excluded: it collides with the very common `PWD`
-  // working-directory environment variable, which is not a secret.
-  [/\b(password|passwd)(\s*[=:]\s*)(\S+)/gi, `$1$2${REDACTED}`],
+  // The value may be a single/double-quoted string (so spaces inside quotes are
+  // covered) or an unquoted run of non-space chars. `pwd` is deliberately
+  // excluded: it collides with the very common `PWD` working-directory
+  // environment variable, which is not a secret.
+  [
+    /\b(password|passwd)(\s*[=:]\s*)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)/gi,
+    `$1$2${REDACTED}`,
+  ],
   // Credentials embedded in a URL, e.g. `postgres://user:pass@host` — keep user and host, drop the password.
   [/\b([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):([^\s:@/]+)@/gi, `$1:${REDACTED}@`],
 ];
