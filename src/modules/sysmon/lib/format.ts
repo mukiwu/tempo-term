@@ -19,6 +19,11 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(1)} ${UNITS[unitIndex]}`;
 }
 
+/** Format a transfer rate, e.g. "0 B/s", "1.0 KB/s", "1.4 MB/s". */
+export function formatRate(bytesPerSec: number): string {
+  return `${formatBytes(bytesPerSec)}/s`;
+}
+
 /** Round a 0–100 value to a whole-number percent string, e.g. "43%". */
 export function formatPercent(value: number): string {
   return `${Math.round(value)}%`;

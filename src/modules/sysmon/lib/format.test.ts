@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatPercent, ramPercent } from "./format";
+import { formatBytes, formatPercent, formatRate, ramPercent } from "./format";
 
 describe("formatBytes", () => {
   it("formats byte counts into human-readable units", () => {
@@ -9,6 +9,14 @@ describe("formatBytes", () => {
     expect(formatBytes(1536)).toBe("1.5 KB");
     expect(formatBytes(1048576)).toBe("1.0 MB");
     expect(formatBytes(1073741824)).toBe("1.0 GB");
+  });
+});
+
+describe("formatRate", () => {
+  it("formats a byte-per-second rate with a /s suffix", () => {
+    expect(formatRate(0)).toBe("0 B/s");
+    expect(formatRate(1024)).toBe("1.0 KB/s");
+    expect(formatRate(1500000)).toBe("1.4 MB/s");
   });
 });
 

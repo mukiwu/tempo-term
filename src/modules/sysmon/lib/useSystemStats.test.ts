@@ -6,7 +6,7 @@ vi.mock("./sysinfoBridge", () => ({ fetchSystemStats }));
 
 import { useSystemStats } from "./useSystemStats";
 
-const sample = { cpuUsage: 42, ramUsed: 8, ramTotal: 16 };
+const sample = { cpuUsage: 42, ramUsed: 8, ramTotal: 16, netRx: 1024, netTx: 512 };
 
 beforeEach(() => {
   fetchSystemStats.mockReset();

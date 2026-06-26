@@ -58,15 +58,19 @@ describe("StatusBar system metrics", () => {
     useSystemStats.mockReturnValue(null);
   });
 
-  it("shows CPU and RAM usage when stats are available", () => {
+  it("shows CPU, RAM and network rates when stats are available", () => {
     useSystemStats.mockReturnValue({
       cpuUsage: 42,
       ramUsed: 8 * 1024 ** 3,
       ramTotal: 16 * 1024 ** 3,
+      netRx: 1024 * 1024,
+      netTx: 512 * 1024,
     });
     render(<StatusBar />);
     expect(screen.getByText("42%")).toBeInTheDocument();
     expect(screen.getByText("50%")).toBeInTheDocument();
+    expect(screen.getByText("1.0 MB/s")).toBeInTheDocument();
+    expect(screen.getByText("512.0 KB/s")).toBeInTheDocument();
   });
 
   it("shows no metrics before the first sample arrives", () => {

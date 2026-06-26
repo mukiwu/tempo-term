@@ -55,7 +55,8 @@
     "language": "Language",
     "updateAvailable": "Update available",
     "cpu": "CPU",
-    "ramTooltip": "RAM {{used}} / {{total}}"
+    "ramTooltip": "RAM {{used}} / {{total}}",
+    "netTooltip": "Download {{rx}} · Upload {{tx}}"
   },
   "actions": {
     "newTab": "New Tab",
