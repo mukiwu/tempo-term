@@ -45,6 +45,7 @@ russh-sftp = "2"
 orion = "0.17"
 machine-uid = "0.6"
 base64 = "0.22"
+sysinfo = "0.33"
 
 # keyring 3.x ships no credential store by default; each platform must opt into
 # its native backend or every keychain operation fails silently.
