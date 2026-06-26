@@ -188,7 +188,11 @@ export function TerminalView({
   // Skipped-bytes total shown in the overload notice, or null when hidden. The
   // refs throttle visible updates during a flood and auto-hide once it settles.
   const [outputSkipped, setOutputSkipped] = useState<number | null>(null);
+  // The writer reports a lifetime cumulative dropped total; the baseline marks
+  // the total when the last notice closed, so each notice shows just this
+  // overload event's skipped bytes rather than an ever-growing lifetime sum.
   const skippedTotalRef = useRef(0);
+  const skippedBaselineRef = useRef(0);
   const skippedShowTimer = useRef<number | null>(null);
   const skippedHideTimer = useRef<number | null>(null);
   const dragDepthRef = useRef(0);
@@ -237,7 +241,7 @@ export function TerminalView({
     if (skippedShowTimer.current === null) {
       skippedShowTimer.current = window.setTimeout(() => {
         skippedShowTimer.current = null;
-        setOutputSkipped(skippedTotalRef.current);
+        setOutputSkipped(skippedTotalRef.current - skippedBaselineRef.current);
       }, 250);
     }
     if (skippedHideTimer.current !== null) {
@@ -245,7 +249,7 @@ export function TerminalView({
     }
     skippedHideTimer.current = window.setTimeout(() => {
       setOutputSkipped(null);
-      skippedTotalRef.current = 0;
+      skippedBaselineRef.current = skippedTotalRef.current;
     }, 2500);
   };
 
