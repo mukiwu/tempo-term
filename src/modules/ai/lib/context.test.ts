@@ -23,6 +23,12 @@ describe("buildActiveFileBlock", () => {
     expect(block).toContain("[truncated]");
     expect(block.length).toBeLessThan(20000);
   });
+
+  it("redacts secrets from the active file before they reach the model", () => {
+    const block = buildActiveFileBlock("/app/.env", "API_KEY=sk-abc123DEF456ghi789jkl012mno345");
+    expect(block).toContain("[REDACTED]");
+    expect(block).not.toContain("sk-abc123DEF456");
+  });
 });
 
 describe("buildTerminalBlock", () => {
@@ -43,5 +49,11 @@ describe("buildTerminalBlock", () => {
     const block = buildTerminalBlock(lines, 100);
     expect(block).toContain("line 499");
     expect(block).not.toContain("line 0\n");
+  });
+
+  it("redacts secrets from terminal output before they reach the model", () => {
+    const block = buildTerminalBlock("$ echo $TOKEN\nsk-abc123DEF456ghi789jkl012mno345");
+    expect(block).toContain("[REDACTED]");
+    expect(block).not.toContain("sk-abc123DEF456");
   });
 });

@@ -12,6 +12,12 @@ describe("buildCommitPrompt", () => {
     expect(prompt.length).toBeLessThan(2000);
     expect(prompt).toContain("truncated");
   });
+
+  it("redacts secrets from the diff before it reaches the model", () => {
+    const prompt = buildCommitPrompt("+API_KEY=sk-abc123DEF456ghi789jkl012mno345");
+    expect(prompt).toContain("[REDACTED]");
+    expect(prompt).not.toContain("sk-abc123DEF456");
+  });
 });
 
 describe("sanitizeCommitMessage", () => {
