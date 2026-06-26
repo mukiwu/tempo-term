@@ -12,6 +12,18 @@ export const IS_MAC =
     navigator.userAgent?.toLowerCase().includes("mac") ||
     false);
 
+/**
+ * Windows-specific paste handling routes Ctrl+V through the same smart paste
+ * flow as macOS (text wins, else a copied file's path). Linux has no native
+ * clipboard backend yet, so it keeps xterm's built-in paste instead.
+ */
+export const IS_WINDOWS =
+  !IS_MAC &&
+  typeof navigator !== "undefined" &&
+  (navigator.platform?.toLowerCase().includes("win") ||
+    navigator.userAgent?.toLowerCase().includes("windows") ||
+    false);
+
 type ModifierEvent = Pick<MouseEvent, "altKey" | "metaKey" | "ctrlKey">;
 
 /** Whether a click carries the platform's open-link modifier. */

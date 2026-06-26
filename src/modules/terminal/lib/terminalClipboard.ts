@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { IS_WINDOWS } from "@/lib/platform";
 
 export function terminalClipboardPaths(): Promise<string[]> {
   return invoke<string[]>("terminal_clipboard_paths");
@@ -46,10 +47,20 @@ export function formatImagePathsForTerminal(paths: string[]): string {
 }
 
 export function formatPathsForTerminal(paths: string[]): string {
-  return paths.length > 0 ? `${paths.map(shellQuotePath).join(" ")} ` : "";
+  return paths.length > 0 ? `${paths.map((path) => shellQuotePath(path)).join(" ")} ` : "";
 }
 
-export function shellQuotePath(path: string): string {
+export function shellQuotePath(path: string, isWindows: boolean = IS_WINDOWS): string {
+  if (isWindows) {
+    // Windows paths use backslashes and a drive colon, and may run under cmd,
+    // PowerShell or git-bash. Double quotes are the one form all three accept,
+    // and filenames cannot contain '"', so wrapping is always safe. Leave a
+    // path that needs no quoting (no spaces/special chars) bare.
+    if (/^[A-Za-z0-9_.:@%+=,\\/-]+$/.test(path)) {
+      return path;
+    }
+    return `"${path}"`;
+  }
   if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(path)) {
     return path;
   }

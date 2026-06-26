@@ -1,9 +1,12 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+// `Command` is only used by the macOS clipboard helpers (pbpaste/osascript/sips).
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp"];
 
@@ -48,7 +51,22 @@ fn clipboard_paths() -> Result<Vec<String>, String> {
     Ok(unique_paths(macos_clipboard_file_paths()?))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn clipboard_paths() -> Result<Vec<String>, String> {
+    use clipboard_win::{formats, get_clipboard};
+    // Files copied in Explorer arrive as CF_HDROP. A missing format (e.g. text
+    // was copied instead) is not an error here — report no paths so the paste
+    // flow falls through, matching the macOS branch.
+    let paths: Vec<String> = get_clipboard(formats::FileList).unwrap_or_default();
+    Ok(unique_paths(
+        paths
+            .into_iter()
+            .filter(|path| Path::new(path).exists())
+            .collect(),
+    ))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn clipboard_paths() -> Result<Vec<String>, String> {
     Ok(Vec::new())
 }
@@ -99,7 +117,15 @@ fn clipboard_text() -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn clipboard_text() -> Result<String, String> {
+    use clipboard_win::{formats, get_clipboard};
+    // No Unicode text on the clipboard (e.g. only files were copied) is not an
+    // error: return empty so the paste flow falls through to file paths.
+    Ok(get_clipboard(formats::Unicode).unwrap_or_default())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn clipboard_text() -> Result<String, String> {
     Ok(String::new())
 }
@@ -242,6 +268,9 @@ fn run_osascript(script: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+// Used by the macOS image-clipboard helpers and by the tests; the other
+// platforms don't probe the clipboard for images.
+#[cfg(any(target_os = "macos", test))]
 fn is_image_path(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -285,6 +314,8 @@ fn image_extension(name: Option<&str>, mime: Option<&str>, bytes: &[u8]) -> Opti
         .map(|ext| if ext == "jpeg" { "jpg" } else { ext })
 }
 
+// Only the macOS AppleScript path-extraction needs this filter; tests cover it too.
+#[cfg(any(target_os = "macos", test))]
 fn is_valid_clipboard_file_path(path: &str) -> bool {
     // APFS/HFS+ filenames cannot contain ':', which is the HFS path separator.
     // A path with ':' is a sign that AppleScript coerced a URL (e.g. https://...)

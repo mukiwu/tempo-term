@@ -39,7 +39,10 @@ trash = "5"
 notify = "6"
 toml_edit = "0.22"
 chrono = "0.4"
-russh = "0.61.2"
+# Use russh's `ring` crypto backend instead of the default `aws-lc-rs`. aws-lc
+# pulls aws-lc-sys, whose Windows build requires NASM; ring builds on Windows
+# MSVC with no extra toolchain. `flate2` and `rsa` are the other defaults we keep.
+russh = { version = "0.61.2", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "2"
 orion = "0.17"
 machine-uid = "0.6"
@@ -52,6 +55,9 @@ keyring = { version = "3", features = ["apple-native"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+# Synchronous Win32 clipboard access (text + copied-file list) for terminal
+# paste, so Ctrl+V never spawns a subprocess on the hot path.
+clipboard-win = "5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service"] }

@@ -80,7 +80,7 @@ import {
 } from "@/modules/claude-progress/lib/sessionStatus";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 
-import { IS_MAC, openModifierLabel } from "@/lib/platform";
+import { IS_MAC, IS_WINDOWS, openModifierLabel } from "@/lib/platform";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -267,6 +267,12 @@ export function TerminalView({
       if (IS_MAC && event.metaKey && !event.ctrlKey) {
         return "cmd";
       }
+      // Windows: Ctrl+V runs the same smart paste (text wins, else file paths)
+      // via handleTerminalPaste. Linux is intentionally excluded — it has no
+      // native clipboard backend, so it keeps xterm's built-in paste.
+      if (IS_WINDOWS && event.ctrlKey && !event.metaKey) {
+        return "ctrl";
+      }
       return null;
     }
 
@@ -297,6 +303,14 @@ export function TerminalView({
     const onPasteCapture = (event: ClipboardEvent) => {
       const target = event.target;
       if (!activeRef.current || (target instanceof Node && !containerEl.contains(target))) {
+        return;
+      }
+      // macOS and Windows route paste through handleTerminalPaste (Ctrl/Cmd+V
+      // in the custom key handler), so the native event must be suppressed here
+      // to avoid a double paste. Linux has no custom paste handler, so let the
+      // event reach xterm's built-in paste — suppressing it there is what made
+      // Ctrl+V do nothing on Linux.
+      if (!IS_MAC && !IS_WINDOWS) {
         return;
       }
       event.preventDefault();
