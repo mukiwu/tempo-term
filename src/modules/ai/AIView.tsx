@@ -116,12 +116,11 @@ export function AIView() {
   const clear = useChatStore((s) => s.clear);
   const attachedPaths = useChatStore((s) => s.attachedPaths);
   const removeAttached = useChatStore((s) => s.removeAttached);
-  // Whether to attach the active terminal's output. Seeded from the user's
-  // default setting so it's on out of the box; the chip/button toggle it per
-  // conversation. The actual output is read fresh at send time.
-  const [includeTerminal, setIncludeTerminal] = useState(
-    () => useSettingsStore.getState().aiTerminalContext,
-  );
+  // Whether to attach the active terminal's output. On by default and the
+  // chip/button is the single control — toggling it remembers the choice. The
+  // actual output is read fresh at send time.
+  const includeTerminal = useSettingsStore((s) => s.aiTerminalContext);
+  const setIncludeTerminal = useSettingsStore((s) => s.setAiTerminalContext);
 
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   // Derive the file in focus from the active tab/pane: the editor uses the tabs
@@ -339,7 +338,7 @@ export function AIView() {
             aria-pressed={includeTerminal}
             aria-label={includeTerminal ? t("grabTerminalActive") : t("grabTerminal")}
             title={includeTerminal ? t("grabTerminalActive") : t("grabTerminal")}
-            onClick={() => setIncludeTerminal((on) => !on)}
+            onClick={() => setIncludeTerminal(!includeTerminal)}
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-colors ${
               includeTerminal
                 ? "border-accent bg-accent/10 text-accent hover:bg-accent/15"

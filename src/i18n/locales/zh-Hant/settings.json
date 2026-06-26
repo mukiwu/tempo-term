@@ -101,10 +101,6 @@
     "label": "行內程式碼補完",
     "description": "在編輯器打字時顯示 AI 灰字建議，Tab 接受、Esc 取消。使用你的預設模型，會計入該模型的用量。"
   },
-  "aiTerminalContext": {
-    "label": "預設帶入終端機輸出",
-    "description": "自動把目前終端機的近期輸出附給 AI 助手，以可移除的晶片顯示，送出前會先遮蔽敏感資訊。關掉的話就只在你點終端機按鈕時才帶入。"
-  },
   "aiKeys": {
     "title": "API 金鑰",
     "description": "金鑰存在你的系統 keychain，只由後端讀取，不會回傳到 app 視窗",
