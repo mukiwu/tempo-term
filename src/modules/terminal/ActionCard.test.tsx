@@ -18,6 +18,29 @@ describe("ActionCard", () => {
     expect(onRun).toHaveBeenCalledWith("ping 1.2.3.4");
   });
 
+  it("opens the in-app preview instead of running a shell command for a preview action", () => {
+    const onRun = vi.fn();
+    const onOpenPreview = vi.fn();
+    render(
+      <ActionCard
+        actions={[
+          {
+            labelKey: "actionLinks.preview",
+            command: "http://localhost:3000",
+            previewUrl: "http://localhost:3000",
+          },
+        ]}
+        onRun={onRun}
+        onOpenPreview={onOpenPreview}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /http:\/\/localhost:3000/ }));
+
+    expect(onOpenPreview).toHaveBeenCalledWith("http://localhost:3000");
+    expect(onRun).not.toHaveBeenCalled();
+  });
+
   it("tints the command on hover via mouse events (not CSS :hover)", () => {
     render(
       <ActionCard actions={[{ labelKey: "actionLinks.ping", command: "ping 1.2.3.4" }]} onRun={vi.fn()} />,

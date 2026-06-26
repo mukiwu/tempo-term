@@ -5,6 +5,7 @@
   "openLinkHint": "{{mods}} + 點擊開啟",
   "actionLinks": {
     "hoverHint": "可執行的動作",
+    "preview": "用網頁預覽開啟",
     "ping": "Ping",
     "traceroute": "Traceroute",
     "ssh": "SSH",

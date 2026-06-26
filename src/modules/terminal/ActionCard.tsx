@@ -6,9 +6,11 @@ import { isDangerousCommand, type TerminalAction } from "./lib/actionLinks";
 interface ActionCardProps {
   actions: TerminalAction[];
   onRun: (command: string) => void;
+  /** Open a URL in the in-app web preview (for localhost/IP preview actions). */
+  onOpenPreview?: (url: string) => void;
 }
 
-export function ActionCard({ actions, onRun }: ActionCardProps) {
+export function ActionCard({ actions, onRun, onOpenPreview }: ActionCardProps) {
   const { t } = useTranslation();
   // The command awaiting a destructive-action confirmation, or null when the
   // plain action list is showing.
@@ -18,11 +20,13 @@ export function ActionCard({ actions, onRun }: ActionCardProps) {
   // elements that appear under the pointer, though mouse events still fire.
   const [hovered, setHovered] = useState<string | null>(null);
 
-  function handleClick(command: string) {
-    if (isDangerousCommand(command)) {
-      setPending(command);
+  function handleAction(action: TerminalAction) {
+    if (action.previewUrl) {
+      onOpenPreview?.(action.previewUrl);
+    } else if (isDangerousCommand(action.command)) {
+      setPending(action.command);
     } else {
-      onRun(command);
+      onRun(action.command);
     }
   }
 
@@ -74,7 +78,7 @@ export function ActionCard({ actions, onRun }: ActionCardProps) {
             className={`flex items-center gap-2 px-2.5 py-1 text-left text-xs ${
               isHovered ? "bg-border" : ""
             }`}
-            onClick={() => handleClick(action.command)}
+            onClick={() => handleAction(action)}
             onMouseEnter={() => setHovered(action.command)}
             onMouseLeave={() => setHovered((h) => (h === action.command ? null : h))}
           >

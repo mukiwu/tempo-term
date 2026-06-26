@@ -51,8 +51,25 @@ function collect(line: string, re: RegExp, kind: ActionLinkKind): ActionLinkMatc
 export interface TerminalAction {
   /** i18n key for the menu label (e.g. "actionLinks.ping"). */
   labelKey: string;
-  /** The shell command to run. */
+  /** Shell command to run, or the URL shown for a preview action. */
   command: string;
+  /**
+   * When set, the action opens this URL in the in-app web preview instead of
+   * running `command` in the shell.
+   */
+  previewUrl?: string;
+}
+
+/** Matches a whole string that is exactly a dotted-decimal IPv4 address. */
+const IPV4_HOST_RE = new RegExp(`^(?:${OCTET}\\.){3}${OCTET}$`);
+
+/**
+ * Whether a host should offer the in-app preview. Limited to localhost and IPs:
+ * those are local servers that allow being framed, whereas public sites usually
+ * block embedding (X-Frame-Options/CSP) and would render blank.
+ */
+function isPreviewableHost(host: string): boolean {
+  return host === "localhost" || IPV4_HOST_RE.test(host);
 }
 
 /** Single-quote a filename for safe use in a shell command. */
@@ -119,7 +136,9 @@ export function isDangerousCommand(command: string): boolean {
 export function actionsFor(match: ActionLinkMatch): TerminalAction[] {
   if (match.kind === "ip") {
     const ip = match.text;
+    const url = `http://${ip}`;
     return [
+      { labelKey: "actionLinks.preview", command: url, previewUrl: url },
       { labelKey: "actionLinks.ping", command: `ping ${ip}` },
       { labelKey: "actionLinks.traceroute", command: `traceroute ${ip}` },
       { labelKey: "actionLinks.ssh", command: `ssh ${ip}` },
@@ -131,12 +150,18 @@ export function actionsFor(match: ActionLinkMatch): TerminalAction[] {
     const lastColon = hostPort.lastIndexOf(":");
     const host = hostPort.slice(0, lastColon);
     const port = hostPort.slice(lastColon + 1);
-    return [
+    const actions: TerminalAction[] = [];
+    if (isPreviewableHost(host)) {
+      const url = `http://${hostPort}`;
+      actions.push({ labelKey: "actionLinks.preview", command: url, previewUrl: url });
+    }
+    actions.push(
       { labelKey: "actionLinks.curl", command: `curl http://${hostPort}` },
       { labelKey: "actionLinks.curlHttps", command: `curl https://${hostPort}` },
       { labelKey: "actionLinks.nc", command: `nc ${host} ${port}` },
       { labelKey: "actionLinks.telnet", command: `telnet ${host} ${port}` },
-    ];
+    );
+    return actions;
   }
   if (match.kind === "archive") {
     const { extract, list } = archiveCommands(match.text);

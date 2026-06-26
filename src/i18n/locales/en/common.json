@@ -5,6 +5,7 @@
   "openLinkHint": "{{mods}}-click to open",
   "actionLinks": {
     "hoverHint": "Hover for actions",
+    "preview": "Open in preview",
     "ping": "Ping",
     "traceroute": "Traceroute",
     "ssh": "SSH",

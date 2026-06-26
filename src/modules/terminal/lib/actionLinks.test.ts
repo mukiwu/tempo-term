@@ -78,6 +78,20 @@ describe("actionsFor", () => {
       "tar -tzf 'backup.tar.gz'",
     );
   });
+
+  it("offers an in-app preview action for localhost and IP web servers", () => {
+    const preview = (m: ActionLinkMatch) =>
+      actionsFor(m).find((a) => a.labelKey === "actionLinks.preview")?.previewUrl;
+
+    expect(preview(match("localhost:3000", "host-port"))).toBe("http://localhost:3000");
+    expect(preview(match("192.168.1.1:8080", "host-port"))).toBe("http://192.168.1.1:8080");
+    expect(preview(match("192.168.1.1", "ip"))).toBe("http://192.168.1.1");
+  });
+
+  it("does not offer preview for a public domain (the iframe would be blocked)", () => {
+    const actions = actionsFor(match("example.com:8000", "host-port"));
+    expect(actions.find((a) => a.labelKey === "actionLinks.preview")).toBeUndefined();
+  });
 });
 
 describe("isDangerousCommand", () => {

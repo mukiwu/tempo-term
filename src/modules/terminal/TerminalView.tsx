@@ -118,6 +118,8 @@ interface TerminalViewProps {
   onCwdChange?: (cwd: string) => void;
   /** Alt+click on a file path in the output opens it (with the resolved abs path). */
   onOpenFile?: (absolutePath: string) => void;
+  /** Open a localhost/IP URL from a terminal action card in the in-app preview. */
+  onOpenPreview?: (url: string) => void;
 }
 
 export function TerminalView({
@@ -129,6 +131,7 @@ export function TerminalView({
   onExit,
   onCwdChange,
   onOpenFile,
+  onOpenPreview,
 }: TerminalViewProps) {
   const leafIdRef = useRef(leafId);
   leafIdRef.current = leafId;
@@ -147,6 +150,8 @@ export function TerminalView({
   onCwdChangeRef.current = onCwdChange;
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
+  const onOpenPreviewRef = useRef(onOpenPreview);
+  onOpenPreviewRef.current = onOpenPreview;
   // Holds a deferred "start the SSH session now" function that is set inside the
   // main mount effect and called by the reconnect button for restored panes.
   const connectNowRef = useRef<(() => void) | null>(null);
@@ -197,6 +202,11 @@ export function TerminalView({
     cancelActionCardHide();
     setActionCard(null);
     handleRef.current?.term.focus();
+  };
+  const openActionPreview = (url: string) => {
+    onOpenPreviewRef.current?.(url);
+    cancelActionCardHide();
+    setActionCard(null);
   };
 
   // Clear any pending action-card hide timer when the pane unmounts so it can't
@@ -1112,7 +1122,11 @@ export function TerminalView({
           onMouseEnter={cancelActionCardHide}
           onMouseLeave={() => setActionCard(null)}
         >
-          <ActionCard actions={actionCard.actions} onRun={runActionCommand} />
+          <ActionCard
+            actions={actionCard.actions}
+            onRun={runActionCommand}
+            onOpenPreview={openActionPreview}
+          />
         </div>
       )}
       {connecting && (
