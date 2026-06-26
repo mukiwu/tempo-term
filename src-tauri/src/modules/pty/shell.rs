@@ -57,6 +57,14 @@ fn zsh_dq_escape(path: &str) -> String {
 /// through the wrapper so its `.zshrc` loads the plugin; a non-interactive zsh
 /// (a script, `zsh -c`) is left on the user's dir with our marker dropped, so
 /// nested shells inherit a clean environment rather than the wrapper's.
+///
+/// The `.zshrc` also rescues `HISTFILE`: macOS's `/etc/zshrc` runs *before* it
+/// and computes `HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history` while `ZDOTDIR` is
+/// still the wrapper, so history would land in the wrapper dir — empty on first
+/// use and never shared with the user's other terminals. We can't intercept the
+/// system file, so the wrapper `.zshrc` redirects a wrapper-dir `HISTFILE` back
+/// to the user's real dir, before sourcing their config so an explicit user
+/// `HISTFILE` still wins.
 fn wrapper_files(user: &str, wrapper: &str, plugin: &str) -> Vec<(&'static str, String)> {
     let wrapper = zsh_dq_escape(wrapper);
     let plugin = zsh_dq_escape(plugin);
@@ -86,6 +94,7 @@ fn wrapper_files(user: &str, wrapper: &str, plugin: &str) -> Vec<(&'static str, 
             format!(
                 "ZDOTDIR=\"{user}\"\n\
                  unset _TEMPO_UZ\n\
+                 [[ \"$HISTFILE\" == \"{wrapper}\"/* ]] && HISTFILE=\"$ZDOTDIR/${{HISTFILE:t}}\"\n\
                  [[ -f \"$ZDOTDIR/.zshrc\" ]] && source \"$ZDOTDIR/.zshrc\"\n\
                  [[ -f \"{plugin}\" ]] && source \"{plugin}\"\n"
             ),
@@ -344,6 +353,32 @@ mod tests {
         // .zprofile likewise only steers interactive shells back to the wrapper.
         let zprofile = files.iter().find(|(n, _)| *n == ".zprofile").unwrap().1.clone();
         assert!(zprofile.contains(r#"[[ -o interactive ]] && ZDOTDIR="/w/zsh""#));
+    }
+
+    #[test]
+    fn wrapper_zshrc_restores_histfile_polluted_by_wrapper_zdotdir() {
+        // macOS's /etc/zshrc runs *before* our wrapper .zshrc and computes
+        // `HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history` while ZDOTDIR is still the
+        // wrapper, so history lands in the wrapper dir — empty on first use and
+        // never shared with other terminals. The .zshrc must redirect a
+        // wrapper-dir HISTFILE back to the user's real ZDOTDIR, and do so before
+        // sourcing the user's config so anyone who sets their own HISTFILE wins.
+        let files = wrapper_files(r#"${_TEMPO_UZ:-$HOME}"#, "/w/zsh", "/p/plugin.zsh");
+        let zshrc = files.iter().find(|(n, _)| *n == ".zshrc").unwrap().1.clone();
+        assert!(
+            zshrc.contains(r#"[[ "$HISTFILE" == "/w/zsh"/* ]] && HISTFILE="$ZDOTDIR/${HISTFILE:t}""#),
+            "zshrc should rewrite a wrapper HISTFILE back to the user dir, got: {zshrc}"
+        );
+        let fix_idx = zshrc
+            .find("HISTFILE=\"$ZDOTDIR/")
+            .expect("zshrc should rewrite HISTFILE");
+        let source_idx = zshrc
+            .find(r#"source "$ZDOTDIR/.zshrc""#)
+            .expect("zshrc should source the user's .zshrc");
+        assert!(
+            fix_idx < source_idx,
+            "HISTFILE fix must precede sourcing the user's .zshrc, got: {zshrc}"
+        );
     }
 
     fn has_utf8(env: &[(String, String)], key: &str) -> bool {
