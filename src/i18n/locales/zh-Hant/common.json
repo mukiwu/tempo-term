@@ -58,6 +58,7 @@
   "actions": {
     "newTab": "新增分頁",
     "closeTab": "關閉分頁",
+    "renameTab": "重新命名分頁",
     "split": "分割",
     "search": "搜尋",
     "cancel": "取消",

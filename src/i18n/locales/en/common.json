@@ -58,6 +58,7 @@
   "actions": {
     "newTab": "New Tab",
     "closeTab": "Close Tab",
+    "renameTab": "Rename Tab",
     "split": "Split",
     "search": "Search",
     "cancel": "Cancel",
