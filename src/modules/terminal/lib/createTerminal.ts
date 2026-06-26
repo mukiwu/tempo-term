@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { buildTerminalFontFamily } from "@/modules/fonts/lib/fontChain";
-import { isWebUrl } from "@/lib/url";
+import { isLocalUrl, isWebUrl } from "@/lib/url";
 import { IS_MAC, matchesOpenModifier } from "@/lib/platform";
 import { hideLinkTooltip, showLinkTooltip } from "./linkTooltip";
 import "@xterm/xterm/css/xterm.css";
@@ -29,6 +29,12 @@ export interface CreateTerminalOptions {
   theme?: ITheme;
   /** Hover hint shown over web links (e.g. "Cmd / Ctrl-click to open"). */
   linkHint?: string;
+  /**
+   * Open a localhost/IP web URL in the in-app preview. When provided, local
+   * URLs route here on modifier-click instead of opening the system browser;
+   * external URLs always go to the browser.
+   */
+  onOpenLocalUrl?: (url: string) => void;
 }
 
 export function createTerminal(options: CreateTerminalOptions = {}): TerminalHandle {
@@ -48,13 +54,19 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
 
   const fit = new FitAddon();
   term.loadAddon(fit);
-  // Open web links in the system browser (not the in-app webview) on a
-  // modifier-click, matching the file-link gesture (Alt/Cmd) plus Ctrl for
-  // non-mac. A plain click is left for text selection. Hover shows a hint.
+  // Open web links on a modifier-click, matching the file-link gesture (Alt/Cmd)
+  // plus Ctrl for non-mac. A plain click is left for text selection. Local
+  // (localhost/IP) URLs go to the in-app preview when a handler is wired;
+  // everything else opens in the system browser. Hover shows a hint.
   term.loadAddon(
     new WebLinksAddon(
       (event, uri) => {
-        if (matchesOpenModifier(event, IS_MAC) && isWebUrl(uri)) {
+        if (!matchesOpenModifier(event, IS_MAC) || !isWebUrl(uri)) {
+          return;
+        }
+        if (options.onOpenLocalUrl && isLocalUrl(uri)) {
+          options.onOpenLocalUrl(uri);
+        } else {
           void openUrl(uri);
         }
       },

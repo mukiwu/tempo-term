@@ -232,6 +232,7 @@ export function TerminalView({
       fontSize: initial.fontSize,
       theme: getTheme(useSettingsStore.getState().themeId).terminal,
       linkHint: linkHintRef.current,
+      onOpenLocalUrl: (url) => onOpenPreviewRef.current?.(url),
     });
     handleRef.current = handle;
     const { term, fit } = handle;
