@@ -9,15 +9,17 @@ use tauri::ipc::{Channel, Response};
 use tauri::State;
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn pty_open(
     state: State<'_, PtyState>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    suggestions: bool,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
-    session::spawn(&state, cols, rows, cwd, on_data, on_exit)
+    session::spawn(&state, cols, rows, cwd, suggestions, on_data, on_exit)
 }
 
 #[tauri::command]
@@ -61,11 +63,4 @@ pub fn pty_close(state: State<'_, PtyState>, id: u32) {
 #[tauri::command]
 pub fn pty_close_all(state: State<'_, PtyState>) {
     session::close_all(&state);
-}
-
-/// Mirror the user's "suggest previous commands" setting into the backend, so
-/// shells opened afterwards load (or skip) the zsh-autosuggestions plugin.
-#[tauri::command]
-pub fn pty_set_suggestions(enabled: bool) {
-    shell::set_suggestions_enabled(enabled);
 }

@@ -14,6 +14,12 @@ export interface OpenPtyOptions {
   cols: number;
   rows: number;
   cwd?: string;
+  /**
+   * Whether to load zsh-autosuggestions for this shell. Passed per spawn (read
+   * from the user setting at open time) so a freshly opened or restored session
+   * always reflects the current setting, with no startup race against a global.
+   */
+  suggestions: boolean;
   onData: (bytes: Uint8Array) => void;
   onExit: (code: number) => void;
 }
@@ -38,6 +44,7 @@ export async function openPty(opts: OpenPtyOptions): Promise<PtySession> {
     cols: opts.cols,
     rows: opts.rows,
     cwd: opts.cwd,
+    suggestions: opts.suggestions,
     onData,
     onExit,
   });

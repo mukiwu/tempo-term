@@ -71,4 +71,37 @@ describe("App shell", () => {
     fireEvent.keyDown(window, { code: "Digit1", key: "¡", altKey: true });
     expect(useUiStore.getState().sidebarView).toBe("workspaces");
   });
+
+  it("ignores navigation shortcuts while typing in a non-terminal text field", () => {
+    const tabs = ["a", "b", "c"].map((id) => ({
+      id,
+      spaceId: "s1",
+      title: id,
+      kind: "launcher" as const,
+      paneTree: leaf(`${id}-leaf`, { kind: "launcher" }),
+      activeLeafId: `${id}-leaf`,
+    }));
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs,
+      activeId: "a",
+    });
+    render(<App />);
+
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+
+    // ⌘2 typed in a text field must not switch tabs.
+    fireEvent.keyDown(input, { code: "Digit2", key: "2", metaKey: true });
+    expect(useTabsStore.getState().activeId).toBe("a");
+
+    // ⌥1 must not hijack the sidebar either — ⌥+number is normal text entry on
+    // macOS (it types ¡), so the keystroke belongs to the input.
+    fireEvent.keyDown(input, { code: "Digit1", key: "¡", altKey: true });
+    expect(useUiStore.getState().sidebarView).toBe("explorer");
+
+    input.remove();
+  });
 });

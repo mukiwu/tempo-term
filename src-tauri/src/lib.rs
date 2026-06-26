@@ -32,7 +32,7 @@ use modules::secrets::{
 };
 use modules::pty::{
     pty_close, pty_close_all, pty_cwd, pty_foreground_command, pty_open, pty_resize,
-    pty_set_suggestions, pty_shell_name, pty_write, PtyState,
+    pty_shell_name, pty_write, PtyState,
 };
 use modules::ssh::{
     ssh_close, ssh_forward_start, ssh_forward_stop, ssh_open, ssh_prompt_reply, ssh_resize,
@@ -176,7 +176,6 @@ pub fn run() {
             secrets_set_key,
             secrets_delete_key,
             secrets_has_key,
-            pty_set_suggestions,
             gh_available,
             pr_via_gh,
             pr_via_api,

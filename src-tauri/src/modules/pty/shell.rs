@@ -4,25 +4,11 @@
 //! spawning a real shell.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
-
-/// Whether to enable fish-like command autosuggestions for new zsh shells. The
-/// frontend mirrors the user setting into this via `pty_set_suggestions`.
-static SUGGESTIONS_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// The prepared wrapper `ZDOTDIR` whose `.zshrc` sources the user's real config
 /// then the bundled zsh-autosuggestions plugin. Set once at app startup.
 static SUGGEST_ZDOTDIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-
-/// Mirror the user's "suggest previous commands" setting; read when spawning.
-pub fn set_suggestions_enabled(enabled: bool) {
-    SUGGESTIONS_ENABLED.store(enabled, Ordering::Relaxed);
-}
-
-fn suggestions_enabled() -> bool {
-    SUGGESTIONS_ENABLED.load(Ordering::Relaxed)
-}
 
 /// Build the wrapper `ZDOTDIR` under `app_data_dir` whose startup files load the
 /// user's real zsh config and then `plugin_path`. Stores the result for later
@@ -36,50 +22,84 @@ fn build_wrapper_zdotdir(app_data_dir: &Path, plugin_path: &Path) -> std::io::Re
     let dir = app_data_dir.join("zsh");
     std::fs::create_dir_all(&dir)?;
 
-    // Each file falls back to the user's real ZDOTDIR ($_TEMPO_UZ, defaulting to
-    // $HOME) so the user's own config still loads. .zshrc then restores ZDOTDIR
-    // so the interactive session and .zlogin behave as if we were never here.
+    // `$_TEMPO_UZ` carries the user's real ZDOTDIR (defaulting to $HOME) so their
+    // own config still loads. Left unescaped on purpose — it is a shell snippet,
+    // not a path.
     let user = r#"${_TEMPO_UZ:-$HOME}"#;
     let wrapper = dir.to_string_lossy();
-    // Each startup file restores ZDOTDIR to the user's real dir *before* sourcing
-    // their config, so anything that reads $ZDOTDIR (e.g. `source $ZDOTDIR/aliases`)
-    // resolves correctly. .zshenv/.zprofile then point ZDOTDIR back at the wrapper
-    // so zsh keeps loading the remaining wrapper files; .zshrc leaves it on the
-    // user's dir so the interactive session and .zlogin behave normally.
-    std::fs::write(
-        dir.join(".zshenv"),
-        format!(
-            "ZDOTDIR=\"{user}\"\n\
-             [[ -f \"$ZDOTDIR/.zshenv\" ]] && source \"$ZDOTDIR/.zshenv\"\n\
-             ZDOTDIR=\"{wrapper}\"\n"
-        ),
-    )?;
-    std::fs::write(
-        dir.join(".zprofile"),
-        format!(
-            "ZDOTDIR=\"{user}\"\n\
-             [[ -f \"$ZDOTDIR/.zprofile\" ]] && source \"$ZDOTDIR/.zprofile\"\n\
-             ZDOTDIR=\"{wrapper}\"\n"
-        ),
-    )?;
     let plugin = plugin_path.to_string_lossy();
-    std::fs::write(
-        dir.join(".zshrc"),
-        format!(
-            "ZDOTDIR=\"{user}\"\n\
-             unset _TEMPO_UZ\n\
-             [[ -f \"$ZDOTDIR/.zshrc\" ]] && source \"$ZDOTDIR/.zshrc\"\n\
-             [[ -f \"{plugin}\" ]] && source \"{plugin}\"\n"
-        ),
-    )?;
+    for (name, contents) in wrapper_files(user, &wrapper, &plugin) {
+        std::fs::write(dir.join(name), contents)?;
+    }
     Ok(dir)
 }
 
+/// Escape a real filesystem path for safe interpolation inside a zsh
+/// double-quoted string, so a path containing `"`, `$`, a backtick or a
+/// backslash cannot close the quote, expand a variable, or run a command.
+fn zsh_dq_escape(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for c in path.chars() {
+        if matches!(c, '"' | '\\' | '$' | '`') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// The wrapper startup files as `(filename, contents)` pairs. Pure so the
+/// generated shell can be asserted in tests.
+///
+/// Each file restores `ZDOTDIR` to the user's real dir *before* sourcing their
+/// config, so anything reading `$ZDOTDIR` (e.g. `source $ZDOTDIR/aliases`)
+/// resolves correctly. Only an **interactive** shell is then steered back
+/// through the wrapper so its `.zshrc` loads the plugin; a non-interactive zsh
+/// (a script, `zsh -c`) is left on the user's dir with our marker dropped, so
+/// nested shells inherit a clean environment rather than the wrapper's.
+fn wrapper_files(user: &str, wrapper: &str, plugin: &str) -> Vec<(&'static str, String)> {
+    let wrapper = zsh_dq_escape(wrapper);
+    let plugin = zsh_dq_escape(plugin);
+    vec![
+        (
+            ".zshenv",
+            format!(
+                "ZDOTDIR=\"{user}\"\n\
+                 [[ -f \"$ZDOTDIR/.zshenv\" ]] && source \"$ZDOTDIR/.zshenv\"\n\
+                 if [[ -o interactive ]]; then\n\
+                 ZDOTDIR=\"{wrapper}\"\n\
+                 else\n\
+                 unset _TEMPO_UZ\n\
+                 fi\n"
+            ),
+        ),
+        (
+            ".zprofile",
+            format!(
+                "ZDOTDIR=\"{user}\"\n\
+                 [[ -f \"$ZDOTDIR/.zprofile\" ]] && source \"$ZDOTDIR/.zprofile\"\n\
+                 [[ -o interactive ]] && ZDOTDIR=\"{wrapper}\"\n"
+            ),
+        ),
+        (
+            ".zshrc",
+            format!(
+                "ZDOTDIR=\"{user}\"\n\
+                 unset _TEMPO_UZ\n\
+                 [[ -f \"$ZDOTDIR/.zshrc\" ]] && source \"$ZDOTDIR/.zshrc\"\n\
+                 [[ -f \"{plugin}\" ]] && source \"{plugin}\"\n"
+            ),
+        ),
+    ]
+}
+
 /// The `(key, value)` environment pairs to inject so a freshly spawned `shell`
-/// loads zsh-autosuggestions. Empty unless the feature is enabled, the shell is
-/// zsh, and the wrapper was prepared — so non-zsh shells are untouched.
-pub fn autosuggest_env(shell: &str) -> Vec<(String, String)> {
-    if !suggestions_enabled() || !is_zsh(shell) {
+/// loads zsh-autosuggestions. `enabled` is the user's "suggest previous
+/// commands" setting, read per spawn so a session always reflects the current
+/// setting. Empty unless enabled, the shell is zsh, and the wrapper was prepared
+/// — so non-zsh shells are untouched.
+pub fn autosuggest_env(shell: &str, enabled: bool) -> Vec<(String, String)> {
+    if !enabled || !is_zsh(shell) {
         return Vec::new();
     }
     let Some(Some(zdotdir)) = SUGGEST_ZDOTDIR.get() else {
@@ -259,11 +279,50 @@ mod tests {
     }
 
     #[test]
-    fn autosuggest_env_is_empty_for_non_zsh() {
-        // Even with the feature toggled on, a non-zsh shell gets no env changes.
-        set_suggestions_enabled(true);
-        assert!(autosuggest_env("/bin/bash").is_empty());
-        set_suggestions_enabled(false);
+    fn autosuggest_env_is_empty_when_disabled_or_non_zsh() {
+        // A non-zsh shell is untouched even when the setting is on, and zsh is
+        // untouched when the setting is off.
+        assert!(autosuggest_env("/bin/bash", true).is_empty());
+        assert!(autosuggest_env("/bin/zsh", false).is_empty());
+    }
+
+    #[test]
+    fn wrapper_files_escape_paths_in_double_quoted_strings() {
+        // A path with shell metacharacters must be backslash-escaped so it can't
+        // close the quote or trigger expansion; the user snippet is left raw.
+        let files = wrapper_files(
+            r#"${_TEMPO_UZ:-$HOME}"#,
+            r#"/tmp/a"b$c`d\e/zsh"#,
+            r#"/p/plug".zsh"#,
+        );
+        let by = |name: &str| files.iter().find(|(n, _)| *n == name).unwrap().1.clone();
+
+        let zshenv = by(".zshenv");
+        assert!(
+            zshenv.contains(r#"ZDOTDIR="/tmp/a\"b\$c\`d\\e/zsh""#),
+            "wrapper path should be escaped, got: {zshenv}"
+        );
+        // The user snippet stays unescaped — it is intentional shell.
+        assert!(zshenv.contains(r#"ZDOTDIR="${_TEMPO_UZ:-$HOME}""#));
+
+        let zshrc = by(".zshrc");
+        assert!(
+            zshrc.contains(r#"source "/p/plug\".zsh""#),
+            "plugin path should be escaped, got: {zshrc}"
+        );
+    }
+
+    #[test]
+    fn wrapper_zshenv_only_re_enters_wrapper_for_interactive_shells() {
+        // A non-interactive zsh (script, `zsh -c`) must stay on the user's dir
+        // and drop the marker so nested shells get a clean environment.
+        let files = wrapper_files(r#"${_TEMPO_UZ:-$HOME}"#, "/w/zsh", "/p/plugin.zsh");
+        let zshenv = files.iter().find(|(n, _)| *n == ".zshenv").unwrap().1.clone();
+        assert!(zshenv.contains("if [[ -o interactive ]]; then"));
+        assert!(zshenv.contains("unset _TEMPO_UZ"));
+        // .zprofile likewise only steers interactive shells back to the wrapper.
+        let zprofile = files.iter().find(|(n, _)| *n == ".zprofile").unwrap().1.clone();
+        assert!(zprofile.contains(r#"[[ -o interactive ]] && ZDOTDIR="/w/zsh""#));
     }
 
     fn has_utf8(env: &[(String, String)], key: &str) -> bool {

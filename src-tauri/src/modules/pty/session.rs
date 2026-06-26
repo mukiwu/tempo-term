@@ -56,7 +56,9 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
 }
 
 /// Build the shell command and its display name from the live environment.
-fn build_shell_command(cwd: Option<String>) -> (CommandBuilder, String) {
+/// `suggestions` is the user's "suggest previous commands" setting, passed per
+/// spawn so a freshly opened (or restored) session reflects the current value.
+fn build_shell_command(cwd: Option<String>, suggestions: bool) -> (CommandBuilder, String) {
     let shell = resolve_shell();
     let mut cmd = CommandBuilder::new(&shell);
     // Run as a login shell so it sources the user's profile and inherits the
@@ -82,7 +84,7 @@ fn build_shell_command(cwd: Option<String>) -> (CommandBuilder, String) {
 
     // When enabled, point zsh at a wrapper ZDOTDIR that loads the user's config
     // and then the bundled autosuggestions plugin. No-op for non-zsh shells.
-    for (key, value) in autosuggest_env(&shell) {
+    for (key, value) in autosuggest_env(&shell, suggestions) {
         cmd.env(key, value);
     }
 
@@ -156,10 +158,11 @@ pub fn spawn(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    suggestions: bool,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
-    let (cmd, shell_name) = build_shell_command(cwd);
+    let (cmd, shell_name) = build_shell_command(cwd, suggestions);
     spawn_with_sinks(
         state,
         cols,

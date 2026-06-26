@@ -21,7 +21,6 @@ import { leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { applyTheme, getTheme } from "@/themes/themes";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { useWatchSessions } from "@/modules/claude-progress/lib/useWatchSessions";
@@ -49,11 +48,29 @@ function digitFromCode(code: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+/**
+ * True when a key event originates from somewhere the user is typing — a text
+ * input, textarea, or contentEditable — so window-level navigation/zoom
+ * shortcuts yield and let the character through (⌥1 types "¡" in the AI box, the
+ * file finder, etc.). The terminal's own hidden textarea is excluded: TerminalView
+ * deliberately forwards app shortcuts up to this handler, so a focused terminal
+ * must still trigger them.
+ */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.closest(".xterm")) {
+    return false;
+  }
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable;
+}
+
 function App() {
   const { t } = useTranslation();
   const themeId = useSettingsStore((s) => s.themeId);
   const uiZoom = useSettingsStore((s) => s.uiZoom);
-  const terminalSuggestions = useSettingsStore((s) => s.terminalSuggestions);
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const [sidebarWidth, setSidebarWidth] = useState(260);
@@ -66,13 +83,6 @@ function App() {
   useEffect(() => {
     applyTheme(getTheme(themeId), document.documentElement);
   }, [themeId]);
-
-  // Mirror the terminal-suggestions setting into the backend so shells opened
-  // afterwards load (or skip) zsh-autosuggestions. invoke() rejects without a
-  // Tauri runtime (tests, web preview); ignore it.
-  useEffect(() => {
-    void invoke("pty_set_suggestions", { enabled: terminalSuggestions }).catch(() => {});
-  }, [terminalSuggestions]);
 
   // Scale the whole webview to the saved zoom (driven by ⌘+ / ⌘- / ⌘0). Native
   // webview zoom keeps the terminal's sizing math intact, unlike a CSS scale.
@@ -168,9 +178,12 @@ function App() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const digit = digitFromCode(e.code);
+      // Tab/sidebar/zoom/pane shortcuts yield while the user is typing in a text
+      // field (the terminal is excluded — see isEditableTarget).
+      const editable = isEditableTarget(e.target);
 
       // ⌥1…⌥6 jump straight to a sidebar panel by its position in the icon bar.
-      if (digit !== null && e.altKey && !e.metaKey && !e.ctrlKey) {
+      if (digit !== null && e.altKey && !e.metaKey && !e.ctrlKey && !editable) {
         const view = SIDEBAR_VIEW_ORDER[digit - 1];
         if (view) {
           e.preventDefault();
@@ -184,7 +197,7 @@ function App() {
       }
 
       // ⌘1…⌘9 switch to the Nth tab of the active space (matching the tab bar).
-      if (digit !== null && !e.shiftKey && !e.altKey) {
+      if (digit !== null && !e.shiftKey && !e.altKey && !editable) {
         const state = useTabsStore.getState();
         const spaceTabs = state.tabs.filter((t) => t.spaceId === state.activeSpaceId);
         const target = spaceTabs[digit - 1];
@@ -197,7 +210,7 @@ function App() {
 
       // ⌘` cycles focus through the panes of the active tab (⌘~ works too, since
       // both sit on the Backquote key). No-op with one pane.
-      if (e.code === "Backquote" && !e.altKey) {
+      if (e.code === "Backquote" && !e.altKey && !editable) {
         e.preventDefault();
         useTabsStore.getState().focusNextPane();
         return;
@@ -205,7 +218,7 @@ function App() {
 
       // Zoom the whole UI. `code` is used so it works regardless of layout/Shift:
       // the "=" key (⌘= or ⌘+) zooms in, "-" zooms out, "0" resets to 100%.
-      if (!e.altKey) {
+      if (!e.altKey && !editable) {
         if (e.code === "Equal" || e.code === "NumpadAdd") {
           e.preventDefault();
           useSettingsStore.getState().zoomIn();
