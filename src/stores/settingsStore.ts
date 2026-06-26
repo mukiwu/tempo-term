@@ -52,6 +52,8 @@ interface SettingsState {
   aiTerminalContext: boolean;
   /** Suggest previously-run commands as ghost text in the terminal. */
   terminalSuggestions: boolean;
+  /** Show the hover action card (ping/curl/extract) over IPs, host:port and archives. */
+  actionLinksEnabled: boolean;
   /** Webview zoom factor for the whole UI (1 = 100%); driven by ⌘+ / ⌘-. */
   uiZoom: number;
   setLanguage: (language: SupportedLanguage) => void;
@@ -66,6 +68,7 @@ interface SettingsState {
   setAiInlineCompletion: (value: boolean) => void;
   setAiTerminalContext: (value: boolean) => void;
   setTerminalSuggestions: (value: boolean) => void;
+  setActionLinksEnabled: (value: boolean) => void;
   zoomIn: () => void;
   zoomOut: () => void;
   resetZoom: () => void;
@@ -106,6 +109,7 @@ export const useSettingsStore = create<SettingsState>()(
       aiInlineCompletion: false,
       aiTerminalContext: true,
       terminalSuggestions: true,
+      actionLinksEnabled: true,
       uiZoom: DEFAULT_UI_ZOOM,
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
@@ -120,6 +124,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAiInlineCompletion: (value) => set({ aiInlineCompletion: value }),
       setAiTerminalContext: (value) => set({ aiTerminalContext: value }),
       setTerminalSuggestions: (value) => set({ terminalSuggestions: value }),
+      setActionLinksEnabled: (value) => set({ actionLinksEnabled: value }),
       zoomIn: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom + UI_ZOOM_STEP) })),
       zoomOut: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom - UI_ZOOM_STEP) })),
       resetZoom: () => set({ uiZoom: DEFAULT_UI_ZOOM }),

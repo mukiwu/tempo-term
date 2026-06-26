@@ -280,6 +280,9 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     onOpenFile={(absolutePath) =>
                       splitPaneWith(tab.id, pane.id, { kind: "editor", path: absolutePath }, "row")
                     }
+                    onOpenPreview={(url) =>
+                      splitPaneWith(tab.id, pane.id, { kind: "preview", url }, "row")
+                    }
                   />
                 )}
               </Suspense>

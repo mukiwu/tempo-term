@@ -3,6 +3,28 @@
   "tagline": "AI 驅動的終端機工作區",
   "terminalConnecting": "啟動中…",
   "openLinkHint": "{{mods}} + 點擊開啟",
+  "actionLinks": {
+    "hoverHint": "可執行的動作",
+    "preview": "用網頁預覽開啟",
+    "ping": "Ping",
+    "traceroute": "Traceroute",
+    "ssh": "SSH",
+    "curl": "curl（HTTP）",
+    "curlHttps": "curl（HTTPS）",
+    "nc": "Netcat",
+    "telnet": "Telnet",
+    "extract": "解壓縮",
+    "list": "列出內容",
+    "dangerWarning": "這個指令看起來具破壞性",
+    "runAnyway": "仍要執行",
+    "cancel": "取消"
+  },
+  "terminalSearch": {
+    "placeholder": "在終端機中搜尋",
+    "next": "下一個",
+    "previous": "上一個",
+    "close": "關閉搜尋"
+  },
   "ssh": {
     "disconnected": "已斷線，點擊重新連線",
     "reconnect": "重新連線"

@@ -87,6 +87,8 @@
     "restoreHistoryHint": "Reopen each terminal with its previous output (read-only), unless its shell was exited or the pane was closed",
     "suggestions": "Suggest previous commands",
     "suggestionsHint": "Show a dim completion from your shell history as you type; press → to accept",
+    "actionLinks": "Hover action cards",
+    "actionLinksHint": "Hover an IP, host:port or archive in the output to get quick commands (ping, curl, extract…)",
     "clearHistory": "Clear saved history",
     "historyCleared": "Cleared"
   },
@@ -134,6 +136,7 @@
     "splitRight": "Split left / right",
     "splitDown": "Split top / bottom",
     "cyclePane": "Cycle split panes",
+    "searchTerminal": "Search terminal output",
     "lineStart": "Jump to line start",
     "lineEnd": "Jump to line end",
     "wordBack": "Jump word left",

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Loader2, WifiOff } from "lucide-react";
 import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
+import { SearchBar } from "./SearchBar";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
@@ -65,6 +66,8 @@ import {
   shellQuotePath,
 } from "./lib/terminalClipboard";
 import { buildFileLink, findFilePaths, resolveFilePath } from "./lib/fileLinks";
+import { actionsFor, findActionLinks, type TerminalAction } from "./lib/actionLinks";
+import { ActionCard } from "./ActionCard";
 import { buildCellPositions, gatherLogicalLine } from "./lib/cellPositions";
 import { terminalKeySequence } from "./lib/terminalKeymap";
 import { shouldCdToRoot } from "./lib/cwdSync";
@@ -116,6 +119,8 @@ interface TerminalViewProps {
   onCwdChange?: (cwd: string) => void;
   /** Alt+click on a file path in the output opens it (with the resolved abs path). */
   onOpenFile?: (absolutePath: string) => void;
+  /** Open a localhost/IP URL from a terminal action card in the in-app preview. */
+  onOpenPreview?: (url: string) => void;
 }
 
 export function TerminalView({
@@ -127,6 +132,7 @@ export function TerminalView({
   onExit,
   onCwdChange,
   onOpenFile,
+  onOpenPreview,
 }: TerminalViewProps) {
   const leafIdRef = useRef(leafId);
   leafIdRef.current = leafId;
@@ -145,6 +151,8 @@ export function TerminalView({
   onCwdChangeRef.current = onCwdChange;
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
+  const onOpenPreviewRef = useRef(onOpenPreview);
+  onOpenPreviewRef.current = onOpenPreview;
   // Holds a deferred "start the SSH session now" function that is set inside the
   // main mount effect and called by the reconnect button for restored panes.
   const connectNowRef = useRef<(() => void) | null>(null);
@@ -164,8 +172,54 @@ export function TerminalView({
   // effect for restored SSH panes without touching any other path.
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
   const [externalFileDragging, setExternalFileDragging] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const dragDepthRef = useRef(0);
   const nativeDragPathsRef = useRef<string[]>([]);
+  // The hover action card (IP / host:port / archive quick commands), positioned
+  // at the cursor. A short hide delay lets the pointer travel from the link into
+  // the card without it vanishing.
+  const [actionCard, setActionCard] = useState<{
+    actions: TerminalAction[];
+    x: number;
+    y: number;
+  } | null>(null);
+  const actionCardTimer = useRef<number | null>(null);
+
+  const cancelActionCardHide = () => {
+    if (actionCardTimer.current !== null) {
+      clearTimeout(actionCardTimer.current);
+      actionCardTimer.current = null;
+    }
+  };
+  const showActionCard = (actions: TerminalAction[], x: number, y: number) => {
+    cancelActionCardHide();
+    setActionCard({ actions, x, y });
+  };
+  const scheduleActionCardHide = () => {
+    cancelActionCardHide();
+    actionCardTimer.current = window.setTimeout(() => setActionCard(null), 180);
+  };
+  const runActionCommand = (command: string) => {
+    void sessionRef.current?.write(`${command}\r`);
+    cancelActionCardHide();
+    setActionCard(null);
+    handleRef.current?.term.focus();
+  };
+  const openActionPreview = (url: string) => {
+    onOpenPreviewRef.current?.(url);
+    cancelActionCardHide();
+    setActionCard(null);
+  };
+
+  // Clear any pending action-card hide timer when the pane unmounts so it can't
+  // fire a state update on a gone component.
+  useEffect(() => {
+    return () => {
+      if (actionCardTimer.current !== null) {
+        clearTimeout(actionCardTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -180,6 +234,7 @@ export function TerminalView({
       fontSize: initial.fontSize,
       theme: getTheme(useSettingsStore.getState().themeId).terminal,
       linkHint: linkHintRef.current,
+      onOpenLocalUrl: (url) => onOpenPreviewRef.current?.(url),
     });
     handleRef.current = handle;
     const { term, fit } = handle;
@@ -275,6 +330,11 @@ export function TerminalView({
         return false;
       }
       const target = event.target;
+      // Let inputs inside the pane (e.g. the search bar) handle their own paste
+      // rather than redirecting it into the shell.
+      if (target instanceof HTMLInputElement) {
+        return false;
+      }
       if (target instanceof Node && !containerEl.contains(target)) {
         return false;
       }
@@ -296,6 +356,10 @@ export function TerminalView({
 
     const onPasteCapture = (event: ClipboardEvent) => {
       const target = event.target;
+      // Let inputs inside the pane (e.g. the search bar) keep their own paste.
+      if (target instanceof HTMLInputElement) {
+        return;
+      }
       if (!activeRef.current || (target instanceof Node && !containerEl.contains(target))) {
         return;
       }
@@ -321,6 +385,27 @@ export function TerminalView({
       if (event.type === "keydown" && isAppShortcut(event)) {
         event.preventDefault();
         return false;
+      }
+      // Open the in-terminal search bar. On mac Cmd+F is free; on other
+      // platforms Ctrl+F is readline's forward-char, so use Ctrl+Shift+F to
+      // avoid clobbering it.
+      if (event.type === "keydown") {
+        const isF = event.code === "KeyF" || event.key.toLowerCase() === "f";
+        const findCombo = IS_MAC
+          ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+          : event.ctrlKey && event.shiftKey && !event.metaKey && !event.altKey;
+        if (isF && findCombo) {
+          event.preventDefault();
+          setSearchOpen(true);
+          // If the bar is already open (just unfocused), refocus and select it
+          // so the shortcut is never a no-op.
+          const input = containerEl.querySelector("input");
+          if (input) {
+            input.focus();
+            input.select();
+          }
+          return false;
+        }
       }
       // Standard terminal editing shortcuts (Shift+Enter, word/line nav, word
       // and line delete), matching common terminals so muscle memory carries over.
@@ -391,8 +476,15 @@ export function TerminalView({
           return;
         }
         const { text, spans } = buildCellPositions(rows);
-        const matches = findFilePaths(text);
-        if (matches.length === 0) {
+        const actionsEnabled = useSettingsStore.getState().actionLinksEnabled;
+        const actionMatches = actionsEnabled ? findActionLinks(text) : [];
+        // An archive filename also matches as a file path; drop the overlapping
+        // file link so the action card wins (opening a binary archive as a file
+        // is not useful anyway).
+        const matches = findFilePaths(text).filter(
+          (f) => !actionMatches.some((a) => f.start < a.end && f.end > a.start),
+        );
+        if (matches.length === 0 && actionMatches.length === 0) {
           callback(undefined);
           return;
         }
@@ -407,17 +499,29 @@ export function TerminalView({
           const span = spans[index] ?? lastSpan;
           return { x: span?.endX ?? 1, y: span?.y ?? lineNumber };
         };
-        callback(
-          matches.map((m) =>
-            buildFileLink({
-              text: m.text,
-              range: { start: startCell(m.start), end: endCell(m.end - 1) },
-              hint: linkHintRef.current,
-              isMac: IS_MAC,
-              onOpen: (raw) => void openFromTerminal(raw),
-            }),
-          ),
+        const fileLinks = matches.map((m) =>
+          buildFileLink({
+            text: m.text,
+            range: { start: startCell(m.start), end: endCell(m.end - 1) },
+            hint: linkHintRef.current,
+            isMac: IS_MAC,
+            onOpen: (raw) => void openFromTerminal(raw),
+          }),
         );
+        const actionLinks = actionMatches.map((m) => ({
+          text: m.text,
+          range: { start: startCell(m.start), end: endCell(m.end - 1) },
+          // Interaction happens through the hover card's buttons, so a click on
+          // the link itself does nothing.
+          activate: () => {},
+          hover: (event: MouseEvent) => {
+            showActionCard(actionsFor(m), event.clientX, event.clientY);
+          },
+          leave: () => {
+            scheduleActionCardHide();
+          },
+        }));
+        callback([...fileLinks, ...actionLinks]);
       },
     });
 
@@ -1044,6 +1148,29 @@ export function TerminalView({
       }}
     >
       {externalFileDragging && <div className={dropOverlayClassName(true)} />}
+      {actionCard && (
+        <div
+          className="fixed z-30"
+          style={{ left: actionCard.x, top: actionCard.y + 14 }}
+          onMouseEnter={cancelActionCardHide}
+          onMouseLeave={() => setActionCard(null)}
+        >
+          <ActionCard
+            actions={actionCard.actions}
+            onRun={runActionCommand}
+            onOpenPreview={openActionPreview}
+          />
+        </div>
+      )}
+      {searchOpen && handleRef.current && (
+        <SearchBar
+          search={handleRef.current.search}
+          onClose={() => {
+            setSearchOpen(false);
+            handleRef.current?.term.focus();
+          }}
+        />
+      )}
       {connecting && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-fg-subtle">
           <Loader2 size={15} className="animate-spin" />
