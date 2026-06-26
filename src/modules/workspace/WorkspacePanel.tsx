@@ -251,7 +251,7 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
           : "border-border bg-bg-inset text-fg-muted hover:bg-bg-elevated"
       }`}
     >
-      <span className="flex shrink-0 flex-col items-center justify-center gap-1">
+      <span className="flex shrink-0 flex-col items-center justify-start gap-1">
         <Icon size={14} className="text-fg-subtle" />
         <span className="text-[10px] font-medium leading-none text-fg-subtle">{index}</span>
       </span>
