@@ -277,6 +277,11 @@ export function TerminalView({
         return false;
       }
       const target = event.target;
+      // Let inputs inside the pane (e.g. the search bar) handle their own paste
+      // rather than redirecting it into the shell.
+      if (target instanceof HTMLInputElement) {
+        return false;
+      }
       if (target instanceof Node && !containerEl.contains(target)) {
         return false;
       }
@@ -298,6 +303,10 @@ export function TerminalView({
 
     const onPasteCapture = (event: ClipboardEvent) => {
       const target = event.target;
+      // Let inputs inside the pane (e.g. the search bar) keep their own paste.
+      if (target instanceof HTMLInputElement) {
+        return;
+      }
       if (!activeRef.current || (target instanceof Node && !containerEl.contains(target))) {
         return;
       }
@@ -335,6 +344,13 @@ export function TerminalView({
         if (isF && findCombo) {
           event.preventDefault();
           setSearchOpen(true);
+          // If the bar is already open (just unfocused), refocus and select it
+          // so the shortcut is never a no-op.
+          const input = containerEl.querySelector("input");
+          if (input) {
+            input.focus();
+            input.select();
+          }
           return false;
         }
       }

@@ -22,11 +22,24 @@ export function SearchBar({ search, onClose }: SearchBarProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const initialMount = useRef(true);
 
   // Focus the field as soon as the bar opens so the user can type immediately.
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Clear stale highlights the moment the query is emptied, rather than leaving
+  // them on screen until the bar closes. Skips the initial empty mount.
+  useEffect(() => {
+    if (initialMount.current) {
+      initialMount.current = false;
+      return;
+    }
+    if (!query) {
+      search.clearDecorations();
+    }
+  }, [query, search]);
 
   // Drop the match highlight when the bar goes away, so closing search leaves
   // the terminal clean.

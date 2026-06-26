@@ -45,6 +45,18 @@ describe("SearchBar", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("clears the highlight as soon as the query is emptied", () => {
+    const search = makeController();
+    render(<SearchBar search={search} onClose={() => {}} />);
+    const input = screen.getByRole("textbox");
+
+    fireEvent.change(input, { target: { value: "needle" } });
+    search.clearDecorations.mockClear();
+    fireEvent.change(input, { target: { value: "" } });
+
+    expect(search.clearDecorations).toHaveBeenCalled();
+  });
+
   it("clears the search highlight when it unmounts", () => {
     const search = makeController();
     const { unmount } = render(<SearchBar search={search} onClose={() => {}} />);
