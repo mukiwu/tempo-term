@@ -66,14 +66,14 @@ export function ActionCard({ actions, onRun }: ActionCardProps) {
           onClick={() => handleClick(action.command)}
         >
           <span className="min-w-16 font-medium text-fg">{t(action.labelKey)}</span>
-          {/* command + arrow turn accent the moment the row is pressed, so the
-              click clearly registers before the card closes and the command runs */}
-          <code className="font-mono text-fg-subtle group-active:text-accent">
+          {/* command + arrow turn accent while the row is hovered, signalling it
+              is the runnable target */}
+          <code className="font-mono text-fg-subtle group-hover:text-accent">
             {action.command}
           </code>
           <ArrowRight
             size={13}
-            className="ml-auto shrink-0 text-fg-subtle group-active:text-accent"
+            className="ml-auto shrink-0 text-fg-subtle group-hover:text-accent"
           />
         </button>
       ))}
