@@ -16,10 +16,20 @@ pub fn pty_open(
     rows: u16,
     cwd: Option<String>,
     suggestions: bool,
+    shell_override: Option<String>,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
-    session::spawn(&state, cols, rows, cwd, suggestions, on_data, on_exit)
+    session::spawn(
+        &state,
+        cols,
+        rows,
+        cwd,
+        suggestions,
+        shell_override,
+        on_data,
+        on_exit,
+    )
 }
 
 #[tauri::command]

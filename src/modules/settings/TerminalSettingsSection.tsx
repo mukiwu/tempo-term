@@ -16,6 +16,8 @@ export function TerminalSettingsSection() {
   const setRestoreTerminalHistory = useSettingsStore((s) => s.setRestoreTerminalHistory);
   const terminalSuggestions = useSettingsStore((s) => s.terminalSuggestions);
   const setTerminalSuggestions = useSettingsStore((s) => s.setTerminalSuggestions);
+  const customShellPath = useSettingsStore((s) => s.customShellPath);
+  const setCustomShellPath = useSettingsStore((s) => s.setCustomShellPath);
   const actionLinksEnabled = useSettingsStore((s) => s.actionLinksEnabled);
   const setActionLinksEnabled = useSettingsStore((s) => s.setActionLinksEnabled);
   const themeId = useSettingsStore((s) => s.themeId);
@@ -60,6 +62,21 @@ export function TerminalSettingsSection() {
             {t("terminalSettings.previewText")}
           </pre>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <label htmlFor="custom-shell-path" className="mb-2 block text-sm font-medium text-fg">
+          {t("terminalSettings.customShell")}
+        </label>
+        <input
+          id="custom-shell-path"
+          type="text"
+          value={customShellPath}
+          placeholder={t("terminalSettings.customShellPlaceholder")}
+          onChange={(e) => setCustomShellPath(e.target.value)}
+          className="w-full max-w-md rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent"
+        />
+        <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.customShellHint")}</p>
       </div>
 
       <div className="mb-6">

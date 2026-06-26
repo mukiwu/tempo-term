@@ -21,6 +21,7 @@ describe("settingsStore", () => {
       prSource: "auto",
       claudeFlags: initialState.claudeFlags,
       codexFlags: initialState.codexFlags,
+      customShellPath: initialState.customShellPath,
     });
   });
 
@@ -123,5 +124,11 @@ describe("settingsStore", () => {
     useSettingsStore.getState().setClaudeFlags("--model opus");
     const persisted = localStorage.getItem("tempoterm-settings");
     expect(persisted).toContain("--model opus");
+  });
+
+  it("defaults the custom shell path empty and updates it", () => {
+    expect(useSettingsStore.getState().customShellPath).toBe("");
+    useSettingsStore.getState().setCustomShellPath("/opt/homebrew/bin/pwsh");
+    expect(useSettingsStore.getState().customShellPath).toBe("/opt/homebrew/bin/pwsh");
   });
 });

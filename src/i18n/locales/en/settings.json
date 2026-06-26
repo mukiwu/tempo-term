@@ -97,6 +97,9 @@
     "suggestionsHint": "Show a dim completion from your shell history as you type; press → to accept",
     "actionLinks": "Hover action cards",
     "actionLinksHint": "Hover an IP, host:port or archive in the output to get quick commands (ping, curl, extract…)",
+    "customShell": "Custom shell path",
+    "customShellHint": "Shell executable to spawn instead of the auto-detected default; leave empty for your system $SHELL, or point at pwsh / PowerShell 7 on Windows",
+    "customShellPlaceholder": "/opt/homebrew/bin/pwsh",
     "clearHistory": "Clear saved history",
     "historyCleared": "Cleared"
   },

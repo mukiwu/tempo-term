@@ -125,18 +125,20 @@ fn is_zsh(shell: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Pick the shell program. A non-empty `$SHELL` wins, otherwise fall back to a
-/// sensible per-platform default.
-pub fn resolve_shell_from(shell_env: Option<String>) -> String {
-    match shell_env {
-        Some(s) if !s.trim().is_empty() => s,
-        _ => default_shell(),
-    }
+/// Pick the shell program. A non-empty `shell_override` (the user's custom
+/// shell-path setting) wins, then a non-empty `$SHELL`, otherwise a sensible
+/// per-platform default.
+pub fn resolve_shell_from(shell_override: Option<String>, shell_env: Option<String>) -> String {
+    let non_empty = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
+    non_empty(shell_override)
+        .or_else(|| non_empty(shell_env))
+        .unwrap_or_else(default_shell)
 }
 
-/// Resolve the shell from the live environment.
-pub fn resolve_shell() -> String {
-    resolve_shell_from(std::env::var("SHELL").ok())
+/// Resolve the shell from the live environment, honouring an optional user
+/// override (the custom shell-path setting, passed per spawn).
+pub fn resolve_shell_with(shell_override: Option<String>) -> String {
+    resolve_shell_from(shell_override, std::env::var("SHELL").ok())
 }
 
 #[cfg(not(windows))]
@@ -249,17 +251,36 @@ mod tests {
     #[test]
     fn uses_shell_env_when_set() {
         assert_eq!(
-            resolve_shell_from(Some("/usr/bin/fish".to_string())),
+            resolve_shell_from(None, Some("/usr/bin/fish".to_string())),
             "/usr/bin/fish"
         );
     }
 
     #[test]
     fn falls_back_to_default_when_shell_env_missing_or_blank() {
-        let from_none = resolve_shell_from(None);
-        let from_blank = resolve_shell_from(Some("   ".to_string()));
+        let from_none = resolve_shell_from(None, None);
+        let from_blank = resolve_shell_from(None, Some("   ".to_string()));
         assert_eq!(from_none, from_blank);
         assert!(from_none.starts_with('/') || from_none.ends_with(".exe"));
+    }
+
+    #[test]
+    fn custom_override_wins_over_shell_env() {
+        assert_eq!(
+            resolve_shell_from(
+                Some("/opt/homebrew/bin/pwsh".to_string()),
+                Some("/bin/zsh".to_string()),
+            ),
+            "/opt/homebrew/bin/pwsh"
+        );
+    }
+
+    #[test]
+    fn blank_override_falls_through_to_shell_env() {
+        assert_eq!(
+            resolve_shell_from(Some("   ".to_string()), Some("/bin/zsh".to_string())),
+            "/bin/zsh"
+        );
     }
 
     #[test]

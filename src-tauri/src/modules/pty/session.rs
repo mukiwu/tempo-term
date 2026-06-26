@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtyPair, PtySize};
 use tauri::ipc::{Channel, Response};
 
-use super::shell::{autosuggest_env, login_args, resolve_shell, terminal_env, usable_cwd};
+use super::shell::{autosuggest_env, login_args, resolve_shell_with, terminal_env, usable_cwd};
 
 /// A single live terminal session.
 pub struct Session {
@@ -58,8 +58,12 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
 /// Build the shell command and its display name from the live environment.
 /// `suggestions` is the user's "suggest previous commands" setting, passed per
 /// spawn so a freshly opened (or restored) session reflects the current value.
-fn build_shell_command(cwd: Option<String>, suggestions: bool) -> (CommandBuilder, String) {
-    let shell = resolve_shell();
+fn build_shell_command(
+    cwd: Option<String>,
+    suggestions: bool,
+    shell_override: Option<String>,
+) -> (CommandBuilder, String) {
+    let shell = resolve_shell_with(shell_override);
     let mut cmd = CommandBuilder::new(&shell);
     // Run as a login shell so it sources the user's profile and inherits the
     // full PATH (Homebrew etc.); a GUI-launched non-login shell misses those.
@@ -159,10 +163,11 @@ pub fn spawn(
     rows: u16,
     cwd: Option<String>,
     suggestions: bool,
+    shell_override: Option<String>,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
-    let (cmd, shell_name) = build_shell_command(cwd, suggestions);
+    let (cmd, shell_name) = build_shell_command(cwd, suggestions, shell_override);
     spawn_with_sinks(
         state,
         cols,

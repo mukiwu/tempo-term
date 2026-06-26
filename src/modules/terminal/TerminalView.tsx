@@ -671,6 +671,7 @@ export function TerminalView({
         // Read the setting at spawn time so a restored pane reflects the current
         // value, instead of racing a global flag set after mount.
         suggestions: useSettingsStore.getState().terminalSuggestions,
+        shellOverride: useSettingsStore.getState().customShellPath,
         onData: (bytes) => outputWriter.push(bytes),
         // Only treat an exit as user-facing when we did not tear the session
         // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
