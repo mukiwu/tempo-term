@@ -1,5 +1,6 @@
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -21,6 +22,7 @@ export const DEFAULT_TERMINAL_FONT_FAMILY = buildTerminalFontFamily({});
 export interface TerminalHandle {
   term: Terminal;
   fit: FitAddon;
+  search: SearchAddon;
 }
 
 export interface CreateTerminalOptions {
@@ -48,6 +50,9 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
 
   const fit = new FitAddon();
   term.loadAddon(fit);
+
+  const search = new SearchAddon();
+  term.loadAddon(search);
   // Open web links in the system browser (not the in-app webview) on a
   // modifier-click, matching the file-link gesture (Alt/Cmd) plus Ctrl for
   // non-mac. A plain click is left for text selection. Hover shows a hint.
@@ -75,7 +80,7 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
   // cells and the cursor never drifts out of alignment.
   term.unicode.activeVersion = "11";
 
-  return { term, fit };
+  return { term, fit, search };
 }
 
 /**

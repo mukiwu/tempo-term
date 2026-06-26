@@ -3,6 +3,12 @@
   "tagline": "AI 驅動的終端機工作區",
   "terminalConnecting": "啟動中…",
   "openLinkHint": "{{mods}} + 點擊開啟",
+  "terminalSearch": {
+    "placeholder": "在終端機中搜尋",
+    "next": "下一個",
+    "previous": "上一個",
+    "close": "關閉搜尋"
+  },
   "ssh": {
     "disconnected": "已斷線，點擊重新連線",
     "reconnect": "重新連線"

@@ -1,0 +1,68 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { SearchBar } from "./SearchBar";
+import "../../i18n";
+
+function makeController() {
+  return {
+    findNext: vi.fn(() => true),
+    findPrevious: vi.fn(() => true),
+    clearDecorations: vi.fn(),
+  };
+}
+
+describe("SearchBar", () => {
+  it("searches forward when the user types a query and presses Enter", () => {
+    const search = makeController();
+    render(<SearchBar search={search} onClose={() => {}} />);
+
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "needle" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(search.findNext).toHaveBeenCalledWith("needle");
+  });
+
+  it("searches backward when the user presses Shift+Enter", () => {
+    const search = makeController();
+    render(<SearchBar search={search} onClose={() => {}} />);
+
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "needle" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+
+    expect(search.findPrevious).toHaveBeenCalledWith("needle");
+    expect(search.findNext).not.toHaveBeenCalled();
+  });
+
+  it("closes when the user presses Escape", () => {
+    const search = makeController();
+    const onClose = vi.fn();
+    render(<SearchBar search={search} onClose={onClose} />);
+
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("clears the search highlight when it unmounts", () => {
+    const search = makeController();
+    const { unmount } = render(<SearchBar search={search} onClose={() => {}} />);
+
+    unmount();
+
+    expect(search.clearDecorations).toHaveBeenCalled();
+  });
+
+  it("searches forward and backward from the next/previous buttons", () => {
+    const search = makeController();
+    render(<SearchBar search={search} onClose={() => {}} />);
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "needle" } });
+    fireEvent.click(screen.getByLabelText("Find next"));
+    fireEvent.click(screen.getByLabelText("Find previous"));
+
+    expect(search.findNext).toHaveBeenCalledWith("needle");
+    expect(search.findPrevious).toHaveBeenCalledWith("needle");
+  });
+});

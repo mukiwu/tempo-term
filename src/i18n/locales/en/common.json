@@ -3,6 +3,12 @@
   "tagline": "AI-powered terminal workspace",
   "terminalConnecting": "Starting shell…",
   "openLinkHint": "{{mods}}-click to open",
+  "terminalSearch": {
+    "placeholder": "Find in terminal",
+    "next": "Find next",
+    "previous": "Find previous",
+    "close": "Close search"
+  },
   "ssh": {
     "disconnected": "Disconnected — click to reconnect",
     "reconnect": "Reconnect"

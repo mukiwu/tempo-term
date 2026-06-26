@@ -134,6 +134,7 @@
     "splitRight": "Split left / right",
     "splitDown": "Split top / bottom",
     "cyclePane": "Cycle split panes",
+    "searchTerminal": "Search terminal output",
     "lineStart": "Jump to line start",
     "lineEnd": "Jump to line end",
     "wordBack": "Jump word left",
