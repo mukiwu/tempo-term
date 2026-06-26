@@ -101,4 +101,10 @@ describe("settingsStore", () => {
     useSettingsStore.getState().setPrSource("token");
     expect(useSettingsStore.getState().prSource).toBe("token");
   });
+
+  it("defaults aiTerminalContext on and toggles it", () => {
+    expect(useSettingsStore.getState().aiTerminalContext).toBe(true);
+    useSettingsStore.getState().setAiTerminalContext(false);
+    expect(useSettingsStore.getState().aiTerminalContext).toBe(false);
+  });
 });

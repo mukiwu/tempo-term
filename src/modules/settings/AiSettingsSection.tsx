@@ -69,6 +69,27 @@ function InlineCompletionRow() {
   );
 }
 
+function TerminalContextRow() {
+  const { t } = useTranslation("settings");
+  const enabled = useSettingsStore((s) => s.aiTerminalContext);
+  const setEnabled = useSettingsStore((s) => s.setAiTerminalContext);
+
+  return (
+    <div className="mb-6">
+      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          className="accent-accent"
+        />
+        {t("aiTerminalContext.label")}
+      </label>
+      <p className="mt-1 text-xs text-fg-muted">{t("aiTerminalContext.description")}</p>
+    </div>
+  );
+}
+
 function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; needsKey: boolean }) {
   const { t } = useTranslation("settings");
   const [hasKey, setHasKey] = useState(false);
@@ -167,6 +188,8 @@ export function AiSettingsSection() {
       <DefaultModelRow />
 
       <InlineCompletionRow />
+
+      <TerminalContextRow />
 
       <label className="mb-1 block text-sm font-medium text-fg">{t("aiKeys.title")}</label>
       <p className="mb-2 text-xs text-fg-muted">{t("aiKeys.description")}</p>

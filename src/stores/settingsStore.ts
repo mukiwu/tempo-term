@@ -48,6 +48,8 @@ interface SettingsState {
   claudeStatusTracking: boolean;
   /** Show AI ghost-text completions while typing in the code editor. */
   aiInlineCompletion: boolean;
+  /** Include the active terminal's output in the AI assistant context by default. */
+  aiTerminalContext: boolean;
   /** Suggest previously-run commands as ghost text in the terminal. */
   terminalSuggestions: boolean;
   /** Webview zoom factor for the whole UI (1 = 100%); driven by ⌘+ / ⌘-. */
@@ -62,6 +64,7 @@ interface SettingsState {
   setPrSource: (source: WorkspacePrSource) => void;
   setClaudeStatusTracking: (value: boolean) => void;
   setAiInlineCompletion: (value: boolean) => void;
+  setAiTerminalContext: (value: boolean) => void;
   setTerminalSuggestions: (value: boolean) => void;
   zoomIn: () => void;
   zoomOut: () => void;
@@ -101,6 +104,7 @@ export const useSettingsStore = create<SettingsState>()(
       prSource: "auto",
       claudeStatusTracking: true,
       aiInlineCompletion: false,
+      aiTerminalContext: true,
       terminalSuggestions: true,
       uiZoom: DEFAULT_UI_ZOOM,
       setLanguage: (language) => set({ language }),
@@ -114,6 +118,7 @@ export const useSettingsStore = create<SettingsState>()(
       setPrSource: (prSource) => set({ prSource }),
       setClaudeStatusTracking: (value) => set({ claudeStatusTracking: value }),
       setAiInlineCompletion: (value) => set({ aiInlineCompletion: value }),
+      setAiTerminalContext: (value) => set({ aiTerminalContext: value }),
       setTerminalSuggestions: (value) => set({ terminalSuggestions: value }),
       zoomIn: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom + UI_ZOOM_STEP) })),
       zoomOut: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom - UI_ZOOM_STEP) })),

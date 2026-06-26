@@ -12,6 +12,7 @@ import { Combobox } from "@/components/Combobox";
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { basename } from "@/modules/explorer/lib/paths";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { activeEditorPath, useTabsStore } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
 import {
@@ -115,8 +116,12 @@ export function AIView() {
   const clear = useChatStore((s) => s.clear);
   const attachedPaths = useChatStore((s) => s.attachedPaths);
   const removeAttached = useChatStore((s) => s.removeAttached);
-  const terminalContext = useChatStore((s) => s.terminalContext);
-  const setTerminalContext = useChatStore((s) => s.setTerminalContext);
+  // Whether to attach the active terminal's output. Seeded from the user's
+  // default setting so it's on out of the box; the chip/button toggle it per
+  // conversation. The actual output is read fresh at send time.
+  const [includeTerminal, setIncludeTerminal] = useState(
+    () => useSettingsStore.getState().aiTerminalContext,
+  );
 
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   // Derive the file in focus from the active tab/pane: the editor uses the tabs
@@ -157,11 +162,6 @@ export function AIView() {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [input]);
 
-  function grabTerminal() {
-    const raw = readActiveTerminalBuffer();
-    setTerminalContext(raw ? buildTerminalBlock(raw) || null : null);
-  }
-
   function submit() {
     if (!input.trim() || sending) {
       return;
@@ -171,10 +171,15 @@ export function AIView() {
     const activeFileBlock = activeFile
       ? buildActiveFileBlock(activeFile, useEditorStore.getState().contentOf(activeFile))
       : "";
+    // Read the terminal fresh at send time so the AI sees the latest output, not
+    // a stale snapshot.
+    const terminalBlock = includeTerminal
+      ? buildTerminalBlock(readActiveTerminalBuffer() ?? "")
+      : "";
     void buildAttachmentsContext(attachedPaths).then((attachments) =>
       send(
         text,
-        buildSystemPrompt(rootPath, activeFile, activeFileBlock, terminalContext ?? "", attachments),
+        buildSystemPrompt(rootPath, activeFile, activeFileBlock, terminalBlock, attachments),
       ),
     );
   }
@@ -287,9 +292,9 @@ export function AIView() {
 
       {/* Input */}
       <div className="shrink-0 border-t border-border bg-bg-inset p-3">
-        {(attachedPaths.length > 0 || terminalContext) && (
+        {(attachedPaths.length > 0 || includeTerminal) && (
           <div className="mb-2 flex flex-wrap gap-1.5">
-            {terminalContext && (
+            {includeTerminal && (
               <span
                 title={t("terminalContextTitle")}
                 className="inline-flex max-w-[200px] items-center gap-1 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs text-fg-muted"
@@ -300,7 +305,7 @@ export function AIView() {
                   type="button"
                   aria-label={t("removeTerminalContext")}
                   title={t("removeTerminalContext")}
-                  onClick={() => setTerminalContext(null)}
+                  onClick={() => setIncludeTerminal(false)}
                   className="shrink-0 rounded text-fg-subtle hover:text-fg"
                 >
                   <X size={12} />
@@ -331,12 +336,12 @@ export function AIView() {
         <div className="flex items-end gap-2">
           <button
             type="button"
-            aria-pressed={Boolean(terminalContext)}
-            aria-label={terminalContext ? t("grabTerminalActive") : t("grabTerminal")}
-            title={terminalContext ? t("grabTerminalActive") : t("grabTerminal")}
-            onClick={grabTerminal}
+            aria-pressed={includeTerminal}
+            aria-label={includeTerminal ? t("grabTerminalActive") : t("grabTerminal")}
+            title={includeTerminal ? t("grabTerminalActive") : t("grabTerminal")}
+            onClick={() => setIncludeTerminal((on) => !on)}
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-colors ${
-              terminalContext
+              includeTerminal
                 ? "border-accent bg-accent/10 text-accent hover:bg-accent/15"
                 : "border-border text-fg-muted hover:bg-bg-elevated hover:text-fg"
             }`}
