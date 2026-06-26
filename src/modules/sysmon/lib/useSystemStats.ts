@@ -14,10 +14,16 @@ export function useSystemStats(): SystemStats | null {
 
   useEffect(() => {
     let active = true;
+    // Guard against out-of-order responses: if a slow poll resolves after a
+    // newer one, drop it so the latest sample always wins.
+    let nextId = 0;
+    let lastApplied = 0;
     const poll = () => {
+      const id = ++nextId;
       fetchSystemStats()
         .then((next) => {
-          if (active) {
+          if (active && id > lastApplied) {
+            lastApplied = id;
             setStats(next);
           }
         })
@@ -26,10 +32,10 @@ export function useSystemStats(): SystemStats | null {
         });
     };
     poll();
-    const id = setInterval(poll, POLL_INTERVAL_MS);
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
       active = false;
-      clearInterval(id);
+      clearInterval(interval);
     };
   }, []);
 

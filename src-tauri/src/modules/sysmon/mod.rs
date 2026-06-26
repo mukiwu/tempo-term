@@ -6,7 +6,7 @@
 
 use std::sync::Mutex;
 
-use sysinfo::System;
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 use tauri::State;
 
 #[derive(serde::Serialize)]
@@ -24,7 +24,14 @@ pub struct SysinfoState {
 
 impl SysinfoState {
     pub fn new() -> Self {
-        let mut system = System::new();
+        // `System::new()` enables no refresh kinds, so the CPU list stays empty
+        // and global_cpu_usage() would always read 0. Enable CPU usage and RAM
+        // explicitly so the metrics are populated.
+        let mut system = System::new_with_specifics(
+            RefreshKind::nothing()
+                .with_cpu(CpuRefreshKind::nothing().with_cpu_usage())
+                .with_memory(MemoryRefreshKind::nothing().with_ram()),
+        );
         // Prime CPU + memory so the first poll already has a baseline to diff.
         system.refresh_cpu_usage();
         system.refresh_memory();
@@ -40,15 +47,19 @@ impl Default for SysinfoState {
     }
 }
 
+// Async so Tauri runs it on its worker pool rather than the main GUI thread;
+// the refresh calls do blocking system reads. An async command borrowing State
+// must return a Result. No `.await` is held across the lock, so the guard never
+// crosses a suspension point.
 #[tauri::command]
-pub fn system_stats(state: State<'_, SysinfoState>) -> SystemStats {
-    let mut system = state.system.lock().unwrap();
+pub async fn system_stats(state: State<'_, SysinfoState>) -> Result<SystemStats, String> {
+    let mut system = state.system.lock().map_err(|e| e.to_string())?;
     system.refresh_cpu_usage();
     system.refresh_memory();
 
-    SystemStats {
+    Ok(SystemStats {
         cpu_usage: system.global_cpu_usage(),
         ram_used: system.used_memory(),
         ram_total: system.total_memory(),
-    }
+    })
 }
