@@ -5,7 +5,7 @@ import { Loader2, WifiOff } from "lucide-react";
 import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
 import { createOutputWriter } from "./lib/outputWriter";
-import { createLineTimestamps, type LineTimestamps } from "./lib/lineTimestamps";
+import { createLineTimestamps, resolveStampRange, type LineTimestamps } from "./lib/lineTimestamps";
 import { TerminalGutter } from "./TerminalGutter";
 import { SearchBar } from "./SearchBar";
 import { openPty, type PtySession } from "./lib/pty-bridge";
@@ -329,9 +329,8 @@ export function TerminalView({
         return;
       }
       const cur = term.buffer.active.baseY + term.buffer.active.cursorY;
-      if (cur >= stampPrevLine) {
-        lineStamps.stamp(stampPrevLine, cur, Date.now());
-      }
+      const { from, to } = resolveStampRange(stampPrevLine, cur);
+      lineStamps.stamp(from, to, Date.now());
       stampPrevLine = cur;
     });
     const armStamping = () => {
