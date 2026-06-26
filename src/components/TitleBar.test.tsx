@@ -11,12 +11,21 @@ vi.mock("@/lib/platform", () => ({
   },
 }));
 
-const { minimizeWindow, toggleMaximizeWindow, closeWindow } = vi.hoisted(() => ({
-  minimizeWindow: vi.fn(),
-  toggleMaximizeWindow: vi.fn(),
-  closeWindow: vi.fn(),
+const { minimizeWindow, toggleMaximizeWindow, closeWindow, isWindowMaximized, onWindowResized } =
+  vi.hoisted(() => ({
+    minimizeWindow: vi.fn(),
+    toggleMaximizeWindow: vi.fn(),
+    closeWindow: vi.fn(),
+    isWindowMaximized: vi.fn(),
+    onWindowResized: vi.fn(),
+  }));
+vi.mock("@/lib/window", () => ({
+  minimizeWindow,
+  toggleMaximizeWindow,
+  closeWindow,
+  isWindowMaximized,
+  onWindowResized,
 }));
-vi.mock("@/lib/window", () => ({ minimizeWindow, toggleMaximizeWindow, closeWindow }));
 
 import { TitleBar } from "./TitleBar";
 
@@ -25,6 +34,8 @@ beforeEach(() => {
   minimizeWindow.mockReset();
   toggleMaximizeWindow.mockReset();
   closeWindow.mockReset();
+  isWindowMaximized.mockReset().mockResolvedValue(false);
+  onWindowResized.mockReset().mockResolvedValue(() => {});
 });
 
 describe("TitleBar", () => {
@@ -49,5 +60,12 @@ describe("TitleBar", () => {
     expect(minimizeWindow).toHaveBeenCalledOnce();
     expect(toggleMaximizeWindow).toHaveBeenCalledOnce();
     expect(closeWindow).toHaveBeenCalledOnce();
+  });
+
+  it("shows the restore control once the window reports it is maximized", async () => {
+    isWindowMaximized.mockResolvedValue(true);
+    render(<TitleBar />);
+    expect(await screen.findByLabelText("Restore")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Maximize")).toBeNull();
   });
 });

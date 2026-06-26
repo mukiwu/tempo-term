@@ -58,6 +58,7 @@
   "titleBar": {
     "minimize": "Minimize",
     "maximize": "Maximize",
+    "restore": "Restore",
     "close": "Close"
   },
   "actions": {

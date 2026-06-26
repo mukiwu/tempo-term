@@ -6,7 +6,9 @@ vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow }));
 import {
   closeWindow,
   isMainWindow,
+  isWindowMaximized,
   minimizeWindow,
+  onWindowResized,
   perWindowStorage,
   toggleMaximizeWindow,
 } from "./window";
@@ -74,5 +76,25 @@ describe("window controls", () => {
     getCurrentWindow.mockReturnValue({ close });
     await closeWindow();
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("isWindowMaximized reports the current window's maximized state", async () => {
+    const isMaximized = vi.fn().mockResolvedValue(true);
+    getCurrentWindow.mockReturnValue({ isMaximized });
+    await expect(isWindowMaximized()).resolves.toBe(true);
+    expect(isMaximized).toHaveBeenCalledOnce();
+  });
+
+  it("onWindowResized subscribes to the window's resize events", async () => {
+    const unlisten = vi.fn();
+    const onResized = vi.fn().mockResolvedValue(unlisten);
+    getCurrentWindow.mockReturnValue({ onResized });
+    const handler = vi.fn();
+    const off = await onWindowResized(handler);
+    expect(onResized).toHaveBeenCalledOnce();
+    // The wrapper forwards the event to the bare handler.
+    onResized.mock.calls[0][0]();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(off).toBe(unlisten);
   });
 });

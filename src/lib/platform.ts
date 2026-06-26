@@ -18,8 +18,11 @@ export const IS_MAC =
  */
 export const IS_WINDOWS =
   typeof navigator !== "undefined" &&
+  // platform is "Win32"/"Win64" on Windows; the userAgent says "Windows". Match
+  // the userAgent on the full word, not "win", so "darwin" (e.g. jsdom's UA)
+  // doesn't false-positive.
   (navigator.platform?.toLowerCase().includes("win") ||
-    navigator.userAgent?.toLowerCase().includes("win") ||
+    navigator.userAgent?.toLowerCase().includes("windows") ||
     false);
 
 type ModifierEvent = Pick<MouseEvent, "altKey" | "metaKey" | "ctrlKey">;
