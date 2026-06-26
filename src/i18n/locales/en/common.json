@@ -53,7 +53,9 @@
     "shell": "Shell",
     "encoding": "UTF-8",
     "language": "Language",
-    "updateAvailable": "Update available"
+    "updateAvailable": "Update available",
+    "cpu": "CPU",
+    "ramTooltip": "RAM {{used}} / {{total}}"
   },
   "actions": {
     "newTab": "New Tab",

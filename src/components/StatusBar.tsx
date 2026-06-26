@@ -24,12 +24,15 @@ export function StatusBar() {
 
       {stats && (
         <span className="ml-3 flex items-center gap-3 font-mono text-fg-subtle">
-          <span className="flex items-center gap-1" title="CPU">
+          <span className="flex items-center gap-1" title={t("statusBar.cpu")}>
             <Cpu size={11} /> {formatPercent(stats.cpuUsage)}
           </span>
           <span
             className="flex items-center gap-1"
-            title={`RAM ${formatBytes(stats.ramUsed)} / ${formatBytes(stats.ramTotal)}`}
+            title={t("statusBar.ramTooltip", {
+              used: formatBytes(stats.ramUsed),
+              total: formatBytes(stats.ramTotal),
+            })}
           >
             <MemoryStick size={11} /> {formatPercent(ramPercent(stats.ramUsed, stats.ramTotal))}
           </span>
