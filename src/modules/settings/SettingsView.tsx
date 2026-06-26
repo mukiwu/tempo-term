@@ -11,8 +11,8 @@ import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 import { AboutSettingsSection } from "./AboutSettingsSection";
 
-type SectionId = "appearance" | "terminal" | "ai" | "workspace" | "shortcuts" | "about";
-const SECTIONS: SectionId[] = ["appearance", "terminal", "ai", "workspace", "shortcuts", "about"];
+const SECTIONS = ["appearance", "terminal", "ai", "workspace", "shortcuts", "about"] as const;
+type SectionId = typeof SECTIONS[number];
 
 /**
  * A read-only code snippet painted in the active theme's own colours, so its
