@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 import { isDangerousCommand, type TerminalAction } from "./lib/actionLinks";
 
 interface ActionCardProps {
@@ -62,11 +62,19 @@ export function ActionCard({ actions, onRun }: ActionCardProps) {
         <button
           key={action.command}
           type="button"
-          className="flex items-center gap-2 px-2.5 py-1 text-left text-xs hover:bg-border"
+          className="group flex items-center gap-2 px-2.5 py-1 text-left text-xs hover:bg-border"
           onClick={() => handleClick(action.command)}
         >
           <span className="min-w-16 font-medium text-fg">{t(action.labelKey)}</span>
-          <code className="font-mono text-fg-subtle">{action.command}</code>
+          {/* command + arrow turn accent the moment the row is pressed, so the
+              click clearly registers before the card closes and the command runs */}
+          <code className="font-mono text-fg-subtle group-active:text-accent">
+            {action.command}
+          </code>
+          <ArrowRight
+            size={13}
+            className="ml-auto shrink-0 text-fg-subtle group-active:text-accent"
+          />
         </button>
       ))}
     </div>
