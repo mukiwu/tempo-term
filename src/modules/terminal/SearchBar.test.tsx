@@ -1,12 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { ISearchOptions } from "@xterm/addon-search";
 import { SearchBar } from "./SearchBar";
 import "../../i18n";
 
 function makeController() {
   return {
-    findNext: vi.fn(() => true),
-    findPrevious: vi.fn(() => true),
+    findNext: vi.fn((_query: string, _options?: ISearchOptions) => true),
+    findPrevious: vi.fn((_query: string, _options?: ISearchOptions) => true),
     clearDecorations: vi.fn(),
   };
 }
@@ -20,7 +21,23 @@ describe("SearchBar", () => {
     fireEvent.change(input, { target: { value: "needle" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(search.findNext).toHaveBeenCalledWith("needle");
+    expect(search.findNext).toHaveBeenCalledWith(
+      "needle",
+      expect.objectContaining({ decorations: expect.anything() }),
+    );
+  });
+
+  it("highlights matches with a visible decoration background", () => {
+    const search = makeController();
+    render(<SearchBar search={search} onClose={() => {}} />);
+
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "needle" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    const options = search.findNext.mock.calls[0]?.[1];
+    expect(options?.decorations?.matchBackground).toBeTruthy();
+    expect(options?.decorations?.activeMatchBackground).toBeTruthy();
   });
 
   it("searches backward when the user presses Shift+Enter", () => {
@@ -31,7 +48,10 @@ describe("SearchBar", () => {
     fireEvent.change(input, { target: { value: "needle" } });
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
 
-    expect(search.findPrevious).toHaveBeenCalledWith("needle");
+    expect(search.findPrevious).toHaveBeenCalledWith(
+      "needle",
+      expect.objectContaining({ decorations: expect.anything() }),
+    );
     expect(search.findNext).not.toHaveBeenCalled();
   });
 
@@ -74,7 +94,7 @@ describe("SearchBar", () => {
     fireEvent.click(screen.getByLabelText("Find next"));
     fireEvent.click(screen.getByLabelText("Find previous"));
 
-    expect(search.findNext).toHaveBeenCalledWith("needle");
-    expect(search.findPrevious).toHaveBeenCalledWith("needle");
+    expect(search.findNext).toHaveBeenCalledWith("needle", expect.anything());
+    expect(search.findPrevious).toHaveBeenCalledWith("needle", expect.anything());
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
+import type { ISearchOptions } from "@xterm/addon-search";
 
 /**
  * Minimal slice of the xterm SearchAddon the search bar drives. Keeping it to
@@ -8,10 +9,26 @@ import { ChevronDown, ChevronUp, X } from "lucide-react";
  * structurally.
  */
 export interface TerminalSearchController {
-  findNext(query: string): boolean;
-  findPrevious(query: string): boolean;
+  findNext(query: string, options?: ISearchOptions): boolean;
+  findPrevious(query: string, options?: ISearchOptions): boolean;
   clearDecorations(): void;
 }
+
+/**
+ * High-contrast match colours so hits stand out on the dark terminal while the
+ * light terminal text stays readable: a blue fill for every match and a warm
+ * amber for the currently focused one.
+ */
+const SEARCH_OPTIONS: ISearchOptions = {
+  decorations: {
+    matchBackground: "#3b5e8c",
+    matchBorder: "#5e8cd1",
+    matchOverviewRuler: "#5e8cd1",
+    activeMatchBackground: "#d7831e",
+    activeMatchBorder: "#ffb454",
+    activeMatchColorOverviewRuler: "#ffb454",
+  },
+};
 
 interface SearchBarProps {
   search: TerminalSearchController;
@@ -59,9 +76,9 @@ export function SearchBar({ search, onClose }: SearchBarProps) {
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             if (event.shiftKey) {
-              search.findPrevious(query);
+              search.findPrevious(query, SEARCH_OPTIONS);
             } else {
-              search.findNext(query);
+              search.findNext(query, SEARCH_OPTIONS);
             }
           } else if (event.key === "Escape") {
             onClose();
@@ -72,7 +89,7 @@ export function SearchBar({ search, onClose }: SearchBarProps) {
         type="button"
         aria-label={t("terminalSearch.previous")}
         className={buttonClass}
-        onClick={() => search.findPrevious(query)}
+        onClick={() => search.findPrevious(query, SEARCH_OPTIONS)}
       >
         <ChevronUp size={14} />
       </button>
@@ -80,7 +97,7 @@ export function SearchBar({ search, onClose }: SearchBarProps) {
         type="button"
         aria-label={t("terminalSearch.next")}
         className={buttonClass}
-        onClick={() => search.findNext(query)}
+        onClick={() => search.findNext(query, SEARCH_OPTIONS)}
       >
         <ChevronDown size={14} />
       </button>
