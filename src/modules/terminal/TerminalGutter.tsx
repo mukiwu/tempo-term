@@ -69,14 +69,14 @@ export function TerminalGutter({ term, timestamps }: TerminalGutterProps) {
   return (
     <div
       ref={rootRef}
-      className="pointer-events-none absolute inset-y-0 left-0 select-none font-mono text-[11px] text-fg-subtle"
+      className="pointer-events-none absolute inset-0 select-none font-mono text-[11px] text-fg-subtle"
     >
       {rowHeight > 0 &&
         visible.map(({ row, ts }) =>
           ts === null ? null : (
             <div
               key={row}
-              className="absolute pr-2 text-right tabular-nums"
+              className="absolute right-0 left-0 pr-2 text-right tabular-nums"
               style={{ top: topOffset + row * rowHeight, height: rowHeight, lineHeight: `${rowHeight}px` }}
             >
               {formatClock(ts)}

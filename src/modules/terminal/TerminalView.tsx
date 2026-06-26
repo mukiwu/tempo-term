@@ -5,6 +5,8 @@ import { Loader2, WifiOff } from "lucide-react";
 import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
 import { createOutputWriter } from "./lib/outputWriter";
+import { createLineTimestamps, type LineTimestamps } from "./lib/lineTimestamps";
+import { TerminalGutter } from "./TerminalGutter";
 import { SearchBar } from "./SearchBar";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
@@ -105,6 +107,9 @@ async function getHomeDir(): Promise<string | null> {
   return homeDirCache;
 }
 
+/** Left-gutter width (px) reserved for per-line timestamps when enabled. */
+const TIMESTAMP_GUTTER_WIDTH = 68;
+
 /** Human-readable byte size for the overload notice (e.g. 12 KB, 3.4 MB). */
 function formatSkipped(bytes: number): string {
   if (bytes >= 1024 * 1024) {
@@ -176,6 +181,8 @@ export function TerminalView({
   const fontSize = useFontStore((s) => s.fontSize);
   const themeId = useSettingsStore((s) => s.themeId);
   const terminalPadding = useSettingsStore((s) => s.terminalPadding);
+  const showTimestamps = useSettingsStore((s) => s.showTimestamps);
+  const lineStampsRef = useRef<LineTimestamps | null>(null);
   const [connecting, setConnecting] = useState(true);
   // For SSH panes restored after an app relaunch: the freshSshLeaves set is empty,
   // so those panes must not auto-connect. This flag shows the Reconnect UI instead.
@@ -263,6 +270,21 @@ export function TerminalView({
     };
   }, []);
 
+  // Toggling the timestamp gutter changes the terminal's left padding, so re-fit
+  // the terminal to the new width (its PTY cols follow).
+  useEffect(() => {
+    const handle = handleRef.current;
+    const container = containerRef.current;
+    if (!handle || !container || container.clientWidth <= 0 || container.clientHeight <= 0) {
+      return;
+    }
+    try {
+      handle.fit.fit();
+    } catch {
+      // A momentarily hidden container can report zero size; skip this fit.
+    }
+  }, [showTimestamps]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
@@ -293,6 +315,29 @@ export function TerminalView({
       write: (chunk) => term.write(chunk),
       onDrop: (total) => noteDroppedOutput(total),
     });
+
+    // Record each output line's write time for the timestamp gutter. Stamping is
+    // armed only once the session connects, so restored history (written before
+    // connect) keeps no timestamp. onWriteParsed fires after the buffer updates,
+    // so the cursor line it reads is accurate despite term.write being async.
+    const lineStamps = createLineTimestamps();
+    lineStampsRef.current = lineStamps;
+    let stampArmed = false;
+    let stampPrevLine = 0;
+    const stampListener = term.onWriteParsed(() => {
+      if (!stampArmed) {
+        return;
+      }
+      const cur = term.buffer.active.baseY + term.buffer.active.cursorY;
+      if (cur >= stampPrevLine) {
+        lineStamps.stamp(stampPrevLine, cur, Date.now());
+      }
+      stampPrevLine = cur;
+    });
+    const armStamping = () => {
+      stampPrevLine = term.buffer.active.baseY + term.buffer.active.cursorY;
+      stampArmed = true;
+    };
 
     // The session-status hook (see claude_status_hook) emits OSC 6973 on this
     // pane's tty when Claude changes state. Capture it here, where we know the
@@ -723,6 +768,9 @@ export function TerminalView({
         }
         setSshDisconnected(false);
         setConnecting(false);
+        // Restored history has parsed by now; start stamping from the live cursor
+        // so only real-time output gets timestamps.
+        armStamping();
       })
       .catch((error: unknown) => {
         // If the pane unmounted before the spawn rejected, the terminal is
@@ -812,6 +860,8 @@ export function TerminalView({
     return () => {
       disposed = true;
       outputWriter.dispose();
+      stampListener.dispose();
+      lineStampsRef.current = null;
       if (skippedShowTimer.current !== null) clearTimeout(skippedShowTimer.current);
       if (skippedHideTimer.current !== null) clearTimeout(skippedHideTimer.current);
       cancelAnimationFrame(initialFitFrame);
@@ -1141,6 +1191,9 @@ export function TerminalView({
       className="relative h-full w-full"
       style={{
         padding: terminalPadding,
+        // Reserve room on the left for the timestamp gutter so it never overlaps
+        // output; the terminal re-fits to the narrower width (see the effect below).
+        paddingLeft: showTimestamps ? terminalPadding + TIMESTAMP_GUTTER_WIDTH : terminalPadding,
         backgroundColor: getTheme(themeId).terminal.background,
       }}
       onDragEnter={(event) => {
@@ -1201,6 +1254,14 @@ export function TerminalView({
       }}
     >
       {externalFileDragging && <div className={dropOverlayClassName(true)} />}
+      {showTimestamps && handleRef.current && lineStampsRef.current && (
+        <div
+          className="pointer-events-none absolute inset-y-0"
+          style={{ left: terminalPadding, width: TIMESTAMP_GUTTER_WIDTH }}
+        >
+          <TerminalGutter term={handleRef.current.term} timestamps={lineStampsRef.current} />
+        </div>
+      )}
       {actionCard && (
         <div
           className="fixed z-30"
