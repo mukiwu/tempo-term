@@ -83,6 +83,9 @@ function TabItem({ id }: { id: string }) {
   const Icon = tabIcon(tab.kind);
 
   function startRename() {
+    // `tab` is narrowed at line 80, but TS does not carry that into this
+    // closure, so the guard is required to compile (same reason `commit` below
+    // uses `tab &&`).
     if (!tab) {
       return;
     }
@@ -139,6 +142,7 @@ function TabItem({ id }: { id: string }) {
           onBlur={commit}
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === "Enter") commit();
             if (e.key === "Escape") setEditing(false);

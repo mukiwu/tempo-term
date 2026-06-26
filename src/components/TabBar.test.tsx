@@ -46,4 +46,14 @@ describe("TabBar tab context menu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Close Tab" }));
     expect(useTabsStore.getState().tabs).toHaveLength(0);
   });
+
+  it("does not open a context menu when right-clicking the rename input", () => {
+    render(<TabBar />);
+    fireEvent.contextMenu(screen.getByRole("tab"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename Tab" }));
+    // Right-clicking the rename field must not bubble up and open a fresh tab
+    // menu over the input being edited.
+    fireEvent.contextMenu(screen.getByRole("textbox"));
+    expect(screen.queryByRole("menuitem")).toBeNull();
+  });
 });
