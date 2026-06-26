@@ -19,6 +19,8 @@
     "statusTrackingTitle": "Claude session 狀態",
     "statusTrackingDescription": "安裝一個 Claude Code hook，讓卡片只在 Claude 跑於 tempo-term 終端機時顯示即時狀態（執行中、思考中、等待批准）。其他終端機不受影響。",
     "statusTrackingLabel": "追蹤 Claude session 狀態",
+    "notificationsLabel": "工作階段需要批准或完成時跳出桌面通知（僅在視窗未聚焦時）",
+    "notificationsRequiresTracking": "需先開啟 session 狀態追蹤才能使用通知。",
     "prTitle": "Pull request 來源",
     "prDescription": "PR 狀態的查詢來源，gh 會自動偵測。",
     "prAuto": "自動",

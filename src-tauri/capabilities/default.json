@@ -11,6 +11,9 @@
     "core:webview:allow-set-webview-zoom",
     "opener:default",
     "dialog:default",
+    "notification:allow-notify",
+    "notification:allow-request-permission",
+    "notification:allow-is-permission-granted",
     "updater:default",
     "process:default"
   ]

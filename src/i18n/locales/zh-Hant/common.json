@@ -25,6 +25,11 @@
     "previous": "上一個",
     "close": "關閉搜尋"
   },
+  "notify": {
+    "agentFallback": "工作階段",
+    "needPermission": "{{agent}} 需要權限",
+    "finished": "{{agent}} 已完成"
+  },
   "ssh": {
     "disconnected": "已斷線，點擊重新連線",
     "reconnect": "重新連線"

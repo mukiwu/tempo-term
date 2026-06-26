@@ -19,6 +19,8 @@
     "statusTrackingTitle": "Claude session status",
     "statusTrackingDescription": "Installs a Claude Code hook so cards show live status (running, thinking, needs approval) only while Claude runs in a tempo-term terminal. Other terminals are unaffected.",
     "statusTrackingLabel": "Track Claude session status",
+    "notificationsLabel": "Desktop notification when an agent needs approval or finishes (only while the window is unfocused)",
+    "notificationsRequiresTracking": "Turn on session-status tracking to enable notifications.",
     "prTitle": "Pull request source",
     "prDescription": "Where PR status is fetched from. gh is detected automatically.",
     "prAuto": "Auto",
