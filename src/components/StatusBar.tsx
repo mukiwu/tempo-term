@@ -18,7 +18,7 @@ export function StatusBar() {
   return (
     <footer className="flex h-7 shrink-0 cursor-default items-center gap-1 border-t border-border bg-bg-inset px-2 text-xs text-fg-muted">
       {stats && (
-        <span className="flex items-center gap-3 font-mono text-fg-subtle">
+        <span className="ml-[5px] flex items-center gap-3 font-mono text-fg-subtle">
           <Tooltip label={t("statusBar.cpu")} side="top">
             <span className="flex items-center gap-1">
               <Cpu size={11} /> {formatPercent(stats.cpuUsage)}
