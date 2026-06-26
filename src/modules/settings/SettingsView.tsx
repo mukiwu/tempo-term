@@ -11,8 +11,8 @@ import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 import { AboutSettingsSection } from "./AboutSettingsSection";
 
-type SectionId = "appearance" | "ai" | "workspace" | "shortcuts" | "about";
-const SECTIONS: SectionId[] = ["appearance", "ai", "workspace", "shortcuts", "about"];
+const SECTIONS = ["appearance", "terminal", "ai", "workspace", "shortcuts", "about"] as const;
+type SectionId = typeof SECTIONS[number];
 
 /**
  * A read-only code snippet painted in the active theme's own colours, so its
@@ -146,14 +146,10 @@ function AppearanceSection() {
         ))}
       </div>
 
-      {/* Fonts and terminal display settings now live under Appearance so the
-          sidebar stays a short list of top-level areas. */}
+      {/* Font settings stay under Appearance; terminal behaviour now has its
+          own top-level section in the sidebar. */}
       <div className="mt-8 border-t border-border pt-8">
         <FontsSettingsSection />
-      </div>
-
-      <div className="mt-8 border-t border-border pt-8">
-        <TerminalSettingsSection />
       </div>
     </section>
   );
@@ -199,6 +195,7 @@ export function SettingsView() {
           }
         >
           {section === "appearance" && <AppearanceSection />}
+          {section === "terminal" && <TerminalSettingsSection />}
           {section === "ai" && <AiSettingsSection />}
           {section === "workspace" && <WorkspaceSettingsSection />}
           {section === "shortcuts" && <ShortcutsSettingsSection />}
