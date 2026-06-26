@@ -31,4 +31,10 @@ describe("buildExplainPrompt", () => {
     const out = buildExplainPrompt("short", "f.ts", "en", 100);
     expect(out).not.toContain("[truncated]");
   });
+
+  it("redacts secrets from the diff before it reaches the model", () => {
+    const out = buildExplainPrompt("+API_KEY=sk-abc123DEF456ghi789jkl012mno345", "f.ts", "en");
+    expect(out).toContain("[REDACTED]");
+    expect(out).not.toContain("sk-abc123DEF456");
+  });
 });

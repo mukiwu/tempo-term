@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Loader2, WifiOff } from "lucide-react";
 import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
+import { SearchBar } from "./SearchBar";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
@@ -171,6 +172,7 @@ export function TerminalView({
   // effect for restored SSH panes without touching any other path.
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
   const [externalFileDragging, setExternalFileDragging] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const dragDepthRef = useRef(0);
   const nativeDragPathsRef = useRef<string[]>([]);
   // The hover action card (IP / host:port / archive quick commands), positioned
@@ -328,6 +330,11 @@ export function TerminalView({
         return false;
       }
       const target = event.target;
+      // Let inputs inside the pane (e.g. the search bar) handle their own paste
+      // rather than redirecting it into the shell.
+      if (target instanceof HTMLInputElement) {
+        return false;
+      }
       if (target instanceof Node && !containerEl.contains(target)) {
         return false;
       }
@@ -349,6 +356,10 @@ export function TerminalView({
 
     const onPasteCapture = (event: ClipboardEvent) => {
       const target = event.target;
+      // Let inputs inside the pane (e.g. the search bar) keep their own paste.
+      if (target instanceof HTMLInputElement) {
+        return;
+      }
       if (!activeRef.current || (target instanceof Node && !containerEl.contains(target))) {
         return;
       }
@@ -374,6 +385,27 @@ export function TerminalView({
       if (event.type === "keydown" && isAppShortcut(event)) {
         event.preventDefault();
         return false;
+      }
+      // Open the in-terminal search bar. On mac Cmd+F is free; on other
+      // platforms Ctrl+F is readline's forward-char, so use Ctrl+Shift+F to
+      // avoid clobbering it.
+      if (event.type === "keydown") {
+        const isF = event.code === "KeyF" || event.key.toLowerCase() === "f";
+        const findCombo = IS_MAC
+          ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+          : event.ctrlKey && event.shiftKey && !event.metaKey && !event.altKey;
+        if (isF && findCombo) {
+          event.preventDefault();
+          setSearchOpen(true);
+          // If the bar is already open (just unfocused), refocus and select it
+          // so the shortcut is never a no-op.
+          const input = containerEl.querySelector("input");
+          if (input) {
+            input.focus();
+            input.select();
+          }
+          return false;
+        }
       }
       // Standard terminal editing shortcuts (Shift+Enter, word/line nav, word
       // and line delete), matching common terminals so muscle memory carries over.
@@ -1129,6 +1161,15 @@ export function TerminalView({
             onOpenPreview={openActionPreview}
           />
         </div>
+      )}
+      {searchOpen && handleRef.current && (
+        <SearchBar
+          search={handleRef.current.search}
+          onClose={() => {
+            setSearchOpen(false);
+            handleRef.current?.term.focus();
+          }}
+        />
       )}
       {connecting && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-fg-subtle">

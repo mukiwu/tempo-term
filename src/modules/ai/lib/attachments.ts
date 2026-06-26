@@ -1,3 +1,5 @@
+import { redactSecrets } from "./redact";
+
 /** A file the user attached to the assistant's context. */
 export interface AttachedFile {
   path: string;
@@ -32,7 +34,7 @@ export function buildAttachmentsBlock(files: AttachedFile[]): string {
     return "";
   }
   const sections = files.map((file) => {
-    const body = truncateContents(file.contents);
+    const body = redactSecrets(truncateContents(file.contents));
     return `--- ${file.path} ---\n${body}`;
   });
   return ["The user attached these files for reference:", ...sections].join("\n\n");

@@ -1,4 +1,5 @@
 import { truncateContents } from "./attachments";
+import { redactSecrets } from "./redact";
 
 /** Budget for the active-file context block — larger than a casual attachment
  * because it is the primary thing the user is looking at. */
@@ -18,7 +19,7 @@ export function buildActiveFileBlock(
     return "";
   }
   const body = truncateContents(content, ACTIVE_FILE_MAX_BYTES);
-  return `The file the user is currently viewing (${path}):\n${body}`;
+  return `The file the user is currently viewing (${path}):\n${redactSecrets(body)}`;
 }
 
 /** Default number of trailing terminal lines to keep as context. */
@@ -39,5 +40,5 @@ export function buildTerminalBlock(
   }
   const lines = trimmed.split("\n");
   const tail = lines.length > maxLines ? lines.slice(lines.length - maxLines) : lines;
-  return `Recent output from the user's active terminal:\n${tail.join("\n")}`;
+  return `Recent output from the user's active terminal:\n${redactSecrets(tail.join("\n"))}`;
 }

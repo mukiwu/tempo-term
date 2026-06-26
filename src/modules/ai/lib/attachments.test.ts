@@ -45,4 +45,12 @@ describe("buildAttachmentsBlock", () => {
     ]);
     expect(block).toContain("[truncated]");
   });
+
+  it("redacts secrets from attached files before they reach the model", () => {
+    const block = buildAttachmentsBlock([
+      { path: "/app/.env", contents: "TOKEN=ghp_16C7e42F292c6912E7710c838347Ae178B4a01" },
+    ]);
+    expect(block).toContain("[REDACTED]");
+    expect(block).not.toContain("ghp_16C7e42F292c6912");
+  });
 });

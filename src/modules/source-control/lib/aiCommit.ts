@@ -1,6 +1,7 @@
 import { aiChat } from "@/modules/ai/lib/aiBridge";
 import { composeMessages } from "@/modules/ai/lib/chat";
 import { providerById } from "@/modules/ai/lib/providers";
+import { redactSecrets } from "@/modules/ai/lib/redact";
 
 const SYSTEM_PROMPT =
   "You are a git commit message generator. Given a staged diff, write a single " +
@@ -12,7 +13,7 @@ const SYSTEM_PROMPT =
 export function buildCommitPrompt(diff: string, maxChars = 12000): string {
   const body =
     diff.length > maxChars ? `${diff.slice(0, maxChars)}\n...[truncated]` : diff;
-  return `Write a conventional commit message for this staged diff:\n\n${body}`;
+  return `Write a conventional commit message for this staged diff:\n\n${redactSecrets(body)}`;
 }
 
 /** Strip code fences and surrounding whitespace from a model's reply. */
