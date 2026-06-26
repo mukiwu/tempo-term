@@ -107,4 +107,10 @@ describe("settingsStore", () => {
     useSettingsStore.getState().setAiTerminalContext(false);
     expect(useSettingsStore.getState().aiTerminalContext).toBe(false);
   });
+
+  it("defaults showTimestamps off and toggles it", () => {
+    expect(useSettingsStore.getState().showTimestamps).toBe(false);
+    useSettingsStore.getState().setShowTimestamps(true);
+    expect(useSettingsStore.getState().showTimestamps).toBe(true);
+  });
 });

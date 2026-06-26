@@ -18,6 +18,8 @@ export function TerminalSettingsSection() {
   const setTerminalSuggestions = useSettingsStore((s) => s.setTerminalSuggestions);
   const actionLinksEnabled = useSettingsStore((s) => s.actionLinksEnabled);
   const setActionLinksEnabled = useSettingsStore((s) => s.setActionLinksEnabled);
+  const showTimestamps = useSettingsStore((s) => s.showTimestamps);
+  const setShowTimestamps = useSettingsStore((s) => s.setShowTimestamps);
   const themeId = useSettingsStore((s) => s.themeId);
   const terminal = getTheme(themeId).terminal;
   const [cleared, setCleared] = useState(false);
@@ -86,6 +88,19 @@ export function TerminalSettingsSection() {
           {t("terminalSettings.actionLinks")}
         </label>
         <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.actionLinksHint")}</p>
+      </div>
+
+      <div className="mb-6">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
+          <input
+            type="checkbox"
+            checked={showTimestamps}
+            onChange={(e) => setShowTimestamps(e.target.checked)}
+            className="accent-accent"
+          />
+          {t("terminalSettings.timestamps")}
+        </label>
+        <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.timestampsHint")}</p>
       </div>
 
       <div className="mb-6">

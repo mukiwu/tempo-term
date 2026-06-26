@@ -89,6 +89,8 @@
     "suggestionsHint": "輸入時根據 shell 歷史以灰色顯示補完建議，按 → 接受",
     "actionLinks": "滑鼠懸停動作卡片",
     "actionLinksHint": "滑鼠移到輸出中的 IP、host:port 或壓縮檔，跳出可執行的快速指令（ping、curl、解壓縮等）",
+    "timestamps": "顯示每行時間戳",
+    "timestampsHint": "在左側 gutter 顯示每行輸出的寫入時間（HH:MM:SS），打開時終端會縮一點讓出空間",
     "clearHistory": "清除已儲存的歷史",
     "historyCleared": "已清除"
   },

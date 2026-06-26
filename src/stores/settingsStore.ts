@@ -54,6 +54,8 @@ interface SettingsState {
   terminalSuggestions: boolean;
   /** Show the hover action card (ping/curl/extract) over IPs, host:port and archives. */
   actionLinksEnabled: boolean;
+  /** Show a left gutter with each output line's write time (HH:MM:SS). */
+  showTimestamps: boolean;
   /** Webview zoom factor for the whole UI (1 = 100%); driven by ⌘+ / ⌘-. */
   uiZoom: number;
   setLanguage: (language: SupportedLanguage) => void;
@@ -69,6 +71,7 @@ interface SettingsState {
   setAiTerminalContext: (value: boolean) => void;
   setTerminalSuggestions: (value: boolean) => void;
   setActionLinksEnabled: (value: boolean) => void;
+  setShowTimestamps: (value: boolean) => void;
   zoomIn: () => void;
   zoomOut: () => void;
   resetZoom: () => void;
@@ -110,6 +113,7 @@ export const useSettingsStore = create<SettingsState>()(
       aiTerminalContext: true,
       terminalSuggestions: true,
       actionLinksEnabled: true,
+      showTimestamps: false,
       uiZoom: DEFAULT_UI_ZOOM,
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
@@ -125,6 +129,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAiTerminalContext: (value) => set({ aiTerminalContext: value }),
       setTerminalSuggestions: (value) => set({ terminalSuggestions: value }),
       setActionLinksEnabled: (value) => set({ actionLinksEnabled: value }),
+      setShowTimestamps: (value) => set({ showTimestamps: value }),
       zoomIn: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom + UI_ZOOM_STEP) })),
       zoomOut: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom - UI_ZOOM_STEP) })),
       resetZoom: () => set({ uiZoom: DEFAULT_UI_ZOOM }),

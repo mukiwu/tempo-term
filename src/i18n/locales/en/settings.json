@@ -89,6 +89,8 @@
     "suggestionsHint": "Show a dim completion from your shell history as you type; press → to accept",
     "actionLinks": "Hover action cards",
     "actionLinksHint": "Hover an IP, host:port or archive in the output to get quick commands (ping, curl, extract…)",
+    "timestamps": "Show line timestamps",
+    "timestampsHint": "Show each output line's write time (HH:MM:SS) in a left gutter; the terminal narrows to make room while it's on",
     "clearHistory": "Clear saved history",
     "historyCleared": "Cleared"
   },
