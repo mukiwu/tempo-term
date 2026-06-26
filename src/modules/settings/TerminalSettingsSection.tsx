@@ -16,6 +16,8 @@ export function TerminalSettingsSection() {
   const setRestoreTerminalHistory = useSettingsStore((s) => s.setRestoreTerminalHistory);
   const terminalSuggestions = useSettingsStore((s) => s.terminalSuggestions);
   const setTerminalSuggestions = useSettingsStore((s) => s.setTerminalSuggestions);
+  const actionLinksEnabled = useSettingsStore((s) => s.actionLinksEnabled);
+  const setActionLinksEnabled = useSettingsStore((s) => s.setActionLinksEnabled);
   const themeId = useSettingsStore((s) => s.themeId);
   const terminal = getTheme(themeId).terminal;
   const [cleared, setCleared] = useState(false);
@@ -71,6 +73,19 @@ export function TerminalSettingsSection() {
           {t("terminalSettings.suggestions")}
         </label>
         <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.suggestionsHint")}</p>
+      </div>
+
+      <div className="mb-6">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
+          <input
+            type="checkbox"
+            checked={actionLinksEnabled}
+            onChange={(e) => setActionLinksEnabled(e.target.checked)}
+            className="accent-accent"
+          />
+          {t("terminalSettings.actionLinks")}
+        </label>
+        <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.actionLinksHint")}</p>
       </div>
 
       <div className="mb-6">

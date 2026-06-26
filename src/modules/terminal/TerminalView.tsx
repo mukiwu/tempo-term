@@ -65,6 +65,8 @@ import {
   shellQuotePath,
 } from "./lib/terminalClipboard";
 import { buildFileLink, findFilePaths, resolveFilePath } from "./lib/fileLinks";
+import { actionsFor, findActionLinks, type TerminalAction } from "./lib/actionLinks";
+import { ActionCard } from "./ActionCard";
 import { buildCellPositions, gatherLogicalLine } from "./lib/cellPositions";
 import { terminalKeySequence } from "./lib/terminalKeymap";
 import { shouldCdToRoot } from "./lib/cwdSync";
@@ -166,6 +168,36 @@ export function TerminalView({
   const [externalFileDragging, setExternalFileDragging] = useState(false);
   const dragDepthRef = useRef(0);
   const nativeDragPathsRef = useRef<string[]>([]);
+  // The hover action card (IP / host:port / archive quick commands), positioned
+  // at the cursor. A short hide delay lets the pointer travel from the link into
+  // the card without it vanishing.
+  const [actionCard, setActionCard] = useState<{
+    actions: TerminalAction[];
+    x: number;
+    y: number;
+  } | null>(null);
+  const actionCardTimer = useRef<number | null>(null);
+
+  const cancelActionCardHide = () => {
+    if (actionCardTimer.current !== null) {
+      clearTimeout(actionCardTimer.current);
+      actionCardTimer.current = null;
+    }
+  };
+  const showActionCard = (actions: TerminalAction[], x: number, y: number) => {
+    cancelActionCardHide();
+    setActionCard({ actions, x, y });
+  };
+  const scheduleActionCardHide = () => {
+    cancelActionCardHide();
+    actionCardTimer.current = window.setTimeout(() => setActionCard(null), 180);
+  };
+  const runActionCommand = (command: string) => {
+    void sessionRef.current?.write(`${command}\r`);
+    cancelActionCardHide();
+    setActionCard(null);
+    handleRef.current?.term.focus();
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -391,8 +423,15 @@ export function TerminalView({
           return;
         }
         const { text, spans } = buildCellPositions(rows);
-        const matches = findFilePaths(text);
-        if (matches.length === 0) {
+        const actionsEnabled = useSettingsStore.getState().actionLinksEnabled;
+        const actionMatches = actionsEnabled ? findActionLinks(text) : [];
+        // An archive filename also matches as a file path; drop the overlapping
+        // file link so the action card wins (opening a binary archive as a file
+        // is not useful anyway).
+        const matches = findFilePaths(text).filter(
+          (f) => !actionMatches.some((a) => f.start < a.end && f.end > a.start),
+        );
+        if (matches.length === 0 && actionMatches.length === 0) {
           callback(undefined);
           return;
         }
@@ -407,17 +446,29 @@ export function TerminalView({
           const span = spans[index] ?? lastSpan;
           return { x: span?.endX ?? 1, y: span?.y ?? lineNumber };
         };
-        callback(
-          matches.map((m) =>
-            buildFileLink({
-              text: m.text,
-              range: { start: startCell(m.start), end: endCell(m.end - 1) },
-              hint: linkHintRef.current,
-              isMac: IS_MAC,
-              onOpen: (raw) => void openFromTerminal(raw),
-            }),
-          ),
+        const fileLinks = matches.map((m) =>
+          buildFileLink({
+            text: m.text,
+            range: { start: startCell(m.start), end: endCell(m.end - 1) },
+            hint: linkHintRef.current,
+            isMac: IS_MAC,
+            onOpen: (raw) => void openFromTerminal(raw),
+          }),
         );
+        const actionLinks = actionMatches.map((m) => ({
+          text: m.text,
+          range: { start: startCell(m.start), end: endCell(m.end - 1) },
+          // Interaction happens through the hover card's buttons, so a click on
+          // the link itself does nothing.
+          activate: () => {},
+          hover: (event: MouseEvent) => {
+            showActionCard(actionsFor(m), event.clientX, event.clientY);
+          },
+          leave: () => {
+            scheduleActionCardHide();
+          },
+        }));
+        callback([...fileLinks, ...actionLinks]);
       },
     });
 
@@ -1044,6 +1095,16 @@ export function TerminalView({
       }}
     >
       {externalFileDragging && <div className={dropOverlayClassName(true)} />}
+      {actionCard && (
+        <div
+          className="fixed z-30"
+          style={{ left: actionCard.x, top: actionCard.y + 14 }}
+          onMouseEnter={cancelActionCardHide}
+          onMouseLeave={() => setActionCard(null)}
+        >
+          <ActionCard actions={actionCard.actions} onRun={runActionCommand} />
+        </div>
+      )}
       {connecting && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-fg-subtle">
           <Loader2 size={15} className="animate-spin" />
