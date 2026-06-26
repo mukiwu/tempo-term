@@ -29,7 +29,7 @@ export function ActionCard({ actions, onRun }: ActionCardProps) {
           <AlertTriangle size={13} className="shrink-0" />
           <span>{t("actionLinks.dangerWarning")}</span>
         </div>
-        <code className="block truncate rounded bg-bg-inset px-1.5 py-1 font-mono text-xs text-fg">
+        <code className="block max-h-24 overflow-y-auto whitespace-pre-wrap break-all rounded bg-bg-inset px-1.5 py-1 font-mono text-xs text-fg">
           {pending}
         </code>
         <div className="flex justify-end gap-1.5">

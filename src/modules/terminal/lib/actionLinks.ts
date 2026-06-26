@@ -55,10 +55,16 @@ export interface TerminalAction {
   command: string;
 }
 
+/** Single-quote a filename for safe use in a shell command. */
+function shellQuote(file: string): string {
+  return `'${file.replace(/'/g, "'\\''")}'`;
+}
+
 /** The extract and list commands appropriate for an archive's extension. */
 function archiveCommands(file: string): { extract: string; list: string | null } {
   const lower = file.toLowerCase();
-  const tar = (flags: string) => `tar -${flags} ${file}`;
+  const q = shellQuote(file);
+  const tar = (flags: string) => `tar -${flags} ${q}`;
   if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz")) {
     return { extract: tar("xzf"), list: tar("tzf") };
   }
@@ -72,22 +78,22 @@ function archiveCommands(file: string): { extract: string; list: string | null }
     return { extract: tar("xf"), list: tar("tf") };
   }
   if (lower.endsWith(".zip")) {
-    return { extract: `unzip ${file}`, list: `unzip -l ${file}` };
+    return { extract: `unzip ${q}`, list: `unzip -l ${q}` };
   }
   if (lower.endsWith(".gz")) {
-    return { extract: `gunzip ${file}`, list: null };
+    return { extract: `gunzip ${q}`, list: null };
   }
   if (lower.endsWith(".bz2")) {
-    return { extract: `bunzip2 ${file}`, list: null };
+    return { extract: `bunzip2 ${q}`, list: null };
   }
   if (lower.endsWith(".xz")) {
-    return { extract: `unxz ${file}`, list: null };
+    return { extract: `unxz ${q}`, list: null };
   }
   if (lower.endsWith(".7z")) {
-    return { extract: `7z x ${file}`, list: `7z l ${file}` };
+    return { extract: `7z x ${q}`, list: `7z l ${q}` };
   }
   if (lower.endsWith(".rar")) {
-    return { extract: `unrar x ${file}`, list: `unrar l ${file}` };
+    return { extract: `unrar x ${q}`, list: `unrar l ${q}` };
   }
   return { extract: tar("xf"), list: tar("tf") };
 }
@@ -96,7 +102,7 @@ function archiveCommands(file: string): { extract: string; list: string | null }
 // None of the built-in actions hit these; this is a safety net for destructive
 // commands so the run-on-click gesture can't silently do real damage.
 const DANGEROUS_COMMAND_RES: RegExp[] = [
-  /\brm\s+-[a-z]*[rf]/i, // rm -rf / rm -r / rm -f
+  /\brm\s+(?:-[a-z]*[rf]|--recursive|--force)\b/i, // rm -rf / -r / -f / --recursive / --force
   /\bdd\b[^\n]*\bof=/i, // dd writing to a device/file
   /\bmkfs\b/i, // formatting a filesystem
   /\|\s*(?:sudo\s+)?(?:sh|bash|zsh|fish)\b/i, // piping a download into a shell
@@ -144,12 +150,21 @@ export function actionsFor(match: ActionLinkMatch): TerminalAction[] {
 }
 
 export function findActionLinks(line: string): ActionLinkMatch[] {
-  // host:port is matched first; an IP that sits inside a host:port match (e.g.
-  // `1.2.3.4:80`) is dropped so the two matchers don't overlap.
-  const hostPorts = collect(line, HOST_PORT_RE, "host-port");
-  const ips = collect(line, IPV4_RE, "ip").filter(
-    (ip) => !hostPorts.some((hp) => ip.start < hp.end && ip.end > hp.start),
-  );
-  const archives = collect(line, ARCHIVE_RE, "archive");
-  return [...hostPorts, ...ips, ...archives].sort((a, b) => a.start - b.start);
+  // Collect every candidate, then resolve overlaps generically: sort by start
+  // (and longest-first on ties) and keep a match only when it doesn't overlap
+  // one already kept. This drops the IP inside `1.2.3.4:80` and the IP inside an
+  // archive name like `1.2.3.4.zip`, always preferring the longer entity.
+  const all = [
+    ...collect(line, HOST_PORT_RE, "host-port"),
+    ...collect(line, IPV4_RE, "ip"),
+    ...collect(line, ARCHIVE_RE, "archive"),
+  ].sort((a, b) => a.start - b.start || b.end - b.start - (a.end - a.start));
+
+  const out: ActionLinkMatch[] = [];
+  for (const m of all) {
+    if (!out.some((kept) => m.start < kept.end && m.end > kept.start)) {
+      out.push(m);
+    }
+  }
+  return out;
 }

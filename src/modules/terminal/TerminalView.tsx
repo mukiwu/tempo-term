@@ -199,6 +199,16 @@ export function TerminalView({
     handleRef.current?.term.focus();
   };
 
+  // Clear any pending action-card hide timer when the pane unmounts so it can't
+  // fire a state update on a gone component.
+  useEffect(() => {
+    return () => {
+      if (actionCardTimer.current !== null) {
+        clearTimeout(actionCardTimer.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {

