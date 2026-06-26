@@ -11,19 +11,6 @@ export interface LineTimestamps {
 const DEFAULT_MAX = 12_000;
 
 /**
- * The buffer-line range to stamp given the previous and current cursor lines.
- * Forward moves stamp the whole span; a backward jump (prompt redraw, autosuggest
- * clearing) stamps only the current line so the next-line pointer follows the
- * cursor down and stamping can never get permanently stuck ahead of real output.
- */
-export function resolveStampRange(
-  prevLine: number,
-  cursorLine: number,
-): { from: number; to: number } {
-  return { from: Math.min(prevLine, cursorLine), to: cursorLine };
-}
-
-/**
  * Records the time each terminal buffer line was first written, so a gutter can
  * show per-line timestamps. First write wins; the oldest entries are pruned
  * once the cap is exceeded so the map can't grow without bound.

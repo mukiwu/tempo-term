@@ -1,19 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLineTimestamps, resolveStampRange } from "./lineTimestamps";
-
-describe("resolveStampRange", () => {
-  it("stamps forward from the previous cursor line to the current one", () => {
-    expect(resolveStampRange(6, 9)).toEqual({ from: 6, to: 9 });
-  });
-
-  it("stamps a single line when the cursor stays put", () => {
-    expect(resolveStampRange(6, 6)).toEqual({ from: 6, to: 6 });
-  });
-
-  it("stamps only the current line when the cursor jumps backward, so stamping never gets stuck", () => {
-    expect(resolveStampRange(20, 6)).toEqual({ from: 6, to: 6 });
-  });
-});
+import { createLineTimestamps } from "./lineTimestamps";
 
 describe("createLineTimestamps", () => {
   it("stamps every line in the written range with the write time", () => {

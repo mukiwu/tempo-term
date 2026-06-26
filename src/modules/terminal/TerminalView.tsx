@@ -5,7 +5,8 @@ import { Loader2, WifiOff } from "lucide-react";
 import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
 import { createOutputWriter } from "./lib/outputWriter";
-import { createLineTimestamps, resolveStampRange, type LineTimestamps } from "./lib/lineTimestamps";
+import { createLineTimestamps, type LineTimestamps } from "./lib/lineTimestamps";
+import { attachLineStamper } from "./lib/lineStamper";
 import { TerminalGutter } from "./TerminalGutter";
 import { SearchBar } from "./SearchBar";
 import { openPty, type PtySession } from "./lib/pty-bridge";
@@ -316,27 +317,12 @@ export function TerminalView({
       onDrop: (total) => noteDroppedOutput(total),
     });
 
-    // Record each output line's write time for the timestamp gutter. Stamping is
-    // armed only once the session connects, so restored history (written before
-    // connect) keeps no timestamp. onWriteParsed fires after the buffer updates,
-    // so the cursor line it reads is accurate despite term.write being async.
+    // Record each output line's write time for the timestamp gutter. Armed only
+    // once the session connects, so restored history (written before connect)
+    // keeps no timestamp.
     const lineStamps = createLineTimestamps();
     lineStampsRef.current = lineStamps;
-    let stampArmed = false;
-    let stampPrevLine = 0;
-    const stampListener = term.onWriteParsed(() => {
-      if (!stampArmed) {
-        return;
-      }
-      const cur = term.buffer.active.baseY + term.buffer.active.cursorY;
-      const { from, to } = resolveStampRange(stampPrevLine, cur);
-      lineStamps.stamp(from, to, Date.now());
-      stampPrevLine = cur;
-    });
-    const armStamping = () => {
-      stampPrevLine = term.buffer.active.baseY + term.buffer.active.cursorY;
-      stampArmed = true;
-    };
+    const lineStamper = attachLineStamper(term, lineStamps);
 
     // The session-status hook (see claude_status_hook) emits OSC 6973 on this
     // pane's tty when Claude changes state. Capture it here, where we know the
@@ -767,9 +753,9 @@ export function TerminalView({
         }
         setSshDisconnected(false);
         setConnecting(false);
-        // Restored history has parsed by now; start stamping from the live cursor
-        // so only real-time output gets timestamps.
-        armStamping();
+        // Restored history has parsed by now; start stamping so only real-time
+        // output gets timestamps.
+        lineStamper.arm();
       })
       .catch((error: unknown) => {
         // If the pane unmounted before the spawn rejected, the terminal is
@@ -859,7 +845,7 @@ export function TerminalView({
     return () => {
       disposed = true;
       outputWriter.dispose();
-      stampListener.dispose();
+      lineStamper.dispose();
       lineStampsRef.current = null;
       if (skippedShowTimer.current !== null) clearTimeout(skippedShowTimer.current);
       if (skippedHideTimer.current !== null) clearTimeout(skippedHideTimer.current);
