@@ -40,21 +40,35 @@ fn build_wrapper_zdotdir(app_data_dir: &Path, plugin_path: &Path) -> std::io::Re
     // $HOME) so the user's own config still loads. .zshrc then restores ZDOTDIR
     // so the interactive session and .zlogin behave as if we were never here.
     let user = r#"${_TEMPO_UZ:-$HOME}"#;
+    let wrapper = dir.to_string_lossy();
+    // Each startup file restores ZDOTDIR to the user's real dir *before* sourcing
+    // their config, so anything that reads $ZDOTDIR (e.g. `source $ZDOTDIR/aliases`)
+    // resolves correctly. .zshenv/.zprofile then point ZDOTDIR back at the wrapper
+    // so zsh keeps loading the remaining wrapper files; .zshrc leaves it on the
+    // user's dir so the interactive session and .zlogin behave normally.
     std::fs::write(
         dir.join(".zshenv"),
-        format!("[[ -f \"{user}/.zshenv\" ]] && source \"{user}/.zshenv\"\n"),
+        format!(
+            "ZDOTDIR=\"{user}\"\n\
+             [[ -f \"$ZDOTDIR/.zshenv\" ]] && source \"$ZDOTDIR/.zshenv\"\n\
+             ZDOTDIR=\"{wrapper}\"\n"
+        ),
     )?;
     std::fs::write(
         dir.join(".zprofile"),
-        format!("[[ -f \"{user}/.zprofile\" ]] && source \"{user}/.zprofile\"\n"),
+        format!(
+            "ZDOTDIR=\"{user}\"\n\
+             [[ -f \"$ZDOTDIR/.zprofile\" ]] && source \"$ZDOTDIR/.zprofile\"\n\
+             ZDOTDIR=\"{wrapper}\"\n"
+        ),
     )?;
     let plugin = plugin_path.to_string_lossy();
     std::fs::write(
         dir.join(".zshrc"),
         format!(
-            "[[ -f \"{user}/.zshrc\" ]] && source \"{user}/.zshrc\"\n\
-             ZDOTDIR=\"{user}\"\n\
+            "ZDOTDIR=\"{user}\"\n\
              unset _TEMPO_UZ\n\
+             [[ -f \"$ZDOTDIR/.zshrc\" ]] && source \"$ZDOTDIR/.zshrc\"\n\
              [[ -f \"{plugin}\" ]] && source \"{plugin}\"\n"
         ),
     )?;

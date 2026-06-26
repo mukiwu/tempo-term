@@ -78,7 +78,9 @@ function clampPadding(value: number): number {
 }
 
 function clampZoom(value: number): number {
-  if (Number.isNaN(value)) {
+  // Guard against non-numbers too (e.g. null/undefined from an older persisted
+  // settings blob): NaN alone wouldn't catch them and Math.min/max would yield NaN.
+  if (typeof value !== "number" || Number.isNaN(value)) {
     return DEFAULT_UI_ZOOM;
   }
   const clamped = Math.min(MAX_UI_ZOOM, Math.max(MIN_UI_ZOOM, value));
