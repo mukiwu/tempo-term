@@ -214,7 +214,7 @@ function SessionRow({
   );
 }
 
-function TabCard({ tab }: { tab: Tab }) {
+function TabCard({ tab, index }: { tab: Tab; index: number }) {
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
   const statuses = useSessionStatusStore((s) => s.statuses);
@@ -245,13 +245,16 @@ function TabCard({ tab }: { tab: Tab }) {
     <button
       type="button"
       onClick={() => setActive(tab.id)}
-      className={`flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+      className={`flex w-full items-stretch gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
         active
           ? "border-accent bg-accent/10 text-fg"
           : "border-border bg-bg-inset text-fg-muted hover:bg-bg-elevated"
       }`}
     >
-      <Icon size={14} className="mt-0.5 shrink-0 text-fg-subtle" />
+      <span className="flex shrink-0 flex-col items-center justify-between py-0.5">
+        <Icon size={14} className="text-fg-subtle" />
+        <span className="text-[10px] font-medium leading-none text-fg-subtle">{index}</span>
+      </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{title}</span>
@@ -293,9 +296,10 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
   const [collapsed, setCollapsed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const tabs = useTabsStore((s) => s.tabs)
-    .filter((t) => t.spaceId === id)
-    .filter((t) => filter === "all" || tabSessionStatus(t, statuses) === filter);
+  const allTabs = useTabsStore((s) => s.tabs).filter((t) => t.spaceId === id);
+  // Number cards by their position in the full space list (not the filtered one)
+  // so the badge keeps matching ⌘1-9, which also indexes the unfiltered tabs.
+  const tabs = allTabs.filter((t) => filter === "all" || tabSessionStatus(t, statuses) === filter);
 
   // Under an active filter a group with no matching cards adds only noise.
   if (filter !== "all" && tabs.length === 0) {
@@ -374,14 +378,13 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
               onClick={() => {
                 setActiveSpace(id);
                 openLauncherTab();
+                // Expand the group so the freshly added card is visible.
+                setCollapsed(false);
               }}
               className="shrink-0 rounded p-0.5 text-fg-subtle transition-colors hover:text-fg"
             >
               <Plus size={12} />
             </button>
-            <span className="shrink-0 rounded-full bg-border px-1.5 py-0.5 text-[11px] leading-none text-fg-subtle">
-              {tabs.length}
-            </span>
           </div>
         )}
       </div>
@@ -389,7 +392,7 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
       {!collapsed && (
         <div className="space-y-1.5 pl-2">
           {tabs.map((tab) => (
-            <TabCard key={tab.id} tab={tab} />
+            <TabCard key={tab.id} tab={tab} index={allTabs.indexOf(tab) + 1} />
           ))}
         </div>
       )}

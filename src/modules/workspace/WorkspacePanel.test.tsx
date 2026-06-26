@@ -269,4 +269,23 @@ describe("WorkspacePanel", () => {
     expect(added?.spaceId).toBe("s2");
     expect(useTabsStore.getState().activeSpaceId).toBe("s2");
   });
+
+  it("shows a 1-based index on each card matching its ⌘-number", () => {
+    render(<WorkspacePanel />);
+    const alpha = screen.getByRole("button", { name: /alpha/ });
+    const beta = screen.getByRole("button", { name: /beta/ });
+    expect(within(alpha).getByText("1")).toBeInTheDocument();
+    expect(within(beta).getByText("2")).toBeInTheDocument();
+  });
+
+  it("keeps the card index tied to the space order under a status filter", () => {
+    // Only beta (the 2nd tab) is active; filtering to running must still show it
+    // as 2, not renumber it to 1, so the number keeps matching ⌘2.
+    useSessionStatusStore.setState({ statuses: { p2: "active" } });
+    render(<WorkspacePanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Running" }));
+    const beta = screen.getByRole("button", { name: /beta/ });
+    expect(within(beta).getByText("2")).toBeInTheDocument();
+    expect(screen.queryByText("alpha")).toBeNull();
+  });
 });
