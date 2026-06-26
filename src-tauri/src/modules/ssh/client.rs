@@ -591,37 +591,40 @@ async fn authenticate_with_private_key(
     Ok(result.success())
 }
 
-/// Agent auth: connect to the running ssh-agent, then try each identity it
-/// holds until one authenticates (the agent does the signing — no private key
-/// material ever reaches this process).
-#[cfg(unix)]
-async fn authenticate_agent(
+/// The public keys worth trying from what the agent offered, in agent order.
+/// Certificate identities need a different auth call and are out of scope, so
+/// they are skipped.
+fn agent_public_keys(
+    identities: Vec<russh::keys::agent::AgentIdentity>,
+) -> Vec<russh::keys::PublicKey> {
+    use russh::keys::agent::AgentIdentity;
+    identities
+        .into_iter()
+        .filter_map(|identity| match identity {
+            AgentIdentity::PublicKey { key, .. } => Some(key),
+            AgentIdentity::Certificate { .. } => None,
+        })
+        .collect()
+}
+
+/// Try each public key the agent holds until one authenticates. Generic over
+/// the agent transport `S` so the unix socket and the Windows named pipe /
+/// Pageant agents — different concrete stream types — share one loop. The agent
+/// does the signing, so no private key material reaches this process.
+async fn try_agent_identities<S>(
     handle: &mut russh::client::Handle<VerifyingClient>,
     args: &AuthArgs,
-) -> Result<bool, String> {
-    use russh::keys::agent::client::AgentClient;
-    use russh::keys::agent::AgentIdentity;
-
-    // `connect_env` reaches the agent over the unix-domain socket named by
-    // SSH_AUTH_SOCK and is unix-only in russh. Windows agents (the OpenSSH
-    // named pipe / Pageant) use a different transport; see the Windows arm.
-    let mut agent = AgentClient::connect_env()
-        .await
-        .map_err(|e| format!("could not connect to ssh-agent: {e}"))?;
-
+    mut agent: russh::keys::agent::client::AgentClient<S>,
+) -> Result<bool, String>
+where
+    S: russh::keys::agent::client::AgentStream + Unpin + Send,
+{
     let identities = agent
         .request_identities()
         .await
         .map_err(|e| format!("could not list agent identities: {e}"))?;
 
-    for identity in identities {
-        // Only plain public keys are tried here; certificate identities need a
-        // different auth call and aren't part of this task's scope.
-        let public_key = match identity {
-            AgentIdentity::PublicKey { key, .. } => key,
-            AgentIdentity::Certificate { .. } => continue,
-        };
-
+    for public_key in agent_public_keys(identities) {
         let result = handle
             .authenticate_publickey_with(args.user.clone(), public_key, None, &mut agent)
             .await
@@ -634,16 +637,59 @@ async fn authenticate_agent(
     Ok(false)
 }
 
-// Windows ssh-agent auth needs a separate transport (OpenSSH named pipe or
-// Pageant) because russh's `connect_env` is unix-only. Until that path is
-// wired up, fail clearly so the Windows build compiles and the other auth
-// methods (password, key file) keep working.
-#[cfg(not(unix))]
+/// Agent auth on unix: reach the agent over the unix-domain socket named by
+/// `SSH_AUTH_SOCK` (russh's `connect_env`, which is unix-only).
+#[cfg(unix)]
+async fn authenticate_agent(
+    handle: &mut russh::client::Handle<VerifyingClient>,
+    args: &AuthArgs,
+) -> Result<bool, String> {
+    use russh::keys::agent::client::AgentClient;
+
+    let agent = AgentClient::connect_env()
+        .await
+        .map_err(|e| format!("could not connect to ssh-agent: {e}"))?;
+    try_agent_identities(handle, args, agent).await
+}
+
+/// Agent auth on Windows: `connect_env` is unix-only, so reach the OpenSSH agent
+/// over its fixed named pipe, falling back to Pageant (PuTTY). The two
+/// transports are different stream types, so each arm hands its agent to the
+/// shared `try_agent_identities`.
+#[cfg(windows)]
+async fn authenticate_agent(
+    handle: &mut russh::client::Handle<VerifyingClient>,
+    args: &AuthArgs,
+) -> Result<bool, String> {
+    use russh::keys::agent::client::AgentClient;
+
+    // OpenSSH's agent on Windows listens on this fixed named pipe.
+    const OPENSSH_AGENT_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
+
+    match AgentClient::connect_named_pipe(OPENSSH_AGENT_PIPE).await {
+        Ok(agent) => try_agent_identities(handle, args, agent).await,
+        Err(pipe_err) => {
+            // No OpenSSH agent pipe; try Pageant before giving up.
+            let agent = AgentClient::connect_pageant().await.map_err(|pageant_err| {
+                format!(
+                    "could not connect to ssh-agent: OpenSSH named pipe ({pipe_err}) \
+                     and Pageant ({pageant_err}) both unavailable"
+                )
+            })?;
+            try_agent_identities(handle, args, agent).await
+        }
+    }
+}
+
+/// Platforms that are neither unix nor Windows have no agent transport wired up;
+/// fail clearly so the other auth methods (password, key file) keep working.
+#[cfg(not(any(unix, windows)))]
 async fn authenticate_agent(
     _handle: &mut russh::client::Handle<VerifyingClient>,
     _args: &AuthArgs,
 ) -> Result<bool, String> {
-    Err("ssh-agent authentication is not supported on Windows yet; use password or a key file".to_string())
+    Err("ssh-agent authentication is not supported on this platform; use password or a key file"
+        .to_string())
 }
 
 /// Public alias for the shared prompt registry handle, so sibling modules can
@@ -766,5 +812,48 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err();
         assert!(msg.contains("unsupported"), "expected 'unsupported' in: {msg}");
+    }
+
+    #[test]
+    fn agent_public_keys_keeps_keys_in_order_and_skips_certificates() {
+        use russh::keys::agent::AgentIdentity;
+        use russh::keys::{Certificate, PublicKey};
+
+        let key_one = PublicKey::from_openssh(
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKk10T4VJ8XEFRzgKqrW4pWkOphcTC0KezIr3y07ppvu key-one@test",
+        )
+        .unwrap();
+        let key_two = PublicKey::from_openssh(
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOlVLOKR+D57c6Y1e1JTtthtlrBxz2qrYQ68CXAdCftv key-two@test",
+        )
+        .unwrap();
+        let certificate = Certificate::from_openssh(
+            "ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIA5t7M3nXsYlqqOMpf+70YhnFGJs8eCt6e7jG10QOvpyAAAAIOlVLOKR+D57c6Y1e1JTtthtlrBxz2qrYQ68CXAdCftvAAAAAAAAAAAAAAABAAAAB3Rlc3QtaWQAAAAMAAAACHRlc3R1c2VyAAAAAGo+FKwAAAAAbB329AAAAAAAAACCAAAAFXBlcm1pdC1YMTEtZm9yd2FyZGluZwAAAAAAAAAXcGVybWl0LWFnZW50LWZvcndhcmRpbmcAAAAAAAAAFnBlcm1pdC1wb3J0LWZvcndhcmRpbmcAAAAAAAAACnBlcm1pdC1wdHkAAAAAAAAADnBlcm1pdC11c2VyLXJjAAAAAAAAAAAAAAAzAAAAC3NzaC1lZDI1NTE5AAAAINDE0xz3yvBWfeJlm6e7wgee6dqKv0eTQpBnbVLnSZGsAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEBc2gwXbr0YxQPOo5xGAB1gQQiLdFOvnj6PNj7wCGHCP4khsFxbd14WKHiP3k4CN4D+bk+7QgniXVJl7QkE/10G key-two@test",
+        )
+        .unwrap();
+
+        let identities = vec![
+            AgentIdentity::PublicKey {
+                key: key_one.clone(),
+                comment: "one".to_string(),
+            },
+            AgentIdentity::Certificate {
+                certificate,
+                comment: "cert".to_string(),
+            },
+            AgentIdentity::PublicKey {
+                key: key_two.clone(),
+                comment: "two".to_string(),
+            },
+        ];
+
+        // Certificates are out of scope and dropped; plain public keys are tried
+        // in the order the agent offered them.
+        assert_eq!(agent_public_keys(identities), vec![key_one, key_two]);
+    }
+
+    #[test]
+    fn agent_public_keys_empty_when_agent_has_nothing() {
+        assert!(agent_public_keys(Vec::new()).is_empty());
     }
 }
