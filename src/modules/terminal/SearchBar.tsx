@@ -15,19 +15,20 @@ export interface TerminalSearchController {
 }
 
 /**
- * Bright match colours. Decorations only set the cell background (xterm can't
- * recolour the matched text), so a bright fill is what keeps dark/dim terminal
- * text readable and makes the hit obvious: amber for every match, a stronger
- * orange for the currently focused one.
+ * Muted gold match colours. Decorations only set the cell background (xterm
+ * can't recolour the matched text), so the fill is kept a desaturated mid-tone
+ * gold: bright enough to spot, dark enough that light terminal text stays
+ * readable on top, and easy on the eyes. The active match is a lighter gold so
+ * the focused hit still stands out from the rest.
  */
 const SEARCH_OPTIONS: ISearchOptions = {
   decorations: {
-    matchBackground: "#fbbf24",
-    matchBorder: "#fbbf24",
-    matchOverviewRuler: "#fbbf24",
-    activeMatchBackground: "#f97316",
-    activeMatchBorder: "#fdba74",
-    activeMatchColorOverviewRuler: "#fdba74",
+    matchBackground: "#9d8136",
+    matchBorder: "#b59a45",
+    matchOverviewRuler: "#b59a45",
+    activeMatchBackground: "#c0a046",
+    activeMatchBorder: "#d8b65e",
+    activeMatchColorOverviewRuler: "#d8b65e",
   },
 };
 
