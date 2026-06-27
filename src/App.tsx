@@ -15,6 +15,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore, tabHasDirtyEditor } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
 import { installEditorBufferSync } from "@/modules/editor/lib/syncBuffers";
+import { installEditorWatchSync } from "@/modules/editor/lib/editorWatch";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
@@ -113,6 +114,10 @@ function App() {
   // Forget an editor buffer once its file leaves every tab/pane, so closing a
   // file without saving discards the edit instead of resurrecting it on reopen.
   useEffect(() => installEditorBufferSync(), []);
+
+  // Watch the files open in editor tabs so external edits (e.g. an AI agent
+  // editing a file) can reload it without closing and reopening the tab.
+  useEffect(() => installEditorWatchSync(), []);
 
   // In a secondary window, close this window's PTY sessions before it is
   // destroyed so no background shells leak. No-op in the main window.

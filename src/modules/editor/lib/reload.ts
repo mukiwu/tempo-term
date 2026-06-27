@@ -29,3 +29,22 @@ export type ManualReloadAction = "reload" | "confirm";
 export function manualReloadAction(buffer: BufferSnapshot | undefined): ManualReloadAction {
   return shouldReloadFromDisk(buffer) ? "reload" : "confirm";
 }
+
+export type ExternalChangeAction = "ignore" | "reload" | "flag";
+
+/**
+ * How to react when the watcher reports the open file changed on disk. A change
+ * we caused ourselves (a save just happened) is ignored, so writing the file
+ * doesn't bounce back as a reload. Otherwise a clean buffer reloads silently; a
+ * dirty buffer flags a conflict so the user's unsaved edits are kept and they
+ * can reload when ready.
+ */
+export function externalChangeAction(
+  buffer: BufferSnapshot | undefined,
+  isSelfSave: boolean,
+): ExternalChangeAction {
+  if (isSelfSave) {
+    return "ignore";
+  }
+  return shouldReloadFromDisk(buffer) ? "reload" : "flag";
+}

@@ -11,6 +11,9 @@
   "reloadUnsavedTitle": "Unsaved changes",
   "reloadUnsavedMessage": "This file has unsaved changes. Reload from disk and discard them?",
   "discardReload": "Reload and discard",
+  "externalChanged": "This file changed on disk while you were editing.",
+  "useDiskVersion": "Use disk version",
+  "keepMine": "Keep mine",
   "wrap": "Word wrap",
   "mode": {
     "edit": "Edit",
