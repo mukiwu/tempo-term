@@ -95,6 +95,14 @@ describe("wrappedPathCandidates", () => {
     ).toContain("/private/tmp/proj/scratchpad/history.html");
   });
 
+  it("rejoins a relative path too, keeping the leading directory segments", () => {
+    // The whole path-like suffix must be kept, not just the last "/seg", so a
+    // relative path stays relative instead of collapsing to "/inalView.tsx".
+    expect(
+      wrappedPathCandidates("● Write(src/modules/terminal/Term", "      inalView.tsx)"),
+    ).toContain("src/modules/terminal/TerminalView.tsx");
+  });
+
   it("returns nothing when the first line does not end mid-path", () => {
     expect(wrappedPathCandidates("just some prose ending in a word", "  more prose")).toEqual([]);
   });

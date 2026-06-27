@@ -78,17 +78,26 @@ export function resolveFilePath(
 }
 
 /**
- * Candidate absolute paths formed when a program hard-wraps a long path across
- * two lines: the first line ends mid-path (an absolute fragment running to the
+ * The trailing path-like fragment of a line: a run of path characters that
+ * contains at least one slash and reaches the end of the line. Matching the
+ * whole suffix (not just the last slash) keeps a relative path like
+ * `src/modules/x` intact instead of collapsing it to `/x`. Shared so the link
+ * range and the rejoin agree on where the fragment starts.
+ */
+export const TRAILING_PATH_RE = /[\p{L}\p{N}_.\-/~]*\/[\p{L}\p{N}_.\-/~]*$/u;
+
+/**
+ * Candidate paths (absolute or relative) formed when a program hard-wraps a long
+ * path across two lines: the first line ends mid-path (a fragment reaching the
  * line end with no trailing space) and the next line continues it after
  * indentation. The caller MUST validate each candidate against the filesystem,
  * since this also joins unrelated lines — that validation is what keeps the
  * broad join safe (a wrong join simply won't exist, so it never becomes a link).
  */
 export function wrappedPathCandidates(firstLine: string, nextLine: string): string[] {
-  // First line must end with an absolute path fragment: a "/" run reaching the
-  // end of the line with no trailing whitespace.
-  const tail = firstLine.match(/\/\S*$/);
+  // First line must end with a path fragment that contains at least one slash,
+  // reaching the end of the line with no trailing whitespace.
+  const tail = firstLine.match(TRAILING_PATH_RE);
   if (!tail) {
     return [];
   }

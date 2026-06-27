@@ -66,7 +66,13 @@ import {
   shouldAttachImage,
   shellQuotePath,
 } from "./lib/terminalClipboard";
-import { buildFileLink, findFilePaths, resolveFilePath, wrappedPathCandidates } from "./lib/fileLinks";
+import {
+  buildFileLink,
+  findFilePaths,
+  resolveFilePath,
+  wrappedPathCandidates,
+  TRAILING_PATH_RE,
+} from "./lib/fileLinks";
 import { actionsFor, findActionLinks, type TerminalAction } from "./lib/actionLinks";
 import { ActionCard } from "./ActionCard";
 import { buildCellPositions, gatherLogicalLine } from "./lib/cellPositions";
@@ -571,12 +577,12 @@ export function TerminalView({
         const nextText = logicalText(rows[rows.length - 1].y + 1);
         if (nextText !== null) {
           for (const cand of wrappedPathCandidates(text, nextText)) {
-            const tailIdx = text.search(/\/\S*$/);
-            if (tailIdx >= 0) {
+            const tailMatch = text.match(TRAILING_PATH_RE);
+            if (tailMatch && tailMatch.index !== undefined) {
               wrappedLinks.push(
                 buildFileLink({
                   text: cand,
-                  range: { start: startCell(tailIdx), end: endCell(text.length - 1) },
+                  range: { start: startCell(tailMatch.index), end: endCell(text.length - 1) },
                   hint: linkHintRef.current,
                   isMac: IS_MAC,
                   onOpen: (raw) => void openFromTerminal(raw),
