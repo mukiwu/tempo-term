@@ -1,7 +1,7 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, WifiOff } from "lucide-react";
+import { ClipboardPaste, Copy, Loader2, WifiOff } from "lucide-react";
 import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
 import { openPty, type PtySession } from "./lib/pty-bridge";
@@ -70,6 +70,7 @@ import { terminalKeySequence } from "./lib/terminalKeymap";
 import { shouldCdToRoot } from "./lib/cwdSync";
 import { debounce } from "@/lib/debounce";
 import { dropOverlayClassName } from "@/components/EntryDropOverlay";
+import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { fsHomeDir, fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { getDraggedEntry } from "@/modules/explorer/lib/dragEntry";
 import {
@@ -166,6 +167,12 @@ export function TerminalView({
   const [externalFileDragging, setExternalFileDragging] = useState(false);
   const dragDepthRef = useRef(0);
   const nativeDragPathsRef = useRef<string[]>([]);
+  // Right-click menu position; null when closed. Exposes Copy/Paste that run the
+  // same fast clipboard path as the keyboard shortcuts (see `pasteRef`), instead
+  // of the WebView2 native menu whose paste is slow.
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null);
+  // Lets the right-click menu call the in-effect smart-paste handler.
+  const pasteRef = useRef<((kind: "ctrl" | "cmd") => void) | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -255,6 +262,7 @@ export function TerminalView({
           break;
       }
     }
+    pasteRef.current = handleTerminalPaste;
 
     function isTerminalPasteShortcut(event: KeyboardEvent): "ctrl" | "cmd" | null {
       const isV = event.code === "KeyV" || event.key.toLowerCase() === "v";
@@ -1056,8 +1064,58 @@ export function TerminalView({
         const files = imageFilesFromDrop(event.dataTransfer);
         void handlePathDrop(paths, files);
       }}
+      onContextMenu={(event) => {
+        // Windows only: replace the WebView2 native menu (whose paste is slow,
+        // ~5s) with our own, backed by the same fast clipboard path as Ctrl+V.
+        // macOS and Linux keep their native menus — neither has the slow-paste
+        // problem, so there's no reason to override their richer native menu.
+        if (!IS_WINDOWS) {
+          return;
+        }
+        event.preventDefault();
+        setContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          hasSelection: handleRef.current?.term.hasSelection() ?? false,
+        });
+      }}
     >
       {externalFileDragging && <div className={dropOverlayClassName(true)} />}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={[
+            ...(contextMenu.hasSelection
+              ? [
+                  {
+                    id: "copy",
+                    label: t("terminalCopy"),
+                    icon: Copy,
+                    onSelect: () => {
+                      const term = handleRef.current?.term;
+                      if (term?.hasSelection()) {
+                        void navigator.clipboard.writeText(term.getSelection());
+                      }
+                    },
+                  } satisfies ContextMenuItem,
+                ]
+              : []),
+            {
+              id: "paste",
+              label: t("terminalPaste"),
+              icon: ClipboardPaste,
+              // "cmd" so an empty clipboard is a no-op; "ctrl" would inject the
+              // raw paste control byte, which a menu paste should never do.
+              onSelect: () => {
+                pasteRef.current?.("cmd");
+                handleRef.current?.term.focus();
+              },
+            } satisfies ContextMenuItem,
+          ]}
+        />
+      )}
       {connecting && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-fg-subtle">
           <Loader2 size={15} className="animate-spin" />

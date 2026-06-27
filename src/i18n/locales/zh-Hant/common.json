@@ -2,6 +2,8 @@
   "appName": "TempoTerm",
   "tagline": "AI 驅動的終端機工作區",
   "terminalConnecting": "啟動中…",
+  "terminalCopy": "複製",
+  "terminalPaste": "貼上",
   "openLinkHint": "{{mods}} + 點擊開啟",
   "ssh": {
     "disconnected": "已斷線，點擊重新連線",

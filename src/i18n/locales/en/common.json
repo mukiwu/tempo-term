@@ -2,6 +2,8 @@
   "appName": "TempoTerm",
   "tagline": "AI-powered terminal workspace",
   "terminalConnecting": "Starting shell…",
+  "terminalCopy": "Copy",
+  "terminalPaste": "Paste",
   "openLinkHint": "{{mods}}-click to open",
   "ssh": {
     "disconnected": "Disconnected — click to reconnect",
