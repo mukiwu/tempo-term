@@ -16,3 +16,16 @@ export function shouldReloadFromDisk(buffer: BufferSnapshot | undefined): boolea
   }
   return buffer.content === buffer.baseline;
 }
+
+export type ManualReloadAction = "reload" | "confirm";
+
+/**
+ * What a user-initiated refresh should do. A clean (or not-yet-open) buffer
+ * reloads straight from disk; a buffer with unsaved edits must confirm first so
+ * the user's work is never silently discarded. This differs from the on-open
+ * path (`shouldReloadFromDisk`), where a dirty buffer is silently kept rather
+ * than prompting — a manual refresh is an explicit user action, so it asks.
+ */
+export function manualReloadAction(buffer: BufferSnapshot | undefined): ManualReloadAction {
+  return shouldReloadFromDisk(buffer) ? "reload" : "confirm";
+}

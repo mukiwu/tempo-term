@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Columns2, Eye, SquarePen, WrapText, type LucideIcon } from "lucide-react";
+import { Columns2, Eye, RefreshCw, SquarePen, WrapText, type LucideIcon } from "lucide-react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView as CMView } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
@@ -12,11 +12,12 @@ import { aiChat } from "@/modules/ai/lib/aiBridge";
 import { providerById } from "@/modules/ai/lib/providers";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { buildCompletionMessages, cleanCompletion } from "@/modules/ai/lib/completion";
-import { shouldReloadFromDisk } from "./lib/reload";
+import { manualReloadAction, shouldReloadFromDisk } from "./lib/reload";
 import { fsReadFile, fsWriteFile } from "@/modules/explorer/lib/fsBridge";
 import { basename } from "@/modules/explorer/lib/paths";
 import { MarkdownView } from "@/components/MarkdownView";
 import { Tooltip } from "@/components/Tooltip";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -67,6 +68,7 @@ export function EditorTabContent({ path }: { path: string }) {
 
   const isMarkdown = isMarkdownPath(path);
   const [mode, setMode] = useState<EditorMode>("edit");
+  const [confirmReload, setConfirmReload] = useState(false);
   const effectiveMode: EditorMode = isMarkdown ? mode : "edit";
 
   const cmRef = useRef<ReactCodeMirrorRef>(null);
@@ -138,6 +140,25 @@ export function EditorTabContent({ path }: { path: string }) {
     }
   }
 
+  // Re-read the file from disk into the buffer (content + baseline → clean), so
+  // external edits (e.g. an AI agent editing the file) show up without closing
+  // and reopening the tab.
+  function reloadFromDisk() {
+    fsReadFile(path)
+      .then((text) => setBaseline(path, text))
+      .catch(() => {});
+  }
+
+  // The refresh button: reload immediately when there is nothing to lose, but
+  // confirm first when the buffer has unsaved edits.
+  function handleRefresh() {
+    if (manualReloadAction(useEditorStore.getState().buffers[path]) === "confirm") {
+      setConfirmReload(true);
+    } else {
+      reloadFromDisk();
+    }
+  }
+
   const editorPane = (
     <CodeMirror
       ref={cmRef}
@@ -170,6 +191,16 @@ export function EditorTabContent({ path }: { path: string }) {
           {basename(path)}
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
+        <Tooltip label={t("refresh")}>
+          <button
+            type="button"
+            aria-label={t("refresh")}
+            onClick={handleRefresh}
+            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </Tooltip>
         <Tooltip label={t("wrap")}>
           <button
             type="button"
@@ -220,6 +251,20 @@ export function EditorTabContent({ path }: { path: string }) {
           editorPane
         )}
       </div>
+
+      {confirmReload && (
+        <ConfirmDialog
+          title={t("reloadUnsavedTitle")}
+          message={t("reloadUnsavedMessage")}
+          confirmLabel={t("discardReload")}
+          cancelLabel={t("common:actions.cancel")}
+          onConfirm={() => {
+            setConfirmReload(false);
+            reloadFromDisk();
+          }}
+          onCancel={() => setConfirmReload(false)}
+        />
+      )}
     </div>
   );
 }
