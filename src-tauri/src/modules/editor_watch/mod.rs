@@ -116,9 +116,9 @@ pub fn editor_watch_set(
         }
     }
     for dir in dirs {
-        watcher
-            .watch(&dir, RecursiveMode::NonRecursive)
-            .map_err(|e| e.to_string())?;
+        // Ignore individual watch errors (permission denied, deleted directory,
+        // disconnected drive) so the remaining open files are still watched.
+        let _ = watcher.watch(&dir, RecursiveMode::NonRecursive);
     }
     *state.watcher.lock().unwrap() = Some(watcher);
     Ok(())

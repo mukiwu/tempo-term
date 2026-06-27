@@ -23,8 +23,19 @@ export function onEditorFileChanged(handler: (path: string) => void): Promise<Un
  * Returns the unsubscribe handle.
  */
 export function installEditorWatchSync(): () => void {
+  // The tabs store fires on every change (active tab, pane resize, cwd polls),
+  // but the watcher only needs rebuilding when the SET of open files changes.
+  // Skip the backend call when the path set is unchanged so dragging a pane
+  // resizer doesn't tear down and rebuild the OS watcher dozens of times a second.
+  let lastPathsKey = "";
   const sync = () => {
-    void setWatchedEditorFiles(openEditorPaths(useTabsStore.getState().tabs)).catch(() => {});
+    const paths = openEditorPaths(useTabsStore.getState().tabs).sort();
+    const pathsKey = paths.join("\n");
+    if (pathsKey === lastPathsKey) {
+      return;
+    }
+    lastPathsKey = pathsKey;
+    void setWatchedEditorFiles(paths).catch(() => {});
   };
   sync();
   return useTabsStore.subscribe(sync);

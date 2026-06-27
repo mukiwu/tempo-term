@@ -139,12 +139,15 @@ export function EditorTabContent({ path }: { path: string }) {
 
   async function save() {
     const current = useEditorStore.getState().contentOf(path);
+    // Mark our own write BEFORE the async write: the OS watcher event can arrive
+    // before fsWriteFile resolves, so setting the marker afterwards would race and
+    // let our own save be mistaken for an external change.
+    selfWrite.current = { path, at: Date.now() };
     try {
       await fsWriteFile(path, current);
       markSaved(path);
-      // Mark our own write so the watcher echo for it is ignored.
-      selfWrite.current = { path, at: Date.now() };
     } catch {
+      selfWrite.current = null;
       // a toast surface comes later
     }
   }
