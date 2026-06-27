@@ -46,6 +46,7 @@ use modules::terminal_history::{
     terminal_history_prune, terminal_history_save,
 };
 use modules::sysmon::{system_stats, SysinfoState};
+use modules::editor_watch::{editor_watch_set, EditorWatchState};
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +91,7 @@ pub fn run() {
         .manage(CodexProgressState::new())
         .manage(NotesWatchState::new())
         .manage(SysinfoState::new())
+        .manage(EditorWatchState::new())
         .setup(|app| {
             // window-state restores the last size/position, but it can persist a
             // corrupt tiny / off-screen value (observed 360x240 at a negative
@@ -219,7 +221,8 @@ pub fn run() {
             sftp_close,
             ssh_secret_set,
             ssh_secret_delete,
-            system_stats
+            system_stats,
+            editor_watch_set
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
