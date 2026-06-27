@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { findFilePaths, resolveFilePath, buildFileLink } from "./fileLinks";
+import { findFilePaths, resolveFilePath, wrappedPathCandidates, buildFileLink } from "./fileLinks";
 import { showLinkTooltip, hideLinkTooltip } from "./linkTooltip";
 
 vi.mock("./linkTooltip", () => ({
@@ -82,6 +82,25 @@ describe("resolveFilePath", () => {
 
   it("expands a leading ~ when home is known", () => {
     expect(resolveFilePath("~/notes/a.md", null, "/Users/me")).toBe("/Users/me/notes/a.md");
+  });
+});
+
+describe("wrappedPathCandidates", () => {
+  it("rejoins an absolute path a program hard-wrapped across two lines", () => {
+    // The first line ends mid-path with no trailing space; the next continues it
+    // after indentation. "scr" + "atchpad" rejoins to "scratchpad". The caller
+    // still validates the result exists, since this can also join unrelated lines.
+    expect(
+      wrappedPathCandidates("● Write(/private/tmp/proj/scr", "      atchpad/history.html)"),
+    ).toContain("/private/tmp/proj/scratchpad/history.html");
+  });
+
+  it("returns nothing when the first line does not end mid-path", () => {
+    expect(wrappedPathCandidates("just some prose ending in a word", "  more prose")).toEqual([]);
+  });
+
+  it("returns nothing when the next line is not a path continuation", () => {
+    expect(wrappedPathCandidates("/abs/path/scr", ")not a path")).toEqual([]);
   });
 });
 
