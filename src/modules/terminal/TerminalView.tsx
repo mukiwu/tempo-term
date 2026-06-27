@@ -66,7 +66,7 @@ import {
   shouldAttachImage,
   shellQuotePath,
 } from "./lib/terminalClipboard";
-import { buildFileLink, findFilePaths, resolveFilePath } from "./lib/fileLinks";
+import { buildFileLink, findFilePaths, resolveFilePath, wrappedPathCandidates } from "./lib/fileLinks";
 import { actionsFor, findActionLinks, type TerminalAction } from "./lib/actionLinks";
 import { ActionCard } from "./ActionCard";
 import { buildCellPositions, gatherLogicalLine } from "./lib/cellPositions";
@@ -519,8 +519,9 @@ export function TerminalView({
 
     term.registerLinkProvider({
       provideLinks(lineNumber, callback) {
+        const buffer = term.buffer.active;
         // Resolve the logical line (handles wrapped paths) and read its cells.
-        const rows = gatherLogicalLine(term.buffer.active, lineNumber);
+        const rows = gatherLogicalLine(buffer, lineNumber);
         if (!rows) {
           callback(undefined);
           return;
@@ -534,10 +535,6 @@ export function TerminalView({
         const matches = findFilePaths(text).filter(
           (f) => !actionMatches.some((a) => f.start < a.end && f.end > a.start),
         );
-        if (matches.length === 0 && actionMatches.length === 0) {
-          callback(undefined);
-          return;
-        }
         const lastSpan = spans[spans.length - 1];
         // Map a string index back to a buffer cell (1-based x/y). start uses the
         // glyph's first column; end uses its last, so wide glyphs are covered.
@@ -558,6 +555,56 @@ export function TerminalView({
             onOpen: (raw) => void openFromTerminal(raw),
           }),
         );
+
+        // A program (e.g. an AI coding agent) can hard-wrap a long absolute path
+        // across logical lines: the first ends mid-path, the next continues it
+        // after indentation. Offer a link on each half that opens the rejoined
+        // path. We avoid a cross-line range (an xterm minefield) by giving each
+        // half its own single-line link pointing at the same rejoined path;
+        // openFromTerminal validates existence on click, so a wrong join (this
+        // joins broadly) simply won't open.
+        const logicalText = (start: number): string | null => {
+          const r = gatherLogicalLine(buffer, start);
+          return r ? buildCellPositions(r).text : null;
+        };
+        const wrappedLinks: ReturnType<typeof buildFileLink>[] = [];
+        const nextText = logicalText(rows[rows.length - 1].y + 1);
+        if (nextText !== null) {
+          for (const cand of wrappedPathCandidates(text, nextText)) {
+            const tailIdx = text.search(/\/\S*$/);
+            if (tailIdx >= 0) {
+              wrappedLinks.push(
+                buildFileLink({
+                  text: cand,
+                  range: { start: startCell(tailIdx), end: endCell(text.length - 1) },
+                  hint: linkHintRef.current,
+                  isMac: IS_MAC,
+                  onOpen: (raw) => void openFromTerminal(raw),
+                }),
+              );
+            }
+          }
+        }
+        const prevText = logicalText(rows[0].y - 1);
+        if (prevText !== null) {
+          for (const cand of wrappedPathCandidates(prevText, text)) {
+            const lead = text.match(/^(\s*)([\p{L}\p{N}_.\-/]+)/u);
+            if (lead) {
+              const leadStart = lead[1].length;
+              const leadEnd = leadStart + lead[2].length;
+              wrappedLinks.push(
+                buildFileLink({
+                  text: cand,
+                  range: { start: startCell(leadStart), end: endCell(leadEnd - 1) },
+                  hint: linkHintRef.current,
+                  isMac: IS_MAC,
+                  onOpen: (raw) => void openFromTerminal(raw),
+                }),
+              );
+            }
+          }
+        }
+
         const actionLinks = actionMatches.map((m) => ({
           text: m.text,
           range: { start: startCell(m.start), end: endCell(m.end - 1) },
@@ -571,7 +618,11 @@ export function TerminalView({
             scheduleActionCardHide();
           },
         }));
-        callback([...fileLinks, ...actionLinks]);
+        if (fileLinks.length === 0 && wrappedLinks.length === 0 && actionLinks.length === 0) {
+          callback(undefined);
+          return;
+        }
+        callback([...fileLinks, ...wrappedLinks, ...actionLinks]);
       },
     });
 
