@@ -13,16 +13,24 @@ function fileUrlToPath(url: string): string {
 }
 
 /**
- * Build an asset-protocol URL that keeps the file's directory structure: each
- * path segment is encoded but the slashes stay literal. This matters because
- * the iframe uses this URL as its base, so a previewed page's relative CSS, JS,
- * and images resolve to their sibling files. (Tauri's `convertFileSrc`
- * percent-encodes the whole path into a single segment, which collapses the
- * base directory and breaks every relative reference.)
+ * Build an asset-protocol URL for an absolute file path.
+ *
+ * Tauri's asset handler resolves the file from `request.uri().path()[1..]` (it
+ * strips exactly the URL's structural leading "/") and then percent-decodes it.
+ * So the path's OWN leading slash must be sent as `%2F` — a literal leading
+ * slash gets stripped, turning `/Users/x` into the relative `Users/x`, which
+ * `File::open` then fails to find (the 404 we hit). The `%2F` survives the strip
+ * and decodes back to `/`, yielding the correct absolute path.
+ *
+ * Inner separators stay literal (segments encoded, slashes kept) so the iframe
+ * uses this URL as a real base and a previewed page's relative CSS/JS/images
+ * resolve to their sibling files. (Tauri's `convertFileSrc` percent-encodes the
+ * whole path into one segment, which collapses the base dir and breaks every
+ * relative reference.)
  */
 function toAssetUrl(path: string): string {
-  const encoded = path.split("/").map(encodeURIComponent).join("/");
-  return `${ASSET_ORIGIN}${encoded.startsWith("/") ? "" : "/"}${encoded}`;
+  const segments = path.split("/").filter((seg) => seg !== "").map(encodeURIComponent);
+  return `${ASSET_ORIGIN}/%2F${segments.join("/")}`;
 }
 
 /**

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { resolvePreviewSrc } from "./resolvePreviewSrc";
 
-// The asset URL keeps directory structure (slashes literal, segments encoded)
-// so the iframe's base resolves the page's relative CSS/JS/images.
+// The asset URL encodes the leading slash as %2F (Tauri's handler strips the
+// URL's structural leading "/" before resolving the file, so the path's own
+// leading slash must survive as %2F or an absolute path is read as relative and
+// 404s). Inner slashes stay literal so the iframe base resolves relative assets.
 function assetUrl(path: string): string {
-  return "asset://localhost" + path.split("/").map(encodeURIComponent).join("/");
+  const segments = path.split("/").filter((seg) => seg !== "").map(encodeURIComponent);
+  return "asset://localhost/%2F" + segments.join("/");
 }
 
 describe("resolvePreviewSrc", () => {
@@ -16,12 +19,20 @@ describe("resolvePreviewSrc", () => {
     expect(resolvePreviewSrc("/Users/me/page.html")).toBe(assetUrl("/Users/me/page.html"));
   });
 
-  it("keeps directory structure so relative assets resolve", () => {
+  it("encodes the leading slash as %2F so the asset handler finds the file", () => {
+    // Tauri's asset handler does `request.uri().path()[1..]` then percent-decode;
+    // a literal leading "/" gets stripped, turning /Users/... into the relative
+    // Users/... -> File::open -> 404. %2F survives the strip and decodes to "/".
     const src = resolvePreviewSrc("/Users/me/site/pages/index.html");
-    // Slashes stay literal — the base dir is preserved, not collapsed into one
-    // encoded segment.
-    expect(src).toBe("asset://localhost/Users/me/site/pages/index.html");
-    expect(src).not.toContain("%2F");
+    expect(src).toBe("asset://localhost/%2FUsers/me/site/pages/index.html");
+  });
+
+  it("keeps inner slashes literal so relative assets resolve to sibling files", () => {
+    const src = resolvePreviewSrc("/Users/me/site/pages/index.html");
+    // Exactly one %2F (the leading slash); directory separators stay literal so
+    // the base dir is preserved, not collapsed into one encoded segment.
+    expect(src.match(/%2F/g)?.length).toBe(1);
+    expect(src).toContain("/site/pages/");
   });
 
   it("leaves real web URLs untouched", () => {
