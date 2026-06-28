@@ -490,21 +490,14 @@ export const useTabsStore = create<TabsState>()(
     const spaceId = get().ensureSpace();
     const existing = get().tabs.find((t) => t.kind === "log" && t.spaceId === spaceId);
     if (existing) {
-      // Replace the single leaf's content with the new log, update title, and focus.
-      // Fall back to a fresh leaf if the tree has been split (should not happen in
-      // normal use since we always create it as a single leaf, but guard anyway).
-      const freshPaneId = nextPaneId();
-      const newPaneTree =
-        existing.paneTree.kind === "leaf"
-          ? setLeafPane(existing.paneTree, existing.activeLeafId, { kind: "log", logName })
-          : leaf(freshPaneId, { kind: "log", logName });
-      const newActiveLeafId =
-        existing.paneTree.kind === "leaf" ? existing.activeLeafId : freshPaneId;
+      // Replace the active leaf's content with the new log, update title, and focus.
+      // setLeafPane works for both single-leaf and split trees — it replaces in-place
+      // anywhere in the tree, so a split layout is preserved (not discarded).
+      const newPaneTree = setLeafPane(existing.paneTree, existing.activeLeafId, { kind: "log", logName });
+      // activeLeafId stays the same — the active leaf is what we replaced.
       set((state) => ({
         tabs: state.tabs.map((t) =>
-          t.id === existing.id
-            ? { ...t, title: logName, paneTree: newPaneTree, activeLeafId: newActiveLeafId }
-            : t,
+          t.id === existing.id ? { ...t, title: logName, paneTree: newPaneTree } : t,
         ),
         activeId: existing.id,
       }));

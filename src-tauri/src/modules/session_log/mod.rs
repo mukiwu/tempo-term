@@ -179,8 +179,10 @@ pub fn session_logs_list(app: AppHandle) -> Result<Vec<LogEntry>, String> {
 }
 
 /// Read one log by bare filename, guarded against path traversal.
+/// Returns raw binary via `tauri::ipc::Response` to avoid JSON serialization
+/// overhead (a JSON array of numbers is ~3× larger and much slower than raw bytes).
 #[tauri::command]
-pub fn session_log_read(app: AppHandle, name: String) -> Result<Vec<u8>, String> {
+pub fn session_log_read(app: AppHandle, name: String) -> Result<tauri::ipc::Response, String> {
     if !is_safe_log_name(&name) {
         return Err("invalid log name".into());
     }
@@ -191,7 +193,8 @@ pub fn session_log_read(app: AppHandle, name: String) -> Result<Vec<u8>, String>
     if !canon_path.starts_with(&canon_dir) {
         return Err("path escapes logs directory".into());
     }
-    fs::read(&canon_path).map_err(|e| e.to_string())
+    let bytes = fs::read(&canon_path).map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
@@ -218,6 +221,12 @@ pub fn session_logs_open_dir(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn session_logs_enforce_retention(app: AppHandle, retention_days: Option<i64>) -> Result<(), String> {
     let Some(days) = retention_days else { return Ok(()) };
+    // A zero or negative value would make the cutoff >= now and delete ALL logs.
+    // Guard here at the command boundary; `select_expired` itself is pure and
+    // assumes a valid positive day count.
+    if days <= 0 {
+        return Err("retention days must be greater than zero".into());
+    }
     let dir = logs_dir(&app)?;
     if !dir.exists() {
         return Ok(());
@@ -293,6 +302,26 @@ mod tests {
         let expired = select_expired(&entries, now, 30);
         assert_eq!(expired, vec!["old.log".to_string()]);
     }
+
+    #[test]
+    fn select_expired_with_valid_positive_days_uses_correct_cutoff_math() {
+        // Verify cutoff = now_ms - days * 86_400_000.
+        // With retention_days=7, anything strictly older than 7 days ago is expired.
+        let day = 86_400_000_i64;
+        let now = 1_000 * day;
+        let entries = vec![
+            ("week_old.log".to_string(), now - 7 * day),     // exactly at cutoff: keep
+            ("eight_days.log".to_string(), now - 8 * day),   // 1 ms past cutoff: expire
+            ("six_days.log".to_string(), now - 6 * day),     // fresh: keep
+        ];
+        let expired = select_expired(&entries, now, 7);
+        assert_eq!(expired, vec!["eight_days.log".to_string()]);
+    }
+
+    // Note: the `days <= 0` guard lives at the `session_logs_enforce_retention` command
+    // boundary (needs an AppHandle, so not unit-testable here). `select_expired` itself
+    // is a pure function that assumes a positive day count; the guard above prevents it
+    // from ever being called with non-positive values from the public command surface.
 
     #[cfg(unix)]
     #[test]

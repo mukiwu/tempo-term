@@ -11,8 +11,11 @@ export function listSessionLogs(): Promise<LogEntry[]> {
   return invoke<LogEntry[]>("session_logs_list");
 }
 
-export function readSessionLog(name: string): Promise<Uint8Array> {
-  return invoke<number[]>("session_log_read", { name }).then((arr) => new Uint8Array(arr));
+export async function readSessionLog(name: string): Promise<Uint8Array> {
+  // tauri::ipc::Response delivers raw binary as an ArrayBuffer on the frontend
+  // (not Uint8Array), so we wrap it explicitly.
+  const buf = await invoke<ArrayBuffer>("session_log_read", { name });
+  return new Uint8Array(buf);
 }
 
 export function openSessionLogsDir(): Promise<void> {
