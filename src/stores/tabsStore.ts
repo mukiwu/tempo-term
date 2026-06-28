@@ -493,13 +493,18 @@ export const useTabsStore = create<TabsState>()(
       // Replace the single leaf's content with the new log, update title, and focus.
       // Fall back to a fresh leaf if the tree has been split (should not happen in
       // normal use since we always create it as a single leaf, but guard anyway).
+      const freshPaneId = nextPaneId();
       const newPaneTree =
         existing.paneTree.kind === "leaf"
           ? setLeafPane(existing.paneTree, existing.activeLeafId, { kind: "log", logName })
-          : leaf(nextPaneId(), { kind: "log", logName });
+          : leaf(freshPaneId, { kind: "log", logName });
+      const newActiveLeafId =
+        existing.paneTree.kind === "leaf" ? existing.activeLeafId : freshPaneId;
       set((state) => ({
         tabs: state.tabs.map((t) =>
-          t.id === existing.id ? { ...t, title: logName, paneTree: newPaneTree } : t,
+          t.id === existing.id
+            ? { ...t, title: logName, paneTree: newPaneTree, activeLeafId: newActiveLeafId }
+            : t,
         ),
         activeId: existing.id,
       }));

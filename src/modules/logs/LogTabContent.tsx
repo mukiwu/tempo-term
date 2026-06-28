@@ -54,15 +54,16 @@ export function LogTabContent({ logName }: LogTabContentProps) {
     const next = !showRaw;
     setShowRaw(next);
     if (!bytes) return;
+    const name = logName;
     setLoading(true);
     try {
-      if (next) {
-        setContent(new TextDecoder("utf-8", { fatal: false }).decode(bytes));
-      } else {
-        setContent(await renderLogToText(bytes));
-      }
+      const decoded = next
+        ? new TextDecoder("utf-8", { fatal: false }).decode(bytes)
+        : await renderLogToText(bytes);
+      if (requestedRef.current !== name) return;
+      setContent(decoded);
     } finally {
-      setLoading(false);
+      if (requestedRef.current === name) setLoading(false);
     }
   }
 
