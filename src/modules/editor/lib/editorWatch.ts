@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { openEditorPaths, useTabsStore } from "@/stores/tabsStore";
+import { localPreviewFilePaths, openEditorPaths, useTabsStore } from "@/stores/tabsStore";
 
 /**
  * Frontend wrappers around the Rust editor file watcher. The backend watches the
@@ -29,7 +29,8 @@ export function installEditorWatchSync(): () => void {
   // resizer doesn't tear down and rebuild the OS watcher dozens of times a second.
   let lastPathsKey = "";
   const sync = () => {
-    const paths = openEditorPaths(useTabsStore.getState().tabs).sort();
+    const tabs = useTabsStore.getState().tabs;
+    const paths = Array.from(new Set([...openEditorPaths(tabs), ...localPreviewFilePaths(tabs)])).sort();
     const pathsKey = paths.join("\n");
     if (pathsKey === lastPathsKey) {
       return;
