@@ -626,6 +626,36 @@ describe("openHtmlPreview", () => {
     expect(useTabsStore.getState().tabs.filter((t) => t.kind === "preview").length).toBe(1);
     expect(useTabsStore.getState().tabs.find((t) => t.kind === "preview")!.title).toBe("c.html");
   });
+
+  it("replaces the preview pane content in place when the tab already has a preview pane", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/proj/a.html");
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const editorLeafId = tab.activeLeafId;
+    // Split the editor with a preview pane so the tab already has a preview.
+    useTabsStore
+      .getState()
+      .splitPaneWith(tabId, editorLeafId, { kind: "preview", url: "file:///proj/old.html" }, "row");
+    const withPreview = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const beforeLeafCount = leafIds(withPreview.paneTree).length;
+    const beforeTabCount = useTabsStore.getState().tabs.length;
+    // After the split the active leaf is the new preview leaf.
+    const previewLeafId = withPreview.activeLeafId;
+
+    // Call openHtmlPreview — hits the replace branch.
+    useTabsStore.getState().openHtmlPreview(tabId, editorLeafId, "/proj/new.html");
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+
+    // No new leaves and no new tabs.
+    expect(leafIds(updated.paneTree)).toHaveLength(beforeLeafCount);
+    expect(useTabsStore.getState().tabs).toHaveLength(beforeTabCount);
+    // Preview pane now shows the new file url.
+    expect(findPaneContent(updated.paneTree, previewLeafId)).toEqual({
+      kind: "preview",
+      url: "file:///proj/new.html",
+    });
+    // Active leaf points at the preview pane.
+    expect(updated.activeLeafId).toBe(previewLeafId);
+  });
 });
 
 describe("activeEditorPath", () => {
