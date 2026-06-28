@@ -66,6 +66,22 @@ fn select_expired(entries: &[(String, i64)], now_ms: i64, retention_days: i64) -
         .collect()
 }
 
+/// Create the logs directory with owner-only permissions (0o700) on Unix.
+/// Falls back to plain `create_dir_all` on other platforms.
+#[cfg(unix)]
+fn ensure_logs_dir(dir: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .map_err(|e| format!("create log dir: {e}"))
+}
+#[cfg(not(unix))]
+fn ensure_logs_dir(dir: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("create log dir: {e}"))
+}
+
 pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join(DIR_NAME))
 }
@@ -74,7 +90,7 @@ pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
 /// the returned `tx`; dropping every sender closes the file (writes the footer).
 /// Split from `start_logger` so it is testable against a temp dir.
 fn start_logger_in(dir: PathBuf, label: &str) -> Result<LoggerHandle, String> {
-    fs::create_dir_all(&dir).map_err(|e| format!("create log dir: {e}"))?;
+    ensure_logs_dir(&dir)?;
     // Append a process-global sequence number so same-second sessions (e.g. two
     // `zsh` tabs restoring at once) produce distinct filenames and never collide.
     let seq = LOG_SEQ.fetch_add(1, Ordering::Relaxed);
@@ -84,7 +100,14 @@ fn start_logger_in(dir: PathBuf, label: &str) -> Result<LoggerHandle, String> {
     let path_clone = path.clone();
 
     std::thread::spawn(move || {
-        let mut file = match OpenOptions::new().create(true).append(true).open(&path_clone) {
+        let mut opts = OpenOptions::new();
+        opts.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut file = match opts.open(&path_clone) {
             Ok(f) => f,
             Err(_) => return,
         };
@@ -180,7 +203,7 @@ pub fn session_logs_dir_path(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub fn session_logs_open_dir(app: AppHandle) -> Result<(), String> {
     let dir = logs_dir(&app)?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    ensure_logs_dir(&dir)?;
     let status = if cfg!(target_os = "macos") {
         std::process::Command::new("open").arg(&dir).status()
     } else if cfg!(target_os = "windows") {
@@ -269,6 +292,40 @@ mod tests {
         ];
         let expired = select_expired(&entries, now, 30);
         assert_eq!(expired, vec!["old.log".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn log_file_and_dir_are_owner_only_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir()
+            .join(format!("ttlog-perms-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let handle = start_logger_in(dir.clone(), "zsh").unwrap();
+        handle.tx.send(b"secret token\n".to_vec()).unwrap();
+        drop(handle);
+
+        // Poll for the log file to appear and the writer to finish.
+        let mut log_path = None;
+        for _ in 0..50 {
+            if let Some(entry) = std::fs::read_dir(&dir).ok().and_then(|mut r| r.next()).and_then(|e| e.ok()) {
+                let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
+                if content.contains("Session ended at") {
+                    log_path = Some(entry.path());
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        let log_path = log_path.expect("log file not found");
+        let file_mode = std::fs::metadata(&log_path).unwrap().permissions().mode() & 0o777;
+        let dir_mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(file_mode, 0o600, "log file should be owner-only (0o600), got {file_mode:#o}");
+        assert_eq!(dir_mode, 0o700, "logs dir should be owner-only (0o700), got {dir_mode:#o}");
     }
 
     #[test]
