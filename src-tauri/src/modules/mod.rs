@@ -15,6 +15,6 @@ pub mod notes;
 pub mod pr;
 pub mod pty;
 pub mod secrets;
-pub mod sysmon;
 pub mod session_log;
+pub mod sysmon;
 pub mod terminal_history;

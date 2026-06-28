@@ -16,8 +16,10 @@ use tauri::{AppHandle, Manager};
 const DIR_NAME: &str = "session-logs";
 /// Bounded so a stuck writer can't grow memory without limit. On overflow the
 /// tee drops the chunk (best-effort logging), never blocking the terminal.
+#[allow(dead_code)] // wired up by the PTY/SSH logging tee in Task 3/4
 const CHANNEL_CAPACITY: usize = 256;
 
+#[allow(dead_code)] // wired up by the PTY/SSH logging tee in Task 3/4
 pub struct LoggerHandle {
     pub tx: SyncSender<Vec<u8>>,
     pub path: PathBuf,
@@ -25,6 +27,7 @@ pub struct LoggerHandle {
 
 /// Map a session label (shell name or user@host) to a filename-safe form: keep
 /// alphanumerics and `-_.`; everything else becomes `_`.
+#[allow(dead_code)] // wired up by the PTY/SSH logging tee in Task 3/4
 fn sanitize(label: &str) -> String {
     label
         .chars()
@@ -36,6 +39,7 @@ fn sanitize(label: &str) -> String {
 }
 
 /// `<YYYYMMDD_HHMMSS>_<label>.log`
+#[allow(dead_code)] // wired up by the PTY/SSH logging tee in Task 3/4
 fn log_filename(stamp: &str, label: &str) -> String {
     format!("{}_{}.log", stamp, sanitize(label))
 }
@@ -68,6 +72,7 @@ pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
 /// Start a per-session logger writing into `dir`. Feed each raw output chunk to
 /// the returned `tx`; dropping every sender closes the file (writes the footer).
 /// Split from `start_logger` so it is testable against a temp dir.
+#[allow(dead_code)] // wired up by the PTY/SSH logging tee in Task 3/4
 fn start_logger_in(dir: PathBuf, label: &str) -> Result<LoggerHandle, String> {
     fs::create_dir_all(&dir).map_err(|e| format!("create log dir: {e}"))?;
     let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
@@ -103,6 +108,7 @@ fn start_logger_in(dir: PathBuf, label: &str) -> Result<LoggerHandle, String> {
 
 /// Start a logger under the app's `session-logs` dir, labelled by shell name or
 /// `user@host`.
+#[allow(dead_code)] // wired up by the PTY/SSH logging tee in Task 3/4
 pub fn start_logger(app: &AppHandle, label: &str) -> Result<LoggerHandle, String> {
     start_logger_in(logs_dir(app)?, label)
 }
