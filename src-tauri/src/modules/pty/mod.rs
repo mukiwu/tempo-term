@@ -11,12 +11,14 @@ use tauri::State;
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn pty_open(
+    app: tauri::AppHandle,
     state: State<'_, PtyState>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
     suggestions: bool,
     shell_override: Option<String>,
+    log_enabled: bool,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
@@ -27,6 +29,8 @@ pub fn pty_open(
         cwd,
         suggestions,
         shell_override,
+        &app,
+        log_enabled,
         on_data,
         on_exit,
     )
