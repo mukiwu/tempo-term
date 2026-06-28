@@ -444,6 +444,12 @@ export function TerminalView({
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
+      // Keyboard Ctrl/Cmd+V already preventDefaults on keydown, so this native
+      // paste event only fires for a non-keyboard paste (right-click or the Edit
+      // menu). Route it through the smart-paste flow so those paths work too,
+      // with no double paste. "cmd" keeps an empty clipboard a no-op rather than
+      // injecting the raw paste control byte.
+      void handleTerminalPaste("cmd");
     };
     document.addEventListener("paste", onPasteCapture, true);
 

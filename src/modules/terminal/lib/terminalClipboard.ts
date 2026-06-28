@@ -55,8 +55,9 @@ export function shellQuotePath(path: string, isWindows: boolean = IS_WINDOWS): s
     // Windows paths use backslashes and a drive colon, and may run under cmd,
     // PowerShell or git-bash. Double quotes are the one form all three accept,
     // and filenames cannot contain '"', so wrapping is always safe. Leave a
-    // path that needs no quoting (no spaces/special chars) bare.
-    if (/^[A-Za-z0-9_.:@%+=,\\/-]+$/.test(path)) {
+    // path that needs no quoting (no spaces/special chars) bare. A comma is NOT
+    // safe bare: PowerShell parses it as the array operator, so it forces quoting.
+    if (/^[A-Za-z0-9_.:@%+=\\/-]+$/.test(path)) {
       return path;
     }
     return `"${path}"`;

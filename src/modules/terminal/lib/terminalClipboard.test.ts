@@ -51,6 +51,9 @@ describe("terminal clipboard helpers", () => {
   it("quotes Windows paths with double quotes, leaving plain drive paths bare", () => {
     expect(shellQuotePath("C:\\Users\\me\\a.png", true)).toBe("C:\\Users\\me\\a.png");
     expect(shellQuotePath("C:\\My Documents\\a.png", true)).toBe('"C:\\My Documents\\a.png"');
+    // A comma must force quoting: PowerShell treats a bare comma as its array
+    // operator and would split the path into separate arguments.
+    expect(shellQuotePath("C:\\data\\a,b.png", true)).toBe('"C:\\data\\a,b.png"');
   });
 });
 
