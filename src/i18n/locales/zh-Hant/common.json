@@ -48,7 +48,8 @@
     "notes": "筆記",
     "gitGraph": "Git 線圖",
     "settings": "設定",
-    "connections": "SSH 連線"
+    "connections": "SSH 連線",
+    "logs": "記錄"
   },
   "statusBar": {
     "ready": "就緒",
@@ -166,6 +167,17 @@
       "destPort": "目標埠號",
       "enabled": "啟用"
     }
+  },
+  "logs": {
+    "title": "記錄",
+    "empty": "還沒有 log 檔",
+    "selectHint": "在左邊選一個 log",
+    "raw": "Raw (ANSI)",
+    "copy": "複製",
+    "saveAs": "另存為…",
+    "loading": "載入中…",
+    "refresh": "重新整理",
+    "openFolder": "開啟 log 資料夾"
   },
   "workspace": {
     "openFolder": "開啟資料夾",

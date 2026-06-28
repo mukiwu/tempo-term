@@ -34,6 +34,7 @@ import { registerSecondaryWindowCleanup } from "@/lib/windowLifecycle";
 import { SshPromptDialog } from "@/modules/ssh/SshPromptDialog";
 import { useForwardStatusListener } from "@/modules/ssh/lib/useForwardStatus";
 import { sftpSessionStore } from "@/modules/ssh/lib/sftpSessionStore";
+import { enforceLogRetention } from "@/modules/logs/lib/sessionLog";
 
 const MIN_SIDEBAR = 180;
 const MAX_SIDEBAR = 640;
@@ -118,6 +119,12 @@ function App() {
   // Watch the files open in editor tabs so external edits (e.g. an AI agent
   // editing a file) can reload it without closing and reopening the tab.
   useEffect(() => installEditorWatchSync(), []);
+
+  // Prune session logs older than the configured retention window once on
+  // startup so disk usage stays bounded without waiting for the panel to open.
+  useEffect(() => {
+    void enforceLogRetention(useSettingsStore.getState().logRetentionDays);
+  }, []);
 
   // In a secondary window, close this window's PTY sessions before it is
   // destroyed so no background shells leak. No-op in the main window.
