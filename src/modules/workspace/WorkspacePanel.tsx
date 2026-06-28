@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -303,6 +303,9 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
   // Number cards by their position in the full space list (not the filtered one)
   // so the badge keeps matching ⌘1-9, which also indexes the unfiltered tabs.
   const tabs = allTabs.filter((t) => filter === "all" || tabSessionStatus(t, statuses) === filter);
+  // 1-based position in the unfiltered space list, so the badge keeps matching
+  // ⌘1-9. Precomputed once (O(n)) instead of an O(n) indexOf per card (O(n²)).
+  const tabNumberById = new Map(allTabs.map((tab, i) => [tab.id, i + 1]));
 
   // Under an active filter a group with no matching cards adds only noise.
   if (filter !== "all" && tabs.length === 0) {
@@ -395,7 +398,7 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
       {!collapsed && (
         <div className="space-y-1.5 pl-2">
           {tabs.map((tab) => (
-            <TabCard key={tab.id} tab={tab} index={allTabs.indexOf(tab) + 1} />
+            <TabCard key={tab.id} tab={tab} index={tabNumberById.get(tab.id) ?? 0} />
           ))}
         </div>
       )}
@@ -417,26 +420,38 @@ export function WorkspacePanel() {
   const leafAgents = useSessionStatusStore((s) => s.agents);
   // Dedupe so multiple tabs in the same directory don't trigger redundant IPC
   // and network lookups for that directory.
-  const cwds = Array.from(
-    new Set(
-      tabs.map((tab) => deriveTabCwd(tab)).filter((cwd): cwd is string => cwd !== null),
-    ),
+  const cwds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          tabs.map((tab) => deriveTabCwd(tab)).filter((cwd): cwd is string => cwd !== null),
+        ),
+      ),
+    [tabs],
   );
   useWorktreeInfos(cwds);
   // Titles are per session (cwd + agent), so a directory running both Claude and
   // Codex gets each one's own title fetched.
-  const titleTargets = tabs.flatMap((tab) =>
-    collectTabSessions(tab, statuses, leafAgents).flatMap((session) =>
-      session.cwd && session.agent ? [{ cwd: session.cwd, agent: session.agent }] : [],
-    ),
+  const titleTargets = useMemo(
+    () =>
+      tabs.flatMap((tab) =>
+        collectTabSessions(tab, statuses, leafAgents).flatMap((session) =>
+          session.cwd && session.agent ? [{ cwd: session.cwd, agent: session.agent }] : [],
+        ),
+      ),
+    [tabs, statuses, leafAgents],
   );
   useWorkspaceTitles(titleTargets);
 
   // PR lookups need a branch, which comes from the worktree info fetched above.
   // Skip fetching entirely when the PR block is hidden.
-  const prPairs = cwds
-    .map((cwd) => ({ cwd, branch: infos[cwd]?.branch ?? "" }))
-    .filter((pair) => pair.branch !== "");
+  const prPairs = useMemo(
+    () =>
+      cwds
+        .map((cwd) => ({ cwd, branch: infos[cwd]?.branch ?? "" }))
+        .filter((pair) => pair.branch !== ""),
+    [cwds, infos],
+  );
   useWorkspacePrs(prPairs, showPr ? prSource : "off");
 
   return (
