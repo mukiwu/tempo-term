@@ -64,3 +64,33 @@ describe("IS_MAC platform detection", () => {
     ).resolves.toBe(false);
   });
 });
+
+describe("IS_WINDOWS platform detection", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  async function loadIsWindows(nav: unknown): Promise<boolean> {
+    vi.stubGlobal("navigator", nav);
+    vi.resetModules();
+    const mod = await import("./platform");
+    return mod.IS_WINDOWS;
+  }
+
+  it("detects windows via platform", async () => {
+    await expect(loadIsWindows({ platform: "Win32" })).resolves.toBe(true);
+  });
+
+  it("falls back to userAgent when platform is undefined", async () => {
+    await expect(
+      loadIsWindows({ userAgent: "Mozilla/5.0 (Windows NT 10.0)", platform: undefined }),
+    ).resolves.toBe(true);
+  });
+
+  it("is false on mac", async () => {
+    await expect(
+      loadIsWindows({ platform: "MacIntel", userAgent: "Mac OS X" }),
+    ).resolves.toBe(false);
+  });
+});

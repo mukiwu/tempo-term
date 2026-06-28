@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Columns2, Eye, SquarePen, WrapText, type LucideIcon } from "lucide-react";
+import { Columns2, Eye, RefreshCw, SquarePen, WrapText, type LucideIcon } from "lucide-react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView as CMView } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
@@ -12,11 +12,13 @@ import { aiChat } from "@/modules/ai/lib/aiBridge";
 import { providerById } from "@/modules/ai/lib/providers";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { buildCompletionMessages, cleanCompletion } from "@/modules/ai/lib/completion";
-import { shouldReloadFromDisk } from "./lib/reload";
+import { externalChangeAction, manualReloadAction, shouldReloadFromDisk } from "./lib/reload";
+import { onEditorFileChanged } from "./lib/editorWatch";
 import { fsReadFile, fsWriteFile } from "@/modules/explorer/lib/fsBridge";
 import { basename } from "@/modules/explorer/lib/paths";
 import { MarkdownView } from "@/components/MarkdownView";
 import { Tooltip } from "@/components/Tooltip";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -31,6 +33,10 @@ const MODES: { key: EditorMode; icon: LucideIcon }[] = [
 function isMarkdownPath(path: string): boolean {
   return /\.(md|markdown|mdx)$/i.test(path);
 }
+
+// After we save, the watcher reports our own write back as a change. Ignore
+// those echoes for a short window so a save never bounces back as a reload.
+const SELF_WRITE_WINDOW_MS = 2000;
 
 /** Ask the active chat provider to complete the code around the cursor. */
 async function requestCompletion(
@@ -67,6 +73,9 @@ export function EditorTabContent({ path }: { path: string }) {
 
   const isMarkdown = isMarkdownPath(path);
   const [mode, setMode] = useState<EditorMode>("edit");
+  const [confirmReload, setConfirmReload] = useState(false);
+  const [externalChanged, setExternalChanged] = useState(false);
+  const selfWrite = useRef<{ path: string; at: number } | null>(null);
   const effectiveMode: EditorMode = isMarkdown ? mode : "edit";
 
   const cmRef = useRef<ReactCodeMirrorRef>(null);
@@ -130,13 +139,82 @@ export function EditorTabContent({ path }: { path: string }) {
 
   async function save() {
     const current = useEditorStore.getState().contentOf(path);
+    // Mark our own write BEFORE the async write: the OS watcher event can arrive
+    // before fsWriteFile resolves, so setting the marker afterwards would race and
+    // let our own save be mistaken for an external change.
+    selfWrite.current = { path, at: Date.now() };
     try {
       await fsWriteFile(path, current);
       markSaved(path);
     } catch {
+      selfWrite.current = null;
       // a toast surface comes later
     }
   }
+
+  // Re-read the file from disk into the buffer (content + baseline → clean), so
+  // external edits (e.g. an AI agent editing the file) show up without closing
+  // and reopening the tab.
+  function reloadFromDisk() {
+    fsReadFile(path)
+      .then((text) => {
+        setBaseline(path, text);
+        setExternalChanged(false);
+      })
+      .catch(() => {});
+  }
+
+  // The refresh button: reload immediately when there is nothing to lose, but
+  // confirm first when the buffer has unsaved edits.
+  function handleRefresh() {
+    if (manualReloadAction(useEditorStore.getState().buffers[path]) === "confirm") {
+      setConfirmReload(true);
+    } else {
+      reloadFromDisk();
+    }
+  }
+
+  const keepMine = () => setExternalChanged(false);
+
+  // A path switch on the same component instance starts fresh: drop any pending
+  // conflict flag and the stale self-write marker.
+  useEffect(() => {
+    setExternalChanged(false);
+    selfWrite.current = null;
+  }, [path]);
+
+  // React to the watcher reporting this file changed on disk (e.g. an AI agent
+  // edited it). Ignore the echo of our own save; reload a clean buffer silently;
+  // raise the conflict banner when there are unsaved edits so they are kept.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void onEditorFileChanged((changedPath) => {
+      if (changedPath !== path) {
+        return;
+      }
+      const sw = selfWrite.current;
+      const isSelfSave = sw?.path === path && Date.now() - sw.at < SELF_WRITE_WINDOW_MS;
+      const action = externalChangeAction(useEditorStore.getState().buffers[path], isSelfSave);
+      if (action === "reload") {
+        reloadFromDisk();
+      } else if (action === "flag") {
+        setExternalChanged(true);
+      }
+    }).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+    // reloadFromDisk closes over `path` and stable setters; re-subscribe on path.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
 
   const editorPane = (
     <CodeMirror
@@ -170,6 +248,16 @@ export function EditorTabContent({ path }: { path: string }) {
           {basename(path)}
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
+        <Tooltip label={t("refresh")}>
+          <button
+            type="button"
+            aria-label={t("refresh")}
+            onClick={handleRefresh}
+            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </Tooltip>
         <Tooltip label={t("wrap")}>
           <button
             type="button"
@@ -206,6 +294,28 @@ export function EditorTabContent({ path }: { path: string }) {
         </div>
       </div>
 
+      {externalChanged && (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-warning/10 px-3 py-1.5 text-xs text-fg">
+          <span>{t("externalChanged")}</span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={reloadFromDisk}
+              className="rounded border border-border-strong px-2 py-0.5 hover:bg-border-strong"
+            >
+              {t("useDiskVersion")}
+            </button>
+            <button
+              type="button"
+              onClick={keepMine}
+              className="rounded border border-border-strong px-2 py-0.5 hover:bg-border-strong"
+            >
+              {t("keepMine")}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-hidden">
         {effectiveMode === "split" ? (
           <div className="flex h-full">
@@ -220,6 +330,20 @@ export function EditorTabContent({ path }: { path: string }) {
           editorPane
         )}
       </div>
+
+      {confirmReload && (
+        <ConfirmDialog
+          title={t("reloadUnsavedTitle")}
+          message={t("reloadUnsavedMessage")}
+          confirmLabel={t("discardReload")}
+          cancelLabel={t("common:actions.cancel")}
+          onConfirm={() => {
+            setConfirmReload(false);
+            reloadFromDisk();
+          }}
+          onCancel={() => setConfirmReload(false)}
+        />
+      )}
     </div>
   );
 }

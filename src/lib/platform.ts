@@ -13,13 +13,17 @@ export const IS_MAC =
     false);
 
 /**
- * Windows-specific paste handling routes Ctrl+V through the same smart paste
- * flow as macOS (text wins, else a copied file's path). Linux has no native
- * clipboard backend yet, so it keeps xterm's built-in paste instead.
+ * Windows detection. Used to swap in a custom title bar (the native one is
+ * hidden via decorations, while macOS keeps its overlay title bar) and to route
+ * terminal Ctrl+V through the same smart paste flow as macOS (text wins, else a
+ * copied file's path). Linux has no native clipboard backend yet, so it keeps
+ * xterm's built-in paste.
  */
 export const IS_WINDOWS =
-  !IS_MAC &&
   typeof navigator !== "undefined" &&
+  // platform is "Win32"/"Win64" on Windows; the userAgent says "Windows". Match
+  // the userAgent on the full word, not "win", so "darwin" (e.g. jsdom's UA)
+  // doesn't false-positive.
   (navigator.platform?.toLowerCase().includes("win") ||
     navigator.userAgent?.toLowerCase().includes("windows") ||
     false);

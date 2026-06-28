@@ -14,6 +14,7 @@ import {
   installCodexStatusHook,
   uninstallCodexStatusHook,
 } from "@/modules/claude-progress/lib/statusHookBridge";
+import { ensureNotificationPermission } from "@/modules/claude-progress/lib/notify";
 
 /** Keychain account the GitHub API token is stored under (matches the backend). */
 const GITHUB_PROVIDER = "github";
@@ -100,6 +101,12 @@ export function WorkspaceSettingsSection() {
   const setPrSource = useSettingsStore((s) => s.setPrSource);
   const statusTracking = useSettingsStore((s) => s.claudeStatusTracking);
   const setStatusTracking = useSettingsStore((s) => s.setClaudeStatusTracking);
+  const notifications = useSettingsStore((s) => s.claudeNotifications);
+  const setNotifications = useSettingsStore((s) => s.setClaudeNotifications);
+  const claudeFlags = useSettingsStore((s) => s.claudeFlags);
+  const setClaudeFlags = useSettingsStore((s) => s.setClaudeFlags);
+  const codexFlags = useSettingsStore((s) => s.codexFlags);
+  const setCodexFlags = useSettingsStore((s) => s.setCodexFlags);
   const [ghReady, setGhReady] = useState<boolean | null>(null);
 
   async function toggleStatusTracking(checked: boolean) {
@@ -116,6 +123,15 @@ export function WorkspaceSettingsSection() {
       // Keep the toggle in sync with the real system state: if install or
       // uninstall failed, the hook is in the opposite state from what we set.
       setStatusTracking(!checked);
+    }
+  }
+
+  async function toggleNotifications(checked: boolean) {
+    setNotifications(checked);
+    if (checked) {
+      // Prompt for OS permission the moment the user opts in, so the first real
+      // notification fires without a permission dialog racing it.
+      await ensureNotificationPermission();
     }
   }
 
@@ -151,7 +167,7 @@ export function WorkspaceSettingsSection() {
         {t("workspace.statusTrackingTitle")}
       </label>
       <p className="mb-2 text-xs text-fg-muted">{t("workspace.statusTrackingDescription")}</p>
-      <label className="mb-6 flex items-center gap-2 text-sm text-fg">
+      <label className="mb-3 flex items-center gap-2 text-sm text-fg">
         <input
           type="checkbox"
           checked={statusTracking}
@@ -160,6 +176,48 @@ export function WorkspaceSettingsSection() {
         />
         {t("workspace.statusTrackingLabel")}
       </label>
+      <label
+        className={`mb-6 flex items-center gap-2 text-sm ${
+          statusTracking ? "text-fg" : "text-fg-subtle"
+        }`}
+        title={statusTracking ? undefined : t("workspace.notificationsRequiresTracking")}
+      >
+        <input
+          type="checkbox"
+          checked={notifications}
+          disabled={!statusTracking}
+          onChange={(e) => void toggleNotifications(e.target.checked)}
+          className="h-4 w-4 accent-accent disabled:opacity-50"
+        />
+        {t("workspace.notificationsLabel")}
+      </label>
+
+      <label className="mb-1 block text-sm font-medium text-fg">
+        {t("workspace.launcherFlagsTitle")}
+      </label>
+      <p className="mb-2 text-xs text-fg-muted">{t("workspace.launcherFlagsDescription")}</p>
+      <div className="mb-6 space-y-2">
+        <label className="flex items-center gap-3 text-sm text-fg">
+          <span className="shrink-0 whitespace-nowrap">{t("workspace.claudeFlagsLabel")}</span>
+          <input
+            type="text"
+            value={claudeFlags}
+            placeholder={t("workspace.claudeFlagsPlaceholder")}
+            onChange={(e) => setClaudeFlags(e.target.value)}
+            className="flex-1 rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent"
+          />
+        </label>
+        <label className="flex items-center gap-3 text-sm text-fg">
+          <span className="shrink-0 whitespace-nowrap">{t("workspace.codexFlagsLabel")}</span>
+          <input
+            type="text"
+            value={codexFlags}
+            placeholder={t("workspace.codexFlagsPlaceholder")}
+            onChange={(e) => setCodexFlags(e.target.value)}
+            className="flex-1 rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent"
+          />
+        </label>
+      </div>
 
       <label className="mb-1 block text-sm font-medium text-fg">{t("workspace.prTitle")}</label>
       <p className="mb-2 text-xs text-fg-muted">{t("workspace.prDescription")}</p>

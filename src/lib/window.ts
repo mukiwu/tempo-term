@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import type { StateStorage } from "zustand/middleware";
 
 /**
@@ -12,6 +13,33 @@ export function isMainWindow(): boolean {
   } catch {
     return true;
   }
+}
+
+/**
+ * Window-control actions for the custom Windows title bar. They drive the
+ * minimize / maximize-restore / close buttons; on macOS the native overlay
+ * title bar handles this, so these are only wired up in the Windows TitleBar.
+ */
+export function minimizeWindow(): Promise<void> {
+  return getCurrentWindow().minimize();
+}
+
+export function toggleMaximizeWindow(): Promise<void> {
+  return getCurrentWindow().toggleMaximize();
+}
+
+export function closeWindow(): Promise<void> {
+  return getCurrentWindow().close();
+}
+
+/** Whether the window is currently maximized (drives the maximize/restore icon). */
+export function isWindowMaximized(): Promise<boolean> {
+  return getCurrentWindow().isMaximized();
+}
+
+/** Subscribe to window resize events; returns an unlisten function. */
+export function onWindowResized(handler: () => void): Promise<UnlistenFn> {
+  return getCurrentWindow().onResized(() => handler());
 }
 
 // Private to this webview, so each secondary window gets its own isolated copy

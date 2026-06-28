@@ -20,6 +20,12 @@ export interface OpenPtyOptions {
    * always reflects the current setting, with no startup race against a global.
    */
   suggestions: boolean;
+  /**
+   * Custom shell executable to spawn instead of the auto-detected one. Undefined
+   * or empty keeps the backend's `$SHELL` / per-platform default. Tauri maps this
+   * camelCase key onto the Rust command's `shell_override` argument.
+   */
+  shellOverride?: string;
   onData: (bytes: Uint8Array) => void;
   onExit: (code: number) => void;
 }
@@ -45,6 +51,7 @@ export async function openPty(opts: OpenPtyOptions): Promise<PtySession> {
     rows: opts.rows,
     cwd: opts.cwd,
     suggestions: opts.suggestions,
+    shellOverride: opts.shellOverride,
     onData,
     onExit,
   });

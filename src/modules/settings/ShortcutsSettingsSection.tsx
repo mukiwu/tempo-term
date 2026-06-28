@@ -39,6 +39,10 @@ const GROUPS: ShortcutGroup[] = [
       { labelKey: "shortcutsList.splitRight", keys: `${MOD} D` },
       { labelKey: "shortcutsList.splitDown", keys: `${MOD} ${SHIFT} D` },
       { labelKey: "shortcutsList.cyclePane", keys: `${MOD} \`` },
+      {
+        labelKey: "shortcutsList.searchTerminal",
+        keys: IS_MAC ? `${MOD} F` : `${MOD} ${SHIFT} F`,
+      },
     ],
   },
   {

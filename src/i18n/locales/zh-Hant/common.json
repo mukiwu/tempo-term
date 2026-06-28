@@ -4,7 +4,35 @@
   "terminalConnecting": "啟動中…",
   "terminalCopy": "複製",
   "terminalPaste": "貼上",
+  "outputThrottled": "輸出太快，已略過 {{size}} 以維持介面流暢",
   "openLinkHint": "{{mods}} + 點擊開啟",
+  "actionLinks": {
+    "hoverHint": "可執行的動作",
+    "preview": "用網頁預覽開啟",
+    "ping": "Ping",
+    "traceroute": "Traceroute",
+    "ssh": "SSH",
+    "curl": "curl（HTTP）",
+    "curlHttps": "curl（HTTPS）",
+    "nc": "Netcat",
+    "telnet": "Telnet",
+    "extract": "解壓縮",
+    "list": "列出內容",
+    "dangerWarning": "這個指令看起來具破壞性",
+    "runAnyway": "仍要執行",
+    "cancel": "取消"
+  },
+  "terminalSearch": {
+    "placeholder": "在終端機中搜尋",
+    "next": "下一個",
+    "previous": "上一個",
+    "close": "關閉搜尋"
+  },
+  "notify": {
+    "agentFallback": "工作階段",
+    "needPermission": "{{agent}} 需要權限",
+    "finished": "{{agent}} 已完成"
+  },
   "ssh": {
     "disconnected": "已斷線，點擊重新連線",
     "reconnect": "重新連線"
@@ -27,11 +55,21 @@
     "shell": "Shell",
     "encoding": "UTF-8",
     "language": "語言",
-    "updateAvailable": "有可用更新"
+    "updateAvailable": "有可用更新",
+    "cpu": "CPU",
+    "ramTooltip": "RAM {{used}} / {{total}}",
+    "netTooltip": "下載 {{rx}} · 上傳 {{tx}}"
+  },
+  "titleBar": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "還原",
+    "close": "關閉"
   },
   "actions": {
     "newTab": "新增分頁",
     "closeTab": "關閉分頁",
+    "renameTab": "重新命名分頁",
     "split": "分割",
     "search": "搜尋",
     "cancel": "取消",
@@ -141,6 +179,8 @@
     "note": "筆記",
     "newTerminal": "新增終端機",
     "connectSsh": "SSH 連線",
+    "claudeCode": "Claude Code",
+    "codex": "Codex",
     "launcherHint": "選擇要開啟的內容",
     "launcherGroup": {
       "workspace": "工作區",

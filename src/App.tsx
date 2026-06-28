@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TabBar } from "@/components/TabBar";
+import { TitleBar } from "@/components/TitleBar";
 import { Sidebar, SIDEBAR_VIEW_ORDER } from "@/components/Sidebar";
 import { Resizer } from "@/components/Resizer";
 import { StatusBar } from "@/components/StatusBar";
@@ -14,6 +15,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore, tabHasDirtyEditor } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
 import { installEditorBufferSync } from "@/modules/editor/lib/syncBuffers";
+import { installEditorWatchSync } from "@/modules/editor/lib/editorWatch";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
@@ -25,6 +27,8 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { useWatchSessions } from "@/modules/claude-progress/lib/useWatchSessions";
 import { installStatusHook, installCodexStatusHook } from "@/modules/claude-progress/lib/statusHookBridge";
+import { installSessionNotifications } from "@/modules/claude-progress/lib/sessionNotifications";
+import { ensureNotificationPermission } from "@/modules/claude-progress/lib/notify";
 import { useWatchNotes } from "@/modules/notes/lib/useWatchNotes";
 import { registerSecondaryWindowCleanup } from "@/lib/windowLifecycle";
 import { SshPromptDialog } from "@/modules/ssh/SshPromptDialog";
@@ -111,6 +115,10 @@ function App() {
   // file without saving discards the edit instead of resurrecting it on reopen.
   useEffect(() => installEditorBufferSync(), []);
 
+  // Watch the files open in editor tabs so external edits (e.g. an AI agent
+  // editing a file) can reload it without closing and reopening the tab.
+  useEffect(() => installEditorWatchSync(), []);
+
   // In a secondary window, close this window's PTY sessions before it is
   // destroyed so no background shells leak. No-op in the main window.
   useEffect(() => {
@@ -136,6 +144,16 @@ function App() {
       void installStatusHook().catch(() => {});
       void installCodexStatusHook().catch(() => {});
     }
+  }, []);
+
+  // Raise a desktop notification when a tracked agent needs approval or finishes
+  // while the window is unfocused. Prime the OS permission up front so the first
+  // real notification isn't swallowed by a permission prompt.
+  useEffect(() => {
+    if (useSettingsStore.getState().claudeNotifications) {
+      void ensureNotificationPermission();
+    }
+    return installSessionNotifications();
   }, []);
 
   // Quietly check for a new release a few seconds after launch; the modal only
@@ -263,18 +281,21 @@ function App() {
             tabsState.closePaneOrTab();
           }
         } else {
-          // Closing the bottom-right pane (same selection as closePaneOrTab).
-          const target = panes.reduce((a, b) => {
-            if (b.rect.top !== a.rect.top) return b.rect.top > a.rect.top ? b : a;
-            return b.rect.left > a.rect.left ? b : a;
-          });
+          // Close the currently focused pane; fall back to the bottom-right
+          // pane if the active leaf is somehow stale.
+          const target =
+            panes.find((p) => p.id === tab.activeLeafId) ??
+            panes.reduce((a, b) => {
+              if (b.rect.top !== a.rect.top) return b.rect.top > a.rect.top ? b : a;
+              return b.rect.left > a.rect.left ? b : a;
+            });
           const targetBuf =
             target.content.kind === "editor" ? buffers[target.content.path] : undefined;
           const targetDirty = targetBuf ? targetBuf.content !== targetBuf.baseline : false;
           if (targetDirty) {
             setPendingCloseAction(() => () => tabsState.closePane(tab.id, target.id));
           } else {
-            tabsState.closePaneOrTab();
+            tabsState.closePane(tab.id, target.id);
           }
         }
       } else if (key === "p") {
@@ -298,6 +319,7 @@ function App() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-fg">
+      <TitleBar />
       <TabBar />
 
       <div className="flex min-h-0 flex-1">

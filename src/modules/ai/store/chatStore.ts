@@ -23,8 +23,6 @@ interface ChatState {
   error: string | null;
   /** Absolute file paths the user attached as extra context for the assistant. */
   attachedPaths: string[];
-  /** A one-shot snapshot of the active terminal's output, grabbed by the user. */
-  terminalContext: string | null;
   setProvider: (id: string) => void;
   setModel: (model: string) => void;
   send: (text: string, systemPrompt: string) => Promise<void>;
@@ -32,7 +30,6 @@ interface ChatState {
   attachPath: (path: string) => void;
   removeAttached: (path: string) => void;
   clearAttached: () => void;
-  setTerminalContext: (block: string | null) => void;
 }
 
 export const CHAT_STORAGE_KEY = "tempoterm-chat";
@@ -46,7 +43,6 @@ export const useChatStore = create<ChatState>()(
       sending: false,
       error: null,
       attachedPaths: [],
-      terminalContext: null,
 
       setProvider: (id) => {
         const provider = providerById(id);
@@ -102,8 +98,6 @@ export const useChatStore = create<ChatState>()(
         })),
 
       clearAttached: () => set({ attachedPaths: [] }),
-
-      setTerminalContext: (terminalContext) => set({ terminalContext }),
     }),
     {
       name: CHAT_STORAGE_KEY,

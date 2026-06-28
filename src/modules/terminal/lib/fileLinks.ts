@@ -77,6 +77,39 @@ export function resolveFilePath(
   return base ? `${base}/${rel}` : rel;
 }
 
+/**
+ * The trailing path-like fragment of a line: a run of path characters that
+ * contains at least one slash and reaches the end of the line. Matching the
+ * whole suffix (not just the last slash) keeps a relative path like
+ * `src/modules/x` intact instead of collapsing it to `/x`. Shared so the link
+ * range and the rejoin agree on where the fragment starts.
+ */
+export const TRAILING_PATH_RE = /[\p{L}\p{N}_.\-/~]*\/[\p{L}\p{N}_.\-/~]*$/u;
+
+/**
+ * Candidate paths (absolute or relative) formed when a program hard-wraps a long
+ * path across two lines: the first line ends mid-path (a fragment reaching the
+ * line end with no trailing space) and the next line continues it after
+ * indentation. The caller MUST validate each candidate against the filesystem,
+ * since this also joins unrelated lines — that validation is what keeps the
+ * broad join safe (a wrong join simply won't exist, so it never becomes a link).
+ */
+export function wrappedPathCandidates(firstLine: string, nextLine: string): string[] {
+  // First line must end with a path fragment that contains at least one slash,
+  // reaching the end of the line with no trailing whitespace.
+  const tail = firstLine.match(TRAILING_PATH_RE);
+  if (!tail) {
+    return [];
+  }
+  // The continuation is the next line's leading path-like run, after dropping
+  // its indentation; it stops at the first non-path char (e.g. a closing paren).
+  const cont = nextLine.replace(/^\s+/, "").match(/^[\p{L}\p{N}_.\-/]+/u);
+  if (!cont) {
+    return [];
+  }
+  return [tail[0] + cont[0]];
+}
+
 interface BuildFileLinkParams {
   text: string;
   range: IBufferRange;

@@ -7,6 +7,13 @@
   "closeUnsavedTitle": "Unsaved changes",
   "closeUnsavedMessage": "This tab has unsaved changes. Close without saving?",
   "discardClose": "Close without saving",
+  "refresh": "Reload from disk",
+  "reloadUnsavedTitle": "Unsaved changes",
+  "reloadUnsavedMessage": "This file has unsaved changes. Reload from disk and discard them?",
+  "discardReload": "Reload and discard",
+  "externalChanged": "This file changed on disk while you were editing.",
+  "useDiskVersion": "Use disk version",
+  "keepMine": "Keep mine",
   "wrap": "Word wrap",
   "mode": {
     "edit": "Edit",

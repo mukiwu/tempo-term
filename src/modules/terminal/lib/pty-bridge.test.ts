@@ -25,6 +25,16 @@ describe("pty-bridge session registry", () => {
     expect((open?.[1] as { suggestions: boolean }).suggestions).toBe(true);
   });
 
+  it("forwards the shell override to pty_open so the backend can spawn it", async () => {
+    invoke.mockResolvedValueOnce(1);
+    await openPty({ ...opts, shellOverride: "/opt/homebrew/bin/pwsh" });
+
+    const open = invoke.mock.calls.find(([cmd]) => cmd === "pty_open");
+    expect((open?.[1] as { shellOverride?: string }).shellOverride).toBe(
+      "/opt/homebrew/bin/pwsh",
+    );
+  });
+
   it("closeLocalSessions closes every open session, then clears", async () => {
     invoke.mockResolvedValueOnce(1).mockResolvedValueOnce(2); // two pty_open ids
     await openPty(opts);

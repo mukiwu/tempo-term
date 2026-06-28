@@ -5,7 +5,7 @@ import "./i18n";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useTabsStore } from "@/stores/tabsStore";
-import { leaf } from "@/modules/terminal/lib/terminalLayout";
+import { leaf, splitLeaf } from "@/modules/terminal/lib/terminalLayout";
 
 describe("App shell", () => {
   beforeEach(() => {
@@ -60,6 +60,35 @@ describe("App shell", () => {
     // A digit past the last tab is a no-op rather than clearing the selection.
     fireEvent.keyDown(window, { code: "Digit9", key: "9", metaKey: true });
     expect(useTabsStore.getState().activeId).toBe("b");
+  });
+
+  it("closes the focused pane with Cmd+W, not the bottom-right one", () => {
+    // Two launcher panes (left + right); focus the left one. Cmd+W must peel
+    // away the focused pane, leaving the right pane behind.
+    const paneTree = splitLeaf(leaf("left-leaf", { kind: "launcher" }), "left-leaf", "row", "right-leaf", {
+      kind: "launcher",
+    });
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs: [
+        {
+          id: "a",
+          spaceId: "s1",
+          title: "a",
+          kind: "launcher" as const,
+          paneTree,
+          activeLeafId: "left-leaf",
+        },
+      ],
+      activeId: "a",
+    });
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: "KeyW", key: "w", metaKey: true });
+
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === "a");
+    expect(tab?.paneTree).toEqual(leaf("right-leaf", { kind: "launcher" }));
   });
 
   it("selects the Nth sidebar panel with Option+digit", () => {

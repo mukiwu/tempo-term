@@ -19,6 +19,9 @@ describe("settingsStore", () => {
       wordWrap: initialState.wordWrap,
       workspaceCard: { status: true, branch: true, cwd: true, pr: true },
       prSource: "auto",
+      claudeFlags: initialState.claudeFlags,
+      codexFlags: initialState.codexFlags,
+      customShellPath: initialState.customShellPath,
     });
   });
 
@@ -100,5 +103,32 @@ describe("settingsStore", () => {
   it("updates the PR source through setPrSource", () => {
     useSettingsStore.getState().setPrSource("token");
     expect(useSettingsStore.getState().prSource).toBe("token");
+  });
+
+  it("defaults aiTerminalContext on and toggles it", () => {
+    expect(useSettingsStore.getState().aiTerminalContext).toBe(true);
+    useSettingsStore.getState().setAiTerminalContext(false);
+    expect(useSettingsStore.getState().aiTerminalContext).toBe(false);
+  });
+
+  it("defaults the launcher flags empty and updates them independently", () => {
+    expect(useSettingsStore.getState().claudeFlags).toBe("");
+    expect(useSettingsStore.getState().codexFlags).toBe("");
+    useSettingsStore.getState().setClaudeFlags("--model opus");
+    useSettingsStore.getState().setCodexFlags("--full-auto");
+    expect(useSettingsStore.getState().claudeFlags).toBe("--model opus");
+    expect(useSettingsStore.getState().codexFlags).toBe("--full-auto");
+  });
+
+  it("persists the launcher flags so they survive a reload", () => {
+    useSettingsStore.getState().setClaudeFlags("--model opus");
+    const persisted = localStorage.getItem("tempoterm-settings");
+    expect(persisted).toContain("--model opus");
+  });
+
+  it("defaults the custom shell path empty and updates it", () => {
+    expect(useSettingsStore.getState().customShellPath).toBe("");
+    useSettingsStore.getState().setCustomShellPath("/opt/homebrew/bin/pwsh");
+    expect(useSettingsStore.getState().customShellPath).toBe("/opt/homebrew/bin/pwsh");
   });
 });

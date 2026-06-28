@@ -7,6 +7,13 @@
   "closeUnsavedTitle": "尚未儲存的變更",
   "closeUnsavedMessage": "這個分頁有未儲存的變更，確定要關閉嗎？",
   "discardClose": "不儲存直接關閉",
+  "refresh": "從磁碟重新整理",
+  "reloadUnsavedTitle": "尚未儲存的變更",
+  "reloadUnsavedMessage": "這個檔案有未儲存的變更，要從磁碟重新載入並捨棄它們嗎？",
+  "discardReload": "重新載入並捨棄",
+  "externalChanged": "編輯期間，這個檔案在磁碟上被改動了",
+  "useDiskVersion": "使用磁碟版本",
+  "keepMine": "保留我的",
   "wrap": "自動換行",
   "mode": {
     "edit": "編輯",

@@ -38,7 +38,7 @@ export function Sidebar() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden border-r border-border bg-bg-inset">
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-1.5">
+      <div className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border px-1.5">
         {SIDEBAR_TABS.map(({ id, icon: Icon, labelKey }) => {
           const active = sidebarView === id;
           return (
@@ -48,8 +48,10 @@ export function Sidebar() {
                 aria-label={t(labelKey)}
                 aria-pressed={active}
                 onClick={() => selectSidebar(id)}
-                className={`flex h-7 w-8 items-center justify-center rounded-md transition-colors ${
-                  active ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
+                className={`flex h-7 w-8 items-center justify-center border-b-2 transition-colors ${
+                  active
+                    ? "border-accent text-fg"
+                    : "border-transparent text-fg-subtle hover:border-border-strong hover:text-fg"
                 }`}
               >
                 <Icon size={15} />

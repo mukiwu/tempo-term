@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { ClipboardPaste, Copy, Loader2, WifiOff } from "lucide-react";
 import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, enableWebglRenderer, type TerminalHandle } from "./lib/createTerminal";
+import { createOutputWriter } from "./lib/outputWriter";
+import { SearchBar } from "./SearchBar";
 import { openPty, type PtySession } from "./lib/pty-bridge";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
@@ -64,7 +66,15 @@ import {
   shouldAttachImage,
   shellQuotePath,
 } from "./lib/terminalClipboard";
-import { buildFileLink, findFilePaths, resolveFilePath } from "./lib/fileLinks";
+import {
+  buildFileLink,
+  findFilePaths,
+  resolveFilePath,
+  wrappedPathCandidates,
+  TRAILING_PATH_RE,
+} from "./lib/fileLinks";
+import { actionsFor, findActionLinks, type TerminalAction } from "./lib/actionLinks";
+import { ActionCard } from "./ActionCard";
 import { buildCellPositions, gatherLogicalLine } from "./lib/cellPositions";
 import { terminalKeySequence } from "./lib/terminalKeymap";
 import { shouldCdToRoot } from "./lib/cwdSync";
@@ -102,6 +112,17 @@ async function getHomeDir(): Promise<string | null> {
   return homeDirCache;
 }
 
+/** Human-readable byte size for the overload notice (e.g. 12 KB, 3.4 MB). */
+function formatSkipped(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
+}
+
 interface TerminalViewProps {
   active: boolean;
   /** When true, this pane drives the file explorer root from its shell CWD. */
@@ -117,6 +138,8 @@ interface TerminalViewProps {
   onCwdChange?: (cwd: string) => void;
   /** Alt+click on a file path in the output opens it (with the resolved abs path). */
   onOpenFile?: (absolutePath: string) => void;
+  /** Open a localhost/IP URL from a terminal action card in the in-app preview. */
+  onOpenPreview?: (url: string) => void;
 }
 
 export function TerminalView({
@@ -128,6 +151,7 @@ export function TerminalView({
   onExit,
   onCwdChange,
   onOpenFile,
+  onOpenPreview,
 }: TerminalViewProps) {
   const leafIdRef = useRef(leafId);
   leafIdRef.current = leafId;
@@ -146,6 +170,8 @@ export function TerminalView({
   onCwdChangeRef.current = onCwdChange;
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
+  const onOpenPreviewRef = useRef(onOpenPreview);
+  onOpenPreviewRef.current = onOpenPreview;
   // Holds a deferred "start the SSH session now" function that is set inside the
   // main mount effect and called by the reconnect button for restored panes.
   const connectNowRef = useRef<(() => void) | null>(null);
@@ -165,6 +191,17 @@ export function TerminalView({
   // effect for restored SSH panes without touching any other path.
   const [reconnectTrigger, setReconnectTrigger] = useState(0);
   const [externalFileDragging, setExternalFileDragging] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Skipped-bytes total shown in the overload notice, or null when hidden. The
+  // refs throttle visible updates during a flood and auto-hide once it settles.
+  const [outputSkipped, setOutputSkipped] = useState<number | null>(null);
+  // The writer reports a lifetime cumulative dropped total; the baseline marks
+  // the total when the last notice closed, so each notice shows just this
+  // overload event's skipped bytes rather than an ever-growing lifetime sum.
+  const skippedTotalRef = useRef(0);
+  const skippedBaselineRef = useRef(0);
+  const skippedShowTimer = useRef<number | null>(null);
+  const skippedHideTimer = useRef<number | null>(null);
   const dragDepthRef = useRef(0);
   const nativeDragPathsRef = useRef<string[]>([]);
   // Right-click menu position; null when closed. Exposes Copy/Paste that run the
@@ -173,6 +210,71 @@ export function TerminalView({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null);
   // Lets the right-click menu call the in-effect smart-paste handler.
   const pasteRef = useRef<((kind: "ctrl" | "cmd") => void) | null>(null);
+  // The hover action card (IP / host:port / archive quick commands), positioned
+  // at the cursor. A short hide delay lets the pointer travel from the link into
+  // the card without it vanishing.
+  const [actionCard, setActionCard] = useState<{
+    actions: TerminalAction[];
+    x: number;
+    y: number;
+  } | null>(null);
+  const actionCardTimer = useRef<number | null>(null);
+
+  const cancelActionCardHide = () => {
+    if (actionCardTimer.current !== null) {
+      clearTimeout(actionCardTimer.current);
+      actionCardTimer.current = null;
+    }
+  };
+  const showActionCard = (actions: TerminalAction[], x: number, y: number) => {
+    cancelActionCardHide();
+    setActionCard({ actions, x, y });
+  };
+  const scheduleActionCardHide = () => {
+    cancelActionCardHide();
+    actionCardTimer.current = window.setTimeout(() => setActionCard(null), 180);
+  };
+  const runActionCommand = (command: string) => {
+    void sessionRef.current?.write(`${command}\r`);
+    cancelActionCardHide();
+    setActionCard(null);
+    handleRef.current?.term.focus();
+  };
+  const openActionPreview = (url: string) => {
+    onOpenPreviewRef.current?.(url);
+    cancelActionCardHide();
+    setActionCard(null);
+  };
+
+  // Surface the overload notice when the output writer sheds data. Visible
+  // updates are throttled so a sustained flood doesn't itself thrash React, and
+  // the notice auto-hides once output stops being dropped.
+  const noteDroppedOutput = (total: number) => {
+    skippedTotalRef.current = total;
+    if (skippedShowTimer.current === null) {
+      skippedShowTimer.current = window.setTimeout(() => {
+        skippedShowTimer.current = null;
+        setOutputSkipped(skippedTotalRef.current - skippedBaselineRef.current);
+      }, 250);
+    }
+    if (skippedHideTimer.current !== null) {
+      clearTimeout(skippedHideTimer.current);
+    }
+    skippedHideTimer.current = window.setTimeout(() => {
+      setOutputSkipped(null);
+      skippedBaselineRef.current = skippedTotalRef.current;
+    }, 2500);
+  };
+
+  // Clear any pending action-card hide timer when the pane unmounts so it can't
+  // fire a state update on a gone component.
+  useEffect(() => {
+    return () => {
+      if (actionCardTimer.current !== null) {
+        clearTimeout(actionCardTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -187,6 +289,7 @@ export function TerminalView({
       fontSize: initial.fontSize,
       theme: getTheme(useSettingsStore.getState().themeId).terminal,
       linkHint: linkHintRef.current,
+      onOpenLocalUrl: (url) => onOpenPreviewRef.current?.(url),
     });
     handleRef.current = handle;
     const { term, fit } = handle;
@@ -195,6 +298,14 @@ export function TerminalView({
     // DOM renderer on its own if WebGL is unavailable; term.dispose() (cleanup
     // below) tears the addon down with the terminal.
     enableWebglRenderer(term);
+
+    // Batch live PTY/SSH output through a frame-scheduled writer so a flood
+    // (cat a huge file, runaway logs) can't block the UI thread. One-shot writes
+    // (restored history, error notices) still go straight to the terminal.
+    const outputWriter = createOutputWriter({
+      write: (chunk) => term.write(chunk),
+      onDrop: (total) => noteDroppedOutput(total),
+    });
 
     // The session-status hook (see claude_status_hook) emits OSC 6973 on this
     // pane's tty when Claude changes state. Capture it here, where we know the
@@ -289,6 +400,11 @@ export function TerminalView({
         return false;
       }
       const target = event.target;
+      // Let inputs inside the pane (e.g. the search bar) handle their own paste
+      // rather than redirecting it into the shell.
+      if (target instanceof HTMLInputElement) {
+        return false;
+      }
       if (target instanceof Node && !containerEl.contains(target)) {
         return false;
       }
@@ -310,6 +426,10 @@ export function TerminalView({
 
     const onPasteCapture = (event: ClipboardEvent) => {
       const target = event.target;
+      // Let inputs inside the pane (e.g. the search bar) keep their own paste.
+      if (target instanceof HTMLInputElement) {
+        return;
+      }
       if (!activeRef.current || (target instanceof Node && !containerEl.contains(target))) {
         return;
       }
@@ -343,6 +463,27 @@ export function TerminalView({
       if (event.type === "keydown" && isAppShortcut(event)) {
         event.preventDefault();
         return false;
+      }
+      // Open the in-terminal search bar. On mac Cmd+F is free; on other
+      // platforms Ctrl+F is readline's forward-char, so use Ctrl+Shift+F to
+      // avoid clobbering it.
+      if (event.type === "keydown") {
+        const isF = event.code === "KeyF" || event.key.toLowerCase() === "f";
+        const findCombo = IS_MAC
+          ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+          : event.ctrlKey && event.shiftKey && !event.metaKey && !event.altKey;
+        if (isF && findCombo) {
+          event.preventDefault();
+          setSearchOpen(true);
+          // If the bar is already open (just unfocused), refocus and select it
+          // so the shortcut is never a no-op.
+          const input = containerEl.querySelector("input");
+          if (input) {
+            input.focus();
+            input.select();
+          }
+          return false;
+        }
       }
       // Standard terminal editing shortcuts (Shift+Enter, word/line nav, word
       // and line delete), matching common terminals so muscle memory carries over.
@@ -406,18 +547,22 @@ export function TerminalView({
 
     term.registerLinkProvider({
       provideLinks(lineNumber, callback) {
+        const buffer = term.buffer.active;
         // Resolve the logical line (handles wrapped paths) and read its cells.
-        const rows = gatherLogicalLine(term.buffer.active, lineNumber);
+        const rows = gatherLogicalLine(buffer, lineNumber);
         if (!rows) {
           callback(undefined);
           return;
         }
         const { text, spans } = buildCellPositions(rows);
-        const matches = findFilePaths(text);
-        if (matches.length === 0) {
-          callback(undefined);
-          return;
-        }
+        const actionsEnabled = useSettingsStore.getState().actionLinksEnabled;
+        const actionMatches = actionsEnabled ? findActionLinks(text) : [];
+        // An archive filename also matches as a file path; drop the overlapping
+        // file link so the action card wins (opening a binary archive as a file
+        // is not useful anyway).
+        const matches = findFilePaths(text).filter(
+          (f) => !actionMatches.some((a) => f.start < a.end && f.end > a.start),
+        );
         const lastSpan = spans[spans.length - 1];
         // Map a string index back to a buffer cell (1-based x/y). start uses the
         // glyph's first column; end uses its last, so wide glyphs are covered.
@@ -429,17 +574,83 @@ export function TerminalView({
           const span = spans[index] ?? lastSpan;
           return { x: span?.endX ?? 1, y: span?.y ?? lineNumber };
         };
-        callback(
-          matches.map((m) =>
-            buildFileLink({
-              text: m.text,
-              range: { start: startCell(m.start), end: endCell(m.end - 1) },
-              hint: linkHintRef.current,
-              isMac: IS_MAC,
-              onOpen: (raw) => void openFromTerminal(raw),
-            }),
-          ),
+        const fileLinks = matches.map((m) =>
+          buildFileLink({
+            text: m.text,
+            range: { start: startCell(m.start), end: endCell(m.end - 1) },
+            hint: linkHintRef.current,
+            isMac: IS_MAC,
+            onOpen: (raw) => void openFromTerminal(raw),
+          }),
         );
+
+        // A program (e.g. an AI coding agent) can hard-wrap a long absolute path
+        // across logical lines: the first ends mid-path, the next continues it
+        // after indentation. Offer a link on each half that opens the rejoined
+        // path. We avoid a cross-line range (an xterm minefield) by giving each
+        // half its own single-line link pointing at the same rejoined path;
+        // openFromTerminal validates existence on click, so a wrong join (this
+        // joins broadly) simply won't open.
+        const logicalText = (start: number): string | null => {
+          const r = gatherLogicalLine(buffer, start);
+          return r ? buildCellPositions(r).text : null;
+        };
+        const wrappedLinks: ReturnType<typeof buildFileLink>[] = [];
+        const nextText = logicalText(rows[rows.length - 1].y + 1);
+        if (nextText !== null) {
+          for (const cand of wrappedPathCandidates(text, nextText)) {
+            const tailMatch = text.match(TRAILING_PATH_RE);
+            if (tailMatch && tailMatch.index !== undefined) {
+              wrappedLinks.push(
+                buildFileLink({
+                  text: cand,
+                  range: { start: startCell(tailMatch.index), end: endCell(text.length - 1) },
+                  hint: linkHintRef.current,
+                  isMac: IS_MAC,
+                  onOpen: (raw) => void openFromTerminal(raw),
+                }),
+              );
+            }
+          }
+        }
+        const prevText = logicalText(rows[0].y - 1);
+        if (prevText !== null) {
+          for (const cand of wrappedPathCandidates(prevText, text)) {
+            const lead = text.match(/^(\s*)([\p{L}\p{N}_.\-/]+)/u);
+            if (lead) {
+              const leadStart = lead[1].length;
+              const leadEnd = leadStart + lead[2].length;
+              wrappedLinks.push(
+                buildFileLink({
+                  text: cand,
+                  range: { start: startCell(leadStart), end: endCell(leadEnd - 1) },
+                  hint: linkHintRef.current,
+                  isMac: IS_MAC,
+                  onOpen: (raw) => void openFromTerminal(raw),
+                }),
+              );
+            }
+          }
+        }
+
+        const actionLinks = actionMatches.map((m) => ({
+          text: m.text,
+          range: { start: startCell(m.start), end: endCell(m.end - 1) },
+          // Interaction happens through the hover card's buttons, so a click on
+          // the link itself does nothing.
+          activate: () => {},
+          hover: (event: MouseEvent) => {
+            showActionCard(actionsFor(m), event.clientX, event.clientY);
+          },
+          leave: () => {
+            scheduleActionCardHide();
+          },
+        }));
+        if (fileLinks.length === 0 && wrappedLinks.length === 0 && actionLinks.length === 0) {
+          callback(undefined);
+          return;
+        }
+        callback([...fileLinks, ...wrappedLinks, ...actionLinks]);
       },
     });
 
@@ -513,7 +724,7 @@ export function TerminalView({
           cols: term.cols,
           rows: term.rows,
           forwards,
-          onData: (bytes) => term.write(bytes),
+          onData: (bytes) => outputWriter.push(bytes),
           // Only treat an exit as user-facing when we did not tear the session
           // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
           onExit: (_code) => {
@@ -539,7 +750,8 @@ export function TerminalView({
         // Read the setting at spawn time so a restored pane reflects the current
         // value, instead of racing a global flag set after mount.
         suggestions: useSettingsStore.getState().terminalSuggestions,
-        onData: (bytes) => term.write(bytes),
+        shellOverride: useSettingsStore.getState().customShellPath,
+        onData: (bytes) => outputWriter.push(bytes),
         // Only treat an exit as user-facing when we did not tear the session
         // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
         onExit: () => {
@@ -679,6 +891,9 @@ export function TerminalView({
 
     return () => {
       disposed = true;
+      outputWriter.dispose();
+      if (skippedShowTimer.current !== null) clearTimeout(skippedShowTimer.current);
+      if (skippedHideTimer.current !== null) clearTimeout(skippedHideTimer.current);
       cancelAnimationFrame(initialFitFrame);
       clearInterval(snapshotTimer);
       writeListener.dispose();
@@ -784,7 +999,11 @@ export function TerminalView({
       return;
     }
     let cancelled = false;
-    let last = "";
+    // Seed with the shell's starting dir so the mount-time setRoot (which fires
+    // with this same dir) does not echo a redundant `cd` back into the shell.
+    // Without this, a freshly opened pane that auto-runs a CLI (e.g. claude,
+    // codex) gets the `cd` typed into that program's prompt instead.
+    let last = cwdRef.current ?? "";
     const poll = async () => {
       const raw = sessionRef.current;
       const session = raw && isPtySession(raw) ? raw : null;
@@ -1116,10 +1335,38 @@ export function TerminalView({
           ]}
         />
       )}
+      {actionCard && (
+        <div
+          className="fixed z-30"
+          style={{ left: actionCard.x, top: actionCard.y + 14 }}
+          onMouseEnter={cancelActionCardHide}
+          onMouseLeave={() => setActionCard(null)}
+        >
+          <ActionCard
+            actions={actionCard.actions}
+            onRun={runActionCommand}
+            onOpenPreview={openActionPreview}
+          />
+        </div>
+      )}
+      {searchOpen && handleRef.current && (
+        <SearchBar
+          search={handleRef.current.search}
+          onClose={() => {
+            setSearchOpen(false);
+            handleRef.current?.term.focus();
+          }}
+        />
+      )}
       {connecting && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-fg-subtle">
           <Loader2 size={15} className="animate-spin" />
           <span className="text-xs">{t("terminalConnecting")}</span>
+        </div>
+      )}
+      {outputSkipped !== null && (
+        <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md border border-border-strong bg-bg-elevated px-3 py-1 text-xs text-fg-muted shadow-lg">
+          {t("outputThrottled", { size: formatSkipped(outputSkipped) })}
         </div>
       )}
       {sshDisconnected && !connecting && (

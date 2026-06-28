@@ -44,12 +44,31 @@ interface SettingsState {
   workspaceCard: WorkspaceCardBlocks;
   /** Where workspace cards source PR data. */
   prSource: WorkspacePrSource;
+  /** Default flags appended to the `claude` command when launched from the launcher. */
+  claudeFlags: string;
+  /** Default flags appended to the `codex` command when launched from the launcher. */
+  codexFlags: string;
   /** Install the Claude Code hook that reports live session status to cards. */
   claudeStatusTracking: boolean;
+  /**
+   * Raise an OS desktop notification when a tracked agent needs approval or
+   * finishes, but only while the window is unfocused. Depends on status tracking.
+   */
+  claudeNotifications: boolean;
   /** Show AI ghost-text completions while typing in the code editor. */
   aiInlineCompletion: boolean;
+  /** Include the active terminal's output in the AI assistant context by default. */
+  aiTerminalContext: boolean;
   /** Suggest previously-run commands as ghost text in the terminal. */
   terminalSuggestions: boolean;
+  /**
+   * Custom shell executable to spawn instead of the auto-detected one (`$SHELL`,
+   * or the per-platform default). Empty string keeps the default. Lets Windows
+   * users point at pwsh / PowerShell 7, for example.
+   */
+  customShellPath: string;
+  /** Show the hover action card (ping/curl/extract) over IPs, host:port and archives. */
+  actionLinksEnabled: boolean;
   /** Webview zoom factor for the whole UI (1 = 100%); driven by ⌘+ / ⌘-. */
   uiZoom: number;
   setLanguage: (language: SupportedLanguage) => void;
@@ -60,9 +79,15 @@ interface SettingsState {
   setNotesFolderPath: (path: string | null) => void;
   setWorkspaceCardBlock: (key: keyof WorkspaceCardBlocks, value: boolean) => void;
   setPrSource: (source: WorkspacePrSource) => void;
+  setClaudeFlags: (flags: string) => void;
+  setCodexFlags: (flags: string) => void;
   setClaudeStatusTracking: (value: boolean) => void;
+  setClaudeNotifications: (value: boolean) => void;
   setAiInlineCompletion: (value: boolean) => void;
+  setAiTerminalContext: (value: boolean) => void;
   setTerminalSuggestions: (value: boolean) => void;
+  setCustomShellPath: (path: string) => void;
+  setActionLinksEnabled: (value: boolean) => void;
   zoomIn: () => void;
   zoomOut: () => void;
   resetZoom: () => void;
@@ -99,9 +124,15 @@ export const useSettingsStore = create<SettingsState>()(
       notesFolderPath: null,
       workspaceCard: DEFAULT_WORKSPACE_CARD,
       prSource: "auto",
+      claudeFlags: "",
+      codexFlags: "",
       claudeStatusTracking: true,
+      claudeNotifications: true,
       aiInlineCompletion: false,
+      aiTerminalContext: true,
       terminalSuggestions: true,
+      customShellPath: "",
+      actionLinksEnabled: true,
       uiZoom: DEFAULT_UI_ZOOM,
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
@@ -112,9 +143,15 @@ export const useSettingsStore = create<SettingsState>()(
       setWorkspaceCardBlock: (key, value) =>
         set((state) => ({ workspaceCard: { ...state.workspaceCard, [key]: value } })),
       setPrSource: (prSource) => set({ prSource }),
+      setClaudeFlags: (claudeFlags) => set({ claudeFlags }),
+      setCodexFlags: (codexFlags) => set({ codexFlags }),
       setClaudeStatusTracking: (value) => set({ claudeStatusTracking: value }),
+      setClaudeNotifications: (value) => set({ claudeNotifications: value }),
       setAiInlineCompletion: (value) => set({ aiInlineCompletion: value }),
+      setAiTerminalContext: (value) => set({ aiTerminalContext: value }),
       setTerminalSuggestions: (value) => set({ terminalSuggestions: value }),
+      setCustomShellPath: (customShellPath) => set({ customShellPath }),
+      setActionLinksEnabled: (value) => set({ actionLinksEnabled: value }),
       zoomIn: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom + UI_ZOOM_STEP) })),
       zoomOut: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom - UI_ZOOM_STEP) })),
       resetZoom: () => set({ uiZoom: DEFAULT_UI_ZOOM }),

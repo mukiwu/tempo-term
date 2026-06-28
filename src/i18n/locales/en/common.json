@@ -4,7 +4,35 @@
   "terminalConnecting": "Starting shell…",
   "terminalCopy": "Copy",
   "terminalPaste": "Paste",
+  "outputThrottled": "Output throttled, skipped {{size}} to keep the UI responsive",
   "openLinkHint": "{{mods}}-click to open",
+  "actionLinks": {
+    "hoverHint": "Hover for actions",
+    "preview": "Open in preview",
+    "ping": "Ping",
+    "traceroute": "Traceroute",
+    "ssh": "SSH",
+    "curl": "curl (HTTP)",
+    "curlHttps": "curl (HTTPS)",
+    "nc": "Netcat",
+    "telnet": "Telnet",
+    "extract": "Extract",
+    "list": "List contents",
+    "dangerWarning": "This command looks destructive.",
+    "runAnyway": "Run anyway",
+    "cancel": "Cancel"
+  },
+  "terminalSearch": {
+    "placeholder": "Find in terminal",
+    "next": "Find next",
+    "previous": "Find previous",
+    "close": "Close search"
+  },
+  "notify": {
+    "agentFallback": "Agent",
+    "needPermission": "{{agent}} needs permission",
+    "finished": "{{agent}} finished"
+  },
   "ssh": {
     "disconnected": "Disconnected — click to reconnect",
     "reconnect": "Reconnect"
@@ -27,11 +55,21 @@
     "shell": "Shell",
     "encoding": "UTF-8",
     "language": "Language",
-    "updateAvailable": "Update available"
+    "updateAvailable": "Update available",
+    "cpu": "CPU",
+    "ramTooltip": "RAM {{used}} / {{total}}",
+    "netTooltip": "Download {{rx}} · Upload {{tx}}"
+  },
+  "titleBar": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
   },
   "actions": {
     "newTab": "New Tab",
     "closeTab": "Close Tab",
+    "renameTab": "Rename Tab",
     "split": "Split",
     "search": "Search",
     "cancel": "Cancel",
@@ -141,6 +179,8 @@
     "note": "Note",
     "newTerminal": "New terminal",
     "connectSsh": "Connect SSH",
+    "claudeCode": "Claude Code",
+    "codex": "Codex",
     "launcherHint": "Choose what to open",
     "launcherGroup": {
       "workspace": "Workspace",

@@ -232,4 +232,60 @@ describe("WorkspacePanel", () => {
     const card = screen.getByRole("button", { name: /alpha/ });
     expect(within(card).queryByText("/a")).toBeNull();
   });
+
+  it("opens a new launcher tab in the space from its group add button", () => {
+    render(<WorkspacePanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Add tab" }));
+    const added = useTabsStore.getState().tabs.find((tab) => tab.kind === "launcher");
+    expect(added).toBeDefined();
+    expect(added?.spaceId).toBe("s1");
+    expect(useTabsStore.getState().activeId).toBe(added?.id);
+  });
+
+  it("opens the new tab in the clicked group's space, not the active one", () => {
+    useTabsStore.setState({
+      spaces: [
+        { id: "s1", name: "Salon" },
+        { id: "s2", name: "Studio" },
+      ],
+      activeSpaceId: "s1",
+      activeId: "t1",
+      tabs: [
+        {
+          id: "t1",
+          spaceId: "s1",
+          title: "alpha",
+          kind: "terminal",
+          paneTree: leaf("p1", { kind: "terminal", cwd: "/a" }),
+          activeLeafId: "p1",
+        },
+      ],
+    });
+    render(<WorkspacePanel />);
+    // Each group renders its own "Add tab" button; the second one belongs to s2.
+    const addButtons = screen.getAllByRole("button", { name: "Add tab" });
+    fireEvent.click(addButtons[1]);
+    const added = useTabsStore.getState().tabs.find((tab) => tab.kind === "launcher");
+    expect(added?.spaceId).toBe("s2");
+    expect(useTabsStore.getState().activeSpaceId).toBe("s2");
+  });
+
+  it("shows a 1-based index on each card matching its ⌘-number", () => {
+    render(<WorkspacePanel />);
+    const alpha = screen.getByRole("button", { name: /alpha/ });
+    const beta = screen.getByRole("button", { name: /beta/ });
+    expect(within(alpha).getByText("1")).toBeInTheDocument();
+    expect(within(beta).getByText("2")).toBeInTheDocument();
+  });
+
+  it("keeps the card index tied to the space order under a status filter", () => {
+    // Only beta (the 2nd tab) is active; filtering to running must still show it
+    // as 2, not renumber it to 1, so the number keeps matching ⌘2.
+    useSessionStatusStore.setState({ statuses: { p2: "active" } });
+    render(<WorkspacePanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Running" }));
+    const beta = screen.getByRole("button", { name: /beta/ });
+    expect(within(beta).getByText("2")).toBeInTheDocument();
+    expect(screen.queryByText("alpha")).toBeNull();
+  });
 });

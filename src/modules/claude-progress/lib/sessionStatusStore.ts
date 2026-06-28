@@ -20,20 +20,33 @@ export const useSessionStatusStore = create<SessionStatusState>((set) => ({
   statuses: {},
   agents: {},
   setStatus: (leafId, status) =>
-    set((s) => ({ statuses: { ...s.statuses, [leafId]: status } })),
+    set((s) =>
+      s.statuses[leafId] === status ? s : { statuses: { ...s.statuses, [leafId]: status } },
+    ),
   setAgent: (leafId, agent) =>
     set((s) =>
       s.agents[leafId] === agent ? s : { agents: { ...s.agents, [leafId]: agent } },
     ),
   clear: (leafId) =>
     set((s) => {
-      if (!(leafId in s.statuses) && !(leafId in s.agents)) {
+      const hasStatus = leafId in s.statuses;
+      const hasAgent = leafId in s.agents;
+      if (!hasStatus && !hasAgent) {
         return s;
       }
-      const statuses = { ...s.statuses };
-      delete statuses[leafId];
-      const agents = { ...s.agents };
-      delete agents[leafId];
-      return { statuses, agents };
+      // Only rebuild the map the leaf is actually in, so clearing an
+      // agent-only leaf doesn't churn the statuses ref the notifier watches.
+      const next: Partial<SessionStatusState> = {};
+      if (hasStatus) {
+        const statuses = { ...s.statuses };
+        delete statuses[leafId];
+        next.statuses = statuses;
+      }
+      if (hasAgent) {
+        const agents = { ...s.agents };
+        delete agents[leafId];
+        next.agents = agents;
+      }
+      return next;
     }),
 }));

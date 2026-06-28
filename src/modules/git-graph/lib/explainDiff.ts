@@ -1,6 +1,7 @@
 import { aiChat } from "@/modules/ai/lib/aiBridge";
 import { composeMessages } from "@/modules/ai/lib/chat";
 import { providerById } from "@/modules/ai/lib/providers";
+import { redactSecrets } from "@/modules/ai/lib/redact";
 
 export const EXPLAIN_SYSTEM_PROMPT =
   "You are a senior software engineer. Explain a git diff in simple, scannable terms: " +
@@ -14,8 +15,9 @@ export function buildExplainPrompt(
   lang: string,
   maxChars = 12000,
 ): string {
-  const body =
-    diff.length > maxChars ? `${diff.slice(0, maxChars)}\n...[truncated]` : diff;
+  const body = redactSecrets(
+    diff.length > maxChars ? `${diff.slice(0, maxChars)}\n...[truncated]` : diff,
+  );
   const language = lang.startsWith("zh")
     ? "Respond in 正體中文 (Traditional Chinese)."
     : "Respond in English.";

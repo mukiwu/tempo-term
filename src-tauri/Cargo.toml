@@ -1,6 +1,6 @@
 [package]
 name = "tempo-term"
-version = "0.0.8"
+version = "0.0.10"
 description = "TempoTerm - AI-powered terminal, editor and file explorer"
 authors = ["TempoTerm"]
 edition = "2021"
@@ -32,6 +32,7 @@ git2 = "0.19"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "rt", "io-util", "net", "time"] }
 tauri-plugin-dialog = "2.7.1"
+tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-window-state = "2"
@@ -47,6 +48,7 @@ russh-sftp = "2"
 orion = "0.17"
 machine-uid = "0.6"
 base64 = "0.22"
+sysinfo = "0.33"
 
 # keyring 3.x ships no credential store by default; each platform must opt into
 # its native backend or every keychain operation fails silently.

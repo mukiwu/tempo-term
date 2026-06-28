@@ -218,7 +218,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                 height: `${pane.rect.height}%`,
               }}
               className={`p-1 ${
-                multiple ? (active ? "border border-accent" : "border border-border") : ""
+                multiple ? (active ? "border border-accent/40" : "border border-border") : ""
               }`}
             >
               {multiple && (
@@ -279,6 +279,9 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     onCwdChange={(dir) => setTerminalCwd(tab.id, pane.id, dir)}
                     onOpenFile={(absolutePath) =>
                       splitPaneWith(tab.id, pane.id, { kind: "editor", path: absolutePath }, "row")
+                    }
+                    onOpenPreview={(url) =>
+                      splitPaneWith(tab.id, pane.id, { kind: "preview", url }, "row")
                     }
                   />
                 )}
