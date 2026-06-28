@@ -440,6 +440,32 @@ describe("openSshTab", () => {
   });
 });
 
+describe("openLogTab", () => {
+  beforeEach(reset);
+
+  it("creates a log tab with kind='log', correct title, and pane content on first call", () => {
+    const id = useTabsStore.getState().openLogTab("20260507_143343_zsh.log");
+    expect(useTabsStore.getState().activeId).toBe(id);
+    const tab = activeTab();
+    expect(tab.kind).toBe("log");
+    expect(tab.title).toBe("20260507_143343_zsh.log");
+    expect(firstLeafContent(tab)).toEqual({ kind: "log", logName: "20260507_143343_zsh.log" });
+    expect(leafIds(tab.paneTree)).toHaveLength(1);
+  });
+
+  it("reuses the same tab id and replaces content when called with a different log name", () => {
+    const id = useTabsStore.getState().openLogTab("first.log");
+    useTabsStore.getState().newTerminalTab();
+    const id2 = useTabsStore.getState().openLogTab("second.log");
+    expect(id2).toBe(id);
+    expect(useTabsStore.getState().activeId).toBe(id);
+    expect(useTabsStore.getState().tabs.filter((t) => t.kind === "log")).toHaveLength(1);
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === id)!;
+    expect(tab.title).toBe("second.log");
+    expect(firstLeafContent(tab)).toEqual({ kind: "log", logName: "second.log" });
+  });
+});
+
 describe("migratePersistedTabs", () => {
   it("migrates v0 simple tabs into single-leaf pane tabs", () => {
     const v0 = {

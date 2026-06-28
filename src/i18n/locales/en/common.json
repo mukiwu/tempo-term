@@ -177,7 +177,8 @@
     "saveAs": "Save As…",
     "loading": "Loading…",
     "refresh": "Refresh",
-    "openFolder": "Open logs folder"
+    "openFolder": "Open logs folder",
+    "error": "Error"
   },
   "workspace": {
     "openFolder": "Open Folder",

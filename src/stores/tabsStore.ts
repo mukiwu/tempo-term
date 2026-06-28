@@ -31,7 +31,7 @@ export interface Space {
   name: string;
 }
 
-export type TabKind = "terminal" | "editor" | "note" | "preview" | "git-graph" | "launcher";
+export type TabKind = "terminal" | "editor" | "note" | "preview" | "git-graph" | "launcher" | "log";
 
 /**
  * A single tab. `kind` is only the tab's creation type, used for the tab-bar
@@ -70,6 +70,11 @@ interface TabsState {
   openNoteTab: (noteId: string, title: string) => string;
   openPreviewTab: (url: string) => string;
   openGitGraphTab: () => string;
+  /**
+   * Open the single reusable log tab for this space. If one already exists,
+   * replace its pane content + title in place (no new tab) and focus it.
+   */
+  openLogTab: (logName: string) => string;
   setTabTitle: (id: string, title: string) => void;
   /** Update a terminal tab's title to follow its cwd, unless the user renamed it. */
   syncTabTitleToCwd: (id: string, cwd: string) => void;
@@ -475,6 +480,39 @@ export const useTabsStore = create<TabsState>()(
       kind: "git-graph",
       title: "Git Graph",
       paneTree: leaf(paneId, { kind: "git-graph" }),
+      activeLeafId: paneId,
+    };
+    set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+    return id;
+  },
+
+  openLogTab: (logName) => {
+    const spaceId = get().ensureSpace();
+    const existing = get().tabs.find((t) => t.kind === "log" && t.spaceId === spaceId);
+    if (existing) {
+      // Replace the single leaf's content with the new log, update title, and focus.
+      // Fall back to a fresh leaf if the tree has been split (should not happen in
+      // normal use since we always create it as a single leaf, but guard anyway).
+      const newPaneTree =
+        existing.paneTree.kind === "leaf"
+          ? setLeafPane(existing.paneTree, existing.activeLeafId, { kind: "log", logName })
+          : leaf(nextPaneId(), { kind: "log", logName });
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === existing.id ? { ...t, title: logName, paneTree: newPaneTree } : t,
+        ),
+        activeId: existing.id,
+      }));
+      return existing.id;
+    }
+    const id = nextTabId();
+    const paneId = nextPaneId();
+    const tab: Tab = {
+      id,
+      spaceId,
+      kind: "log",
+      title: logName,
+      paneTree: leaf(paneId, { kind: "log", logName }),
       activeLeafId: paneId,
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));

@@ -9,6 +9,7 @@ import {
   PanelLeft,
   Pencil,
   Plus,
+  ScrollText,
   SquareTerminal,
   X,
   type LucideIcon,
@@ -56,6 +57,8 @@ function tabIcon(kind: Tab["kind"]): LucideIcon {
       return GitBranch;
     case "launcher":
       return LayoutGrid;
+    case "log":
+      return ScrollText;
   }
 }
 

@@ -17,7 +17,8 @@ export type PaneContent =
   | { kind: "note"; noteId: string }
   | { kind: "preview"; url: string }
   | { kind: "git-graph" }
-  | { kind: "launcher" };
+  | { kind: "launcher" }
+  | { kind: "log"; logName: string };
 
 export const TERMINAL_PANE: PaneContent = { kind: "terminal" };
 

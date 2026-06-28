@@ -177,7 +177,8 @@
     "saveAs": "另存為…",
     "loading": "載入中…",
     "refresh": "重新整理",
-    "openFolder": "開啟 log 資料夾"
+    "openFolder": "開啟 log 資料夾",
+    "error": "錯誤"
   },
   "workspace": {
     "openFolder": "開啟資料夾",

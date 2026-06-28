@@ -28,6 +28,9 @@ const GitGraphTabContent = lazy(() =>
     default: m.GitGraphTabContent,
   })),
 );
+const LogTabContent = lazy(() =>
+  import("@/modules/logs/LogTabContent").then((m) => ({ default: m.LogTabContent })),
+);
 import { LauncherPanel } from "@/components/LauncherPanel";
 import { dropOverlayClassName } from "@/components/EntryDropOverlay";
 import {
@@ -135,6 +138,9 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
         if (!entry.isDir) {
           setPaneContent(tab.id, leafId, { kind: "editor", path: entry.path });
         }
+        break;
+      case "log":
+        // Log panes are read-only; drops are ignored.
         break;
     }
   }
@@ -255,6 +261,8 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   <PreviewTabContent url={pane.content.url} />
                 ) : pane.content.kind === "git-graph" ? (
                   <GitGraphTabContent />
+                ) : pane.content.kind === "log" ? (
+                  <LogTabContent logName={pane.content.logName} />
                 ) : pane.content.kind === "launcher" ? (
                   <LauncherPanel
                     target={{ mode: "replacePane", tabId: tab.id, leafId: pane.id }}
