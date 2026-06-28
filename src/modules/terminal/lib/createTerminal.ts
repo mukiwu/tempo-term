@@ -114,9 +114,14 @@ export function enableWebglRenderer(term: Terminal): WebglAddon | null {
     addon.onContextLoss(() => addon.dispose());
     term.loadAddon(addon);
     // Clear the glyph atlas just before it overflows, so long CJK-heavy sessions
-    // don't start rendering the wrong glyphs (see webglAtlasGuard). The listeners
-    // are disposed with the addon.
-    installAtlasPressureGuard(addon);
+    // don't start rendering the wrong glyphs (see webglAtlasGuard). Run the
+    // guard's cleanup when the addon is disposed so its listener doesn't leak.
+    const disposeAtlasGuard = installAtlasPressureGuard(addon);
+    const originalDispose = addon.dispose.bind(addon);
+    addon.dispose = () => {
+      disposeAtlasGuard();
+      originalDispose();
+    };
     return addon;
   } catch {
     return null;

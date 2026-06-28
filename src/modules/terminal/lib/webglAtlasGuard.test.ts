@@ -2,41 +2,36 @@ import { describe, expect, it } from "vitest";
 import { AtlasPressureGuard } from "./webglAtlasGuard";
 
 describe("AtlasPressureGuard", () => {
-  it("requests a clear only once the page count reaches the threshold", () => {
-    const guard = new AtlasPressureGuard(3);
-    expect(guard.recordAdd()).toBe(false); // 1
-    expect(guard.recordAdd()).toBe(false); // 2
-    expect(guard.recordAdd()).toBe(true); // 3 -> at threshold, clear
+  it("requests a clear once the pages-added-since-last-clear count reaches the threshold", () => {
+    const guard = new AtlasPressureGuard(3, 1000, () => 0);
+    expect(guard.recordPageAdded()).toBe(false); // 1
+    expect(guard.recordPageAdded()).toBe(false); // 2
+    expect(guard.recordPageAdded()).toBe(true); // 3 -> clear
   });
 
-  it("does not request another clear while cooling down (avoids a clear loop)", () => {
-    const guard = new AtlasPressureGuard(2);
-    expect(guard.recordAdd()).toBe(false); // 1
-    expect(guard.recordAdd()).toBe(true); // 2 -> clear requested, now cooling
-    // The clear's redraw re-adds a few visible-glyph pages; these must NOT
-    // trigger another clear until reset() runs.
-    expect(guard.recordAdd()).toBe(false);
-    expect(guard.recordAdd()).toBe(false);
+  it("counts ADDS since the last clear (clearTextureAtlas keeps pages, so removes are irrelevant)", () => {
+    // A clear empties pages in place and re-rasterizes into them without firing
+    // onAdd, so the right signal is genuine new growth since the last clear.
+    let t = 0;
+    const guard = new AtlasPressureGuard(2, 1000, () => t);
+    guard.recordPageAdded();
+    expect(guard.recordPageAdded()).toBe(true); // first clear, counter reset
+    t = 5000; // well past the cooldown
+    expect(guard.recordPageAdded()).toBe(false); // 1 of the new growth
+    expect(guard.recordPageAdded()).toBe(true); // 2 -> clears again
   });
 
-  it("can trigger again after reset() once pressure rebuilds", () => {
-    const guard = new AtlasPressureGuard(2);
-    guard.recordAdd();
-    expect(guard.recordAdd()).toBe(true); // first clear
-    guard.reset();
-    expect(guard.recordAdd()).toBe(false); // 1 after reset
-    expect(guard.recordAdd()).toBe(true); // 2 -> clears again
-  });
-
-  it("decrements on page removal, floored at zero, so merges delay the next clear", () => {
-    const guard = new AtlasPressureGuard(3);
-    guard.recordAdd(); // 1
-    guard.recordAdd(); // 2
-    guard.recordRemove(); // 1 (a merge removed a page)
-    guard.recordRemove(); // 0
-    guard.recordRemove(); // stays 0, never negative
-    expect(guard.recordAdd()).toBe(false); // 1
-    expect(guard.recordAdd()).toBe(false); // 2
-    expect(guard.recordAdd()).toBe(true); // 3 -> threshold
+  it("does not clear again within the cooldown window, even at threshold (loop backstop)", () => {
+    let t = 0;
+    const guard = new AtlasPressureGuard(2, 1000, () => t);
+    guard.recordPageAdded();
+    expect(guard.recordPageAdded()).toBe(true); // clear at t=0
+    // Pathological: the post-clear redraw immediately needs many new pages.
+    t = 200; // still inside the 1000ms cooldown
+    guard.recordPageAdded();
+    guard.recordPageAdded();
+    expect(guard.recordPageAdded()).toBe(false); // blocked by the temporal cooldown
+    t = 1200; // cooldown elapsed
+    expect(guard.recordPageAdded()).toBe(true); // now allowed again
   });
 });
