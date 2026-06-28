@@ -39,7 +39,7 @@ export function LogsView() {
 
   // Enforce retention once when the panel mounts, then list what remains.
   useEffect(() => {
-    void enforceLogRetention(retentionDays).finally(() => void refresh());
+    void enforceLogRetention(retentionDays).catch(() => {}).finally(() => void refresh());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
