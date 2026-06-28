@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Columns2, Eye, RefreshCw, SquarePen, WrapText, type LucideIcon } from "lucide-react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView as CMView } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
@@ -15,24 +14,11 @@ import { buildCompletionMessages, cleanCompletion } from "@/modules/ai/lib/compl
 import { externalChangeAction, manualReloadAction, shouldReloadFromDisk } from "./lib/reload";
 import { onEditorFileChanged } from "./lib/editorWatch";
 import { fsReadFile, fsWriteFile } from "@/modules/explorer/lib/fsBridge";
-import { basename } from "@/modules/explorer/lib/paths";
 import { MarkdownView } from "@/components/MarkdownView";
-import { Tooltip } from "@/components/Tooltip";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EditorToolbar, type EditorMode } from "./EditorToolbar";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-
-type EditorMode = "edit" | "split" | "preview";
-
-const MODES: { key: EditorMode; icon: LucideIcon }[] = [
-  { key: "edit", icon: SquarePen },
-  { key: "split", icon: Columns2 },
-  { key: "preview", icon: Eye },
-];
-
-function isMarkdownPath(path: string): boolean {
-  return /\.(md|markdown|mdx)$/i.test(path);
-}
 
 // After we save, the watcher reports our own write back as a change. Ignore
 // those echoes for a short window so a save never bounces back as a reload.
@@ -57,7 +43,13 @@ async function requestCompletion(
 }
 
 /** One open file. Each editor tab renders a single file with its own buffer. */
-export function EditorTabContent({ path }: { path: string }) {
+export function EditorTabContent({
+  path,
+  onOpenWebPreview,
+}: {
+  path: string;
+  onOpenWebPreview?: () => void;
+}) {
   const { t } = useTranslation("editor");
   const setBaseline = useEditorStore((s) => s.setBaseline);
   const setContent = useEditorStore((s) => s.setContent);
@@ -71,7 +63,7 @@ export function EditorTabContent({ path }: { path: string }) {
   const toggleWordWrap = useSettingsStore((s) => s.toggleWordWrap);
   const aiInlineCompletionEnabled = useSettingsStore((s) => s.aiInlineCompletion);
 
-  const isMarkdown = isMarkdownPath(path);
+  const isMarkdown = /\.(md|markdown|mdx)$/i.test(path);
   const [mode, setMode] = useState<EditorMode>("edit");
   const [confirmReload, setConfirmReload] = useState(false);
   const [externalChanged, setExternalChanged] = useState(false);
@@ -242,57 +234,15 @@ export function EditorTabContent({ path }: { path: string }) {
         }
       }}
     >
-      {/* pr-8 leaves room for the pane's close button (absolute, top-right). */}
-      <div className="flex h-7 shrink-0 items-center justify-between gap-2 border-b border-border pl-2 pr-8">
-        <span className="min-w-0 truncate text-xs text-fg-muted" title={path}>
-          {basename(path)}
-        </span>
-        <div className="flex shrink-0 items-center gap-0.5">
-        <Tooltip label={t("refresh")}>
-          <button
-            type="button"
-            aria-label={t("refresh")}
-            onClick={handleRefresh}
-            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-          >
-            <RefreshCw size={14} />
-          </button>
-        </Tooltip>
-        <Tooltip label={t("wrap")}>
-          <button
-            type="button"
-            aria-label={t("wrap")}
-            aria-pressed={wordWrap}
-            onClick={toggleWordWrap}
-            className={`rounded p-1 ${
-              wordWrap ? "bg-bg-elevated text-fg" : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
-            }`}
-          >
-            <WrapText size={14} />
-          </button>
-        </Tooltip>
-        {isMarkdown &&
-          MODES.map((m) => {
-            const Icon = m.icon;
-            const active = mode === m.key;
-            return (
-              <Tooltip key={m.key} label={t(`mode.${m.key}`)}>
-                <button
-                  type="button"
-                  aria-label={t(`mode.${m.key}`)}
-                  aria-pressed={active}
-                  onClick={() => setMode(m.key)}
-                  className={`rounded p-1 ${
-                    active ? "bg-bg-elevated text-fg" : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
-                  }`}
-                >
-                  <Icon size={14} />
-                </button>
-              </Tooltip>
-            );
-          })}
-        </div>
-      </div>
+      <EditorToolbar
+        path={path}
+        wordWrap={wordWrap}
+        onToggleWordWrap={toggleWordWrap}
+        onRefresh={handleRefresh}
+        onOpenWebPreview={onOpenWebPreview}
+        mode={mode}
+        onSetMode={setMode}
+      />
 
       {externalChanged && (
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-warning/10 px-3 py-1.5 text-xs text-fg">

@@ -15,6 +15,7 @@
   "useDiskVersion": "Use disk version",
   "keepMine": "Keep mine",
   "wrap": "Word wrap",
+  "webPreview": "Web preview",
   "mode": {
     "edit": "Edit",
     "split": "Split",

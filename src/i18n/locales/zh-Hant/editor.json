@@ -15,6 +15,7 @@
   "useDiskVersion": "使用磁碟版本",
   "keepMine": "保留我的",
   "wrap": "自動換行",
+  "webPreview": "網頁預覽",
   "mode": {
     "edit": "編輯",
     "split": "並排",
