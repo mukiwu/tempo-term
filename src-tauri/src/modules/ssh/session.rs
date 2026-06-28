@@ -293,6 +293,17 @@ async fn run_session(
         forwards.insert(fid, tx);
     }
 
+    // Best-effort per-session logger; never let logging failures affect the
+    // session. Dropping `log_tx` at the end of run_session writes the footer.
+    let log_tx = if req.log_enabled {
+        let label = format!("{}@{}", req.user, req.host);
+        crate::modules::session_log::start_logger(&app, &label)
+            .ok()
+            .map(|h| h.tx)
+    } else {
+        None
+    };
+
     loop {
         tokio::select! {
             // Remote → frontend. `wait` polls russh's event loop, which is what
@@ -300,13 +311,23 @@ async fn run_session(
             msg = read_half.wait() => {
                 match msg {
                     Some(russh::ChannelMsg::Data { data }) => {
-                        if on_data.send(Response::new(data.to_vec())).is_err() {
+                        let bytes = data.to_vec();
+                        if let Some(tx) = &log_tx {
+                            // Best-effort: drop chunk if channel is full or writer has exited.
+                            let _ = tx.try_send(bytes.clone());
+                        }
+                        if on_data.send(Response::new(bytes)).is_err() {
                             // Frontend channel gone (pane closed) — stop.
                             break;
                         }
                     }
                     Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                        if on_data.send(Response::new(data.to_vec())).is_err() {
+                        let bytes = data.to_vec();
+                        if let Some(tx) = &log_tx {
+                            // Best-effort: drop chunk if channel is full or writer has exited.
+                            let _ = tx.try_send(bytes.clone());
+                        }
+                        if on_data.send(Response::new(bytes)).is_err() {
                             break;
                         }
                     }
