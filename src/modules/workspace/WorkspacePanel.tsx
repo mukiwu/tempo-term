@@ -299,13 +299,19 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
   const [collapsed, setCollapsed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const allTabs = useTabsStore((s) => s.tabs).filter((t) => t.spaceId === id);
+  // Select the raw (store-stable) tab list, then memoize the per-space slice on
+  // its reference so frequent SpaceGroup re-renders (typing in the rename field,
+  // status updates) don't rebuild it. zustand keeps the same array reference
+  // until tabs actually change.
+  const allTabsRaw = useTabsStore((s) => s.tabs);
+  const allTabs = useMemo(() => allTabsRaw.filter((t) => t.spaceId === id), [allTabsRaw, id]);
   // Number cards by their position in the full space list (not the filtered one)
   // so the badge keeps matching ⌘1-9, which also indexes the unfiltered tabs.
   const tabs = allTabs.filter((t) => filter === "all" || tabSessionStatus(t, statuses) === filter);
   // 1-based position in the unfiltered space list, so the badge keeps matching
-  // ⌘1-9. Precomputed once (O(n)) instead of an O(n) indexOf per card (O(n²)).
-  const tabNumberById = new Map(allTabs.map((tab, i) => [tab.id, i + 1]));
+  // ⌘1-9. O(1) lookup per card (vs an O(n) indexOf), memoized on the slice so a
+  // rename keystroke or status update doesn't rebuild the map.
+  const tabNumberById = useMemo(() => new Map(allTabs.map((tab, i) => [tab.id, i + 1])), [allTabs]);
 
   // Under an active filter a group with no matching cards adds only noise.
   if (filter !== "all" && tabs.length === 0) {
