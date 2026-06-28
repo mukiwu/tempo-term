@@ -7,6 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import { openSsh, startForward, stopForward } from "./ssh-bridge";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 describe("openSsh", () => {
   it("invokes ssh_open and exposes write/resize/close on the returned id", async () => {
@@ -24,6 +25,7 @@ describe("openSsh", () => {
 
   it("passes the correct req shape to ssh_open", async () => {
     invoke.mockClear();
+    useSettingsStore.setState({ loggingEnabled: true });
     await openSsh({
       connectionId: "conn-42", host: "example.com", port: 2222, user: "alice",
       authMethod: "keyFile", keyPath: "~/.ssh/id_ed25519", cols: 120, rows: 40,
@@ -42,9 +44,23 @@ describe("openSsh", () => {
           cols: 120,
           rows: 40,
           forwards: [],
+          logEnabled: true,
         },
       }),
     );
+  });
+
+  it("forwards loggingEnabled=false from settings store to ssh_open", async () => {
+    invoke.mockClear();
+    useSettingsStore.setState({ loggingEnabled: false });
+    await openSsh({
+      connectionId: "conn-log", host: "example.com", port: 22, user: "alice",
+      authMethod: "password", cols: 80, rows: 24,
+      onData: () => {}, onExit: () => {},
+    });
+    const call = invoke.mock.calls.find(([cmd]) => cmd === "ssh_open");
+    expect((call?.[1] as { req: { logEnabled: boolean } }).req.logEnabled).toBe(false);
+    useSettingsStore.setState({ loggingEnabled: true });
   });
 
   it("includes forwards in the req when provided", async () => {

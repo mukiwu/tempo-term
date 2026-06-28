@@ -9,6 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import { closeLocalSessions, openPty } from "./pty-bridge";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 const opts = { cols: 80, rows: 24, suggestions: false, onData: () => {}, onExit: () => {} };
 
@@ -23,6 +24,16 @@ describe("pty-bridge session registry", () => {
 
     const open = invoke.mock.calls.find(([cmd]) => cmd === "pty_open");
     expect((open?.[1] as { suggestions: boolean }).suggestions).toBe(true);
+  });
+
+  it("forwards loggingEnabled=false from settings store to pty_open", async () => {
+    invoke.mockResolvedValueOnce(1);
+    useSettingsStore.setState({ loggingEnabled: false });
+    await openPty(opts);
+
+    const open = invoke.mock.calls.find(([cmd]) => cmd === "pty_open");
+    expect((open?.[1] as { logEnabled: boolean }).logEnabled).toBe(false);
+    useSettingsStore.setState({ loggingEnabled: true });
   });
 
   it("forwards the shell override to pty_open so the backend can spawn it", async () => {
