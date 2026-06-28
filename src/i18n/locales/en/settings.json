@@ -6,6 +6,7 @@
     "fonts": "Fonts",
     "ai": "AI",
     "workspace": "Workspaces",
+    "logs": "Logs",
     "shortcuts": "Shortcuts",
     "about": "About"
   },
@@ -123,6 +124,17 @@
     "save": "Save",
     "remove": "Remove",
     "localNoKey": "Runs locally, no key needed"
+  },
+  "logsSettings": {
+    "description": "Record each terminal session's output to a log file you can browse in the Logs panel",
+    "enable": "Record session logs",
+    "enableHint": "New sessions write their output to a per-session log file. Turning this off does not stop sessions already running",
+    "retention": "Keep logs for",
+    "retentionForever": "Forever",
+    "retention7": "7 days",
+    "retention30": "30 days",
+    "retention90": "90 days",
+    "openFolder": "Open logs folder"
   },
   "shortcutsList": {
     "description": "Common keyboard shortcuts",

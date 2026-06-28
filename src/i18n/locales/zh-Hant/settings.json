@@ -6,6 +6,7 @@
     "fonts": "字體",
     "ai": "AI",
     "workspace": "工作區",
+    "logs": "記錄",
     "shortcuts": "快捷鍵",
     "about": "關於"
   },
@@ -123,6 +124,17 @@
     "save": "儲存",
     "remove": "移除",
     "localNoKey": "本機執行，不需金鑰"
+  },
+  "logsSettings": {
+    "description": "把每個終端機 session 的輸出記錄成檔案，可在 Logs 面板瀏覽",
+    "enable": "記錄 session log",
+    "enableHint": "新開的 session 會把輸出寫進獨立的 log 檔。關掉不會中止已經在跑的 session",
+    "retention": "保留期限",
+    "retentionForever": "永久",
+    "retention7": "7 天",
+    "retention30": "30 天",
+    "retention90": "90 天",
+    "openFolder": "開啟 log 資料夾"
   },
   "shortcutsList": {
     "description": "常用鍵盤快捷鍵",

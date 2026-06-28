@@ -71,6 +71,12 @@ interface SettingsState {
   actionLinksEnabled: boolean;
   /** Webview zoom factor for the whole UI (1 = 100%); driven by ⌘+ / ⌘-. */
   uiZoom: number;
+  /** Tee each terminal session's output to a per-session log file. */
+  loggingEnabled: boolean;
+  /** Delete logs older than this many days. `null` keeps them forever. */
+  logRetentionDays: number | null;
+  setLoggingEnabled: (value: boolean) => void;
+  setLogRetentionDays: (value: number | null) => void;
   setLanguage: (language: SupportedLanguage) => void;
   setThemeId: (themeId: string) => void;
   setTerminalPadding: (padding: number) => void;
@@ -134,6 +140,8 @@ export const useSettingsStore = create<SettingsState>()(
       customShellPath: "",
       actionLinksEnabled: true,
       uiZoom: DEFAULT_UI_ZOOM,
+      loggingEnabled: true,
+      logRetentionDays: 30,
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
@@ -155,6 +163,8 @@ export const useSettingsStore = create<SettingsState>()(
       zoomIn: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom + UI_ZOOM_STEP) })),
       zoomOut: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom - UI_ZOOM_STEP) })),
       resetZoom: () => set({ uiZoom: DEFAULT_UI_ZOOM }),
+      setLoggingEnabled: (value) => set({ loggingEnabled: value }),
+      setLogRetentionDays: (value) => set({ logRetentionDays: value }),
     }),
     {
       name: SETTINGS_STORAGE_KEY,

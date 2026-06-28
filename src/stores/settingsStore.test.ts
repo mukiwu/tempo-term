@@ -131,4 +131,19 @@ describe("settingsStore", () => {
     useSettingsStore.getState().setCustomShellPath("/opt/homebrew/bin/pwsh");
     expect(useSettingsStore.getState().customShellPath).toBe("/opt/homebrew/bin/pwsh");
   });
+
+  it("defaults logging on with 30-day retention and updates via setters", () => {
+    const s = useSettingsStore.getState();
+    expect(s.loggingEnabled).toBe(true);
+    expect(s.logRetentionDays).toBe(30);
+
+    s.setLoggingEnabled(false);
+    expect(useSettingsStore.getState().loggingEnabled).toBe(false);
+
+    s.setLogRetentionDays(null);
+    expect(useSettingsStore.getState().logRetentionDays).toBeNull();
+
+    s.setLogRetentionDays(7);
+    expect(useSettingsStore.getState().logRetentionDays).toBe(7);
+  });
 });
