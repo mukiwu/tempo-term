@@ -548,7 +548,7 @@ export const useTabsStore = create<TabsState>()(
       return;
     }
     const url = fileUrl(filePath);
-    const title = filePath.split(/[\\/]/).pop() ?? "preview";
+    const title = basename(filePath) || "preview";
     const target = decideHtmlPreviewOpen(tab.paneTree, fromLeafId);
 
     if (target.kind === "replace") {

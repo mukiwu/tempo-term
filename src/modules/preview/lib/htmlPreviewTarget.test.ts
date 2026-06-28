@@ -32,4 +32,8 @@ describe("previewLocalPath", () => {
     expect(previewLocalPath("http://localhost:3000")).toBeNull();
     expect(previewLocalPath("https://example.com")).toBeNull();
   });
+
+  it("handles file:// urls with a host component", () => {
+    expect(previewLocalPath("file://localhost/Users/me/a.html")).toBe("/Users/me/a.html");
+  });
 });

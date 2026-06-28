@@ -33,11 +33,15 @@ export function decideHtmlPreviewOpen(paneTree: LayoutNode, fromLeafId: string):
 export function previewLocalPath(url: string): string | null {
   const value = url.trim();
   if (value.startsWith("file://")) {
-    const withoutScheme = value.replace(/^file:\/\//i, "");
     try {
-      return decodeURIComponent(withoutScheme);
+      return decodeURIComponent(new URL(value).pathname);
     } catch {
-      return withoutScheme;
+      const withoutScheme = value.replace(/^file:\/\//i, "");
+      try {
+        return decodeURIComponent(withoutScheme);
+      } catch {
+        return withoutScheme;
+      }
     }
   }
   if (value.startsWith("/")) {
