@@ -251,16 +251,17 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                 }
               >
                 {pane.content.kind === "editor" ? (
-                  <EditorTabContent
-                    path={pane.content.path}
-                    onOpenWebPreview={() =>
-                      openHtmlPreview(
-                        tab.id,
-                        pane.id,
-                        (pane.content as { kind: "editor"; path: string }).path,
-                      )
-                    }
-                  />
+                  (() => {
+                    const editorPath = pane.content.path;
+                    return (
+                      <EditorTabContent
+                        path={editorPath}
+                        onOpenWebPreview={() =>
+                          openHtmlPreview(tab.id, pane.id, editorPath)
+                        }
+                      />
+                    );
+                  })()
                 ) : pane.content.kind === "note" ? (
                   <NoteTabContent
                     noteId={pane.content.noteId}
