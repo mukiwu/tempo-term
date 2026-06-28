@@ -39,7 +39,7 @@ export function PreviewTabContent({ url }: { url: string }) {
       } else {
         unlisten = fn;
       }
-    });
+    }).catch(() => {});
     return () => {
       disposed = true;
       unlisten?.();
