@@ -9,6 +9,7 @@ import {
 } from "./tabsStore";
 import {
   computeLayout,
+  findPaneContent,
   leaf,
   leafIds,
   paneOf,
@@ -591,6 +592,39 @@ describe("tabHasDirtyEditor", () => {
       "/a/dirty.ts": { content: "changed", baseline: "original" },
     };
     expect(tabHasDirtyEditor(tab, buffers)).toBe(true);
+  });
+});
+
+describe("openHtmlPreview", () => {
+  beforeEach(reset);
+
+  it("splits beside a single-pane editor tab", () => {
+    const store = useTabsStore.getState();
+    const tabId = store.openEditorTab("/proj/a.html");
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    useTabsStore.getState().openHtmlPreview(tabId, tab.activeLeafId, "/proj/a.html");
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree.kind).toBe("split");
+    const kinds = leafIds(updated.paneTree).map((id) => findPaneContent(updated.paneTree, id)?.kind);
+    expect(kinds).toContain("editor");
+    expect(kinds).toContain("preview");
+  });
+
+  it("opens a reusable preview tab when the source tab is already split", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/proj/b.html");
+    // split the editor tab so it has no preview pane but is multi-pane
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    useTabsStore.getState().splitPaneWith(tabId, tab.activeLeafId, { kind: "terminal" }, "row");
+    const before = useTabsStore.getState().tabs.length;
+    useTabsStore.getState().openHtmlPreview(tabId, tab.activeLeafId, "/proj/b.html");
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs.length).toBe(before + 1);
+    const previewTab = tabs.find((t) => t.kind === "preview")!;
+    expect(previewTab.title).toBe("b.html");
+    // a second preview of a different file reuses the same preview tab
+    useTabsStore.getState().openHtmlPreview(tabId, tab.activeLeafId, "/proj/c.html");
+    expect(useTabsStore.getState().tabs.filter((t) => t.kind === "preview").length).toBe(1);
+    expect(useTabsStore.getState().tabs.find((t) => t.kind === "preview")!.title).toBe("c.html");
   });
 });
 

@@ -3,6 +3,8 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { uid } from "@/lib/id";
 import { perWindowStorage } from "@/lib/window";
 import { markFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
+import { decideHtmlPreviewOpen, previewLocalPath } from "@/modules/preview/lib/htmlPreviewTarget";
+import { fileUrl } from "@/modules/explorer/lib/dragEntry";
 import {
   computeLayout,
   findPaneContent,
@@ -75,6 +77,12 @@ interface TabsState {
    * replace its pane content + title in place (no new tab) and focus it.
    */
   openLogTab: (logName: string) => string;
+  /**
+   * Open the web preview of a local HTML file with a smart target: reuse an
+   * existing preview pane in this tab, else split beside a single-pane editor,
+   * else open/reuse a per-space preview tab.
+   */
+  openHtmlPreview: (tabId: string, fromLeafId: string, filePath: string) => void;
   setTabTitle: (id: string, title: string) => void;
   /** Update a terminal tab's title to follow its cwd, unless the user renamed it. */
   syncTabTitleToCwd: (id: string, cwd: string) => void;
@@ -168,6 +176,23 @@ export function openEditorPaths(tabs: Tab[]): string[] {
     }
   }
   return [...paths];
+}
+
+/** Absolute paths of local-file preview panes across all tabs, for file watching. */
+export function localPreviewFilePaths(tabs: Tab[]): string[] {
+  const paths: string[] = [];
+  for (const tab of tabs) {
+    for (const id of leafIds(tab.paneTree)) {
+      const content = findPaneContent(tab.paneTree, id);
+      if (content?.kind === "preview") {
+        const local = previewLocalPath(content.url);
+        if (local) {
+          paths.push(local);
+        }
+      }
+    }
+  }
+  return paths;
 }
 
 /** True when a tab is a single, unsplit leaf showing exactly `content`. */
@@ -515,6 +540,66 @@ export const useTabsStore = create<TabsState>()(
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
+  },
+
+  openHtmlPreview: (tabId, fromLeafId, filePath) => {
+    const tab = get().tabs.find((t) => t.id === tabId);
+    if (!tab) {
+      return;
+    }
+    const url = fileUrl(filePath);
+    const title = filePath.split(/[\\/]/).pop() ?? "preview";
+    const target = decideHtmlPreviewOpen(tab.paneTree, fromLeafId);
+
+    if (target.kind === "replace") {
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === tabId
+            ? {
+                ...t,
+                paneTree: setLeafPane(t.paneTree, target.leafId, { kind: "preview", url }),
+                activeLeafId: target.leafId,
+              }
+            : t,
+        ),
+      }));
+      return;
+    }
+
+    if (target.kind === "split") {
+      get().splitPaneWith(tabId, target.fromLeafId, { kind: "preview", url }, "row");
+      return;
+    }
+
+    // previewTab: open or reuse the single preview tab in this tab's space.
+    const spaceId = tab.spaceId;
+    const existing = get().tabs.find((t) => t.kind === "preview" && t.spaceId === spaceId);
+    if (existing) {
+      set((state) => ({
+        tabs: state.tabs.map((t) =>
+          t.id === existing.id
+            ? {
+                ...t,
+                title,
+                paneTree: setLeafPane(existing.paneTree, existing.activeLeafId, { kind: "preview", url }),
+              }
+            : t,
+        ),
+        activeId: existing.id,
+      }));
+      return;
+    }
+    const id = nextTabId();
+    const paneId = nextPaneId();
+    const newTab: Tab = {
+      id,
+      spaceId,
+      kind: "preview",
+      title,
+      paneTree: leaf(paneId, { kind: "preview", url }),
+      activeLeafId: paneId,
+    };
+    set((state) => ({ tabs: [...state.tabs, newTab], activeId: id }));
   },
 
   setTabTitle: (id, title) =>
