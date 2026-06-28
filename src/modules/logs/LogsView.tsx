@@ -43,8 +43,8 @@ export function LogsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function decode(raw: Uint8Array, raw_mode: boolean) {
-    if (raw_mode) {
+  async function decode(raw: Uint8Array, rawMode: boolean) {
+    if (rawMode) {
       setContent(new TextDecoder("utf-8", { fatal: false }).decode(raw));
     } else {
       setContent(await renderLogToText(raw));
@@ -144,7 +144,7 @@ export function LogsView() {
                   <input
                     type="checkbox"
                     checked={showRaw}
-                    onChange={() => void toggleRaw()}
+                    onChange={() => void toggleRaw().catch(() => {})}
                     disabled={loading || !bytes}
                     className="accent-accent"
                   />
@@ -152,7 +152,7 @@ export function LogsView() {
                 </label>
                 <button
                   type="button"
-                  onClick={() => void navigator.clipboard.writeText(content)}
+                  onClick={() => void navigator.clipboard.writeText(content).catch(() => {})}
                   disabled={!content}
                   className="rounded border border-border px-2 py-0.5 hover:bg-bg-elevated disabled:opacity-50"
                 >
@@ -160,7 +160,7 @@ export function LogsView() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void saveAs()}
+                  onClick={() => void saveAs().catch(() => {})}
                   disabled={!content}
                   className="rounded border border-border px-2 py-0.5 hover:bg-bg-elevated disabled:opacity-50"
                 >
