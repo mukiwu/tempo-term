@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import { basename } from "@/modules/explorer/lib/paths";
+import { isHtmlPath, isMarkdownPath } from "./lib/language";
 
 export type EditorMode = "edit" | "split" | "preview";
 
@@ -40,8 +41,8 @@ export function EditorToolbar({
   onSetMode,
 }: EditorToolbarProps) {
   const { t } = useTranslation("editor");
-  const isMarkdown = /\.(md|markdown|mdx)$/i.test(path);
-  const isHtml = /\.(html|htm)$/i.test(path);
+  const isMarkdown = isMarkdownPath(path);
+  const isHtml = isHtmlPath(path);
 
   return (
     /* pr-8 leaves room for the pane's close button (absolute, top-right). */

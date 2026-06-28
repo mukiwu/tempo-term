@@ -32,6 +32,16 @@ export function languageDescriptionForPath(path: string): LanguageDescription | 
   return LanguageDescription.matchFilename(languages, name);
 }
 
+/** True for markdown file paths (.md / .markdown / .mdx). */
+export function isMarkdownPath(path: string): boolean {
+  return /\.(md|markdown|mdx)$/i.test(path);
+}
+
+/** True for HTML file paths (.html / .htm). */
+export function isHtmlPath(path: string): boolean {
+  return /\.(html|htm)$/i.test(path);
+}
+
 /**
  * Load the CodeMirror language support extension for a path. Returns an empty
  * list for unknown files (or when the grammar fails to load), so the editor

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   activeEditorPath,
+  localPreviewFilePaths,
   openEditorPaths,
   tabHasDirtyEditor,
   useTabsStore,
@@ -655,6 +656,44 @@ describe("openHtmlPreview", () => {
     });
     // Active leaf points at the preview pane.
     expect(updated.activeLeafId).toBe(previewLeafId);
+  });
+});
+
+describe("localPreviewFilePaths", () => {
+  it("includes the decoded local path for a file:// preview pane", () => {
+    const tab: Tab = {
+      id: "t1",
+      spaceId: "s1",
+      title: "a.html",
+      kind: "preview",
+      paneTree: leaf("l1", { kind: "preview", url: "file:///proj/a.html" }),
+      activeLeafId: "l1",
+    };
+    expect(localPreviewFilePaths([tab])).toContain("/proj/a.html");
+  });
+
+  it("excludes web preview urls (http://)", () => {
+    const tab: Tab = {
+      id: "t2",
+      spaceId: "s1",
+      title: "localhost",
+      kind: "preview",
+      paneTree: leaf("l2", { kind: "preview", url: "http://localhost:3000" }),
+      activeLeafId: "l2",
+    };
+    expect(localPreviewFilePaths([tab])).toHaveLength(0);
+  });
+
+  it("contributes nothing for a tab with no preview pane", () => {
+    const tab: Tab = {
+      id: "t3",
+      spaceId: "s1",
+      title: "Term",
+      kind: "terminal",
+      paneTree: leaf("l3", { kind: "terminal" }),
+      activeLeafId: "l3",
+    };
+    expect(localPreviewFilePaths([tab])).toHaveLength(0);
   });
 });
 

@@ -4,7 +4,7 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView as CMView } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
 import { editorSyntaxTheme } from "@/themes/editorTheme";
-import { languageLabel, loadLanguageExtension } from "./lib/language";
+import { isMarkdownPath, languageLabel, loadLanguageExtension } from "./lib/language";
 import { inlineCompletion, type CompletionRequest } from "./lib/inlineCompletion";
 import { useEditorStore } from "./store/editorStore";
 import { aiChat } from "@/modules/ai/lib/aiBridge";
@@ -63,7 +63,7 @@ export function EditorTabContent({
   const toggleWordWrap = useSettingsStore((s) => s.toggleWordWrap);
   const aiInlineCompletionEnabled = useSettingsStore((s) => s.aiInlineCompletion);
 
-  const isMarkdown = /\.(md|markdown|mdx)$/i.test(path);
+  const isMarkdown = isMarkdownPath(path);
   const [mode, setMode] = useState<EditorMode>("edit");
   const [confirmReload, setConfirmReload] = useState(false);
   const [externalChanged, setExternalChanged] = useState(false);
