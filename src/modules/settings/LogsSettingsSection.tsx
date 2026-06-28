@@ -16,8 +16,10 @@ export function LogsSettingsSection() {
   const labelFor = (value: number | null): string => {
     if (value === null) return t("logsSettings.retentionForever");
     if (value === 7) return t("logsSettings.retention7");
-    if (value === 30) return t("logsSettings.retention30");
-    return t("logsSettings.retention90");
+    if (value === 90) return t("logsSettings.retention90");
+    // 30 is the default; any unexpected value falls back to it rather than
+    // silently masquerading as a different option.
+    return t("logsSettings.retention30");
   };
   const options = RETENTION_VALUES.map(labelFor);
 

@@ -12,7 +12,7 @@ import { LogsSettingsSection } from "./LogsSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 import { AboutSettingsSection } from "./AboutSettingsSection";
 
-const SECTIONS = ["appearance", "terminal", "ai", "workspace", "logs", "shortcuts", "about"] as const;
+const SECTIONS = ["appearance", "terminal", "logs", "ai", "workspace", "shortcuts", "about"] as const;
 type SectionId = typeof SECTIONS[number];
 
 /**
