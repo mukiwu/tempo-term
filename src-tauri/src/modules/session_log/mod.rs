@@ -7,6 +7,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::time::UNIX_EPOCH;
 
@@ -18,11 +19,13 @@ const DIR_NAME: &str = "session-logs";
 /// tee drops the chunk (best-effort logging), never blocking the terminal.
 const CHANNEL_CAPACITY: usize = 256;
 
+/// Monotonically increasing counter appended to each log filename so that two
+/// sessions starting within the same wall-clock second (e.g. several `zsh`
+/// tabs restoring simultaneously) get distinct paths and never collide.
+static LOG_SEQ: AtomicU64 = AtomicU64::new(0);
+
 pub struct LoggerHandle {
     pub tx: SyncSender<Vec<u8>>,
-    // Exposed for callers that need the log file path (e.g. Task 5 Logs panel).
-    #[allow(dead_code)]
-    pub path: PathBuf,
 }
 
 /// Map a session label (shell name or user@host) to a filename-safe form: keep
@@ -72,13 +75,16 @@ pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
 /// Split from `start_logger` so it is testable against a temp dir.
 fn start_logger_in(dir: PathBuf, label: &str) -> Result<LoggerHandle, String> {
     fs::create_dir_all(&dir).map_err(|e| format!("create log dir: {e}"))?;
-    let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    // Append a process-global sequence number so same-second sessions (e.g. two
+    // `zsh` tabs restoring at once) produce distinct filenames and never collide.
+    let seq = LOG_SEQ.fetch_add(1, Ordering::Relaxed);
+    let stamp = format!("{}_{}", chrono::Local::now().format("%Y%m%d_%H%M%S"), seq);
     let path = dir.join(log_filename(&stamp, label));
     let (tx, rx) = sync_channel::<Vec<u8>>(CHANNEL_CAPACITY);
-    let path_for_task = path.clone();
+    let path_clone = path.clone();
 
     std::thread::spawn(move || {
-        let mut file = match OpenOptions::new().create(true).append(true).open(&path_for_task) {
+        let mut file = match OpenOptions::new().create(true).append(true).open(&path_clone) {
             Ok(f) => f,
             Err(_) => return,
         };
@@ -100,7 +106,7 @@ fn start_logger_in(dir: PathBuf, label: &str) -> Result<LoggerHandle, String> {
         let _ = file.flush();
     });
 
-    Ok(LoggerHandle { tx, path })
+    Ok(LoggerHandle { tx })
 }
 
 /// Start a logger under the app's `session-logs` dir, labelled by shell name or

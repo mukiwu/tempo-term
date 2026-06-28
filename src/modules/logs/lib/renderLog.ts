@@ -38,6 +38,8 @@ export async function renderLogToText(bytes: Uint8Array): Promise<string> {
   const term = new Terminal({
     cols: 200,
     rows: 50,
+    // Clean-mode rendering caps at 100k scrollback lines; very large logs are
+    // truncated at the top in this view. Raw mode shows everything via TextDecoder.
     scrollback: 100000,
     allowProposedApi: true,
     fontFamily: selectTerminalFontFamily(font),

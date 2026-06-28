@@ -58,7 +58,7 @@ export function LogsSettingsSection() {
 
       <button
         type="button"
-        onClick={() => void openSessionLogsDir()}
+        onClick={() => void openSessionLogsDir().catch(() => {})}
         className="rounded-md border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
       >
         {t("logsSettings.openFolder")}

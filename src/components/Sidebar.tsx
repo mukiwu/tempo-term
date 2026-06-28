@@ -27,7 +27,7 @@ const SIDEBAR_TABS: SidebarTab[] = [
 ];
 
 /**
- * The sidebar panels in their displayed left-to-right order, so ⌥1…⌥6 can map a
+ * The sidebar panels in their displayed left-to-right order, so ⌥1…⌥7 can map a
  * number to the matching panel. Kept beside SIDEBAR_TABS so the order never
  * drifts from what the icon bar renders.
  */

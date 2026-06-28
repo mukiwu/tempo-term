@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderOpen, RefreshCw } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -28,6 +28,9 @@ export function LogsView() {
   const [showRaw, setShowRaw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Tracks the most recently requested log name so that a slow renderLogToText
+  // for an older selection cannot overwrite content after the user has moved on.
+  const requestedRef = useRef<string | null>(null);
 
   async function refresh() {
     try {
@@ -52,6 +55,9 @@ export function LogsView() {
   }
 
   async function select(name: string) {
+    // Record this as the latest request before any await so the stale-check
+    // below can detect if the user selected a different file while we waited.
+    requestedRef.current = name;
     setSelected(name);
     setLoading(true);
     setError(null);
@@ -59,12 +65,21 @@ export function LogsView() {
     setBytes(null);
     try {
       const raw = await readSessionLog(name);
+      // Bail if the user selected a different file while we were fetching.
+      if (requestedRef.current !== name) return;
+      const text = showRaw
+        ? new TextDecoder("utf-8", { fatal: false }).decode(raw)
+        : await renderLogToText(raw);
+      // Bail again after the potentially slow renderLogToText.
+      if (requestedRef.current !== name) return;
       setBytes(raw);
-      await decode(raw, showRaw);
+      setContent(text);
     } catch (e: unknown) {
+      if (requestedRef.current !== name) return;
       setError(`read: ${String(e)}`);
     } finally {
-      setLoading(false);
+      // Only clear the loading spinner when this is still the current request.
+      if (requestedRef.current === name) setLoading(false);
     }
   }
 
@@ -102,7 +117,7 @@ export function LogsView() {
           <button
             type="button"
             aria-label={t("logs.openFolder")}
-            onClick={() => void openSessionLogsDir()}
+            onClick={() => void openSessionLogsDir().catch(() => {})}
             className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
           >
             <FolderOpen size={14} />

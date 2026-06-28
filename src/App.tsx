@@ -208,7 +208,7 @@ function App() {
       // field (the terminal is excluded — see isEditableTarget).
       const editable = isEditableTarget(e.target);
 
-      // ⌥1…⌥6 jump straight to a sidebar panel by its position in the icon bar.
+      // ⌥1…⌥7 jump straight to a sidebar panel by its position in the icon bar.
       if (digit !== null && e.altKey && !e.metaKey && !e.ctrlKey && !editable) {
         const view = SIDEBAR_VIEW_ORDER[digit - 1];
         if (view) {
