@@ -35,6 +35,18 @@ fn our_command(script_path: &str, state: &str) -> String {
     format!("{script_path} {state}")
 }
 
+/// Canonicalize a hook command (or our script path) for storage and comparison.
+/// On Windows the script path is built with backslashes, but Claude Code runs
+/// `command` hooks through bash, which treats `\` as an escape and mangles the
+/// path (`C:\Users\...` collapses to `C:Users...`, so the hook can't be found).
+/// Git Bash accepts forward slashes, so we store and match on a single
+/// forward-slash form. Applied unconditionally: Unix paths never contain a
+/// backslash, so this is effectively a no-op there, and keeping it
+/// platform-agnostic lets the dedup logic be tested on any CI runner.
+fn normalize(s: &str) -> String {
+    s.replace('\\', "/")
+}
+
 /// Add our hook entry to each event without disturbing the user's own hooks.
 /// Idempotent: re-running never duplicates our entries.
 pub fn merge_hook_settings(mut existing: Value, script_path: &str, events: &[(&str, &str)]) -> Value {
@@ -68,6 +80,8 @@ pub fn merge_hook_settings(mut existing: Value, script_path: &str, events: &[(&s
 
 /// Remove only the entries whose command points at our script, then drop any
 /// event array we left empty. The user's other hooks are untouched.
+/// `script_path` must already be normalized (see `normalize`); each stored
+/// command is normalized before comparison so stale backslash entries still match.
 pub fn remove_hook_settings(mut existing: Value, script_path: &str, events: &[(&str, &str)]) -> Value {
     let Some(hooks) = existing.get_mut("hooks").and_then(Value::as_object_mut) else {
         return existing;
@@ -79,7 +93,7 @@ pub fn remove_hook_settings(mut existing: Value, script_path: &str, events: &[(&
                     !hs.iter().any(|h| {
                         h["command"]
                             .as_str()
-                            .is_some_and(|c| c.contains(script_path))
+                            .is_some_and(|c| normalize(c).contains(script_path))
                     })
                 })
             });
@@ -158,10 +172,14 @@ pub fn claude_status_hook_install(app: AppHandle) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
+    // Canonicalize to forward slashes so the command bash runs is valid on Windows
+    // and has one stable form (see `normalize`).
+    let script_str = normalize(script_str);
+    let script_str = script_str.as_str();
     // Remove our existing entries first, then merge fresh. This migrates installs
     // from older versions whose command arguments differed (e.g. Notification
-    // used to pass "waiting-approval"); a plain merge would leave those stale
-    // entries behind alongside the new ones.
+    // used to pass "waiting-approval") or whose path used backslashes; a plain
+    // merge would leave those stale entries behind alongside the new ones.
     let cleaned = remove_hook_settings(read_settings(&settings_path)?, script_str, EVENTS);
     let merged = merge_hook_settings(cleaned, script_str, EVENTS);
     write_settings(&settings_path, &merged)
@@ -172,6 +190,10 @@ pub fn claude_status_hook_install(app: AppHandle) -> Result<(), String> {
 pub fn claude_status_hook_uninstall(app: AppHandle) -> Result<(), String> {
     let (script_path, settings_path) = paths(&app)?;
     let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
+    // Match on the same forward-slash form install wrote (see `normalize`), so we
+    // also clean up entries left by older backslash installs.
+    let script_str = normalize(script_str);
+    let script_str = script_str.as_str();
     // Only rewrite settings.json if it already exists, so uninstalling never
     // creates an empty `{}` file for a user who has no settings.
     if settings_path.exists() {
@@ -284,5 +306,32 @@ mod tests {
             .collect();
         assert!(commands.contains(&"/p/status-hook.sh notification"));
         assert!(!commands.contains(&"/p/status-hook.sh waiting-approval"));
+    }
+
+    #[test]
+    fn windows_install_dedups_across_slash_styles() {
+        // An older Windows install wrote the command with backslashes, which bash
+        // can't run (C:\Users\... collapses to C:Users...). The install sequence
+        // (remove then merge) must strip that stale entry and leave exactly one
+        // forward-slash entry per event, not stack a second one beside it.
+        // `normalize` is platform-agnostic, so this runs (and guards regressions)
+        // on every CI runner, not just Windows.
+        let canonical = "C:/Users/me/.claude/tempoterm/status-hook.sh";
+        let stale = json!({
+            "hooks": {
+                "PreToolUse": [
+                    { "hooks": [{ "type": "command", "command": r"C:\Users\me\.claude\tempoterm\status-hook.sh active" }] }
+                ]
+            }
+        });
+        let cleaned = remove_hook_settings(stale, canonical, EVENTS);
+        let merged = merge_hook_settings(cleaned, canonical, EVENTS);
+        let cmds: Vec<&str> = merged["hooks"]["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| e["hooks"][0]["command"].as_str())
+            .collect();
+        assert_eq!(cmds, vec!["C:/Users/me/.claude/tempoterm/status-hook.sh active"]);
     }
 }
