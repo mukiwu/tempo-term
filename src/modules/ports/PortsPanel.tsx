@@ -34,7 +34,7 @@ export function PortsPanel({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
-      <div className="absolute bottom-8 right-2 z-50 flex max-h-[60vh] w-96 flex-col rounded-lg border border-border bg-bg-elevated shadow-xl">
+      <div className="absolute bottom-8 right-2 z-50 flex max-h-[60vh] w-[420px] flex-col rounded-lg border border-border bg-bg-elevated shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <span className="text-sm font-semibold text-fg">{t("ports.title")}</span>
           <label className="flex items-center gap-2 text-xs text-fg-muted">
