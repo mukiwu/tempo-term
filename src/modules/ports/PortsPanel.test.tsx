@@ -68,4 +68,10 @@ describe("PortsPanel", () => {
     setup({ ports: [] });
     expect(screen.getByText(/no ports/i)).toBeInTheDocument();
   });
+
+  it("shows a loading state before the first poll resolves", () => {
+    setup({ ports: null });
+    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no ports/i)).toBeNull();
+  });
 });

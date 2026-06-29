@@ -52,7 +52,9 @@ export function PortsPanel({
           </label>
         </div>
         <div className="overflow-y-auto">
-          {list.length === 0 ? (
+          {ports === null ? (
+            <div className="px-3 py-6 text-center text-sm text-fg-subtle">{t("ports.loading")}</div>
+          ) : list.length === 0 ? (
             <div className="px-3 py-6 text-center text-sm text-fg-subtle">{t("ports.empty")}</div>
           ) : (
             list.map((port) => (

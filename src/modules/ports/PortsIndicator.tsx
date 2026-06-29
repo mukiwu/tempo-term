@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useUiStore } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore } from "@/stores/tabsStore";
+import { message } from "@tauri-apps/plugin-dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { usePorts } from "./lib/usePorts";
 import { killPortProcess, type PortInfo } from "./lib/portsBridge";
@@ -30,12 +31,18 @@ export function PortsIndicator() {
   };
 
   const confirmKill = () => {
-    if (killTarget) {
-      void killPortProcess(killTarget.pid).catch(() => {
-        // The next poll reflects whether the process is gone.
-      });
-    }
+    const target = killTarget;
     setKillTarget(null);
+    if (!target) {
+      return;
+    }
+    void killPortProcess(target.port, target.pid).catch((err: unknown) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      void message(t("ports.killFailed", { process: target.processName, error: detail }), {
+        title: t("ports.kill"),
+        kind: "error",
+      });
+    });
   };
 
   return (

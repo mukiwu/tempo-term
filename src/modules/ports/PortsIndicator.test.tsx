@@ -11,6 +11,7 @@ vi.mock("@/stores/tabsStore", () => ({
   useTabsStore: Object.assign(() => {}, { getState: () => ({ newTerminalTab }) }),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn() }));
 
 import { PortsIndicator } from "./PortsIndicator";
 import { useUiStore } from "@/stores/uiStore";

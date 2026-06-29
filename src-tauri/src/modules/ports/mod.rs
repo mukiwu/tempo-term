@@ -113,7 +113,13 @@ fn extract_meta(process: &Process, own_uid: Option<&Uid>) -> ProcMeta {
     };
     let is_current_user = match (process.user_id(), own_uid) {
         (Some(u), Some(o)) => u == o,
-        _ => false,
+        // We can't determine our own uid (common on Windows, where sysinfo often
+        // returns None): we have no basis to filter by owner, so don't hide
+        // everything — otherwise the default list would be empty. Treat as ours.
+        (_, None) => true,
+        // We know our uid but the process won't reveal its owner (another user's
+        // protected process): keep it out of the current-user default view.
+        (None, Some(_)) => false,
     };
     ProcMeta {
         name: process.name().to_string_lossy().into_owned(),
@@ -192,9 +198,26 @@ pub async fn list_ports(
 
 #[tauri::command]
 pub async fn kill_port_process(
+    port: u16,
     pid: u32,
     state: State<'_, PortsState>,
 ) -> Result<(), String> {
+    // Guard against PID reuse: between listing and the user clicking kill, the
+    // process could have exited and its pid been recycled by an unrelated one.
+    // Confirm the pid still listens on the expected port before killing.
+    let still_listening = listeners::get_all()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .any(|l| {
+            l.protocol == Protocol::TCP
+                && l.state == SocketState::Listen
+                && l.socket.port() == port
+                && l.process.pid == pid
+        });
+    if !still_listening {
+        return Err(format!("Process {pid} is no longer listening on port {port}"));
+    }
+
     let mut sys = state.system.lock().map_err(|e| e.to_string())?;
     let target = Pid::from_u32(pid);
     sys.refresh_processes(ProcessesToUpdate::Some(&[target]), true);

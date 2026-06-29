@@ -25,7 +25,11 @@ export function fetchPorts(showAll: boolean): Promise<PortInfo[]> {
   return invoke<PortInfo[]>("list_ports", { showAll });
 }
 
-/** Kill the process holding a port. Rejects with a message on failure. */
-export function killPortProcess(pid: number): Promise<void> {
-  return invoke("kill_port_process", { pid });
+/**
+ * Kill the process holding a port. Passes both port and pid so the backend can
+ * confirm the pid still listens on that port before killing (PID-reuse guard).
+ * Rejects with a message on failure.
+ */
+export function killPortProcess(port: number, pid: number): Promise<void> {
+  return invoke("kill_port_process", { port, pid });
 }
