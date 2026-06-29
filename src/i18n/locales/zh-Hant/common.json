@@ -61,6 +61,25 @@
     "ramTooltip": "RAM {{used}} / {{total}}",
     "netTooltip": "下載 {{rx}} · 上傳 {{tx}}"
   },
+  "ports": {
+    "title": "Ports",
+    "showAll": "顯示全部",
+    "empty": "沒有使用中的 port",
+    "count": "{{count}} 個 port 使用中",
+    "kill": "結束程序",
+    "killPort": "結束 port {{port}}",
+    "killConfirm": "確定要結束 port {{port}} 上的 {{process}}？",
+    "openTerminal": "在此開終端機",
+    "openTerminalFor": "為 port {{port}} 開終端機",
+    "openBrowser": "在瀏覽器開啟",
+    "openBrowserFor": "在瀏覽器開啟 port {{port}}",
+    "copy": "複製",
+    "copyFor": "複製 port {{port}} 資訊",
+    "detailsFor": "Port {{port}} 詳細資訊",
+    "bind": "綁定",
+    "command": "指令",
+    "cwd": "工作目錄"
+  },
   "titleBar": {
     "minimize": "最小化",
     "maximize": "最大化",

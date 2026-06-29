@@ -61,6 +61,25 @@
     "ramTooltip": "RAM {{used}} / {{total}}",
     "netTooltip": "Download {{rx}} · Upload {{tx}}"
   },
+  "ports": {
+    "title": "Ports",
+    "showAll": "Show all",
+    "empty": "No ports in use",
+    "count": "{{count}} ports in use",
+    "kill": "Kill process",
+    "killPort": "Kill port {{port}}",
+    "killConfirm": "Kill {{process}} on port {{port}}?",
+    "openTerminal": "Open terminal here",
+    "openTerminalFor": "Open terminal for port {{port}}",
+    "openBrowser": "Open in browser",
+    "openBrowserFor": "Open port {{port}} in browser",
+    "copy": "Copy",
+    "copyFor": "Copy info for port {{port}}",
+    "detailsFor": "Details for port {{port}}",
+    "bind": "Bind",
+    "command": "Command",
+    "cwd": "Working dir"
+  },
   "titleBar": {
     "minimize": "Minimize",
     "maximize": "Maximize",
