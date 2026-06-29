@@ -13,6 +13,7 @@
 - 側邊欄切換到工作區面板時短暫卡頓、像當機的問題已修：原因是面板每次顯示都重複做大量計算，現在改成只算必要的部分，切換變順
 - Git 線圖點開 commit 看 diff 時的卡頓已修：之前不論 diff 多長都一次把每一行畫成節點，大檔會塞進上千個 DOM；現在只渲染可視範圍內的行，超長 diff 也順
 - Git 線圖在正式版（Windows）點 commit／檔案時明顯延遲、視窗閃一下的問題已修：正式版沒有主控台，每次跑 git 都被 Windows 配一個新主控台視窗、每次多花上百毫秒；現在用 CREATE_NO_WINDOW 抑制，點開 diff 立即反應（開發版有主控台所以一直都正常）
+- Git 線圖 commit 詳情的變更檔案清單也改成虛擬化：改動上千個檔案的 commit 不再一次掛上幾千個項目；左欄改成 metadata／訊息固定在上、檔案清單自己捲動
 
 ## English
 
@@ -29,3 +30,4 @@
 - Fixed a brief freeze when switching the sidebar to the Workspaces panel: the panel repeated heavy work every time it showed, and now computes only what it needs so the switch stays responsive
 - Fixed jank when opening a commit's diff in the git graph: every diff line was rendered as a DOM node regardless of length, so large files mounted thousands at once; only the rows in the viewport are now rendered, keeping even very long diffs smooth
 - Fixed a noticeable delay (and window flash) when opening a commit or file diff in the git graph on Windows release builds: a release build has no console, so Windows allocated a fresh console for every git subprocess, costing ~100ms per call; spawning with CREATE_NO_WINDOW removes it so diffs open instantly (dev builds own a console, which is why they were never affected)
+- The changed-files list in a commit's details is now virtualized too: a commit touching thousands of files no longer mounts thousands of list items at once. The left column now keeps the metadata/message pinned at the top while the file list scrolls on its own

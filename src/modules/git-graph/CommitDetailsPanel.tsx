@@ -5,6 +5,7 @@ import { Resizer } from "@/components/Resizer";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { gitCommitDetails, gitCommitFileDiff } from "./lib/gitGraphBridge";
 import { parseDiffLines } from "./lib/parseDiff";
+import { useVirtualRows } from "./lib/useVirtualRows";
 import { DiffView } from "./DiffView";
 import { DiffExplain } from "./DiffExplain";
 import type { CommitDetails, CommitNode, DiffLine } from "./types";
@@ -41,6 +42,12 @@ const STATUS_COLORS: Record<string, string> = {
   C: "text-accent",
   T: "text-fg-muted",
 };
+
+// Fixed row height for the changed-files list, so it can be windowed the same
+// way as the diff. A commit touching thousands of files would otherwise mount
+// thousands of buttons at once.
+const FILE_ROW_HEIGHT = 22;
+const FILE_OVERSCAN = 20;
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -131,6 +138,21 @@ export function CommitDetailsPanel({ repo, commit, onClose, labels }: CommitDeta
     };
   }, [repo, commit.hash, selectedFile]);
 
+  // Window the changed-files list inside the left column's single scroll
+  // container: the metadata/message header scrolls with it, so the list is
+  // measured relative to its own offset (fileListRef) rather than the container
+  // top. Keeps one scrollbar over the whole column.
+  const files = details?.files ?? [];
+  const fileListRef = useRef<HTMLDivElement>(null);
+  const filesWindow = useVirtualRows(
+    files.length,
+    FILE_ROW_HEIGHT,
+    FILE_OVERSCAN,
+    commit.hash,
+    { listRef: fileListRef },
+  );
+  const visibleFiles = files.slice(filesWindow.start, filesWindow.end);
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg">
       <div className="flex items-center justify-between border-b border-border bg-bg-inset px-3 py-1.5">
@@ -150,10 +172,12 @@ export function CommitDetailsPanel({ repo, commit, onClose, labels }: CommitDeta
       {error && <div className="px-3 py-1.5 text-xs text-danger" role="alert">{error}</div>}
 
       <div className="flex min-h-0 flex-1">
-        {/* 左欄：metadata + 訊息 + 變更檔案 */}
+        {/* 左欄：metadata + 訊息 + 變更檔案，整欄共用單一卷軸；檔案清單虛擬化 */}
         <div
+          ref={filesWindow.scrollRef}
+          onScroll={filesWindow.onScroll}
           style={{ width: `${leftWidth}px` }}
-          className="shrink-0 overflow-auto px-3 py-2"
+          className="relative shrink-0 overflow-auto px-3 py-2"
         >
           <div className="flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[11px] text-fg-subtle">
             <span>
@@ -168,37 +192,41 @@ export function CommitDetailsPanel({ repo, commit, onClose, labels }: CommitDeta
               {details.message}
             </pre>
           )}
-          <div className="mt-2">
-            <div className="mb-1 text-[11px] font-medium text-fg-subtle">
-              {labels.changedFiles} ({details?.files.length ?? 0})
-            </div>
-            {details && details.files.length === 0 ? (
-              <div className="text-[11px] text-fg-subtle">{labels.noChanges}</div>
-            ) : (
-              <ul className="space-y-0.5">
-                {details?.files.map((f) => (
-                  <li key={f.path}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFile(f.path)}
-                      className={`flex w-full items-center gap-2 rounded px-2 py-0.5 text-left font-mono text-[11px] ${
-                        selectedFile === f.path
-                          ? "bg-bg-elevated text-fg"
-                          : "text-fg-muted hover:bg-bg-elevated/50"
-                      }`}
-                    >
-                      <span
-                        className={`w-3 shrink-0 font-semibold ${STATUS_COLORS[f.status] ?? "text-fg-muted"}`}
-                      >
-                        {f.status}
-                      </span>
-                      <span className="truncate">{f.path}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <div className="mt-2 text-[11px] font-medium text-fg-subtle">
+            {labels.changedFiles} ({details?.files.length ?? 0})
           </div>
+          {details && files.length === 0 ? (
+            <div className="mt-1 text-[11px] text-fg-subtle">{labels.noChanges}</div>
+          ) : (
+            <div
+              ref={fileListRef}
+              style={{ height: `${filesWindow.totalHeight}px` }}
+              className="relative mt-0.5"
+            >
+              <div style={{ transform: `translateY(${filesWindow.offsetTop}px)` }}>
+                {visibleFiles.map((f) => (
+                  <button
+                    key={f.path}
+                    type="button"
+                    onClick={() => setSelectedFile(f.path)}
+                    style={{ height: `${FILE_ROW_HEIGHT}px` }}
+                    className={`flex w-full items-center gap-2 rounded px-2 text-left font-mono text-[11px] ${
+                      selectedFile === f.path
+                        ? "bg-bg-elevated text-fg"
+                        : "text-fg-muted hover:bg-bg-elevated/50"
+                    }`}
+                  >
+                    <span
+                      className={`w-3 shrink-0 font-semibold ${STATUS_COLORS[f.status] ?? "text-fg-muted"}`}
+                    >
+                      {f.status}
+                    </span>
+                    <span className="truncate">{f.path}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <Resizer
