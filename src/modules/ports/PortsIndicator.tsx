@@ -15,7 +15,8 @@ export function PortsIndicator() {
   const setOpen = useUiStore((s) => s.setPortsPanelOpen);
   const showAll = useSettingsStore((s) => s.showAllPorts);
   const setShowAll = useSettingsStore((s) => s.setShowAllPorts);
-  const ports = usePorts(showAll);
+  // Poll briskly while the panel is open, slowly while it is just feeding the badge.
+  const ports = usePorts(showAll, open ? 5000 : 15000);
   const [killTarget, setKillTarget] = useState<PortInfo | null>(null);
 
   const count = ports?.length ?? 0;

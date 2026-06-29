@@ -161,12 +161,14 @@ pub async fn list_ports(
         .collect();
     let rows = dedupe_by_port_pid(rows);
 
+    // Refresh ALL processes with remove_dead = true so the long-lived System
+    // stays in sync with reality and never accumulates stale entries. Refreshing
+    // only the listening pids (Some) would leak: sysinfo only drops dead pids
+    // that are part of the update set, so a process that stops listening lingers
+    // in the map forever. All + remove_dead keeps the map bounded to live
+    // processes (a few hundred, steady), at the cost of a slightly heavier poll.
     let mut sys = state.system.lock().map_err(|e| e.to_string())?;
-    let mut pids: Vec<Pid> = rows.iter().map(|r| Pid::from_u32(r.pid)).collect();
-    if let Ok(own) = get_current_pid() {
-        pids.push(own);
-    }
-    sys.refresh_processes(ProcessesToUpdate::Some(&pids), true);
+    sys.refresh_processes(ProcessesToUpdate::All, true);
 
     let own_uid: Option<Uid> = get_current_pid()
         .ok()
