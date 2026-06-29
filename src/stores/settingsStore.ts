@@ -77,6 +77,9 @@ interface SettingsState {
   logRetentionDays: number | null;
   setLoggingEnabled: (value: boolean) => void;
   setLogRetentionDays: (value: number | null) => void;
+  /** Port monitor lists every listening port instead of only the current user's. */
+  showAllPorts: boolean;
+  setShowAllPorts: (value: boolean) => void;
   setLanguage: (language: SupportedLanguage) => void;
   setThemeId: (themeId: string) => void;
   setTerminalPadding: (padding: number) => void;
@@ -142,6 +145,7 @@ export const useSettingsStore = create<SettingsState>()(
       uiZoom: DEFAULT_UI_ZOOM,
       loggingEnabled: true,
       logRetentionDays: 30,
+      showAllPorts: false,
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
@@ -165,6 +169,7 @@ export const useSettingsStore = create<SettingsState>()(
       resetZoom: () => set({ uiZoom: DEFAULT_UI_ZOOM }),
       setLoggingEnabled: (value) => set({ loggingEnabled: value }),
       setLogRetentionDays: (value) => set({ logRetentionDays: value }),
+      setShowAllPorts: (value) => set({ showAllPorts: value }),
     }),
     {
       name: SETTINGS_STORAGE_KEY,
