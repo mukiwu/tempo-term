@@ -188,6 +188,26 @@ pub async fn list_ports(
     Ok(infos)
 }
 
+#[tauri::command]
+pub async fn kill_port_process(
+    pid: u32,
+    state: State<'_, PortsState>,
+) -> Result<(), String> {
+    let mut sys = state.system.lock().map_err(|e| e.to_string())?;
+    let target = Pid::from_u32(pid);
+    sys.refresh_processes(ProcessesToUpdate::Some(&[target]), true);
+    match sys.process(target) {
+        Some(process) => {
+            if process.kill() {
+                Ok(())
+            } else {
+                Err(format!("Failed to kill process {pid}"))
+            }
+        }
+        None => Err(format!("Process {pid} not found")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

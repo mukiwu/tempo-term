@@ -50,7 +50,7 @@ use modules::session_log::{
     session_logs_open_dir,
 };
 use modules::sysmon::{system_stats, SysinfoState};
-use modules::ports::{list_ports, PortsState};
+use modules::ports::{kill_port_process, list_ports, PortsState};
 use modules::editor_watch::{editor_watch_set, EditorWatchState};
 
 #[derive(serde::Serialize)]
@@ -234,6 +234,7 @@ pub fn run() {
             ssh_secret_delete,
             system_stats,
             list_ports,
+            kill_port_process,
             editor_watch_set
         ])
         .run(tauri::generate_context!())
