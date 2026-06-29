@@ -50,6 +50,7 @@ use modules::session_log::{
     session_logs_open_dir,
 };
 use modules::sysmon::{system_stats, SysinfoState};
+use modules::ports::{list_ports, PortsState};
 use modules::editor_watch::{editor_watch_set, EditorWatchState};
 
 #[derive(serde::Serialize)]
@@ -95,6 +96,7 @@ pub fn run() {
         .manage(CodexProgressState::new())
         .manage(NotesWatchState::new())
         .manage(SysinfoState::new())
+        .manage(PortsState::new())
         .manage(EditorWatchState::new())
         .setup(|app| {
             // window-state restores the last size/position, but it can persist a
@@ -231,6 +233,7 @@ pub fn run() {
             ssh_secret_set,
             ssh_secret_delete,
             system_stats,
+            list_ports,
             editor_watch_set
         ])
         .run(tauri::generate_context!())

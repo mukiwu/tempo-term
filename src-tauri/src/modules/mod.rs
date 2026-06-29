@@ -12,6 +12,7 @@ pub mod fs;
 pub mod git;
 pub mod menu;
 pub mod notes;
+pub mod ports;
 pub mod pr;
 pub mod pty;
 pub mod secrets;

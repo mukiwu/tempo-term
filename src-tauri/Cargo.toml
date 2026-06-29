@@ -49,6 +49,10 @@ orion = "0.17"
 machine-uid = "0.6"
 base64 = "0.22"
 sysinfo = "0.33"
+# Cross-platform socket->PID mapping for the port monitor. Supports macOS and
+# Windows (and Linux); no subprocess spawning. get_all() returns TCP+UDP and all
+# socket states, so the caller filters to TCP + LISTEN.
+listeners = "0.6"
 
 # keyring 3.x ships no credential store by default; each platform must opt into
 # its native backend or every keychain operation fails silently.
