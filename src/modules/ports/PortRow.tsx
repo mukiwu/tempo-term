@@ -25,7 +25,7 @@ export function PortRow({ port, expanded, onToggleExpand, onRequestKill, onOpenT
     <div className="border-b border-border px-3 py-2 last:border-b-0">
       {/* Line 1: identifier on the left, resource stats on the right. */}
       <div className="flex items-center gap-2 text-sm">
-        <span className="shrink-0 font-mono text-accent">:{port.port}</span>
+        <span className="shrink-0 font-mono text-xs text-accent">:{port.port}</span>
         <span className="min-w-0 flex-1 truncate font-medium text-fg">{port.processName}</span>
         <div className="flex shrink-0 items-center gap-3 text-xs text-fg-subtle">
           <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={11} /> {formatUptime(port.uptimeSecs)}</span>
@@ -44,7 +44,7 @@ export function PortRow({ port, expanded, onToggleExpand, onRequestKill, onOpenT
       </div>
 
       {/* Line 2: actions, each with a tooltip explaining the icon. */}
-      <div className="mt-1.5 flex items-center gap-1">
+      <div className="mt-1.5 flex items-center justify-end gap-1">
         <Tooltip label={t("ports.openBrowser")} side="top">
           <button
             type="button"
