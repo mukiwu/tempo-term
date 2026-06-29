@@ -5,6 +5,7 @@ import { useUpdaterStore } from "@/stores/updaterStore";
 import { useSystemStats } from "@/modules/sysmon/lib/useSystemStats";
 import { formatBytes, formatPercent, formatRate, ramPercent } from "@/modules/sysmon/lib/format";
 import { Tooltip } from "@/components/Tooltip";
+import { PortsIndicator } from "@/modules/ports/PortsIndicator";
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -54,27 +55,29 @@ export function StatusBar() {
         </span>
       )}
 
-      {showIndicator && (
+      <div className="ml-auto flex items-center gap-1">
+        <PortsIndicator />
+        {showIndicator && (
+          <button
+            type="button"
+            title={t("statusBar.updateAvailable")}
+            aria-label={t("statusBar.updateAvailable")}
+            onClick={openModal}
+            className="flex h-5 items-center gap-1 rounded px-1.5 text-accent transition-colors hover:bg-bg-elevated"
+          >
+            <ArrowUpCircle size={13} strokeWidth={2} />
+          </button>
+        )}
         <button
           type="button"
-          title={t("statusBar.updateAvailable")}
-          aria-label={t("statusBar.updateAvailable")}
-          onClick={openModal}
-          className="ml-auto flex h-5 items-center gap-1 rounded px-1.5 text-accent transition-colors hover:bg-bg-elevated"
+          title={t("nav.settings")}
+          aria-label={t("nav.settings")}
+          onClick={() => setSettingsOpen(true)}
+          className="flex h-5 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:text-fg"
         >
-          <ArrowUpCircle size={13} strokeWidth={2} />
+          <Settings size={14} strokeWidth={1.75} />
         </button>
-      )}
-
-      <button
-        type="button"
-        title={t("nav.settings")}
-        aria-label={t("nav.settings")}
-        onClick={() => setSettingsOpen(true)}
-        className={`${showIndicator ? "" : "ml-auto"} flex h-5 w-6 items-center justify-center rounded text-fg-subtle transition-colors hover:text-fg`}
-      >
-        <Settings size={14} strokeWidth={1.75} />
-      </button>
+      </div>
     </footer>
   );
 }
