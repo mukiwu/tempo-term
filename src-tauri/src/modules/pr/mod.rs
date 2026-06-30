@@ -102,32 +102,75 @@ fn remote_origin_url(cwd: &str) -> Option<String> {
     remote.url().map(str::to_string)
 }
 
-/// Directories to search for a CLI binary. A GUI launch (Finder/Dock) hands the
-/// app a minimal PATH that omits Homebrew and other user install dirs, so we
-/// append the usual locations. Pure so it can be tested without the real env.
-fn cli_search_dirs(path_env: Option<&str>, home: Option<&str>) -> Vec<PathBuf> {
+/// Directories to search for a CLI binary, on top of `PATH`. A GUI launch hands
+/// the app a reduced environment that can omit user install dirs — Homebrew on
+/// macOS, winget/scoop/choco shims on Windows — so we append the usual
+/// per-platform locations. `windows` selects the platform layout; pure so it can
+/// be tested on any host without the real env.
+fn cli_search_dirs(path_env: Option<&str>, home: Option<&str>, windows: bool) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = match path_env {
         Some(path) => std::env::split_paths(path).collect(),
         None => Vec::new(),
     };
-    for extra in ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"] {
-        dirs.push(PathBuf::from(extra));
-    }
-    if let Some(home) = home {
-        dirs.push(PathBuf::from(home).join(".local").join("bin"));
+    if windows {
+        // winget/MSI land in Program Files; chocolatey shims its own bin.
+        for extra in [
+            r"C:\Program Files\GitHub CLI",
+            r"C:\Program Files (x86)\GitHub CLI",
+            r"C:\ProgramData\chocolatey\bin",
+        ] {
+            dirs.push(PathBuf::from(extra));
+        }
+        if let Some(home) = home {
+            // scoop puts shims under the user profile.
+            dirs.push(PathBuf::from(home).join("scoop").join("shims"));
+        }
+    } else {
+        for extra in ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"] {
+            dirs.push(PathBuf::from(extra));
+        }
+        if let Some(home) = home {
+            dirs.push(PathBuf::from(home).join(".local").join("bin"));
+        }
     }
     dirs
 }
 
+/// Candidate file names for an executable. Windows binaries carry an extension
+/// (`gh.exe`), so a bare `gh` never matches on disk — try the common executable
+/// extensions there; elsewhere the stem itself is the only candidate. Pure for
+/// testing.
+fn exe_names(stem: &str, windows: bool) -> Vec<String> {
+    if windows {
+        [".exe", ".cmd", ".bat"]
+            .iter()
+            .map(|ext| format!("{stem}{ext}"))
+            .collect()
+    } else {
+        vec![stem.to_string()]
+    }
+}
+
 /// Absolute path to the `gh` binary, searching PATH plus the common install
-/// dirs a GUI launch drops, or None when it isn't installed.
+/// dirs a GUI launch drops, or None when it isn't installed. On Windows this
+/// resolves `gh.exe` (a bare `gh` file never exists there) and honours
+/// `USERPROFILE` as the home dir, since `HOME` is usually unset.
 fn find_gh() -> Option<PathBuf> {
     let path_env = std::env::var("PATH").ok();
-    let home = std::env::var("HOME").ok();
-    cli_search_dirs(path_env.as_deref(), home.as_deref())
-        .into_iter()
-        .map(|dir| dir.join("gh"))
-        .find(|candidate| candidate.is_file())
+    let home = std::env::var("HOME")
+        .ok()
+        .or_else(|| std::env::var("USERPROFILE").ok());
+    let windows = cfg!(windows);
+    let names = exe_names("gh", windows);
+    for dir in cli_search_dirs(path_env.as_deref(), home.as_deref(), windows) {
+        for name in &names {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 /// Whether the `gh` CLI is available.
@@ -289,8 +332,10 @@ mod tests {
     fn cli_search_dirs_adds_common_install_locations_to_a_minimal_path() {
         // A GUI launch (Finder/Dock) hands the app a minimal PATH without
         // Homebrew, so gh "isn't found" even when installed. The search must
-        // still cover the usual install dirs.
-        let dirs = cli_search_dirs(Some("/usr/bin:/bin"), Some("/Users/me"));
+        // still cover the usual install dirs. Build PATH with join_paths so the
+        // host's separator is used and split_paths round-trips on any runner.
+        let path = std::env::join_paths(["/usr/bin", "/bin"]).unwrap();
+        let dirs = cli_search_dirs(path.to_str(), Some("/Users/me"), false);
         assert!(dirs.contains(&PathBuf::from("/usr/bin"))); // PATH entries kept
         assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin"))); // Apple Silicon brew
         assert!(dirs.contains(&PathBuf::from("/usr/local/bin"))); // Intel brew
@@ -299,8 +344,31 @@ mod tests {
 
     #[test]
     fn cli_search_dirs_works_without_a_path_or_home() {
-        let dirs = cli_search_dirs(None, None);
+        let dirs = cli_search_dirs(None, None, false);
         assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
         assert!(!dirs.iter().any(|d| d.ends_with(".local/bin")));
+    }
+
+    #[test]
+    fn cli_search_dirs_windows_uses_windows_install_locations() {
+        // The Windows GUI launch can hand the app a PATH without the gh install
+        // dir, so the search must cover the standard Windows locations and not
+        // leak the macOS ones. Build expected dirs with join (not backslash
+        // literals) so component comparison holds on a non-Windows host too.
+        let home = PathBuf::from(r"C:\Users\me");
+        let dirs = cli_search_dirs(None, Some(r"C:\Users\me"), true);
+        assert!(dirs.contains(&PathBuf::from(r"C:\Program Files\GitHub CLI")));
+        assert!(dirs.contains(&home.join("scoop").join("shims"))); // scoop shims
+        assert!(!dirs.contains(&PathBuf::from("/opt/homebrew/bin"))); // no macOS leak
+    }
+
+    #[test]
+    fn exe_names_appends_windows_extensions_only_on_windows() {
+        // The heart of issue #87: on Windows the binary is gh.exe, so probing a
+        // bare "gh" never matches and gh is reported missing even when on PATH.
+        assert_eq!(exe_names("gh", false), vec!["gh".to_string()]);
+        let win = exe_names("gh", true);
+        assert!(win.contains(&"gh.exe".to_string()));
+        assert!(!win.contains(&"gh".to_string()));
     }
 }
