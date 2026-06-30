@@ -136,6 +136,17 @@ describe("terminalFontFamilyFor", () => {
     expect(chain.toLowerCase()).not.toContain("meslo");
   });
 
+  it("the 'none' sentinel disables icon fallback even when a suggestion is detected", () => {
+    const enabled = terminalFontFamilyFor("JetBrains Mono", "", null, "", "MesloLGS NF");
+    const disabled = terminalFontFamilyFor("JetBrains Mono", "", null, "none", "MesloLGS NF");
+    expect(enabled).toContain("MesloLGS NF");
+    expect(disabled).not.toContain("MesloLGS NF");
+    // 'none' is a sentinel, not a real family — it must never land in the chain.
+    const parts = disabled.split(", ");
+    expect(parts).not.toContain("none");
+    expect(parts).not.toContain('"none"');
+  });
+
   it("prefers the user's explicit CJK fallback over the system suggestion", () => {
     const parts = terminalFontFamilyFor(
       "JetBrains Mono",

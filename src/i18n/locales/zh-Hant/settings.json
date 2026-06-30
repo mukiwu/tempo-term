@@ -84,6 +84,8 @@
     "iconFont": "圖示字體",
     "iconFontHint": "選用的 Nerd Font／Powerline 字體，用來補上主要字體沒有的圖示字符",
     "iconFontNone": "不使用",
+    "iconFontSystemDefault": "系統預設（{{name}}）",
+    "iconFontSystemDefaultEmpty": "系統預設",
     "fontSize": "字級大小",
     "preview": "預覽",
     "previewText": "The quick brown fox 中文字體預覽 0123",

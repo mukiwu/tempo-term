@@ -115,16 +115,22 @@ pub fn pick_icon_fallback(fonts: &[FontInfo], priority: &[&str]) -> Option<Strin
             return Some(name.to_string());
         }
     }
-    if let Some(f) = fonts
-        .iter()
-        .find(|f| looks_like_icon_font(&f.family) && f.monospace)
-    {
-        return Some(f.family.clone());
+    // Single pass over fonts: prefer the first Mono variant, but remember the
+    // first proportional one as a fallback. Calls looks_like_icon_font (and its
+    // to_lowercase allocation) at most once per family.
+    let mut first_proportional: Option<String> = None;
+    for f in fonts {
+        if !looks_like_icon_font(&f.family) {
+            continue;
+        }
+        if f.monospace {
+            return Some(f.family.clone());
+        }
+        if first_proportional.is_none() {
+            first_proportional = Some(f.family.clone());
+        }
     }
-    fonts
-        .iter()
-        .find(|f| looks_like_icon_font(&f.family))
-        .map(|f| f.family.clone())
+    first_proportional
 }
 
 #[cfg(test)]

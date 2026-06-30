@@ -93,10 +93,22 @@ export function buildTerminalFontFamily(input: FontChainInput): string {
 }
 
 /**
+ * Sentinel `userIconFallback` value: the user explicitly opted out of the
+ * icon font slot. Distinct from `""` (auto-detect, use the suggested family).
+ * Without this, an empty string would be falsy and `||` would silently fall
+ * back to the detected suggestion, making the "None" option a no-op.
+ */
+export const ICON_FALLBACK_DISABLED = "none";
+
+/**
  * Resolve the effective terminal font stack from user preferences and the
  * system-detected suggestions. For both the icon fallback and the CJK fallback,
  * an explicit user choice wins; an empty user value falls back to whatever the
  * backend detected (a Nerd Font for icons, a CJK monospace family for CJK).
+ *
+ * Icon fallback has a third state: the sentinel `ICON_FALLBACK_DISABLED`
+ * (`"none"`) skips the suggestion too, so the user can turn the slot off
+ * even when the backend detected a Nerd Font on the system.
  */
 export function terminalFontFamilyFor(
   primary: string,
@@ -106,7 +118,10 @@ export function terminalFontFamilyFor(
   suggestedIconFallback: string | null = null,
 ): string {
   const cjk = userCjkFallback.trim() || suggestedCjkFallback || undefined;
-  const icon = userIconFallback.trim() || suggestedIconFallback || undefined;
+  const icon =
+    userIconFallback === ICON_FALLBACK_DISABLED
+      ? undefined
+      : userIconFallback.trim() || suggestedIconFallback || undefined;
   return buildTerminalFontFamily({
     primary: primary.trim() || undefined,
     iconFallback: icon,

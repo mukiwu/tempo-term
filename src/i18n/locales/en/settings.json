@@ -84,6 +84,8 @@
     "iconFont": "Icon font",
     "iconFontHint": "Optional Nerd Font / Powerline font used to render icon glyphs the primary font lacks",
     "iconFontNone": "None",
+    "iconFontSystemDefault": "System default ({{name}})",
+    "iconFontSystemDefaultEmpty": "System default",
     "fontSize": "Font size",
     "preview": "Preview",
     "previewText": "The quick brown fox 中文字體預覽 0123",

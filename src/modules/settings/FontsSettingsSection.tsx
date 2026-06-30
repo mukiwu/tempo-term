@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import { Combobox } from "@/components/Combobox";
+import { ICON_FALLBACK_DISABLED } from "@/modules/fonts/lib/fontChain";
 import {
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
@@ -31,6 +32,20 @@ export function FontsSettingsSection() {
     () => (report?.fonts ?? []).filter((f) => f.monospace),
     [report],
   );
+
+  const detectedIcon = report?.suggested_icon_fallback;
+  const iconNoneLabel = t("fonts.iconFontNone");
+  const iconAutoLabel = detectedIcon
+    ? t("fonts.iconFontSystemDefault", { name: detectedIcon })
+    : t("fonts.iconFontSystemDefaultEmpty");
+  const iconFontOptions = useMemo(
+    () => [iconAutoLabel, iconNoneLabel, ...(report?.fonts ?? []).map((f) => f.family)],
+    [iconAutoLabel, iconNoneLabel, report],
+  );
+  const iconFontDisplayValue =
+    iconFont === ICON_FALLBACK_DISABLED
+      ? iconNoneLabel
+      : iconFont || iconAutoLabel;
 
   const previewFamily = useFontStore(selectTerminalFontFamily);
 
@@ -99,11 +114,13 @@ export function FontsSettingsSection() {
         </label>
         <p className="mb-2 text-xs text-fg-muted">{t("fonts.iconFontHint")}</p>
         <Combobox
-          value={iconFont || t("fonts.iconFontNone")}
-          options={[t("fonts.iconFontNone"), ...(report?.fonts ?? []).map((f) => f.family)]}
-          onChange={(value) =>
-            setIconFont(value === t("fonts.iconFontNone") ? "" : value)
-          }
+          value={iconFontDisplayValue}
+          options={iconFontOptions}
+          onChange={(value) => {
+            if (value === iconAutoLabel) setIconFont("");
+            else if (value === iconNoneLabel) setIconFont(ICON_FALLBACK_DISABLED);
+            else setIconFont(value);
+          }}
           ariaLabel={t("fonts.iconFont")}
           className="w-72"
         />
