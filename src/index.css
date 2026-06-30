@@ -131,6 +131,30 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/*
+ * Focus ring policy. WKWebView (and Chromium/Firefox) paints a white UA focus
+ * ring on `:focus-visible`. After a mouse click the ring stays suppressed, but
+ * pressing a non-typing key like F1–F12 re-promotes the element to "keyboard
+ * focused" and the white box flashes in. Replace the UA ring with a calm
+ * accent ring on real keyboard navigation, and drop it entirely on the xterm
+ * terminal surface (xterm shows its own focus state via the cursor) and on
+ * inputs/textareas (they already paint their own focused border via Tailwind
+ * `focus:border-accent`).
+ */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+.xterm:focus-visible,
+.xterm *:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[contenteditable]:focus-visible {
+  outline: none;
+}
+
 /* Rendered note (markdown) typography */
 .note-md {
   color: var(--color-fg);
