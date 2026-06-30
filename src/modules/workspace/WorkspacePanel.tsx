@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -18,6 +18,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTabsStore, type Tab, type TabKind } from "@/stores/tabsStore";
+import { ContextMenu } from "@/components/ContextMenu";
+import { tabContextMenuItems } from "@/components/tabContextMenuItems";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus";
@@ -218,14 +220,21 @@ function SessionRow({
 }
 
 function TabCard({ tab, index }: { tab: Tab; index: number }) {
+  const { t } = useTranslation();
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
+  const setTabTitle = useTabsStore((s) => s.setTabTitle);
+  const closeTab = useTabsStore((s) => s.closeTab);
   const statuses = useSessionStatusStore((s) => s.statuses);
   const leafAgents = useSessionStatusStore((s) => s.agents);
   const infos = useWorktreeStore((s) => s.infos);
   const titles = useTitlesStore((s) => s.titles);
   const prs = usePrStore((s) => s.prs);
   const card = useSettingsStore((s) => s.workspaceCard);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const active = tab.id === activeId;
   const cwd = deriveTabCwd(tab);
   // Each pane running an agent is its own session. With two or more, the header
@@ -244,10 +253,36 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
   const Icon = tabIcon(tab.kind);
   const label = agentLabel(primary?.agent);
 
+  function startRename() {
+    setDraft(title);
+    setEditing(true);
+  }
+
+  function commitRename() {
+    const next = draft.trim();
+    if (next) {
+      setTabTitle(tab.id, next);
+    }
+    setEditing(false);
+  }
+
+  // Focus + select the inline rename input once it mounts so the user can type
+  // a new name immediately, matching the main TabBar's rename UX.
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
   return (
     <button
       type="button"
       onClick={() => setActive(tab.id)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenu({ x: event.clientX, y: event.clientY });
+      }}
       className={`flex w-full items-stretch gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
         active
           ? "border-accent bg-accent/10 text-fg"
@@ -260,7 +295,24 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{title}</span>
+          {editing ? (
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={commitRename}
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+              onContextMenu={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") commitRename();
+                if (event.key === "Escape") setEditing(false);
+              }}
+              className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
+            />
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{title}</span>
+          )}
           {!multi && card.status && status && <StatusBadge status={status} />}
           {!multi && card.status && status && label && (
             <span className="shrink-0 text-[11px] text-fg-subtle">{label}</span>
@@ -285,6 +337,17 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
           </span>
         )}
       </span>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={tabContextMenuItems(t, {
+            onRename: startRename,
+            onClose: () => closeTab(tab.id),
+          })}
+        />
+      )}
     </button>
   );
 }

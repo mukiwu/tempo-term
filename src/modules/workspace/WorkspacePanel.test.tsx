@@ -288,4 +288,32 @@ describe("WorkspacePanel", () => {
     expect(within(beta).getByText("2")).toBeInTheDocument();
     expect(screen.queryByText("alpha")).toBeNull();
   });
+
+  it("opens a tab context menu on right-click with rename and close items", () => {
+    render(<WorkspacePanel />);
+    const alpha = screen.getByRole("button", { name: /alpha/ });
+    fireEvent.contextMenu(alpha);
+    // The menu items match those in the main TabBar (Rename Tab / Close Tab).
+    expect(screen.getByRole("menuitem", { name: /Rename Tab/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /Close Tab/i })).toBeInTheDocument();
+  });
+
+  it("closes a tab from the sidebar context menu", () => {
+    render(<WorkspacePanel />);
+    const beta = screen.getByRole("button", { name: /beta/ });
+    fireEvent.contextMenu(beta);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Close Tab/i }));
+    expect(useTabsStore.getState().tabs.find((tab) => tab.id === "t2")).toBeUndefined();
+  });
+
+  it("renames a tab from the sidebar context menu", () => {
+    render(<WorkspacePanel />);
+    const alpha = screen.getByRole("button", { name: /alpha/ });
+    fireEvent.contextMenu(alpha);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename Tab/i }));
+    const input = screen.getByDisplayValue("alpha");
+    fireEvent.change(input, { target: { value: "renamed" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(useTabsStore.getState().tabs.find((tab) => tab.id === "t1")?.title).toBe("renamed");
+  });
 });

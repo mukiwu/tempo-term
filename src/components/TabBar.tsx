@@ -7,7 +7,6 @@ import {
   Globe,
   LayoutGrid,
   PanelLeft,
-  Pencil,
   Plus,
   ScrollText,
   SquareTerminal,
@@ -36,6 +35,7 @@ import { IS_MAC } from "@/lib/platform";
 import { SpaceDropdown } from "./SpaceDropdown";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu } from "./ContextMenu";
+import { tabContextMenuItems } from "./tabContextMenuItems";
 
 // Module-level so the reference stays stable across renders. Passing an inline
 // options object would make useSensor/useSensors return a new sensors array on
@@ -199,23 +199,10 @@ function TabItem({ id }: { id: string }) {
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
-          items={[
-            {
-              id: "rename",
-              label: t("actions.renameTab"),
-              icon: Pencil,
-              group: 0,
-              onSelect: startRename,
-            },
-            {
-              id: "close",
-              label: t("actions.closeTab"),
-              icon: X,
-              group: 1,
-              danger: true,
-              onSelect: requestClose,
-            },
-          ]}
+          items={tabContextMenuItems(t, {
+            onRename: startRename,
+            onClose: requestClose,
+          })}
         />
       )}
     </div>
