@@ -82,6 +82,51 @@ pub fn has_cjk_fallback(fonts: &[FontInfo]) -> bool {
     fonts.iter().any(|f| f.has_cjk)
 }
 
+/// Curated order of common Nerd Font / Powerline families. The first one
+/// actually installed becomes the default icon fallback (Powerline arrows,
+/// devicons, file-type glyphs). `Mono` variants render the icons inside a
+/// single cell, which is what xterm wants.
+pub const RECOMMENDED_ICON_FONTS: [&str; 8] = [
+    "MesloLGS NF",
+    "FiraCode Nerd Font Mono",
+    "JetBrainsMono Nerd Font Mono",
+    "Hack Nerd Font Mono",
+    "BlexMono Nerd Font Mono",
+    "UbuntuMono Nerd Font Mono",
+    "Symbols Nerd Font Mono",
+    "Symbols Nerd Font",
+];
+
+/// Whether `family` looks like an icon-glyph font (Nerd Font, Powerline). This
+/// is a name heuristic because we can't probe Private Use Area coverage cheaply
+/// in font-kit; in practice Nerd Fonts uniformly carry "Nerd Font" or " NF" in
+/// their family name.
+fn looks_like_icon_font(family: &str) -> bool {
+    let lower = family.to_lowercase();
+    lower.contains("nerd font") || lower.contains("powerline") || lower.ends_with(" nf")
+}
+
+/// Pick the best available icon-glyph fallback. Priority order: a curated
+/// family that is installed, then any Nerd-Font-looking family (Mono variant
+/// preferred). Returns None if nothing icon-capable is installed.
+pub fn pick_icon_fallback(fonts: &[FontInfo], priority: &[&str]) -> Option<String> {
+    for &name in priority {
+        if fonts.iter().any(|f| f.family == name) {
+            return Some(name.to_string());
+        }
+    }
+    if let Some(f) = fonts
+        .iter()
+        .find(|f| looks_like_icon_font(&f.family) && f.monospace)
+    {
+        return Some(f.family.clone());
+    }
+    fonts
+        .iter()
+        .find(|f| looks_like_icon_font(&f.family))
+        .map(|f| f.family.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,6 +188,51 @@ mod tests {
     fn detects_presence_of_cjk_fallback() {
         let fonts = vec![font("PingFang TC", false, true)];
         assert!(has_cjk_fallback(&fonts));
+    }
+
+    #[test]
+    fn picks_first_installed_priority_icon_font() {
+        let fonts = vec![
+            font("Menlo", true, false),
+            font("FiraCode Nerd Font Mono", true, false),
+            font("MesloLGS NF", true, false),
+        ];
+        // MesloLGS NF is first in RECOMMENDED_ICON_FONTS, so it wins.
+        assert_eq!(
+            pick_icon_fallback(&fonts, &RECOMMENDED_ICON_FONTS),
+            Some("MesloLGS NF".to_string())
+        );
+    }
+
+    #[test]
+    fn falls_back_to_any_installed_nerd_font_when_none_in_priority() {
+        let fonts = vec![
+            font("Menlo", true, false),
+            font("SomeRandom Nerd Font Mono", true, false),
+        ];
+        assert_eq!(
+            pick_icon_fallback(&fonts, &RECOMMENDED_ICON_FONTS),
+            Some("SomeRandom Nerd Font Mono".to_string())
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_icon_font_installed() {
+        let fonts = vec![font("Menlo", true, false), font("Arial", false, false)];
+        assert_eq!(pick_icon_fallback(&fonts, &RECOMMENDED_ICON_FONTS), None);
+    }
+
+    #[test]
+    fn prefers_monospace_nerd_font_over_proportional_one() {
+        let fonts = vec![
+            font("Menlo", true, false),
+            font("SomeRandom Nerd Font Propo", false, false),
+            font("SomeRandom Nerd Font Mono", true, false),
+        ];
+        assert_eq!(
+            pick_icon_fallback(&fonts, &RECOMMENDED_ICON_FONTS),
+            Some("SomeRandom Nerd Font Mono".to_string())
+        );
     }
 
     #[test]

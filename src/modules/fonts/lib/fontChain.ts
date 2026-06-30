@@ -15,6 +15,14 @@
 
 export interface FontChainInput {
   primary?: string;
+  /**
+   * Optional icon/Powerline font (e.g. a Nerd Font) consulted AFTER the Latin
+   * monospace anchors. Sitting after the anchors (not before) means that when
+   * `primary` is empty the system default (Menlo / ui-monospace) still wins
+   * for ASCII; the icon font only catches the Private Use Area glyphs that
+   * none of the anchors carry.
+   */
+  iconFallback?: string;
   cjkFallback?: string;
 }
 
@@ -74,6 +82,7 @@ export function buildTerminalFontFamily(input: FontChainInput): string {
   for (const anchor of LATIN_MONO_ANCHORS) {
     push(anchor);
   }
+  push(input.iconFallback);
   push(input.cjkFallback);
   for (const fallback of CJK_FALLBACKS) {
     push(fallback);
@@ -85,17 +94,22 @@ export function buildTerminalFontFamily(input: FontChainInput): string {
 
 /**
  * Resolve the effective terminal font stack from user preferences and the
- * system-detected suggestion. An explicit CJK fallback choice wins; otherwise
- * fall back to whatever CJK monospace font the backend detected.
+ * system-detected suggestions. For both the icon fallback and the CJK fallback,
+ * an explicit user choice wins; an empty user value falls back to whatever the
+ * backend detected (a Nerd Font for icons, a CJK monospace family for CJK).
  */
 export function terminalFontFamilyFor(
   primary: string,
   userCjkFallback: string,
   suggestedCjkFallback: string | null,
+  userIconFallback: string = "",
+  suggestedIconFallback: string | null = null,
 ): string {
   const cjk = userCjkFallback.trim() || suggestedCjkFallback || undefined;
+  const icon = userIconFallback.trim() || suggestedIconFallback || undefined;
   return buildTerminalFontFamily({
     primary: primary.trim() || undefined,
+    iconFallback: icon,
     cjkFallback: cjk ?? undefined,
   });
 }

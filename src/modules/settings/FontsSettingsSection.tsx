@@ -11,8 +11,17 @@ import {
 
 export function FontsSettingsSection() {
   const { t } = useTranslation("settings");
-  const { primaryFont, fontSize, report, loading, setPrimaryFont, setFontSize, loadReport } =
-    useFontStore();
+  const {
+    primaryFont,
+    iconFont,
+    fontSize,
+    report,
+    loading,
+    setPrimaryFont,
+    setIconFont,
+    setFontSize,
+    loadReport,
+  } = useFontStore();
 
   useEffect(() => {
     void loadReport();
@@ -68,7 +77,7 @@ export function FontsSettingsSection() {
       </div>
 
       {/* Primary font */}
-      <div>
+      <div className="mb-6">
         <label className="mb-2 block text-sm font-medium text-fg">
           {t("fonts.primary")}
         </label>
@@ -79,6 +88,23 @@ export function FontsSettingsSection() {
             setPrimaryFont(value === t("fonts.systemDefault") ? "" : value)
           }
           ariaLabel={t("fonts.primary")}
+          className="w-72"
+        />
+      </div>
+
+      {/* Icon font (Nerd Font / Powerline glyphs) */}
+      <div>
+        <label className="mb-2 block text-sm font-medium text-fg">
+          {t("fonts.iconFont")}
+        </label>
+        <p className="mb-2 text-xs text-fg-muted">{t("fonts.iconFontHint")}</p>
+        <Combobox
+          value={iconFont || t("fonts.iconFontNone")}
+          options={[t("fonts.iconFontNone"), ...(report?.fonts ?? []).map((f) => f.family)]}
+          onChange={(value) =>
+            setIconFont(value === t("fonts.iconFontNone") ? "" : value)
+          }
+          ariaLabel={t("fonts.iconFont")}
           className="w-72"
         />
       </div>
