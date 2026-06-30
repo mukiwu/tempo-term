@@ -20,6 +20,7 @@ import {
 import { useTabsStore, type Tab, type TabKind } from "@/stores/tabsStore";
 import { ContextMenu } from "@/components/ContextMenu";
 import { tabContextMenuItems } from "@/components/tabContextMenuItems";
+import { useTabCloseRequest } from "@/components/useTabCloseRequest";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus";
@@ -224,7 +225,7 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
   const setTabTitle = useTabsStore((s) => s.setTabTitle);
-  const closeTab = useTabsStore((s) => s.closeTab);
+  const { requestClose, confirmCloseDialog } = useTabCloseRequest(tab);
   const statuses = useSessionStatusStore((s) => s.statuses);
   const leafAgents = useSessionStatusStore((s) => s.agents);
   const infos = useWorktreeStore((s) => s.infos);
@@ -344,10 +345,11 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
           onClose={() => setMenu(null)}
           items={tabContextMenuItems(t, {
             onRename: startRename,
-            onClose: () => closeTab(tab.id),
+            onClose: requestClose,
           })}
         />
       )}
+      {confirmCloseDialog}
     </button>
   );
 }

@@ -28,12 +28,11 @@ import {
   horizontalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
-import { useTabsStore, tabHasDirtyEditor, type Tab } from "@/stores/tabsStore";
-import { useEditorStore } from "@/modules/editor/store/editorStore";
+import { useTabsStore, type Tab } from "@/stores/tabsStore";
+import { useTabCloseRequest } from "./useTabCloseRequest";
 import { useUiStore } from "@/stores/uiStore";
 import { IS_MAC } from "@/lib/platform";
 import { SpaceDropdown } from "./SpaceDropdown";
-import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenu } from "./ContextMenu";
 import { tabContextMenuItems } from "./tabContextMenuItems";
 
@@ -67,18 +66,12 @@ function TabItem({ id }: { id: string }) {
   const tab = useTabsStore((s) => s.tabs.find((x) => x.id === id));
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
-  const closeTab = useTabsStore((s) => s.closeTab);
   const setTabTitle = useTabsStore((s) => s.setTabTitle);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id });
-  // A tab is dirty when any of its editor panes has unsaved changes.
-  const dirty = useEditorStore((s) => {
-    if (!tab) return false;
-    return tabHasDirtyEditor(tab, s.buffers);
-  });
+  const { dirty, requestClose, confirmCloseDialog } = useTabCloseRequest(tab);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const [confirmClose, setConfirmClose] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   if (!tab) {
     return null;
@@ -102,17 +95,6 @@ function TabItem({ id }: { id: string }) {
       setTabTitle(tab.id, draft.trim());
     }
     setEditing(false);
-  }
-
-  function requestClose() {
-    if (!tab) {
-      return;
-    }
-    if (dirty) {
-      setConfirmClose(true);
-    } else {
-      closeTab(tab.id);
-    }
   }
 
   return (
@@ -181,19 +163,7 @@ function TabItem({ id }: { id: string }) {
           <X size={13} />
         )}
       </button>
-      {confirmClose && (
-        <ConfirmDialog
-          title={t("editor:closeUnsavedTitle")}
-          message={t("editor:closeUnsavedMessage")}
-          confirmLabel={t("editor:discardClose")}
-          cancelLabel={t("actions.cancel")}
-          onConfirm={() => {
-            setConfirmClose(false);
-            closeTab(tab.id);
-          }}
-          onCancel={() => setConfirmClose(false)}
-        />
-      )}
+      {confirmCloseDialog}
       {menu && (
         <ContextMenu
           x={menu.x}
