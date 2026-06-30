@@ -102,6 +102,12 @@ interface TabsState {
     content: PaneContent,
     direction: SplitDirection,
   ) => void;
+  /**
+   * Follow an in-preview navigation: update the pane's previewed url, and when
+   * the preview is the tab's whole content (single pane, not user-renamed),
+   * retitle the tab to the new host.
+   */
+  navigatePreview: (tabId: string, leafId: string, url: string) => void;
   /** Replace a pane's content in place (used when dropping a file onto it). */
   setPaneContent: (tabId: string, leafId: string, content: PaneContent) => void;
   /** Remember a terminal pane's current working directory for session restore. */
@@ -188,6 +194,18 @@ export function localPreviewFilePaths(tabs: Tab[]): string[] {
     }
   }
   return paths;
+}
+
+/**
+ * Title for a web preview tab: the URL's host (with port), falling back to the
+ * raw string when it can't be parsed (e.g. a `file://` local preview).
+ */
+function previewTitle(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
 }
 
 /** True when a tab is a single, unsplit leaf showing exactly `content`. */
@@ -462,17 +480,11 @@ export const useTabsStore = create<TabsState>()(
     const spaceId = get().ensureSpace();
     const id = nextTabId();
     const paneId = nextPaneId();
-    let host = url;
-    try {
-      host = new URL(url).host || url;
-    } catch {
-      host = url;
-    }
     const tab: Tab = {
       id,
       spaceId,
       kind: "preview",
-      title: host,
+      title: previewTitle(url),
       paneTree: leaf(paneId, { kind: "preview", url }),
       activeLeafId: paneId,
     };
@@ -733,6 +745,36 @@ export const useTabsStore = create<TabsState>()(
           : tab,
       ),
     })),
+
+  navigatePreview: (tabId, leafId, url) =>
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === tabId);
+      if (!tab) {
+        return state;
+      }
+      const current = findPaneContent(tab.paneTree, leafId);
+      // Only preview panes navigate; skip a no-op write so persistence is not
+      // churned when the url hasn't actually changed.
+      if (!current || current.kind !== "preview" || current.url === url) {
+        return state;
+      }
+      // The tab title follows the previewed site only when the preview fills the
+      // whole tab and the user hasn't given it a name of their own. In a split,
+      // the title belongs to the tab as a whole, not to one preview pane.
+      const isWholeTab = leafIds(tab.paneTree).length === 1;
+      const retitle = isWholeTab && !tab.renamed;
+      return {
+        tabs: state.tabs.map((t) =>
+          t.id === tabId
+            ? {
+                ...t,
+                title: retitle ? previewTitle(url) : t.title,
+                paneTree: setLeafPane(t.paneTree, leafId, { kind: "preview", url }),
+              }
+            : t,
+        ),
+      };
+    }),
 
   setTerminalCwd: (tabId, leafId, cwd) =>
     set((state) => {

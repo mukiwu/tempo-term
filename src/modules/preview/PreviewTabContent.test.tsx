@@ -3,7 +3,7 @@
 // useNativePreviewWebview (which touches Tauri APIs unavailable under jsdom), so
 // it is stubbed here and its reload() is captured to assert the file watcher
 // triggers a reload on a matching change and stays put on a non-matching one.
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
@@ -52,5 +52,40 @@ describe("PreviewTabContent auto-reload", () => {
       changeHandler?.("/proj/other.html");
     });
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+describe("PreviewTabContent navigation", () => {
+  it("notifies onNavigate with the trimmed url when the address is submitted", () => {
+    const onNavigate = vi.fn();
+    const { getByRole } = render(
+      <PreviewTabContent
+        url="http://localhost:3000"
+        leafId="pane-1"
+        visible
+        onNavigate={onNavigate}
+      />,
+    );
+    const input = getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "  https://muki.tw/wp-admin  " } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onNavigate).toHaveBeenCalledWith("https://muki.tw/wp-admin");
+  });
+
+  it("adds a scheme to a bare host before navigating and reflects it in the bar", () => {
+    const onNavigate = vi.fn();
+    const { getByRole } = render(
+      <PreviewTabContent
+        url="http://localhost:3000"
+        leafId="pane-1"
+        visible
+        onNavigate={onNavigate}
+      />,
+    );
+    const input = getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "google.com.tw" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onNavigate).toHaveBeenCalledWith("https://google.com.tw");
+    expect(input.value).toBe("https://google.com.tw");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLocalUrl, isWebUrl } from "./url";
+import { isLocalUrl, isWebUrl, normalizeAddressInput } from "./url";
 
 describe("isWebUrl", () => {
   it("treats an https URL as a web URL", () => {
@@ -37,5 +37,38 @@ describe("isLocalUrl", () => {
   it("returns false for non-URLs", () => {
     expect(isLocalUrl("not a url")).toBe(false);
     expect(isLocalUrl("")).toBe(false);
+  });
+});
+
+describe("normalizeAddressInput", () => {
+  it("adds https:// to a bare public host", () => {
+    expect(normalizeAddressInput("google.com.tw")).toBe("https://google.com.tw");
+  });
+
+  it("keeps the path and query when adding the scheme", () => {
+    expect(normalizeAddressInput("google.com.tw/search?q=a")).toBe(
+      "https://google.com.tw/search?q=a",
+    );
+  });
+
+  it("adds http:// to localhost, loopback and IPv4 hosts (dev servers)", () => {
+    expect(normalizeAddressInput("localhost:3000")).toBe("http://localhost:3000");
+    expect(normalizeAddressInput("127.0.0.1:8080/admin")).toBe("http://127.0.0.1:8080/admin");
+    expect(normalizeAddressInput("192.168.1.5")).toBe("http://192.168.1.5");
+  });
+
+  it("leaves an input that already has a scheme untouched", () => {
+    expect(normalizeAddressInput("https://muki.tw/wp-admin")).toBe("https://muki.tw/wp-admin");
+    expect(normalizeAddressInput("http://localhost:3000")).toBe("http://localhost:3000");
+    expect(normalizeAddressInput("file:///x/index.html")).toBe("file:///x/index.html");
+  });
+
+  it("leaves an absolute file path for the asset resolver to handle", () => {
+    expect(normalizeAddressInput("/Users/me/page.html")).toBe("/Users/me/page.html");
+  });
+
+  it("trims and returns empty for blank input", () => {
+    expect(normalizeAddressInput("  https://muki.tw  ")).toBe("https://muki.tw");
+    expect(normalizeAddressInput("   ")).toBe("");
   });
 });

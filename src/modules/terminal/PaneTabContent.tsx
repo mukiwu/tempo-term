@@ -58,6 +58,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const resizePane = useTabsStore((s) => s.resizePane);
   const splitPaneWith = useTabsStore((s) => s.splitPaneWith);
   const setPaneContent = useTabsStore((s) => s.setPaneContent);
+  const navigatePreview = useTabsStore((s) => s.navigatePreview);
   const setTerminalCwd = useTabsStore((s) => s.setTerminalCwd);
   const closePane = useTabsStore((s) => s.closePane);
   const openHtmlPreview = useTabsStore((s) => s.openHtmlPreview);
@@ -274,6 +275,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                       dragging: draggingSplitterId !== null,
                       anyOverlay,
                     })}
+                    onNavigate={(url) => navigatePreview(tab.id, pane.id, url)}
                   />
                 ) : pane.content.kind === "git-graph" ? (
                   <GitGraphTabContent />

@@ -60,6 +60,69 @@ describe("openEditorPaths", () => {
   });
 });
 
+describe("navigatePreview", () => {
+  beforeEach(reset);
+
+  it("updates a single-pane preview tab's url and title to the new host", () => {
+    const id = useTabsStore.getState().openPreviewTab("http://localhost:3000");
+    const leafId = activeTab().activeLeafId;
+    expect(activeTab().title).toBe("localhost:3000");
+
+    useTabsStore.getState().navigatePreview(id, leafId, "https://muki.tw/wp-admin");
+
+    const tab = activeTab();
+    expect(firstLeafContent(tab)).toEqual({
+      kind: "preview",
+      url: "https://muki.tw/wp-admin",
+    });
+    expect(tab.title).toBe("muki.tw");
+  });
+
+  it("updates only the url, not the tab title, when the preview is one pane of several", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/a/b.ts");
+    const editorLeafId = activeTab().activeLeafId;
+    useTabsStore
+      .getState()
+      .splitPaneWith(tabId, editorLeafId, { kind: "preview", url: "http://localhost:3000" }, "row");
+    const previewLeafId = activeTab().activeLeafId;
+
+    useTabsStore.getState().navigatePreview(tabId, previewLeafId, "https://muki.tw/wp-admin");
+
+    const tab = activeTab();
+    expect(findPaneContent(tab.paneTree, previewLeafId)).toEqual({
+      kind: "preview",
+      url: "https://muki.tw/wp-admin",
+    });
+    expect(tab.title).toBe("b.ts");
+  });
+
+  it("keeps a user-renamed preview tab's title when navigating", () => {
+    const id = useTabsStore.getState().openPreviewTab("http://localhost:3000");
+    const leafId = activeTab().activeLeafId;
+    useTabsStore.getState().setTabTitle(id, "My Site");
+
+    useTabsStore.getState().navigatePreview(id, leafId, "https://muki.tw/wp-admin");
+
+    const tab = activeTab();
+    expect(firstLeafContent(tab)).toEqual({
+      kind: "preview",
+      url: "https://muki.tw/wp-admin",
+    });
+    expect(tab.title).toBe("My Site");
+  });
+
+  it("is a no-op when the leaf is not a preview pane", () => {
+    const id = useTabsStore.getState().newTerminalTab("/a/proj");
+    const leafId = activeTab().activeLeafId;
+
+    useTabsStore.getState().navigatePreview(id, leafId, "https://muki.tw");
+
+    const tab = activeTab();
+    expect(tab.title).toBe("proj");
+    expect(firstLeafContent(tab).kind).toBe("terminal");
+  });
+});
+
 describe("tabsStore", () => {
   beforeEach(reset);
 

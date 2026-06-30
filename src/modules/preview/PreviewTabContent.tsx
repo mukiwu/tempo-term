@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RotateCw } from "lucide-react";
 import { onEditorFileChanged } from "@/modules/editor/lib/editorWatch";
+import { normalizeAddressInput } from "@/lib/url";
 import { previewLocalPath } from "./lib/htmlPreviewTarget";
 import { useNativePreviewWebview } from "./hooks/useNativePreviewWebview";
 
@@ -15,9 +16,14 @@ interface PreviewTabContentProps {
    * (inactive tab/space, split drag, or an open overlay).
    */
   visible: boolean;
+  /**
+   * Called when the user navigates via the address bar, so the owning pane can
+   * persist the new url and retitle the tab. Local-file previews don't supply it.
+   */
+  onNavigate?: (url: string) => void;
 }
 
-export function PreviewTabContent({ url, leafId, visible }: PreviewTabContentProps) {
+export function PreviewTabContent({ url, leafId, visible, onNavigate }: PreviewTabContentProps) {
   const { t } = useTranslation("preview");
   const [current, setCurrent] = useState(url);
   const [input, setInput] = useState(url);
@@ -65,7 +71,10 @@ export function PreviewTabContent({ url, leafId, visible }: PreviewTabContentPro
         className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2"
         onSubmit={(e) => {
           e.preventDefault();
-          setCurrent(input.trim());
+          const next = normalizeAddressInput(input);
+          setCurrent(next);
+          setInput(next);
+          onNavigate?.(next);
         }}
       >
         <input
