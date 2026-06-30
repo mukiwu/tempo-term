@@ -71,4 +71,18 @@ describe("normalizeAddressInput", () => {
     expect(normalizeAddressInput("  https://muki.tw  ")).toBe("https://muki.tw");
     expect(normalizeAddressInput("   ")).toBe("");
   });
+
+  it("isolates the host from query and userinfo before choosing the scheme", () => {
+    expect(normalizeAddressInput("localhost?x=foo:bar")).toBe("http://localhost?x=foo:bar");
+    expect(normalizeAddressInput("user:pass@localhost:3000")).toBe(
+      "http://user:pass@localhost:3000",
+    );
+  });
+
+  it("leaves Windows absolute paths untouched", () => {
+    expect(normalizeAddressInput("C:\\Users\\me\\page.html")).toBe("C:\\Users\\me\\page.html");
+    expect(normalizeAddressInput("\\\\server\\share\\page.html")).toBe(
+      "\\\\server\\share\\page.html",
+    );
+  });
 });

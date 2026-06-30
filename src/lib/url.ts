@@ -35,13 +35,22 @@ export function isLocalUrl(href: string): boolean {
  * it as a relative path and shows a blank page; add the scheme the host implies
  * (http for localhost/loopback/IPv4 dev servers, https otherwise). Inputs that
  * already carry a scheme (http://, https://, file://) or are absolute file
- * paths ("/Users/...") pass through untouched.
+ * paths (Unix "/Users/...", Windows "C:\..." or "\\unc") pass through untouched.
  */
 export function normalizeAddressInput(input: string): string {
   const value = input.trim();
-  if (value === "" || value.startsWith("/") || /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+  if (
+    value === "" ||
+    value.startsWith("/") ||
+    value.startsWith("\\") ||
+    /^[a-z]:[\\/]/i.test(value) ||
+    /^[a-z][a-z0-9+.-]*:\/\//i.test(value)
+  ) {
     return value;
   }
-  const host = value.split("/")[0].split(":")[0];
+  // Isolate the authority (drop any path/query/fragment, then userinfo) before
+  // reading the hostname, so a "?"/"@" in a query can't be mistaken for the host.
+  const authority = value.split(/[/?#]/)[0];
+  const host = (authority.split("@").pop() ?? authority).split(":")[0];
   return `${isLocalHostname(host) ? "http" : "https"}://${value}`;
 }
