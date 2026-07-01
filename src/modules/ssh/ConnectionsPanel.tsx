@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { Pencil, Plus, Server, SquarePlus, Trash2 } from "lucide-react";
+import { Columns2, Pencil, Plus, Server, SquarePlus, Trash2 } from "lucide-react";
 import { useConnectionsStore, type SshConnection, type PortForward } from "@/stores/connectionsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { ConnectionForm } from "@/modules/ssh/ConnectionForm";
@@ -275,6 +275,13 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            {
+              id: "open",
+              label: t("connectionsPanel.open"),
+              icon: Columns2,
+              group: 0,
+              onSelect: handleRowClick,
+            } satisfies ContextMenuItem,
             {
               id: "openInNewTab",
               label: t("connectionsPanel.openInNewTab"),

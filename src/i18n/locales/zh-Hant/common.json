@@ -144,6 +144,7 @@
     "emptyTitle": "尚無已儲存的連線",
     "emptyHint": "在這裡儲存 SSH 連線，即可一鍵連線",
     "alreadyOpenAlert": "{{name}} 已在連線中，無法重複建立連線",
+    "open": "在分割面板開啟",
     "openInNewTab": "在新分頁開啟",
     "forwards": {
       "session": "工作階段 {{id}}",

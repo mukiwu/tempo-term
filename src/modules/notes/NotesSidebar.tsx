@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
   ChevronRight,
+  Columns2,
   FilePlus,
   FolderPlus,
   FileText,
@@ -78,6 +79,18 @@ function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            {
+              id: "open",
+              label: t("open"),
+              icon: Columns2,
+              group: 0,
+              onSelect: () => {
+                const result = openFromSidebar({ kind: "note", noteId: note.path }, note.title || "Untitled");
+                if (result.status === "at-capacity") {
+                  setAtCapacity(true);
+                }
+              },
+            } satisfies ContextMenuItem,
             {
               id: "openInNewTab",
               label: t("openInNewTab"),

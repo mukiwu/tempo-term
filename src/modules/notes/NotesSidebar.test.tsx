@@ -70,6 +70,33 @@ describe("NotesSidebar at pane capacity", () => {
   });
 });
 
+describe("NotesSidebar context menu: open in split pane", () => {
+  beforeEach(() => {
+    useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+    useSettingsStore.setState({ notesFolderPath: "/notes" });
+    useNotesStore.setState({
+      tree: [
+        { kind: "note", name: "todo.md", title: "todo", path: "/notes/todo.md", isConflict: false },
+      ],
+    });
+  });
+
+  it("opens the note in split pane via right-click", () => {
+    render(<NotesSidebar />);
+
+    fireEvent.contextMenu(screen.getByText("todo"));
+    fireEvent.click(screen.getByText("open"));
+
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    const tab = useTabsStore.getState().tabs[0];
+    const pane = tab.paneTree;
+    expect(pane.kind === "leaf" && pane.pane).toMatchObject({
+      kind: "note",
+      noteId: "/notes/todo.md",
+    });
+  });
+});
+
 describe("NotesSidebar context menu: open in new tab", () => {
   beforeEach(() => {
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });

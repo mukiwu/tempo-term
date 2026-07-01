@@ -81,6 +81,32 @@ describe("ConnectionsPanel opening a connection", () => {
     expect(screen.getByText("paneCapacityAlert")).toBeInTheDocument();
   });
 
+  it("opens the connection via right-click 'open in split pane' menu item", () => {
+    render(<ConnectionsPanel />);
+
+    fireEvent.contextMenu(screen.getByText("prod-box"));
+    fireEvent.click(screen.getByText("connectionsPanel.open"));
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    const pane = tabs[0].paneTree;
+    expect(pane.kind === "leaf" && pane.pane).toMatchObject({
+      kind: "terminal",
+      ssh: { connectionId: "c1" },
+    });
+  });
+
+  it("shows 'already connected' dialog when right-clicking 'open in split pane' on an already-connected row", () => {
+    render(<ConnectionsPanel />);
+
+    fireEvent.click(screen.getByText("prod-box"));
+    fireEvent.contextMenu(screen.getByText("prod-box"));
+    fireEvent.click(screen.getByText("connectionsPanel.open"));
+
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(screen.getByText("connectionsPanel.alreadyOpenAlert:prod-box")).toBeInTheDocument();
+  });
+
   it("always opens a new tab via right-click, even when the connection is already open", () => {
     useTabsStore.getState().openEditorTab("/a.ts");
     render(<ConnectionsPanel />);

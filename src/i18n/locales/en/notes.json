@@ -3,6 +3,7 @@
   "newNote": "New note",
   "newFolder": "New folder",
   "deleteNote": "Delete note",
+  "open": "Open in split pane",
   "openInNewTab": "Open in new tab",
   "deleteFolder": "Delete folder",
   "renameFolderHint": "Double-click to rename",
