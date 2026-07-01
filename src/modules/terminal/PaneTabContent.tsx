@@ -6,7 +6,9 @@ import { dropPathsIntoTerminal, writeToTerminal } from "./lib/terminalBus";
 import {
   computeLayout,
   computeSplitters,
+  resolveDropZone,
   resolveTerminalCwd,
+  type DropZone,
   type PaneContent,
   type SplitterInfo,
 } from "./lib/terminalLayout";
@@ -29,7 +31,8 @@ const GitGraphTabContent = lazy(() =>
   })),
 );
 import { LauncherPanel } from "@/components/LauncherPanel";
-import { dropOverlayClassName } from "@/components/EntryDropOverlay";
+import { dropOverlayClassName, outerBandOverlayClassName } from "@/components/EntryDropOverlay";
+import { InfoDialog } from "@/components/InfoDialog";
 import {
   fileUrl,
   shellQuotePath,
@@ -57,6 +60,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const setActiveLeaf = useTabsStore((s) => s.setActiveLeaf);
   const resizePane = useTabsStore((s) => s.resizePane);
   const splitPaneWith = useTabsStore((s) => s.splitPaneWith);
+  const wrapPaneWith = useTabsStore((s) => s.wrapPaneWith);
   const setPaneContent = useTabsStore((s) => s.setPaneContent);
   const navigatePreview = useTabsStore((s) => s.navigatePreview);
   const setTerminalCwd = useTabsStore((s) => s.setTerminalCwd);
@@ -72,11 +76,16 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   // group-hover) because the hairline lives in a child element and group-hover
   // doesn't reach it reliably in the app's WebView.
   const [hoveredSplitterId, setHoveredSplitterId] = useState<string | null>(null);
+  // Whether a file drop attempted a split while the tab was already at its
+  // 8-pane cap, so the at-capacity dialog shows instead.
+  const [atCapacity, setAtCapacity] = useState(false);
+  const rootDirection = tab.paneTree.kind === "split" ? tab.paneTree.direction : null;
   // Pointer-drag state lives in the explorer drag store (see dragEntry.ts): the
   // entry being dragged, which pane it's over, and a resolved drop to consume.
   const dragging = useEntryDragStore((s) => s.dragging);
   const draggedEntry = useEntryDragStore((s) => s.entry);
   const hoverLeaf = useEntryDragStore((s) => s.hoverLeafId);
+  const hoverPointerPct = useEntryDragStore((s) => s.hoverPointerPct);
   const pendingDrop = useEntryDragStore((s) => s.pendingDrop);
   // New terminal panes (incl. splits) start in the explorer's current dir, not
   // the tab's original cwd — so a split follows where you've navigated to.
@@ -85,6 +94,17 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const panes = computeLayout(tab.paneTree);
   const splitters = computeSplitters(tab.paneTree);
   const multiple = panes.length > 1;
+
+  const hoverZone: DropZone | null =
+    hoverLeaf && hoverPointerPct
+      ? resolveDropZone({
+          paneRect: panes.find((p) => p.id === hoverLeaf)?.rect ?? { left: 0, top: 0, width: 100, height: 100 },
+          rootDirection,
+          pointerXPct: hoverPointerPct.xPct,
+          pointerYPct: hoverPointerPct.yPct,
+          isFolder: draggedEntry?.isDir ?? false,
+        })
+      : null;
 
   // When this tab's active pane is an SSH terminal, point the file explorer at
   // that host's remote files. A local (or non-active) pane yields null, so the
@@ -153,6 +173,9 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
 
   // A pointer drag resolves its drop target into the store; the tab that owns
   // that pane runs the drop and clears it. Other tabs ignore it (pane not found).
+  // The drop position decides center (per-kind replace, unchanged) vs. an
+  // edge/outer zone (split the pane, or wrap the whole tree, with a new
+  // editor pane) — see terminalLayout.ts's resolveDropZone.
   useEffect(() => {
     if (!pendingDrop) {
       return;
@@ -161,11 +184,40 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
     if (!pane) {
       return;
     }
-    if (canDropRef.current(pane.content, pendingDrop.entry)) {
-      handleDropRef.current(pane.content, pendingDrop.leafId, pendingDrop.entry);
+    const zone = resolveDropZone({
+      paneRect: pane.rect,
+      rootDirection,
+      pointerXPct: pendingDrop.xPct,
+      pointerYPct: pendingDrop.yPct,
+      isFolder: pendingDrop.entry.isDir,
+    });
+    if (zone.kind === "center") {
+      if (canDropRef.current(pane.content, pendingDrop.entry)) {
+        handleDropRef.current(pane.content, pendingDrop.leafId, pendingDrop.entry);
+      }
+      useEntryDragStore.getState().clearPendingDrop();
+      return;
+    }
+    if (pendingDrop.entry.isDir) {
+      // Folder exception: edge/outer zones never apply to folders, so this
+      // should already be unreachable (resolveDropZone always returns center
+      // for isFolder), but guard defensively rather than split on a folder.
+      useEntryDragStore.getState().clearPendingDrop();
+      return;
+    }
+    if (tab.paneOrder.length >= 8) {
+      setAtCapacity(true);
+      useEntryDragStore.getState().clearPendingDrop();
+      return;
+    }
+    const newContent: PaneContent = { kind: "editor", path: pendingDrop.entry.path };
+    if (zone.scope === "individual") {
+      splitPaneWith(tab.id, pendingDrop.leafId, newContent, zone.direction, zone.anchor);
+    } else {
+      wrapPaneWith(tab.id, newContent, zone.direction, zone.anchor);
     }
     useEntryDragStore.getState().clearPendingDrop();
-  }, [pendingDrop]);
+  }, [pendingDrop, rootDirection, tab.id, tab.paneOrder.length]);
 
   function startDrag(e: ReactMouseEvent, splitter: SplitterInfo) {
     e.preventDefault();
@@ -206,7 +258,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
 
   return (
     <div className="flex h-full flex-col bg-bg-inset">
-      <div ref={paneAreaRef} className="relative min-h-0 flex-1">
+      <div ref={paneAreaRef} data-pane-area className="relative min-h-0 flex-1">
         {panes.map((pane) => {
           const active = pane.id === tab.activeLeafId;
           const dropOk = draggedEntry ? canDrop(pane.content, draggedEntry) : false;
@@ -315,12 +367,16 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   explorer entry. The drop itself is handled by the document-level
                   drag/dragend listeners above, since WKWebView swallows the
                   webview's own HTML5 drop events when dragDropEnabled is on. */}
-              {dragging && pane.id === hoverLeaf && (
-                <div className={dropOverlayClassName(dropOk)} />
+              {dragging && pane.id === hoverLeaf && (hoverZone === null || hoverZone.kind !== "split" || hoverZone.scope !== "outer") && (
+                <div className={dropOverlayClassName(hoverZone, dropOk)} />
               )}
             </div>
           );
         })}
+
+        {dragging && hoverZone?.kind === "split" && hoverZone.scope === "outer" && (
+          <div className={outerBandOverlayClassName(hoverZone.direction, hoverZone.anchor)} />
+        )}
 
         {/* Draggable dividers, one per split, sitting on the pane borders */}
         {splitters.map((splitter) => {
@@ -394,6 +450,15 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
           />
         )}
       </div>
+
+      {atCapacity && (
+        <InfoDialog
+          title={t("workspace.splitRight")}
+          message={t("paneCapacityAlert")}
+          confirmLabel={t("actions.confirm")}
+          onConfirm={() => setAtCapacity(false)}
+        />
+      )}
     </div>
   );
 }

@@ -17,6 +17,8 @@ export interface DraggedEntry {
 interface PendingDrop {
   leafId: string;
   entry: DraggedEntry;
+  xPct: number;
+  yPct: number;
 }
 
 interface EntryDragState {
@@ -26,6 +28,9 @@ interface EntryDragState {
   dragging: boolean;
   /** Leaf id of the pane under the cursor, for the drop highlight. */
   hoverLeafId: string | null;
+  /** The pointer's live position, as a percentage of the pane-area container
+   * under it, for resolving the live drop-zone highlight while dragging. */
+  hoverPointerPct: { xPct: number; yPct: number } | null;
   /** A resolved drop waiting for its owning pane to consume it. */
   pendingDrop: PendingDrop | null;
   setHover: (leafId: string | null) => void;
@@ -36,6 +41,7 @@ export const useEntryDragStore = create<EntryDragState>((set) => ({
   entry: null,
   dragging: false,
   hoverLeafId: null,
+  hoverPointerPct: null,
   pendingDrop: null,
   setHover: (leafId) => set((s) => (s.hoverLeafId === leafId ? s : { hoverLeafId: leafId })),
   clearPendingDrop: () => set({ pendingDrop: null }),
@@ -67,6 +73,28 @@ export function consumeDragClick(): boolean {
 function leafAt(x: number, y: number): string | null {
   return (
     document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-pane-leaf]")?.dataset.paneLeaf ??
+    null
+  );
+}
+
+/** Convert a client point into a 0-100 percentage of `rect`, clamped at the edges. */
+export function pointerToPaneAreaPct(
+  rect: { left: number; top: number; width: number; height: number },
+  clientX: number,
+  clientY: number,
+): { xPct: number; yPct: number } {
+  const xPct = rect.width > 0 ? ((clientX - rect.left) / rect.width) * 100 : 0;
+  const yPct = rect.height > 0 ? ((clientY - rect.top) / rect.height) * 100 : 0;
+  return {
+    xPct: Math.min(100, Math.max(0, xPct)),
+    yPct: Math.min(100, Math.max(0, yPct)),
+  };
+}
+
+/** The pane-area container rect under a client point, or null. */
+function paneAreaRectAt(x: number, y: number): DOMRect | null {
+  return (
+    document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-pane-area]")?.getBoundingClientRect() ??
     null
   );
 }
@@ -132,6 +160,10 @@ export function beginEntryDrag(entry: DraggedEntry, event: ReactPointerEvent): v
     }
     moveGhost(e.clientX, e.clientY);
     useEntryDragStore.getState().setHover(leafAt(e.clientX, e.clientY));
+    const areaRect = paneAreaRectAt(e.clientX, e.clientY);
+    useEntryDragStore.setState({
+      hoverPointerPct: areaRect ? pointerToPaneAreaPct(areaRect, e.clientX, e.clientY) : null,
+    });
   };
 
   const onUp = (e: PointerEvent) => {
@@ -145,17 +177,22 @@ export function beginEntryDrag(entry: DraggedEntry, event: ReactPointerEvent): v
       suppressClick = false;
     }, 0);
     const leafId = leafAt(e.clientX, e.clientY);
+    const areaRect = paneAreaRectAt(e.clientX, e.clientY);
+    const { xPct, yPct } = areaRect
+      ? pointerToPaneAreaPct(areaRect, e.clientX, e.clientY)
+      : { xPct: 0, yPct: 0 };
     useEntryDragStore.setState({
       dragging: false,
       hoverLeafId: null,
+      hoverPointerPct: null,
       entry: null,
-      pendingDrop: leafId ? { leafId, entry } : null,
+      pendingDrop: leafId ? { leafId, entry, xPct, yPct } : null,
     });
   };
 
   const onCancel = () => {
     stop();
-    useEntryDragStore.setState({ dragging: false, hoverLeafId: null, entry: null });
+    useEntryDragStore.setState({ dragging: false, hoverLeafId: null, hoverPointerPct: null, entry: null });
   };
 
   window.addEventListener("pointermove", onMove);

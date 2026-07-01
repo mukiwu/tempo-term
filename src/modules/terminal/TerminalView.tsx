@@ -1307,7 +1307,7 @@ export function TerminalView({
         });
       }}
     >
-      {externalFileDragging && <div className={dropOverlayClassName(true)} />}
+      {externalFileDragging && <div className={dropOverlayClassName(null, true)} />}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

@@ -4,6 +4,7 @@ import {
   fileUrl,
   getDraggedEntry,
   markdownLink,
+  pointerToPaneAreaPct,
   setDraggedEntry,
   shellQuotePath,
 } from "./dragEntry";
@@ -50,5 +51,17 @@ describe("getDraggedEntry / setDraggedEntry", () => {
 describe("consumeDragClick", () => {
   it("is false when no drag has just finished", () => {
     expect(consumeDragClick()).toBe(false);
+  });
+});
+
+describe("pointerToPaneAreaPct", () => {
+  it("converts a client point to a 0-100 percentage of the given container rect", () => {
+    const containerRect = { left: 100, top: 50, width: 400, height: 200 } as DOMRect;
+    expect(pointerToPaneAreaPct(containerRect, 300, 150)).toEqual({ xPct: 50, yPct: 50 });
+  });
+
+  it("clamps to 0-100 when the point is outside the container (fast pointer movement)", () => {
+    const containerRect = { left: 0, top: 0, width: 100, height: 100 } as DOMRect;
+    expect(pointerToPaneAreaPct(containerRect, -20, 250)).toEqual({ xPct: 0, yPct: 100 });
   });
 });
