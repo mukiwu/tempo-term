@@ -97,6 +97,14 @@ interface TabsState {
    */
   openFromSidebar: (content: PaneContent, title?: string) => OpenFromSidebarResult;
   /**
+   * Open sidebar content in a brand-new tab, unconditionally — never splits
+   * into the active tab, never touches/closes a Launcher tab. The explicit
+   * escape hatch from openFromSidebar's default splitting behavior. SSH
+   * content is still blocked from duplicating a connection already open
+   * anywhere in the space, same guard as openFromSidebar.
+   */
+  openInNewTab: (content: PaneContent, title?: string) => OpenFromSidebarResult;
+  /**
    * Open the web preview of a local HTML file with a smart target: reuse an
    * existing preview pane in this tab, else split beside a single-pane editor,
    * else open/reuse a per-space preview tab.
@@ -251,6 +259,17 @@ function singleLeafContentEquals(tab: Tab, content: PaneContent): boolean {
     return pane.url === content.url;
   }
   return true;
+}
+
+/** True when `connectionId` is already open in some pane of some tab in `spaceId`. */
+function sshAlreadyOpen(tabs: Tab[], spaceId: string, connectionId: string): boolean {
+  return tabs.some(
+    (t) =>
+      t.spaceId === spaceId &&
+      computeLayout(t.paneTree).some(
+        (p) => p.content.kind === "terminal" && p.content.ssh?.connectionId === connectionId,
+      ),
+  );
 }
 
 export const TABS_STORAGE_KEY = "tempoterm-tabs";
@@ -566,15 +585,7 @@ export const useTabsStore = create<TabsState>()(
     const isFreshSsh = content.kind === "terminal" && !!content.ssh;
 
     if (content.kind === "terminal" && content.ssh) {
-      const connectionId = content.ssh.connectionId;
-      const alreadyOpen = get().tabs.some(
-        (t) =>
-          t.spaceId === spaceId &&
-          computeLayout(t.paneTree).some(
-            (p) => p.content.kind === "terminal" && p.content.ssh?.connectionId === connectionId,
-          ),
-      );
-      if (alreadyOpen) {
+      if (sshAlreadyOpen(get().tabs, spaceId, content.ssh.connectionId)) {
         return { status: "already-connected" };
       }
     }
@@ -629,6 +640,37 @@ export const useTabsStore = create<TabsState>()(
           : t,
       ),
     }));
+    return { status: "opened" };
+  },
+
+  openInNewTab: (content, title) => {
+    const spaceId = get().ensureSpace();
+    const isFreshSsh = content.kind === "terminal" && !!content.ssh;
+
+    if (content.kind === "terminal" && content.ssh) {
+      if (sshAlreadyOpen(get().tabs, spaceId, content.ssh.connectionId)) {
+        return { status: "already-connected" };
+      }
+    }
+
+    const resolvedTitle =
+      title ?? (content.kind === "editor" ? basename(content.path) : "Untitled");
+    const id = nextTabId();
+    const paneId = nextPaneId();
+    if (isFreshSsh) {
+      markFreshSshLeaf(paneId);
+    }
+    const tab: Tab = {
+      id,
+      spaceId,
+      kind: content.kind,
+      title: resolvedTitle,
+      paneTree: leaf(paneId, content),
+      activeLeafId: paneId,
+      paneOrder: [paneId],
+      ...(isFreshSsh ? { renamed: true } : {}),
+    };
+    set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return { status: "opened" };
   },
 

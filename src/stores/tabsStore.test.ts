@@ -928,6 +928,58 @@ describe("openFromSidebar with ssh content", () => {
   });
 });
 
+describe("openInNewTab", () => {
+  beforeEach(reset);
+
+  it("always creates a brand-new tab even when there is content already open", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    const result = useTabsStore.getState().openInNewTab({ kind: "editor", path: "/a.ts" });
+    expect(result).toEqual({ status: "opened" });
+    expect(useTabsStore.getState().tabs).toHaveLength(2);
+  });
+
+  it("does not split into the active tab, even when the active tab has room", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().openInNewTab({ kind: "note", noteId: "/n.md" }, "note");
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(2);
+    expect(computeLayout(tabs[0].paneTree)).toHaveLength(1);
+    expect(computeLayout(tabs[1].paneTree)).toHaveLength(1);
+  });
+
+  it("initializes paneOrder on the new tab", () => {
+    useTabsStore.getState().openInNewTab({ kind: "editor", path: "/a.ts" });
+    const tab = activeTab();
+    expect(tab.paneOrder).toEqual([tab.activeLeafId]);
+  });
+
+  it("does not touch or close an existing Launcher tab", () => {
+    const launcherId = useTabsStore.getState().openLauncherTab();
+    useTabsStore.getState().openInNewTab({ kind: "editor", path: "/a.ts" });
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(2);
+    expect(tabs.some((t) => t.id === launcherId)).toBe(true);
+  });
+
+  it("blocks and returns already-connected for an ssh connection already open, without creating a tab", () => {
+    useTabsStore.getState().openInNewTab({ kind: "terminal", ssh: { connectionId: "c1" } }, "box");
+    const before = useTabsStore.getState().tabs.length;
+
+    const result = useTabsStore
+      .getState()
+      .openInNewTab({ kind: "terminal", ssh: { connectionId: "c1" } }, "box");
+
+    expect(result).toEqual({ status: "already-connected" });
+    expect(useTabsStore.getState().tabs).toHaveLength(before);
+  });
+
+  it("marks a freshly opened ssh pane so it auto-connects", () => {
+    useTabsStore.getState().openInNewTab({ kind: "terminal", ssh: { connectionId: "c1" } }, "box");
+    const tab = activeTab();
+    expect(consumeFreshSshLeaf(tab.activeLeafId)).toBe(true);
+  });
+});
+
 describe("closePane keeps paneOrder in sync", () => {
   beforeEach(reset);
 
