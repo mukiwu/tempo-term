@@ -5,10 +5,14 @@ import { PaneTabContent } from "./PaneTabContent";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useEntryDragStore } from "@/modules/explorer/lib/dragEntry";
 import { useNoteDragStore } from "@/modules/notes/lib/noteDrag";
+import { useSshDragStore } from "@/modules/ssh/lib/sshDrag";
 import { leaf, splitLeaf } from "./lib/terminalLayout";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts?.name ? `${key}:${opts.name}` : key,
+  }),
 }));
 
 // TerminalView (rendered by every pane here) calls getCurrentWebview() on mount
@@ -214,5 +218,75 @@ describe("PaneTabContent note-drop dispatch", () => {
       const second = updated.paneTree.children[1];
       expect(second.kind === "leaf" && second.pane).toEqual({ kind: "note", noteId: "/notes/todo.md" });
     }
+  });
+});
+
+describe("PaneTabContent SSH-drop dispatch", () => {
+  beforeEach(() => {
+    useSshDragStore.setState({ paneHover: null, pendingPaneDrop: null });
+  });
+
+  it("center drop replaces the pane with the SSH terminal when not already connected", () => {
+    const { tabId, leafId } = makeSinglePaneTab();
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    render(<PaneTabContent tab={tab} />);
+
+    act(() => {
+      useSshDragStore.setState({
+        pendingPaneDrop: { leafId, connectionId: "conn-1", connectionName: "Prod", xPct: 50, yPct: 50 },
+      });
+    });
+
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual({
+      kind: "leaf",
+      id: leafId,
+      pane: { kind: "terminal", ssh: { connectionId: "conn-1" } },
+    });
+  });
+
+  it("blocks the drop and shows the already-connected InfoDialog when the connection is open elsewhere", () => {
+    const { tabId, leafId } = makeSinglePaneTab();
+    useTabsStore.getState().splitPaneWith(
+      tabId,
+      leafId,
+      { kind: "terminal", ssh: { connectionId: "conn-1" } },
+      "row",
+    );
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const untouchedTree = tab.paneTree;
+    render(<PaneTabContent tab={tab} />);
+
+    act(() => {
+      useSshDragStore.setState({
+        pendingPaneDrop: { leafId, connectionId: "conn-1", connectionName: "Prod", xPct: 50, yPct: 50 },
+      });
+    });
+
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual(untouchedTree);
+    expect(screen.getByText("connectionsPanel.alreadyOpenAlert:Prod")).toBeInTheDocument();
+  });
+
+  it("blocks an edge-split too, not just center, when already connected", () => {
+    const { tabId, leafId } = makeSinglePaneTab();
+    useTabsStore.getState().splitPaneWith(
+      tabId,
+      leafId,
+      { kind: "terminal", ssh: { connectionId: "conn-1" } },
+      "row",
+    );
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const untouchedTree = tab.paneTree;
+    render(<PaneTabContent tab={tab} />);
+
+    act(() => {
+      useSshDragStore.setState({
+        pendingPaneDrop: { leafId, connectionId: "conn-1", connectionName: "Prod", xPct: 5, yPct: 50 },
+      });
+    });
+
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual(untouchedTree);
   });
 });

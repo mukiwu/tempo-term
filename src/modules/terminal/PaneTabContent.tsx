@@ -41,8 +41,9 @@ import {
 } from "@/modules/explorer/lib/dragEntry";
 import { insertLinkIntoNote } from "@/modules/notes/lib/noteBus";
 import { useNoteDragStore } from "@/modules/notes/lib/noteDrag";
+import { useSshDragStore } from "@/modules/ssh/lib/sshDrag";
 import { deleteTerminalHistory } from "./lib/terminalHistory";
-import { useTabsStore, type Tab } from "@/stores/tabsStore";
+import { sshAlreadyOpen, useTabsStore, type Tab } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useUiStore, selectAnyOverlayOpen } from "@/stores/uiStore";
 import { shouldShowPreview } from "@/modules/preview/lib/previewWebview";
@@ -90,6 +91,14 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const pendingDrop = useEntryDragStore((s) => s.pendingDrop);
   const pendingNotePaneDrop = useNoteDragStore((s) => s.pendingPaneDrop);
   const notePaneHover = useNoteDragStore((s) => s.paneHover);
+  const pendingSshPaneDrop = useSshDragStore((s) => s.pendingPaneDrop);
+  const sshPaneHover = useSshDragStore((s) => s.paneHover);
+  // Whether a dragged-in SSH connection is already open elsewhere in this
+  // space, so the drop gets blocked and this dialog explains why. The
+  // connection's name is cached alongside the flag because pendingSshPaneDrop
+  // is cleared (and its name with it) as soon as the drop is resolved.
+  const [sshAlreadyConnected, setSshAlreadyConnected] = useState(false);
+  const [sshAlreadyConnectedName, setSshAlreadyConnectedName] = useState("");
   // New terminal panes (incl. splits) start in the explorer's current dir, not
   // the tab's original cwd — so a split follows where you've navigated to.
   const rootPath = useWorkspaceStore((s) => s.rootPath);
@@ -115,9 +124,17 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
             pointerYPct: notePaneHover.yPct,
             isFolder: false,
           })
-        : null;
-  const activeHoverLeaf = hoverLeaf ?? notePaneHover?.leafId ?? null;
-  const anyDragging = dragging || notePaneHover !== null;
+        : sshPaneHover
+          ? resolveDropZone({
+              paneRect: panes.find((p) => p.id === sshPaneHover.leafId)?.rect ?? { left: 0, top: 0, width: 100, height: 100 },
+              rootDirection,
+              pointerXPct: sshPaneHover.xPct,
+              pointerYPct: sshPaneHover.yPct,
+              isFolder: false,
+            })
+          : null;
+  const activeHoverLeaf = hoverLeaf ?? notePaneHover?.leafId ?? sshPaneHover?.leafId ?? null;
+  const anyDragging = dragging || notePaneHover !== null || sshPaneHover !== null;
 
   // When this tab's active pane is an SSH terminal, point the file explorer at
   // that host's remote files. A local (or non-active) pane yields null, so the
@@ -268,6 +285,54 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
     }
     useNoteDragStore.getState().clearPendingPaneDrop();
   }, [pendingNotePaneDrop, rootDirection, tab.id, tab.paneOrder.length]);
+
+  // Parallel to the file/note-drop effects above, but for SSH connections
+  // dragged out of the Connections sidebar. Unlike files and notes, a
+  // duplicate connection is blocked outright (opening the same connection
+  // twice would race for the same forwarded ports) — checked before any zone
+  // resolution, so a blocked drop never touches the pane tree at all.
+  useEffect(() => {
+    if (!pendingSshPaneDrop) {
+      return;
+    }
+    const pane = panesRef.current.find((p) => p.id === pendingSshPaneDrop.leafId);
+    if (!pane) {
+      return;
+    }
+    if (sshAlreadyOpen(useTabsStore.getState().tabs, tab.spaceId, pendingSshPaneDrop.connectionId)) {
+      setSshAlreadyConnected(true);
+      setSshAlreadyConnectedName(pendingSshPaneDrop.connectionName);
+      useSshDragStore.getState().clearPendingPaneDrop();
+      return;
+    }
+    const zone = resolveDropZone({
+      paneRect: pane.rect,
+      rootDirection,
+      pointerXPct: pendingSshPaneDrop.xPct,
+      pointerYPct: pendingSshPaneDrop.yPct,
+      isFolder: false,
+    });
+    const newContent: PaneContent = {
+      kind: "terminal",
+      ssh: { connectionId: pendingSshPaneDrop.connectionId },
+    };
+    if (zone.kind === "center") {
+      setPaneContent(tab.id, pendingSshPaneDrop.leafId, newContent);
+      useSshDragStore.getState().clearPendingPaneDrop();
+      return;
+    }
+    if (tab.paneOrder.length >= 8) {
+      setAtCapacity(true);
+      useSshDragStore.getState().clearPendingPaneDrop();
+      return;
+    }
+    if (zone.scope === "individual") {
+      splitPaneWith(tab.id, pendingSshPaneDrop.leafId, newContent, zone.direction, zone.anchor);
+    } else {
+      wrapPaneWith(tab.id, newContent, zone.direction, zone.anchor);
+    }
+    useSshDragStore.getState().clearPendingPaneDrop();
+  }, [pendingSshPaneDrop, rootDirection, tab.id, tab.spaceId, tab.paneOrder.length]);
 
   function startDrag(e: ReactMouseEvent, splitter: SplitterInfo) {
     e.preventDefault();
@@ -507,6 +572,15 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
           message={t("paneCapacityAlert")}
           confirmLabel={t("actions.confirm")}
           onConfirm={() => setAtCapacity(false)}
+        />
+      )}
+
+      {sshAlreadyConnected && (
+        <InfoDialog
+          title={t("connectionsPanel.title")}
+          message={t("connectionsPanel.alreadyOpenAlert", { name: sshAlreadyConnectedName })}
+          confirmLabel={t("actions.confirm")}
+          onConfirm={() => setSshAlreadyConnected(false)}
         />
       )}
     </div>

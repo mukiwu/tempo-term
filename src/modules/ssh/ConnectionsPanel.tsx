@@ -10,6 +10,7 @@ import { InfoDialog } from "@/components/InfoDialog";
 import { useLiveSessionsStore } from "@/modules/ssh/lib/liveSessionsStore";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
 import { startForward, stopForward } from "@/modules/ssh/lib/ssh-bridge";
+import { beginSshDrag, consumeSshDragClick } from "@/modules/ssh/lib/sshDrag";
 
 // ─── Status dot ───────────────────────────────────────────────────────────────
 
@@ -148,6 +149,9 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const showSessionLabels = sessionIds.length > 1;
 
   function handleRowClick() {
+    if (consumeSshDragClick()) {
+      return;
+    }
     const result = openFromSidebar(
       { kind: "terminal", ssh: { connectionId: connection.id } },
       connection.name,
@@ -196,7 +200,10 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   }
 
   return (
-    <li onContextMenu={handleContextMenu}>
+    <li
+      onContextMenu={handleContextMenu}
+      onPointerDown={(e) => beginSshDrag(connection.id, connection.name, e)}
+    >
       <div className="group flex items-center">
         <button
           type="button"
