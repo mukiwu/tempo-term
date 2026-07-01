@@ -9,10 +9,12 @@ import {
   leafIds,
   paneIdAt,
   removeLeaf,
+  resolveDropZone,
   resolveTerminalCwd,
   setSizesById,
   splitId,
   splitLeaf,
+  type DropZoneInput,
   type LayoutNode,
   type OrderedPane,
 } from "./terminalLayout";
@@ -253,5 +255,228 @@ describe("gridLayout", () => {
       expect(top.rect.height).toBeCloseTo(50, 5);
       expect(bottom.rect.height).toBeCloseTo(50, 5);
     }
+  });
+});
+
+describe("resolveDropZone", () => {
+  const singlePaneRect = { left: 0, top: 0, width: 100, height: 100 };
+
+  it("single pane: center when the pointer is far from any edge", () => {
+    const input: DropZoneInput = {
+      paneRect: singlePaneRect,
+      rootDirection: null,
+      pointerXPct: 50,
+      pointerYPct: 50,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({ kind: "center" });
+  });
+
+  it("single pane: left edge splits row with the new pane before the existing one", () => {
+    const input: DropZoneInput = {
+      paneRect: singlePaneRect,
+      rootDirection: null,
+      pointerXPct: 10,
+      pointerYPct: 50,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({
+      kind: "split",
+      scope: "individual",
+      direction: "row",
+      anchor: "before",
+    });
+  });
+
+  it("single pane: right edge splits row with the new pane after the existing one", () => {
+    const input: DropZoneInput = {
+      paneRect: singlePaneRect,
+      rootDirection: null,
+      pointerXPct: 90,
+      pointerYPct: 50,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({
+      kind: "split",
+      scope: "individual",
+      direction: "row",
+      anchor: "after",
+    });
+  });
+
+  it("single pane: never returns a top/bottom zone, even near the top edge", () => {
+    const input: DropZoneInput = {
+      paneRect: singlePaneRect,
+      rootDirection: null,
+      pointerXPct: 50,
+      pointerYPct: 2,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({ kind: "center" });
+  });
+
+  it("single pane: a dragged folder always resolves to center, even at an edge", () => {
+    const input: DropZoneInput = {
+      paneRect: singlePaneRect,
+      rootDirection: null,
+      pointerXPct: 5,
+      pointerYPct: 50,
+      isFolder: true,
+    };
+    expect(resolveDropZone(input)).toEqual({ kind: "center" });
+  });
+
+  it("row-oriented multi-pane: top edge of the hovered pane splits col, new pane before", () => {
+    const input: DropZoneInput = {
+      paneRect: { left: 0, top: 0, width: 50, height: 100 },
+      rootDirection: "row",
+      pointerXPct: 25,
+      pointerYPct: 5,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({
+      kind: "split",
+      scope: "individual",
+      direction: "col",
+      anchor: "before",
+    });
+  });
+
+  it("row-oriented multi-pane: bottom edge of a stacked (half-height) pane splits col, new pane after", () => {
+    const input: DropZoneInput = {
+      paneRect: { left: 0, top: 50, width: 50, height: 50 },
+      rootDirection: "row",
+      pointerXPct: 25,
+      pointerYPct: 97,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({
+      kind: "split",
+      scope: "individual",
+      direction: "col",
+      anchor: "after",
+    });
+  });
+
+  it("row-oriented multi-pane: near the container's absolute left edge is outer-before, not individual", () => {
+    const input: DropZoneInput = {
+      paneRect: { left: 0, top: 0, width: 50, height: 100 },
+      rootDirection: "row",
+      pointerXPct: 3,
+      pointerYPct: 50,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({
+      kind: "split",
+      scope: "outer",
+      direction: "row",
+      anchor: "before",
+    });
+  });
+
+  it("row-oriented multi-pane: near the container's absolute right edge is outer-after", () => {
+    const input: DropZoneInput = {
+      paneRect: { left: 50, top: 0, width: 50, height: 100 },
+      rootDirection: "row",
+      pointerXPct: 97,
+      pointerYPct: 50,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({
+      kind: "split",
+      scope: "outer",
+      direction: "row",
+      anchor: "after",
+    });
+  });
+
+  it("row-oriented multi-pane: an internal boundary between two panes (not the absolute edge) is center", () => {
+    const input: DropZoneInput = {
+      paneRect: { left: 0, top: 0, width: 50, height: 100 },
+      rootDirection: "row",
+      pointerXPct: 49,
+      pointerYPct: 50,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({ kind: "center" });
+  });
+
+  it("row-oriented multi-pane: a folder near an edge still falls back to center", () => {
+    const input: DropZoneInput = {
+      paneRect: { left: 0, top: 0, width: 50, height: 100 },
+      rootDirection: "row",
+      pointerXPct: 25,
+      pointerYPct: 3,
+      isFolder: true,
+    };
+    expect(resolveDropZone(input)).toEqual({ kind: "center" });
+  });
+
+  it("row-oriented multi-pane, top-left corner: outer-left wins when it is the closer edge", () => {
+    // pane spans the full height here (not stacked), so its own top edge sits
+    // at y=0, exactly tied with the container's top — but there is no
+    // outer-top zone in row orientation, so only outer-left (x=1) and
+    // individual-top (y=1) compete; outer-left is closer in this case only
+    // because INDIVIDUAL_EDGE zones use a smaller absolute band near a
+    // half-height pane — use a full-height pane and a point closer on the x axis.
+    const input: DropZoneInput = {
+      paneRect: { left: 0, top: 0, width: 50, height: 100 },
+      rootDirection: "row",
+      pointerXPct: 2,
+      pointerYPct: 8,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({
+      kind: "split",
+      scope: "outer",
+      direction: "row",
+      anchor: "before",
+    });
+  });
+
+  it("row-oriented multi-pane, top-left corner: individual-top wins when it is the closer edge", () => {
+    const input: DropZoneInput = {
+      paneRect: { left: 0, top: 0, width: 50, height: 100 },
+      rootDirection: "row",
+      pointerXPct: 8,
+      pointerYPct: 2,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({
+      kind: "split",
+      scope: "individual",
+      direction: "col",
+      anchor: "before",
+    });
+  });
+
+  it("col-oriented multi-pane: rules rotate 90 degrees — left/right become individual, top/bottom become outer", () => {
+    const leftEdgeOfTopRow: DropZoneInput = {
+      paneRect: { left: 0, top: 0, width: 100, height: 50 },
+      rootDirection: "col",
+      pointerXPct: 5,
+      pointerYPct: 25,
+      isFolder: false,
+    };
+    expect(resolveDropZone(leftEdgeOfTopRow)).toEqual({
+      kind: "split",
+      scope: "individual",
+      direction: "row",
+      anchor: "before",
+    });
+
+    const outerTop: DropZoneInput = {
+      paneRect: { left: 0, top: 0, width: 100, height: 50 },
+      rootDirection: "col",
+      pointerXPct: 50,
+      pointerYPct: 3,
+      isFolder: false,
+    };
+    expect(resolveDropZone(outerTop)).toEqual({
+      kind: "split",
+      scope: "outer",
+      direction: "col",
+      anchor: "before",
+    });
   });
 });

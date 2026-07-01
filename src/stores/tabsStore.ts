@@ -17,6 +17,7 @@ import {
   setLeafPane,
   setSizesById,
   splitLeaf,
+  wrapTree,
   type LayoutNode,
   type OrderedPane,
   type PaneContent,
@@ -133,6 +134,20 @@ interface TabsState {
     fromLeafId: string,
     content: PaneContent,
     direction: SplitDirection,
+    anchor?: "before" | "after",
+  ) => string;
+  /**
+   * Wrap the tab's whole current pane tree as one side of a brand-new
+   * top-level split, with `content` on the other side. Used for the
+   * outer-edge drop zone (spec section C) — every existing pane shifts over
+   * as a block instead of any single pane being split. Returns the new
+   * leaf's id.
+   */
+  wrapPaneWith: (
+    tabId: string,
+    content: PaneContent,
+    direction: SplitDirection,
+    anchor: "before" | "after",
   ) => string;
   /**
    * Follow an in-preview navigation: update the pane's previewed url, and when
@@ -262,7 +277,7 @@ function singleLeafContentEquals(tab: Tab, content: PaneContent): boolean {
 }
 
 /** True when `connectionId` is already open in some pane of some tab in `spaceId`. */
-function sshAlreadyOpen(tabs: Tab[], spaceId: string, connectionId: string): boolean {
+export function sshAlreadyOpen(tabs: Tab[], spaceId: string, connectionId: string): boolean {
   return tabs.some(
     (t) =>
       t.spaceId === spaceId &&
@@ -887,7 +902,7 @@ export const useTabsStore = create<TabsState>()(
       ),
     })),
 
-  splitPaneWith: (tabId, fromLeafId, content, direction) => {
+  splitPaneWith: (tabId, fromLeafId, content, direction, anchor = "after") => {
     const newId = nextPaneId();
     set((state) => ({
       tabs: state.tabs.map((tab) => {
@@ -896,11 +911,28 @@ export const useTabsStore = create<TabsState>()(
         }
         return {
           ...tab,
-          paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, content),
+          paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, content, anchor),
           activeLeafId: newId,
           paneOrder: [...tab.paneOrder, newId],
         };
       }),
+    }));
+    return newId;
+  },
+
+  wrapPaneWith: (tabId, content, direction, anchor) => {
+    const newId = nextPaneId();
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              paneTree: wrapTree(tab.paneTree, newId, content, direction, anchor),
+              activeLeafId: newId,
+              paneOrder: [...tab.paneOrder, newId],
+            }
+          : tab,
+      ),
     }));
     return newId;
   },

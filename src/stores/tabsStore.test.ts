@@ -3,6 +3,7 @@ import {
   activeEditorPath,
   localPreviewFilePaths,
   openEditorPaths,
+  sshAlreadyOpen,
   tabHasDirtyEditor,
   useTabsStore,
   migratePersistedTabs,
@@ -754,6 +755,86 @@ describe("splitPaneWith", () => {
       kind: "editor",
       path: "/b.ts",
     });
+  });
+});
+
+describe("splitPaneWith anchor", () => {
+  beforeEach(reset);
+
+  it("defaults to placing the new pane after the existing one (unchanged behavior)", () => {
+    const tabId = useTabsStore.getState().newTerminalTab();
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const newId = useTabsStore.getState().splitPaneWith(
+      tabId,
+      tab.activeLeafId,
+      { kind: "editor", path: "/a.ts" },
+      "row",
+    );
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual({
+      kind: "split",
+      direction: "row",
+      children: [
+        { kind: "leaf", id: tab.activeLeafId, pane: { kind: "terminal" } },
+        { kind: "leaf", id: newId, pane: { kind: "editor", path: "/a.ts" } },
+      ],
+      sizes: [0.5, 0.5],
+    });
+  });
+
+  it("places the new pane before the existing one when anchor is \"before\"", () => {
+    const tabId = useTabsStore.getState().newTerminalTab();
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const newId = useTabsStore.getState().splitPaneWith(
+      tabId,
+      tab.activeLeafId,
+      { kind: "editor", path: "/a.ts" },
+      "row",
+      "before",
+    );
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual({
+      kind: "split",
+      direction: "row",
+      children: [
+        { kind: "leaf", id: newId, pane: { kind: "editor", path: "/a.ts" } },
+        { kind: "leaf", id: tab.activeLeafId, pane: { kind: "terminal" } },
+      ],
+      sizes: [0.5, 0.5],
+    });
+  });
+});
+
+describe("wrapPaneWith", () => {
+  beforeEach(reset);
+
+  it("wraps the whole existing tree as the second child, new pane first, for anchor \"before\"", () => {
+    const tabId = useTabsStore.getState().newTerminalTab();
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const existingTree = tab.paneTree;
+    const newId = useTabsStore
+      .getState()
+      .wrapPaneWith(tabId, { kind: "editor", path: "/a.ts" }, "row", "before");
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual({
+      kind: "split",
+      direction: "row",
+      children: [
+        { kind: "leaf", id: newId, pane: { kind: "editor", path: "/a.ts" } },
+        existingTree,
+      ],
+      sizes: [0.5, 0.5],
+    });
+    expect(updated.activeLeafId).toBe(newId);
+    expect(updated.paneOrder).toContain(newId);
+  });
+});
+
+describe("sshAlreadyOpen (exported)", () => {
+  beforeEach(reset);
+
+  it("is importable and reports false for a connection nobody has opened", () => {
+    expect(sshAlreadyOpen(useTabsStore.getState().tabs, "space-1", "conn-x")).toBe(false);
   });
 });
 
