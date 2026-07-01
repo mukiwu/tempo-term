@@ -130,7 +130,7 @@ interface ConnectionRowProps {
 
 function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const { t } = useTranslation("common");
-  const openSshTab = useTabsStore((s) => s.openSshTab);
+  const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Subscribe to live sessions for this connection. Use a direct field lookup
@@ -143,7 +143,13 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const showSessionLabels = sessionIds.length > 1;
 
   function handleRowClick() {
-    openSshTab(connection.id, connection.name);
+    const result = openFromSidebar(
+      { kind: "terminal", ssh: { connectionId: connection.id } },
+      connection.name,
+    );
+    if (result.status === "already-connected") {
+      window.alert(t("connectionsPanel.alreadyOpenAlert", { name: connection.name }));
+    }
   }
 
   function handleDeleteClick(e: React.MouseEvent) {

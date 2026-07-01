@@ -142,6 +142,7 @@
     "cancelDelete": "取消",
     "emptyTitle": "尚無已儲存的連線",
     "emptyHint": "在這裡儲存 SSH 連線，即可一鍵連線",
+    "alreadyOpenAlert": "{{name}} 已經連線中，不能再開一個",
     "forwards": {
       "session": "工作階段 {{id}}",
       "statusActive": "作用中",
