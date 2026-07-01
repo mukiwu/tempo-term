@@ -33,6 +33,8 @@ export interface Space {
   name: string;
 }
 
+export type OpenFromSidebarResult = { status: "opened" } | { status: "already-connected" };
+
 export type TabKind = "terminal" | "editor" | "note" | "preview" | "git-graph" | "launcher";
 
 /**
@@ -72,6 +74,19 @@ interface TabsState {
   openNoteTab: (noteId: string, title: string) => string;
   openPreviewTab: (url: string) => string;
   openGitGraphTab: () => string;
+  /**
+   * Open sidebar content (explorer file, note, or SSH connection). When the
+   * active tab is a real working tab, this splits beside its current
+   * right-most pane. When there is no active tab, or the active tab is a
+   * Launcher tab (kind === "launcher" — TabsArea.tsx renders LauncherPanel
+   * for those directly and ignores their paneTree), this opens a fresh tab
+   * and, for the launcher case, closes the old one — the same two-step
+   * LauncherPanel's own newTab actions already do. Unlike openEditorTab /
+   * openNoteTab / openSshTab, this never focuses an existing pane showing the
+   * same content — duplicates are allowed. SSH content is checked for an
+   * already-open connection in a later task.
+   */
+  openFromSidebar: (content: PaneContent, title?: string) => OpenFromSidebarResult;
   /**
    * Open the web preview of a local HTML file with a smart target: reuse an
    * existing preview pane in this tab, else split beside a single-pane editor,
@@ -516,6 +531,37 @@ export const useTabsStore = create<TabsState>()(
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
+  },
+
+  openFromSidebar: (content, title) => {
+    const spaceId = get().ensureSpace();
+    const resolvedTitle =
+      title ?? (content.kind === "editor" ? basename(content.path) : "Untitled");
+    const activeTab = get().tabs.find((t) => t.id === get().activeId);
+
+    if (!activeTab || activeTab.kind === "launcher") {
+      const id = nextTabId();
+      const paneId = nextPaneId();
+      const tab: Tab = {
+        id,
+        spaceId,
+        kind: content.kind,
+        title: resolvedTitle,
+        paneTree: leaf(paneId, content),
+        activeLeafId: paneId,
+      };
+      set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+      if (activeTab) {
+        get().closeTab(activeTab.id);
+      }
+      return { status: "opened" };
+    }
+
+    const rightmost = computeLayout(activeTab.paneTree).reduce((a, b) =>
+      b.rect.left + b.rect.width > a.rect.left + a.rect.width ? b : a,
+    );
+    get().splitPaneWith(activeTab.id, rightmost.id, content, "row");
+    return { status: "opened" };
   },
 
   openHtmlPreview: (tabId, fromLeafId, filePath) => {

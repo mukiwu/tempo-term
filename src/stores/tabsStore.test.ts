@@ -689,6 +689,75 @@ describe("splitPaneWith", () => {
   });
 });
 
+describe("openFromSidebar", () => {
+  beforeEach(reset);
+
+  it("opens a brand-new tab when there is no active tab", () => {
+    const result = useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/a.ts" });
+    expect(result).toEqual({ status: "opened" });
+    const tab = activeTab();
+    expect(firstLeafContent(tab)).toMatchObject({ kind: "editor", path: "/a.ts" });
+    expect(tab.title).toBe("a.ts");
+  });
+
+  it("closes the launcher tab and opens a fresh one when the active tab is a launcher", () => {
+    // openLauncherTab's tab is identified by kind === "launcher" — TabsArea.tsx
+    // renders LauncherPanel for it directly and never looks at its paneTree, so
+    // "opening into" a launcher tab means replacing the whole tab, the same way
+    // LauncherPanel's own newTab actions do (open elsewhere, close this one).
+    const launcherId = useTabsStore.getState().openLauncherTab();
+    const result = useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "editor", path: "/a.ts" }, "a.ts");
+    expect(result).toEqual({ status: "opened" });
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].id).not.toBe(launcherId);
+    expect(tabs[0].kind).toBe("editor");
+    expect(firstLeafContent(tabs[0])).toMatchObject({ kind: "editor", path: "/a.ts" });
+    expect(tabs[0].title).toBe("a.ts");
+    expect(useTabsStore.getState().activeId).toBe(tabs[0].id);
+  });
+
+  it("splits a new pane to the right when the active tab already has content", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    const result = useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/b.ts" });
+    expect(result).toEqual({ status: "opened" });
+    const tab = activeTab();
+    const panes = computeLayout(tab.paneTree);
+    expect(panes).toHaveLength(2);
+    const rightmost = panes.reduce((a, b) =>
+      b.rect.left + b.rect.width > a.rect.left + a.rect.width ? b : a,
+    );
+    expect(rightmost.content).toMatchObject({ kind: "editor", path: "/b.ts" });
+    expect(tab.activeLeafId).toBe(rightmost.id);
+  });
+
+  it("keeps splitting to the right on repeated calls, leaving earlier panes untouched", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/b.ts" });
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/c.ts" });
+    const tab = activeTab();
+    const panes = computeLayout(tab.paneTree);
+    expect(panes).toHaveLength(3);
+    const sorted = panes.slice().sort((a, b) => a.rect.left - b.rect.left);
+    expect(sorted.map((p) => p.content)).toMatchObject([
+      { kind: "editor", path: "/a.ts" },
+      { kind: "editor", path: "/b.ts" },
+      { kind: "editor", path: "/c.ts" },
+    ]);
+  });
+
+  it("allows the same content to open as a separate pane instead of focusing the existing one", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/a.ts" });
+    const tab = activeTab();
+    const panes = computeLayout(tab.paneTree);
+    expect(panes).toHaveLength(2);
+    expect(panes.filter((p) => p.content.kind === "editor" && p.content.path === "/a.ts")).toHaveLength(2);
+  });
+});
+
 describe("localPreviewFilePaths", () => {
   it("includes the decoded local path for a file:// preview pane", () => {
     const tab: Tab = {
