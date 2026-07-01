@@ -797,13 +797,12 @@ export const useTabsStore = create<TabsState>()(
     })),
 
   splitPaneWith: (tabId, fromLeafId, content, direction) => {
-    let newId: string | undefined;
+    const newId = nextPaneId();
     set((state) => ({
       tabs: state.tabs.map((tab) => {
         if (tab.id !== tabId) {
           return tab;
         }
-        newId = nextPaneId();
         return {
           ...tab,
           paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, content),
@@ -811,7 +810,7 @@ export const useTabsStore = create<TabsState>()(
         };
       }),
     }));
-    return newId!;
+    return newId;
   },
 
   setPaneContent: (tabId, leafId, content) =>
