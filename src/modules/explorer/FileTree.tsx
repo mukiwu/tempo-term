@@ -10,6 +10,7 @@ import {
   FolderOpen,
   FolderPlus,
   MessageSquarePlus,
+  SquarePlus,
   TerminalSquare,
   Trash2,
 } from "lucide-react";
@@ -57,6 +58,7 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
   const [hovered, setHovered] = useState(false);
 
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
+  const openInNewTab = useTabsStore((s) => s.openInNewTab);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const selectSidebar = useUiStore((s) => s.selectSidebar);
   const attachPath = useChatStore((s) => s.attachPath);
@@ -168,6 +170,17 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
       group: 0,
       onSelect: () => void toggle(),
     },
+    ...(!entry.is_dir
+      ? [
+          {
+            id: "openInNewTab",
+            label: t("menu.openInNewTab"),
+            icon: SquarePlus,
+            group: 0,
+            onSelect: () => openInNewTab({ kind: "editor", path: entry.path }),
+          } satisfies ContextMenuItem,
+        ]
+      : []),
     {
       id: "reveal",
       label: t("menu.reveal"),

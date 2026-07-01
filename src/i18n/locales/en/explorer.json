@@ -12,6 +12,7 @@
   "loading": "Loading…",
   "menu": {
     "open": "Open",
+    "openInNewTab": "Open in New Tab",
     "reveal": "Reveal in Finder",
     "openInTerminal": "Open in Terminal",
     "newFile": "New File",

@@ -12,6 +12,7 @@
   "loading": "載入中⋯",
   "menu": {
     "open": "開啟",
+    "openInNewTab": "在新分頁開啟",
     "reveal": "在 Finder 中顯示",
     "openInTerminal": "從終端機開啟",
     "newFile": "新增檔案",

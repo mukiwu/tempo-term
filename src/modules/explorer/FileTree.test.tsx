@@ -85,3 +85,20 @@ describe("FileTree at pane capacity", () => {
     expect(useTabsStore.getState().tabs[0].paneOrder).toHaveLength(8);
   });
 });
+
+describe("FileTree context menu: open in new tab", () => {
+  beforeEach(() => {
+    useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+  });
+
+  it("always opens a new tab, even when the file is already open in the active tab", () => {
+    useTabsStore.getState().openEditorTab("/main.ts");
+    const entries = [{ name: "main.ts", path: "/main.ts", is_dir: false, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+
+    fireEvent.contextMenu(screen.getByText("main.ts"));
+    fireEvent.click(screen.getByText("menu.openInNewTab"));
+
+    expect(useTabsStore.getState().tabs).toHaveLength(2);
+  });
+});
