@@ -53,7 +53,7 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
   // track hover manually to highlight just this row.
   const [hovered, setHovered] = useState(false);
 
-  const openEditorTab = useTabsStore((s) => s.openEditorTab);
+  const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const selectSidebar = useUiStore((s) => s.selectSidebar);
   const attachPath = useChatStore((s) => s.attachPath);
@@ -86,7 +86,7 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
 
   async function toggle() {
     if (!entry.is_dir) {
-      openEditorTab(entry.path);
+      openFromSidebar({ kind: "editor", path: entry.path });
       return;
     }
     if (expanded) {
@@ -129,7 +129,7 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
       onReloadParent();
     }
     if (creating.kind === "file") {
-      openEditorTab(path);
+      openFromSidebar({ kind: "editor", path });
     }
   }
 
