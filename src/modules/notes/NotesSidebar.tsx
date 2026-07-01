@@ -18,7 +18,7 @@ import { beginNoteDrag, consumeNoteDragClick, useNoteDragStore } from "./lib/not
 
 function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
   const { t } = useTranslation("notes");
-  const openNoteTab = useTabsStore((s) => s.openNoteTab);
+  const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const deleteNote = useNotesStore((s) => s.deleteNote);
 
   return (
@@ -34,7 +34,7 @@ function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
           if (consumeNoteDragClick()) {
             return;
           }
-          openNoteTab(note.path, note.title || "Untitled");
+          openFromSidebar({ kind: "note", noteId: note.path }, note.title || "Untitled");
         }}
         style={{ paddingLeft: depth * 12 + 10 }}
         className="flex min-w-0 flex-1 items-center gap-2 py-1 pr-2 text-left text-sm text-fg-muted hover:text-fg"
@@ -67,7 +67,7 @@ function FolderRow({ folder, depth }: { folder: FolderNode; depth: number }) {
   const createNote = useNotesStore((s) => s.createNote);
   const renameFolder = useNotesStore((s) => s.renameFolder);
   const deleteNote = useNotesStore((s) => s.deleteNote);
-  const openNoteTab = useTabsStore((s) => s.openNoteTab);
+  const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const isOver = useNoteDragStore(
     (s) => s.hover?.kind === "folder" && s.hover.path === folder.path,
   );
@@ -79,7 +79,7 @@ function FolderRow({ folder, depth }: { folder: FolderNode; depth: number }) {
   function newNoteInFolder() {
     void (async () => {
       const path = await createNote(folder.path);
-      openNoteTab(path, "Untitled");
+      openFromSidebar({ kind: "note", noteId: path }, "Untitled");
     })();
   }
 
@@ -175,7 +175,7 @@ export function NotesSidebar() {
   const tree = useNotesStore((s) => s.tree);
   const createNote = useNotesStore((s) => s.createNote);
   const createFolder = useNotesStore((s) => s.createFolder);
-  const openNoteTab = useTabsStore((s) => s.openNoteTab);
+  const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const isOverRoot = useNoteDragStore((s) => s.hover?.kind === "root");
 
   if (!rootPath) {
@@ -188,7 +188,7 @@ export function NotesSidebar() {
     }
     void (async () => {
       const path = await createNote(rootPath);
-      openNoteTab(path, "Untitled");
+      openFromSidebar({ kind: "note", noteId: path }, "Untitled");
     })();
   }
 
