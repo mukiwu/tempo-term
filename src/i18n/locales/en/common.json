@@ -144,6 +144,7 @@
     "emptyTitle": "No saved connections",
     "emptyHint": "Save SSH connections here to connect with one click",
     "alreadyOpenAlert": "{{name}} is already connected, so a second one can't be opened",
+    "openInNewTab": "Open in new tab",
     "forwards": {
       "session": "Session {{id}}",
       "statusActive": "Active",

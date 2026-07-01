@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { Pencil, Plus, Server, Trash2 } from "lucide-react";
+import { Pencil, Plus, Server, SquarePlus, Trash2 } from "lucide-react";
 import { useConnectionsStore, type SshConnection, type PortForward } from "@/stores/connectionsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { ConnectionForm } from "@/modules/ssh/ConnectionForm";
+import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { InfoDialog } from "@/components/InfoDialog";
 import { useLiveSessionsStore } from "@/modules/ssh/lib/liveSessionsStore";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
@@ -132,8 +133,10 @@ interface ConnectionRowProps {
 function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const { t } = useTranslation("common");
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
+  const openInNewTab = useTabsStore((s) => s.openInNewTab);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [dialog, setDialog] = useState<"none" | "already-connected" | "at-capacity">("none");
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Subscribe to live sessions for this connection. Use a direct field lookup
   // with a stable EMPTY_SESSIONS fallback so the selector returns the same
@@ -177,8 +180,23 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
     onEdit(connection);
   }
 
+  function handleContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  }
+
+  function handleOpenInNewTab() {
+    const result = openInNewTab(
+      { kind: "terminal", ssh: { connectionId: connection.id } },
+      connection.name,
+    );
+    if (result.status === "already-connected") {
+      setDialog("already-connected");
+    }
+  }
+
   return (
-    <li>
+    <li onContextMenu={handleContextMenu}>
       <div className="group flex items-center">
         <button
           type="button"
@@ -249,6 +267,23 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
             />
           ))}
         </div>
+      )}
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              id: "openInNewTab",
+              label: t("connectionsPanel.openInNewTab"),
+              icon: SquarePlus,
+              group: 0,
+              onSelect: handleOpenInNewTab,
+            } satisfies ContextMenuItem,
+          ]}
+        />
       )}
 
       {dialog === "already-connected" && (

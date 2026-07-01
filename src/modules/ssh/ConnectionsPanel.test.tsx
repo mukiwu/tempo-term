@@ -80,4 +80,25 @@ describe("ConnectionsPanel opening a connection", () => {
 
     expect(screen.getByText("paneCapacityAlert")).toBeInTheDocument();
   });
+
+  it("always opens a new tab via right-click, even when the connection is already open", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    render(<ConnectionsPanel />);
+
+    fireEvent.contextMenu(screen.getByText("prod-box"));
+    fireEvent.click(screen.getByText("connectionsPanel.openInNewTab"));
+
+    expect(useTabsStore.getState().tabs).toHaveLength(2);
+  });
+
+  it("blocks a second connection via right-click when one is already open, showing the same InfoDialog", () => {
+    render(<ConnectionsPanel />);
+    fireEvent.click(screen.getByText("prod-box"));
+
+    fireEvent.contextMenu(screen.getByText("prod-box"));
+    fireEvent.click(screen.getByText("connectionsPanel.openInNewTab"));
+
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(screen.getByText("connectionsPanel.alreadyOpenAlert:prod-box")).toBeInTheDocument();
+  });
 });
