@@ -36,3 +36,6 @@ updater-key*.json
 # Claude Code local state (settings, worktrees, transcripts, etc.)
 .claude/
 CLAUDE.md
+
+# Superpowers brainstorming companion scratch files
+.superpowers/
