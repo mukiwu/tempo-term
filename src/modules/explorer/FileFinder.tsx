@@ -16,7 +16,7 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
   const [query, setQuery] = useState("");
   const [files, setFiles] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  const openEditorTab = useTabsStore((s) => s.openEditorTab);
+  const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -36,7 +36,7 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
   const results = useMemo(() => fuzzyRank(query, files).slice(0, 50), [query, files]);
 
   function open(path: string) {
-    openEditorTab(path);
+    openFromSidebar({ kind: "editor", path });
     onClose();
   }
 
