@@ -9,6 +9,7 @@ import {
   Folder,
   Trash2,
 } from "lucide-react";
+import { InfoDialog } from "@/components/InfoDialog";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -18,8 +19,10 @@ import { beginNoteDrag, consumeNoteDragClick, useNoteDragStore } from "./lib/not
 
 function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
   const { t } = useTranslation("notes");
+  const { t: tCommon } = useTranslation("common");
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const deleteNote = useNotesStore((s) => s.deleteNote);
+  const [atCapacity, setAtCapacity] = useState(false);
 
   return (
     <li
@@ -34,7 +37,10 @@ function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
           if (consumeNoteDragClick()) {
             return;
           }
-          openFromSidebar({ kind: "note", noteId: note.path }, note.title || "Untitled");
+          const result = openFromSidebar({ kind: "note", noteId: note.path }, note.title || "Untitled");
+          if (result.status === "at-capacity") {
+            setAtCapacity(true);
+          }
         }}
         style={{ paddingLeft: depth * 12 + 10 }}
         className="flex min-w-0 flex-1 items-center gap-2 py-1 pr-2 text-left text-sm text-fg-muted hover:text-fg"
@@ -58,12 +64,21 @@ function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
       >
         <Trash2 size={13} />
       </button>
+      {atCapacity && (
+        <InfoDialog
+          title={t("newNote")}
+          message={tCommon("paneCapacityAlert")}
+          confirmLabel={tCommon("actions.confirm")}
+          onConfirm={() => setAtCapacity(false)}
+        />
+      )}
     </li>
   );
 }
 
 function FolderRow({ folder, depth }: { folder: FolderNode; depth: number }) {
   const { t } = useTranslation("notes");
+  const { t: tCommon } = useTranslation("common");
   const createNote = useNotesStore((s) => s.createNote);
   const renameFolder = useNotesStore((s) => s.renameFolder);
   const deleteNote = useNotesStore((s) => s.deleteNote);
@@ -75,11 +90,15 @@ function FolderRow({ folder, depth }: { folder: FolderNode; depth: number }) {
   const [collapsed, setCollapsed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [atCapacity, setAtCapacity] = useState(false);
 
   function newNoteInFolder() {
     void (async () => {
       const path = await createNote(folder.path);
-      openFromSidebar({ kind: "note", noteId: path }, "Untitled");
+      const result = openFromSidebar({ kind: "note", noteId: path }, "Untitled");
+      if (result.status === "at-capacity") {
+        setAtCapacity(true);
+      }
     })();
   }
 
@@ -158,6 +177,14 @@ function FolderRow({ folder, depth }: { folder: FolderNode; depth: number }) {
           ))}
         </ul>
       )}
+      {atCapacity && (
+        <InfoDialog
+          title={t("newNote")}
+          message={tCommon("paneCapacityAlert")}
+          confirmLabel={tCommon("actions.confirm")}
+          onConfirm={() => setAtCapacity(false)}
+        />
+      )}
     </li>
   );
 }
@@ -171,12 +198,14 @@ function NodeRow({ node, depth }: { node: NotesNode; depth: number }) {
 
 export function NotesSidebar() {
   const { t } = useTranslation("notes");
+  const { t: tCommon } = useTranslation("common");
   const rootPath = useSettingsStore((s) => s.notesFolderPath);
   const tree = useNotesStore((s) => s.tree);
   const createNote = useNotesStore((s) => s.createNote);
   const createFolder = useNotesStore((s) => s.createFolder);
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const isOverRoot = useNoteDragStore((s) => s.hover?.kind === "root");
+  const [atCapacity, setAtCapacity] = useState(false);
 
   if (!rootPath) {
     return <NotesEmptyState />;
@@ -188,7 +217,10 @@ export function NotesSidebar() {
     }
     void (async () => {
       const path = await createNote(rootPath);
-      openFromSidebar({ kind: "note", noteId: path }, "Untitled");
+      const result = openFromSidebar({ kind: "note", noteId: path }, "Untitled");
+      if (result.status === "at-capacity") {
+        setAtCapacity(true);
+      }
     })();
   }
 
@@ -242,6 +274,15 @@ export function NotesSidebar() {
           ))}
         </ul>
       </div>
+
+      {atCapacity && (
+        <InfoDialog
+          title={t("newNote")}
+          message={tCommon("paneCapacityAlert")}
+          confirmLabel={tCommon("actions.confirm")}
+          onConfirm={() => setAtCapacity(false)}
+        />
+      )}
     </div>
   );
 }

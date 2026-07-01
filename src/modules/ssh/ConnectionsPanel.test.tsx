@@ -68,4 +68,16 @@ describe("ConnectionsPanel opening a connection", () => {
       screen.queryByText("connectionsPanel.alreadyOpenAlert:prod-box"),
     ).not.toBeInTheDocument();
   });
+
+  it("shows the capacity InfoDialog instead of opening a 9th pane", () => {
+    useTabsStore.getState().openEditorTab("/0.ts");
+    for (let i = 1; i < 8; i++) {
+      useTabsStore.getState().openFromSidebar({ kind: "editor", path: `/${i}.ts` });
+    }
+    render(<ConnectionsPanel />);
+
+    fireEvent.click(screen.getByText("prod-box"));
+
+    expect(screen.getByText("paneCapacityAlert")).toBeInTheDocument();
+  });
 });

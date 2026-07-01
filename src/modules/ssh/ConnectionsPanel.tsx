@@ -133,7 +133,7 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const { t } = useTranslation("common");
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [alreadyOpenAlert, setAlreadyOpenAlert] = useState(false);
+  const [dialog, setDialog] = useState<"none" | "already-connected" | "at-capacity">("none");
 
   // Subscribe to live sessions for this connection. Use a direct field lookup
   // with a stable EMPTY_SESSIONS fallback so the selector returns the same
@@ -150,7 +150,9 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
       connection.name,
     );
     if (result.status === "already-connected") {
-      setAlreadyOpenAlert(true);
+      setDialog("already-connected");
+    } else if (result.status === "at-capacity") {
+      setDialog("at-capacity");
     }
   }
 
@@ -249,12 +251,20 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
         </div>
       )}
 
-      {alreadyOpenAlert && (
+      {dialog === "already-connected" && (
         <InfoDialog
           title={t("connectionsPanel.title")}
           message={t("connectionsPanel.alreadyOpenAlert", { name: connection.name })}
           confirmLabel={t("actions.confirm")}
-          onConfirm={() => setAlreadyOpenAlert(false)}
+          onConfirm={() => setDialog("none")}
+        />
+      )}
+      {dialog === "at-capacity" && (
+        <InfoDialog
+          title={t("connectionsPanel.title")}
+          message={t("paneCapacityAlert")}
+          confirmLabel={t("actions.confirm")}
+          onConfirm={() => setDialog("none")}
         />
       )}
     </li>

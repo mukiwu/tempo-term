@@ -65,3 +65,23 @@ describe("FileTree opening a file", () => {
     expect(tab.paneTree.kind).toBe("split");
   });
 });
+
+describe("FileTree at pane capacity", () => {
+  beforeEach(() => {
+    useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+  });
+
+  it("shows an InfoDialog instead of opening a 9th pane", () => {
+    useTabsStore.getState().openEditorTab("/0.ts");
+    for (let i = 1; i < 8; i++) {
+      useTabsStore.getState().openFromSidebar({ kind: "editor", path: `/${i}.ts` });
+    }
+    const entries = [{ name: "9.ts", path: "/9.ts", is_dir: false, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+
+    fireEvent.click(screen.getByText("9.ts"));
+
+    expect(screen.getByText("paneCapacityAlert")).toBeInTheDocument();
+    expect(useTabsStore.getState().tabs[0].paneOrder).toHaveLength(8);
+  });
+});

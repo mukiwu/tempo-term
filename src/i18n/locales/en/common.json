@@ -99,6 +99,7 @@
     "save": "Save",
     "confirm": "Confirm"
   },
+  "paneCapacityAlert": "This tab can hold at most 8 panes — close one and try again",
   "placeholder": {
     "comingSoon": "Coming soon",
     "terminalArea": "Terminal sessions will appear here",

@@ -45,3 +45,27 @@ describe("NotesSidebar opening a note", () => {
     expect(tab.paneTree.kind).toBe("split");
   });
 });
+
+describe("NotesSidebar at pane capacity", () => {
+  beforeEach(() => {
+    useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+    useSettingsStore.setState({ notesFolderPath: "/notes" });
+    useNotesStore.setState({
+      tree: [
+        { kind: "note", name: "todo.md", title: "todo", path: "/notes/todo.md", isConflict: false },
+      ],
+    });
+  });
+
+  it("shows an InfoDialog instead of opening a 9th pane", () => {
+    useTabsStore.getState().openEditorTab("/0.ts");
+    for (let i = 1; i < 8; i++) {
+      useTabsStore.getState().openFromSidebar({ kind: "editor", path: `/${i}.ts` });
+    }
+    render(<NotesSidebar />);
+
+    fireEvent.click(screen.getByText("todo"));
+
+    expect(screen.getByText("paneCapacityAlert")).toBeInTheDocument();
+  });
+});
