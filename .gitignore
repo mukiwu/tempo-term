@@ -33,6 +33,11 @@ docs/
 *.key
 updater-key*.json
 
-# Claude Code local state (settings, worktrees, transcripts, etc.)
-.claude/
+# Claude Code: ignore local state (settings.local.json, worktrees, transcripts,
+# etc.) by default, but share the project's Tauri skills / commands / agents so
+# collaborators get the same tooling.
+.claude/*
+!.claude/agents
+!.claude/commands
+!.claude/skills
 CLAUDE.md
