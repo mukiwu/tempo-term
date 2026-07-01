@@ -148,13 +148,16 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const showForwards = hasLiveSessions && hasForwards;
   const showSessionLabels = sessionIds.length > 1;
 
-  const blockedConnectionId = useSshDragStore((s) => s.blockedConnectionId);
+  // A boolean selector, not the raw id, so only the row that actually
+  // matches re-renders when a drag is blocked or cleared — every other row
+  // would otherwise re-render on every change to this shared store field.
+  const isBlocked = useSshDragStore((s) => s.blockedConnectionId === connection.id);
   useEffect(() => {
-    if (blockedConnectionId === connection.id) {
+    if (isBlocked) {
       setDialog("already-connected");
       useSshDragStore.getState().clearBlockedConnectionId();
     }
-  }, [blockedConnectionId, connection.id]);
+  }, [isBlocked]);
 
   function handleRowClick() {
     if (consumeSshDragClick()) {

@@ -193,6 +193,10 @@ describe("gridLayout", () => {
     expect(tree).toEqual(leaf("a", { kind: "editor", path: "/a.ts" }));
   });
 
+  it("throws instead of recursing forever when called with no panes at all", () => {
+    expect(() => gridLayout([])).toThrow();
+  });
+
   it("splits two panes into two equal-width columns, left to right in add-order", () => {
     const tree = gridLayout([pane("a", "/a.ts"), pane("b", "/b.ts")]);
     const panes = computeLayout(tree);
@@ -356,6 +360,20 @@ describe("resolveDropZone", () => {
       direction: "col",
       anchor: "after",
     });
+  });
+
+  it("row-oriented multi-pane: the exact center of a stacked (half-height) pane resolves to center, not a split", () => {
+    // A stacked pane's own span (50) is only twice INDIVIDUAL_EDGE_PCT (25),
+    // so an edge threshold measured as an absolute container percentage would
+    // cover the pane's entire height and make its center unreachable.
+    const input: DropZoneInput = {
+      paneRect: { left: 0, top: 50, width: 50, height: 50 },
+      rootDirection: "row",
+      pointerXPct: 25,
+      pointerYPct: 75,
+      isFolder: false,
+    };
+    expect(resolveDropZone(input)).toEqual({ kind: "center" });
   });
 
   it("row-oriented multi-pane: near the container's absolute left edge is outer-before, not individual", () => {

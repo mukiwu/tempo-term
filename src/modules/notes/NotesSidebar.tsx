@@ -103,7 +103,7 @@ function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
       )}
       {atCapacity && (
         <InfoDialog
-          title={t("newNote")}
+          title={t("open")}
           message={tCommon("paneCapacityAlert")}
           confirmLabel={tCommon("actions.confirm")}
           onConfirm={() => setAtCapacity(false)}

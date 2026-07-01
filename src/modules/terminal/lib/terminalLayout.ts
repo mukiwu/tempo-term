@@ -339,13 +339,17 @@ export function resolveDropZone(input: DropZoneInput): DropZone {
   const pointerOnAxis = rowOriented ? pointerYPct : pointerXPct;
   const individualBeforeDist = pointerOnAxis - paneStart;
   const individualAfterDist = paneStart + paneSpan - pointerOnAxis;
-  if (individualBeforeDist <= INDIVIDUAL_EDGE_PCT) {
+  // Relative to this pane's own span, not the whole container — a stacked
+  // pane's span can be as little as 50, and an absolute threshold that large
+  // would swallow its entire center, making it impossible to ever drop there.
+  const individualThreshold = paneSpan * (INDIVIDUAL_EDGE_PCT / 100);
+  if (individualBeforeDist <= individualThreshold) {
     candidates.push({
       distancePct: individualBeforeDist,
       zone: { kind: "split", scope: "individual", direction: individualDirection, anchor: "before" },
     });
   }
-  if (individualAfterDist <= INDIVIDUAL_EDGE_PCT) {
+  if (individualAfterDist <= individualThreshold) {
     candidates.push({
       distancePct: individualAfterDist,
       zone: { kind: "split", scope: "individual", direction: individualDirection, anchor: "after" },
@@ -493,6 +497,9 @@ export function gridLayout(panes: OrderedPane[]): LayoutNode {
 /** Nest `nodes` left to right as equal-width row splits ([1/n, (n-1)/n] at
  * each level, so `computeLayout` gives every node the same width). */
 function combineEqualRow(nodes: LayoutNode[]): LayoutNode {
+  if (nodes.length === 0) {
+    throw new Error("combineEqualRow requires at least one node");
+  }
   if (nodes.length === 1) {
     return nodes[0];
   }
