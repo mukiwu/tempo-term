@@ -17,6 +17,7 @@ import {
   splitLeaf,
   type LayoutNode,
 } from "@/modules/terminal/lib/terminalLayout";
+import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 
 function reset() {
   useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
@@ -755,6 +756,45 @@ describe("openFromSidebar", () => {
     const panes = computeLayout(tab.paneTree);
     expect(panes).toHaveLength(2);
     expect(panes.filter((p) => p.content.kind === "editor" && p.content.path === "/a.ts")).toHaveLength(2);
+  });
+});
+
+describe("openFromSidebar with ssh content", () => {
+  beforeEach(reset);
+
+  it("returns already-connected and does not create a tab when the connection is already open", () => {
+    useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "terminal", ssh: { connectionId: "c1" } }, "prod-box");
+    const before = useTabsStore.getState().tabs.length;
+
+    const result = useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "terminal", ssh: { connectionId: "c1" } }, "prod-box");
+
+    expect(result).toEqual({ status: "already-connected" });
+    expect(useTabsStore.getState().tabs).toHaveLength(before);
+  });
+
+  it("opens a new connection normally when it is not already open", () => {
+    const result = useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "terminal", ssh: { connectionId: "c1" } }, "prod-box");
+    expect(result).toEqual({ status: "opened" });
+    const tab = activeTab();
+    expect(firstLeafContent(tab)).toMatchObject({
+      kind: "terminal",
+      ssh: { connectionId: "c1" },
+    });
+  });
+
+  it("marks a freshly split ssh pane so it auto-connects", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "terminal", ssh: { connectionId: "c1" } }, "prod-box");
+    const tab = activeTab();
+    expect(consumeFreshSshLeaf(tab.activeLeafId)).toBe(true);
   });
 });
 

@@ -535,6 +535,27 @@ export const useTabsStore = create<TabsState>()(
 
   openFromSidebar: (content, title) => {
     const spaceId = get().ensureSpace();
+    // Checked separately from the discriminated narrowing below: TypeScript
+    // can't carry `content.kind === "terminal" && content.ssh` through a
+    // boolean variable, so the two later branches that only need a yes/no
+    // (not `content.ssh.connectionId` itself) read this flag instead of
+    // re-narrowing `content` each time.
+    const isFreshSsh = content.kind === "terminal" && !!content.ssh;
+
+    if (content.kind === "terminal" && content.ssh) {
+      const connectionId = content.ssh.connectionId;
+      const alreadyOpen = get().tabs.some(
+        (t) =>
+          t.spaceId === spaceId &&
+          computeLayout(t.paneTree).some(
+            (p) => p.content.kind === "terminal" && p.content.ssh?.connectionId === connectionId,
+          ),
+      );
+      if (alreadyOpen) {
+        return { status: "already-connected" };
+      }
+    }
+
     const resolvedTitle =
       title ?? (content.kind === "editor" ? basename(content.path) : "Untitled");
     const activeTab = get().tabs.find((t) => t.id === get().activeId);
@@ -542,6 +563,9 @@ export const useTabsStore = create<TabsState>()(
     if (!activeTab || activeTab.kind === "launcher") {
       const id = nextTabId();
       const paneId = nextPaneId();
+      if (isFreshSsh) {
+        markFreshSshLeaf(paneId);
+      }
       const tab: Tab = {
         id,
         spaceId,
@@ -549,6 +573,7 @@ export const useTabsStore = create<TabsState>()(
         title: resolvedTitle,
         paneTree: leaf(paneId, content),
         activeLeafId: paneId,
+        ...(isFreshSsh ? { renamed: true } : {}),
       };
       set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
       if (activeTab) {
@@ -560,7 +585,10 @@ export const useTabsStore = create<TabsState>()(
     const rightmost = computeLayout(activeTab.paneTree).reduce((a, b) =>
       b.rect.left + b.rect.width > a.rect.left + a.rect.width ? b : a,
     );
-    get().splitPaneWith(activeTab.id, rightmost.id, content, "row");
+    const newLeafId = get().splitPaneWith(activeTab.id, rightmost.id, content, "row");
+    if (isFreshSsh) {
+      markFreshSshLeaf(newLeafId);
+    }
     return { status: "opened" };
   },
 
