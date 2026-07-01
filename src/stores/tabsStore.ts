@@ -782,31 +782,31 @@ export const useTabsStore = create<TabsState>()(
       return { tabs };
     }),
 
-  splitActivePane: (_direction) => {
-    const tab = get().tabs.find((t) => t.id === get().activeId);
-    if (!tab) {
-      return;
-    }
-    if (tab.paneOrder.length >= 8) {
-      return;
-    }
-    const newId = nextPaneId();
-    const panes: OrderedPane[] = [
-      ...tab.paneOrder.map((id) => ({
-        id,
-        content: findPaneContent(tab.paneTree, id)!,
-      })),
-      { id: newId, content: { kind: "launcher" } },
-    ];
-    const paneTree = gridLayout(panes);
-    set((state) => ({
-      tabs: state.tabs.map((t) =>
-        t.id === tab.id
-          ? { ...t, paneTree, paneOrder: [...tab.paneOrder, newId], activeLeafId: newId }
-          : t,
-      ),
-    }));
-  },
+  splitActivePane: (direction) =>
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === state.activeId);
+      if (!tab || tab.paneOrder.length >= 8) {
+        return state;
+      }
+      const newId = nextPaneId();
+      return {
+        tabs: state.tabs.map((t) =>
+          t.id === tab.id
+            ? {
+                ...t,
+                // A fresh split shows the launcher so the user picks what goes in it.
+                // Directional and pane-specific (unlike openFromSidebar's grid rebuild)
+                // — the user is choosing exactly which pane to split and which way.
+                paneTree: splitLeaf(t.paneTree, t.activeLeafId, direction, newId, {
+                  kind: "launcher",
+                }),
+                activeLeafId: newId,
+                paneOrder: [...t.paneOrder, newId],
+              }
+            : t,
+        ),
+      };
+    }),
 
   setActiveLeaf: (tabId, leafId) =>
     set((state) => ({
