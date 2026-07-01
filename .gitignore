@@ -39,3 +39,8 @@ CLAUDE.md
 
 # Superpowers brainstorming companion scratch files
 .superpowers/
+
+# TypeScript project-reference build artifacts (tsc -b)
+*.tsbuildinfo
+/vite.config.js
+/vite.config.d.ts

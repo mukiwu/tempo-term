@@ -5,7 +5,6 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 import { configDefaults } from "vitest/config";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
