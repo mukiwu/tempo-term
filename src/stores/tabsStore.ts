@@ -95,13 +95,13 @@ interface TabsState {
   /** Cycle the active tab's focused pane to the next leaf (⌘`); wraps around. */
   focusNextPane: () => void;
   resizePane: (tabId: string, splitId: string, sizes: [number, number]) => void;
-  /** Split a pane and show `content` (terminal/editor/note/preview) in the new half. */
+  /** Split a pane and show `content` (terminal/editor/note/preview) in the new half. Returns the new leaf's id. */
   splitPaneWith: (
     tabId: string,
     fromLeafId: string,
     content: PaneContent,
     direction: SplitDirection,
-  ) => void;
+  ) => string;
   /**
    * Follow an in-preview navigation: update the pane's previewed url, and when
    * the preview is the tab's whole content (single pane, not user-renamed),
@@ -722,20 +722,23 @@ export const useTabsStore = create<TabsState>()(
       ),
     })),
 
-  splitPaneWith: (tabId, fromLeafId, content, direction) =>
+  splitPaneWith: (tabId, fromLeafId, content, direction) => {
+    let newId: string | undefined;
     set((state) => ({
       tabs: state.tabs.map((tab) => {
         if (tab.id !== tabId) {
           return tab;
         }
-        const newId = nextPaneId();
+        newId = nextPaneId();
         return {
           ...tab,
           paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, content),
           activeLeafId: newId,
         };
       }),
-    })),
+    }));
+    return newId!;
+  },
 
   setPaneContent: (tabId, leafId, content) =>
     set((state) => ({

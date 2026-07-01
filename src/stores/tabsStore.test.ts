@@ -670,6 +670,25 @@ describe("openHtmlPreview", () => {
   });
 });
 
+describe("splitPaneWith", () => {
+  beforeEach(reset);
+
+  it("returns the id of the newly created leaf", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/a.ts");
+    const original = activeTab();
+    const newLeafId = useTabsStore
+      .getState()
+      .splitPaneWith(tabId, original.activeLeafId, { kind: "editor", path: "/b.ts" }, "row");
+
+    const updated = activeTab();
+    expect(updated.activeLeafId).toBe(newLeafId);
+    expect(findPaneContent(updated.paneTree, newLeafId)).toMatchObject({
+      kind: "editor",
+      path: "/b.ts",
+    });
+  });
+});
+
 describe("localPreviewFilePaths", () => {
   it("includes the decoded local path for a file:// preview pane", () => {
     const tab: Tab = {
