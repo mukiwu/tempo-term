@@ -305,3 +305,53 @@ export function computeSplitters(node: LayoutNode, rect: Rect = FULL): SplitterI
     }),
   ];
 }
+
+/** One pane in add-order, paired with its content, for `gridLayout`. */
+export interface OrderedPane {
+  id: string;
+  content: PaneContent;
+}
+
+/**
+ * Arrange 1-8 panes into a fixed grid: up to 4 equal-width columns, each
+ * holding up to 2 equal-height stacked panes. `panes[0..3]` each get their
+ * own column; `panes[4..7]` stack under columns 0-3 respectively. The caller
+ * must cap input at 8 entries — this function does not validate or throw
+ * on more.
+ */
+export function gridLayout(panes: OrderedPane[]): LayoutNode {
+  const columnCount = Math.min(panes.length, 4);
+  const columns: LayoutNode[] = [];
+  for (let col = 0; col < columnCount; col++) {
+    const bottomIndex = col + 4;
+    if (bottomIndex < panes.length) {
+      columns.push({
+        kind: "split",
+        direction: "col",
+        children: [
+          leaf(panes[col].id, panes[col].content),
+          leaf(panes[bottomIndex].id, panes[bottomIndex].content),
+        ],
+        sizes: [0.5, 0.5],
+      });
+    } else {
+      columns.push(leaf(panes[col].id, panes[col].content));
+    }
+  }
+  return combineEqualRow(columns);
+}
+
+/** Nest `nodes` left to right as equal-width row splits ([1/n, (n-1)/n] at
+ * each level, so `computeLayout` gives every node the same width). */
+function combineEqualRow(nodes: LayoutNode[]): LayoutNode {
+  if (nodes.length === 1) {
+    return nodes[0];
+  }
+  const [first, ...rest] = nodes;
+  return {
+    kind: "split",
+    direction: "row",
+    children: [first, combineEqualRow(rest)],
+    sizes: [1 / nodes.length, (nodes.length - 1) / nodes.length],
+  };
+}
