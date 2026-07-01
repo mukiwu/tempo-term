@@ -127,6 +127,7 @@ describe("App shell", () => {
           kind: "launcher" as const,
           paneTree,
           activeLeafId: "p1",
+          paneOrder: ["p1", "p2", "p3"],
         },
       ],
       activeId: "a",
