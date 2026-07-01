@@ -827,6 +827,7 @@ export const useTabsStore = create<TabsState>()(
           ...tab,
           paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, content),
           activeLeafId: newId,
+          paneOrder: [...tab.paneOrder, newId],
         };
       }),
     }));
@@ -922,7 +923,9 @@ export const useTabsStore = create<TabsState>()(
         tab.activeLeafId === leafId ? (firstLeafId(paneTree) ?? tab.activeLeafId) : tab.activeLeafId;
       return {
         tabs: state.tabs.map((t) =>
-          t.id === tabId ? { ...t, paneTree, activeLeafId } : t,
+          t.id === tabId
+            ? { ...t, paneTree, activeLeafId, paneOrder: t.paneOrder.filter((id) => id !== leafId) }
+            : t,
         ),
       };
     }),

@@ -757,6 +757,21 @@ describe("splitPaneWith", () => {
   });
 });
 
+describe("splitPaneWith keeps paneOrder in sync", () => {
+  beforeEach(reset);
+
+  it("appends the new leaf id to paneOrder", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/a.ts");
+    const original = activeTab();
+    const newLeafId = useTabsStore
+      .getState()
+      .splitPaneWith(tabId, original.activeLeafId, { kind: "editor", path: "/b.ts" }, "row");
+
+    const updated = activeTab();
+    expect(updated.paneOrder).toEqual([original.activeLeafId, newLeafId]);
+  });
+});
+
 describe("openFromSidebar", () => {
   beforeEach(reset);
 
@@ -862,6 +877,26 @@ describe("openFromSidebar with ssh content", () => {
       .openFromSidebar({ kind: "terminal", ssh: { connectionId: "c1" } }, "prod-box");
     const tab = activeTab();
     expect(consumeFreshSshLeaf(tab.activeLeafId)).toBe(true);
+  });
+});
+
+describe("closePane keeps paneOrder in sync", () => {
+  beforeEach(reset);
+
+  it("removes the closed leaf id from paneOrder, preserving the order of survivors", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/a.ts");
+    const first = activeTab().activeLeafId;
+    const second = useTabsStore
+      .getState()
+      .splitPaneWith(tabId, first, { kind: "editor", path: "/b.ts" }, "row");
+    const third = useTabsStore
+      .getState()
+      .splitPaneWith(tabId, second, { kind: "editor", path: "/c.ts" }, "row");
+
+    useTabsStore.getState().closePane(tabId, second);
+
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(tab.paneOrder).toEqual([first, third]);
   });
 });
 
