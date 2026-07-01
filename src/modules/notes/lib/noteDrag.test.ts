@@ -1,5 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
-import { applyNoteDrop, isOverTabBar, resolveNoteDrop, useNoteDragStore } from "./noteDrag";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  applyNoteDrop,
+  beginNoteDrag,
+  isOverTabBar,
+  resolveNoteDrop,
+  useNoteDragStore,
+} from "./noteDrag";
+import { useTabsStore } from "@/stores/tabsStore";
+
+// jsdom has no PointerEvent constructor; a MouseEvent dispatched under the
+// pointermove/pointerup type names reaches the same window listeners since
+// beginNoteDrag's handlers only read clientX/clientY off the event.
+function firePointer(type: "pointermove" | "pointerup", clientX: number, clientY: number): void {
+  window.dispatchEvent(new MouseEvent(type, { clientX, clientY }));
+}
 
 describe("resolveNoteDrop", () => {
   it("resolves a folder header to a folder target carrying its path", () => {
@@ -84,5 +98,81 @@ describe("tab-bar drop priority", () => {
     const inner = document.createElement("div");
     outer.appendChild(inner);
     expect(isOverTabBar(inner)).toBe(true);
+  });
+});
+
+describe("beginNoteDrag tab-bar drop with insertion", () => {
+  beforeEach(() => {
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "One" }],
+      activeSpaceId: "s1",
+      tabs: [],
+      activeId: null,
+    });
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    // @ts-expect-error jsdom has no native elementFromPoint; tests assign one directly.
+    delete document.elementFromPoint;
+    document.body.innerHTML = "";
+    useNoteDragStore.setState({ hover: null, paneHover: null, tabBarHover: null });
+  });
+
+  function setUpTabBarDom(tabIdA: string, tabIdB: string): { bar: Element } {
+    document.body.innerHTML = `
+      <div data-tab-bar>
+        <div role="tab" data-tab-id="${tabIdA}"></div>
+        <div role="tab" data-tab-id="${tabIdB}"></div>
+      </div>
+    `;
+    const bar = document.querySelector("[data-tab-bar]")!;
+    const [elA, elB] = Array.from(document.querySelectorAll('[role="tab"]'));
+    vi.spyOn(elA, "getBoundingClientRect").mockReturnValue({ left: 0, width: 100 } as DOMRect);
+    vi.spyOn(elB, "getBoundingClientRect").mockReturnValue({ left: 100, width: 100 } as DOMRect);
+    vi.spyOn(bar, "getBoundingClientRect").mockReturnValue({} as DOMRect);
+    return { bar };
+  }
+
+  it("reorders the newly-opened tab to land before the tab it was dropped nearest to", () => {
+    const tabIdA = useTabsStore.getState().newTerminalTab();
+    const tabIdB = useTabsStore.getState().newTerminalTab();
+    const { bar } = setUpTabBarDom(tabIdA, tabIdB);
+    document.elementFromPoint = vi.fn().mockReturnValue(bar);
+
+    const startEvent = { clientX: 500, clientY: 10, button: 0 } as unknown as React.PointerEvent;
+    beginNoteDrag("/root/n.md", "n.md", startEvent);
+
+    firePointer("pointermove", 10, 10);
+    firePointer("pointerup", 10, 10);
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(3);
+    const newTab = tabs.find((t) => t.kind === "note")!;
+    expect(newTab).toBeDefined();
+    const indexOfNew = tabs.findIndex((t) => t.id === newTab.id);
+    const indexOfA = tabs.findIndex((t) => t.id === tabIdA);
+    // The new tab lands immediately before tabIdA — it takes tabIdA's former
+    // slot and tabIdA shifts one place to the right.
+    expect(indexOfNew).toBe(indexOfA - 1);
+  });
+
+  it("leaves the new tab at the end (no reorder) when dropped past every tab's midpoint", () => {
+    const tabIdA = useTabsStore.getState().newTerminalTab();
+    const tabIdB = useTabsStore.getState().newTerminalTab();
+    const { bar } = setUpTabBarDom(tabIdA, tabIdB);
+    document.elementFromPoint = vi.fn().mockReturnValue(bar);
+
+    const startEvent = { clientX: 500, clientY: 10, button: 0 } as unknown as React.PointerEvent;
+    beginNoteDrag("/root/n.md", "n.md", startEvent);
+
+    firePointer("pointermove", 280, 10);
+    firePointer("pointerup", 280, 10);
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(3);
+    const newTab = tabs.find((t) => t.kind === "note")!;
+    expect(tabs[tabs.length - 1].id).toBe(newTab.id);
   });
 });

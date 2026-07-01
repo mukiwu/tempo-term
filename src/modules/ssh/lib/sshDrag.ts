@@ -9,6 +9,7 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";
 import { useTabsStore } from "@/stores/tabsStore";
+import { nearestTabInsertion, tabRectsInTabBar } from "@/components/lib/tabBarDrop";
 
 interface SshDragState {
   /** The pane under the cursor and the pointer's percentage position within it. */
@@ -21,6 +22,8 @@ interface SshDragState {
   /** Set when a tab-bar drop of this connection was blocked by the already-connected guard, for `ConnectionsPanel.tsx` to show its dialog. */
   blockedConnectionId: string | null;
   clearBlockedConnectionId: () => void;
+  /** Where a drop on the tab bar would insert a new tab, while dragging over it; null when not hovering the tab bar at all. */
+  tabBarHover: { insertBeforeId: string | null } | null;
 }
 
 export const useSshDragStore = create<SshDragState>((set) => ({
@@ -29,6 +32,7 @@ export const useSshDragStore = create<SshDragState>((set) => ({
   clearPendingPaneDrop: () => set({ pendingPaneDrop: null }),
   blockedConnectionId: null,
   clearBlockedConnectionId: () => set({ blockedConnectionId: null }),
+  tabBarHover: null,
 }));
 
 const DRAG_THRESHOLD = 5;
@@ -133,6 +137,14 @@ export function beginSshDrag(
       showGhost(connectionName, e.clientX, e.clientY);
     }
     moveGhost(e.clientX, e.clientY);
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      useSshDragStore.setState({
+        paneHover: null,
+        tabBarHover: { insertBeforeId: nearestTabInsertion(tabRectsInTabBar(), e.clientX) },
+      });
+      return;
+    }
+    useSshDragStore.setState({ tabBarHover: null });
     const leafId = leafAt(e.clientX, e.clientY);
     const areaRect = paneAreaRectAt(e.clientX, e.clientY);
     useSshDragStore.setState({
@@ -150,12 +162,20 @@ export function beginSshDrag(
       suppressClick = false;
     }, 0);
     if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
-      useSshDragStore.setState({ paneHover: null, pendingPaneDrop: null });
+      const insertBeforeId = nearestTabInsertion(tabRectsInTabBar(), e.clientX);
+      useSshDragStore.setState({ paneHover: null, pendingPaneDrop: null, tabBarHover: null });
       const result = useTabsStore
         .getState()
         .openInNewTab({ kind: "terminal", ssh: { connectionId } }, connectionName);
       if (result.status === "already-connected") {
         useSshDragStore.setState({ blockedConnectionId: connectionId });
+        return;
+      }
+      if (result.status === "opened" && insertBeforeId !== null) {
+        const newTabId = useTabsStore.getState().activeId;
+        if (newTabId) {
+          useTabsStore.getState().reorderTab(newTabId, insertBeforeId);
+        }
       }
       return;
     }
@@ -170,7 +190,7 @@ export function beginSshDrag(
 
   const onCancel = () => {
     stop();
-    useSshDragStore.setState({ paneHover: null });
+    useSshDragStore.setState({ paneHover: null, tabBarHover: null });
   };
 
   window.addEventListener("pointermove", onMove);

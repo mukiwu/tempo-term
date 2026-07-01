@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   FileCode,
@@ -34,6 +34,9 @@ import { IS_MAC } from "@/lib/platform";
 import { SpaceDropdown } from "./SpaceDropdown";
 import { ContextMenu } from "./ContextMenu";
 import { tabContextMenuItems } from "./tabContextMenuItems";
+import { useEntryDragStore } from "@/modules/explorer/lib/dragEntry";
+import { useNoteDragStore } from "@/modules/notes/lib/noteDrag";
+import { useSshDragStore } from "@/modules/ssh/lib/sshDrag";
 
 // Module-level so the reference stays stable across renders. Passing an inline
 // options object would make useSensor/useSensors return a new sensors array on
@@ -104,6 +107,7 @@ function TabItem({ id }: { id: string }) {
       {...attributes}
       {...listeners}
       role="tab"
+      data-tab-id={id}
       aria-selected={active}
       onClick={() => setActive(tab.id)}
       onDoubleClick={startRename}
@@ -176,6 +180,16 @@ function TabItem({ id }: { id: string }) {
   );
 }
 
+function TabInsertionLine() {
+  return (
+    <div
+      aria-hidden
+      data-testid="tab-insertion-line"
+      className="h-7 w-0.5 shrink-0 rounded-full bg-accent"
+    />
+  );
+}
+
 function TabOverlay({ tab }: { tab: Tab }) {
   const Icon = tabIcon(tab.kind);
   return (
@@ -195,6 +209,10 @@ export function TabBar() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const reorderTab = useTabsStore((s) => s.reorderTab);
+  const entryTabBarHover = useEntryDragStore((s) => s.tabBarHover);
+  const noteTabBarHover = useNoteDragStore((s) => s.tabBarHover);
+  const sshTabBarHover = useSshDragStore((s) => s.tabBarHover);
+  const tabBarHover = entryTabBarHover ?? noteTabBarHover ?? sshTabBarHover ?? null;
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
   const draggingTab = visibleTabs.find((tab) => tab.id === draggingId);
@@ -253,9 +271,13 @@ export function TabBar() {
             strategy={horizontalListSortingStrategy}
           >
             {visibleTabs.map((tab) => (
-              <TabItem key={tab.id} id={tab.id} />
+              <Fragment key={tab.id}>
+                {tabBarHover?.insertBeforeId === tab.id && <TabInsertionLine />}
+                <TabItem id={tab.id} />
+              </Fragment>
             ))}
           </SortableContext>
+          {tabBarHover !== null && tabBarHover.insertBeforeId === null && <TabInsertionLine />}
           <button
             type="button"
             aria-label={t("workspace.addTab")}

@@ -9,6 +9,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";
 import { useNotesStore } from "@/stores/notesStore";
 import { useTabsStore } from "@/stores/tabsStore";
+import { nearestTabInsertion, tabRectsInTabBar } from "@/components/lib/tabBarDrop";
 
 /** Where a dragged note will land when released: a sidebar folder/root (moves the note), or a pane (opens the note there). */
 export type NoteDropTarget =
@@ -66,6 +67,8 @@ interface NoteDragState {
   /** A resolved pane drop waiting for its owning tab to consume it. */
   pendingPaneDrop: { leafId: string; noteId: string; noteTitle: string; xPct: number; yPct: number } | null;
   clearPendingPaneDrop: () => void;
+  /** Where a drop on the tab bar would insert a new tab, while dragging over it; null when not hovering the tab bar at all. */
+  tabBarHover: { insertBeforeId: string | null } | null;
 }
 
 export const useNoteDragStore = create<NoteDragState>((set) => ({
@@ -74,6 +77,7 @@ export const useNoteDragStore = create<NoteDragState>((set) => ({
   paneHover: null,
   pendingPaneDrop: null,
   clearPendingPaneDrop: () => set({ pendingPaneDrop: null }),
+  tabBarHover: null,
 }));
 
 const DRAG_THRESHOLD = 5;
@@ -201,6 +205,15 @@ export function beginNoteDrag(
       showGhost(label, e.clientX, e.clientY);
     }
     moveGhost(e.clientX, e.clientY);
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      useNoteDragStore.setState({
+        hover: null,
+        paneHover: null,
+        tabBarHover: { insertBeforeId: nearestTabInsertion(tabRectsInTabBar(), e.clientX) },
+      });
+      return;
+    }
+    useNoteDragStore.setState({ tabBarHover: null });
     const target = targetAt(e.clientX, e.clientY);
     if (target?.kind === "pane") {
       const areaRect = paneAreaRectAt(e.clientX, e.clientY);
@@ -226,8 +239,15 @@ export function beginNoteDrag(
       suppressClick = false;
     }, 0);
     if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
-      useNoteDragStore.setState({ hover: null, paneHover: null });
-      useTabsStore.getState().openInNewTab({ kind: "note", noteId: notePath }, label);
+      const insertBeforeId = nearestTabInsertion(tabRectsInTabBar(), e.clientX);
+      useNoteDragStore.setState({ hover: null, paneHover: null, tabBarHover: null });
+      const result = useTabsStore.getState().openInNewTab({ kind: "note", noteId: notePath }, label);
+      if (result.status === "opened" && insertBeforeId !== null) {
+        const newTabId = useTabsStore.getState().activeId;
+        if (newTabId) {
+          useTabsStore.getState().reorderTab(newTabId, insertBeforeId);
+        }
+      }
       return;
     }
     const target = targetAt(e.clientX, e.clientY);
@@ -248,7 +268,7 @@ export function beginNoteDrag(
 
   const onCancel = () => {
     stop();
-    useNoteDragStore.setState({ hover: null, paneHover: null });
+    useNoteDragStore.setState({ hover: null, paneHover: null, tabBarHover: null });
   };
 
   window.addEventListener("pointermove", onMove);

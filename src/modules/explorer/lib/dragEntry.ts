@@ -8,6 +8,7 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";
 import { useTabsStore } from "@/stores/tabsStore";
+import { nearestTabInsertion, tabRectsInTabBar } from "@/components/lib/tabBarDrop";
 
 export interface DraggedEntry {
   path: string;
@@ -34,6 +35,8 @@ interface EntryDragState {
   hoverPointerPct: { xPct: number; yPct: number } | null;
   /** A resolved drop waiting for its owning pane to consume it. */
   pendingDrop: PendingDrop | null;
+  /** Where a drop on the tab bar would insert a new tab, while dragging over it; null when not hovering the tab bar at all. */
+  tabBarHover: { insertBeforeId: string | null } | null;
   setHover: (leafId: string | null) => void;
   clearPendingDrop: () => void;
 }
@@ -44,6 +47,7 @@ export const useEntryDragStore = create<EntryDragState>((set) => ({
   hoverLeafId: null,
   hoverPointerPct: null,
   pendingDrop: null,
+  tabBarHover: null,
   setHover: (leafId) => set((s) => (s.hoverLeafId === leafId ? s : { hoverLeafId: leafId })),
   clearPendingDrop: () => set({ pendingDrop: null }),
 }));
@@ -165,6 +169,15 @@ export function beginEntryDrag(entry: DraggedEntry, event: ReactPointerEvent): v
       showGhost(entry.name, e.clientX, e.clientY);
     }
     moveGhost(e.clientX, e.clientY);
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      useEntryDragStore.setState({
+        hoverLeafId: null,
+        hoverPointerPct: null,
+        tabBarHover: { insertBeforeId: nearestTabInsertion(tabRectsInTabBar(), e.clientX) },
+      });
+      return;
+    }
+    useEntryDragStore.setState({ tabBarHover: null });
     useEntryDragStore.getState().setHover(leafAt(e.clientX, e.clientY));
     const areaRect = paneAreaRectAt(e.clientX, e.clientY);
     useEntryDragStore.setState({
@@ -183,15 +196,23 @@ export function beginEntryDrag(entry: DraggedEntry, event: ReactPointerEvent): v
       suppressClick = false;
     }, 0);
     if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      const insertBeforeId = nearestTabInsertion(tabRectsInTabBar(), e.clientX);
       useEntryDragStore.setState({
         dragging: false,
         hoverLeafId: null,
         hoverPointerPct: null,
         entry: null,
         pendingDrop: null,
+        tabBarHover: null,
       });
       if (!entry.isDir) {
-        useTabsStore.getState().openInNewTab({ kind: "editor", path: entry.path });
+        const result = useTabsStore.getState().openInNewTab({ kind: "editor", path: entry.path });
+        if (result.status === "opened" && insertBeforeId !== null) {
+          const newTabId = useTabsStore.getState().activeId;
+          if (newTabId) {
+            useTabsStore.getState().reorderTab(newTabId, insertBeforeId);
+          }
+        }
       }
       return;
     }
@@ -211,7 +232,13 @@ export function beginEntryDrag(entry: DraggedEntry, event: ReactPointerEvent): v
 
   const onCancel = () => {
     stop();
-    useEntryDragStore.setState({ dragging: false, hoverLeafId: null, hoverPointerPct: null, entry: null });
+    useEntryDragStore.setState({
+      dragging: false,
+      hoverLeafId: null,
+      hoverPointerPct: null,
+      entry: null,
+      tabBarHover: null,
+    });
   };
 
   window.addEventListener("pointermove", onMove);
