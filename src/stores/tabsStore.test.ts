@@ -570,6 +570,41 @@ describe("migratePersistedTabs", () => {
     expect(byId("t2").title).toBe("b.ts");
     expect(byId("t2").activeLeafId).toBe(leafIds(byId("t2").paneTree)[0]);
   });
+
+  it("preserves a non-terminal tab's real multi-leaf split when it survives migration", () => {
+    const multiLeafTree = splitLeaf(
+      leaf("e1", { kind: "editor", path: "/a/b.ts" }),
+      "e1",
+      "row",
+      "t1",
+      { kind: "terminal" },
+    );
+
+    const v1WithoutPaneOrder = {
+      spaces: [{ id: "s1", name: "W" }],
+      activeSpaceId: "s1",
+      activeId: "tab1",
+      tabs: [
+        {
+          id: "tab1",
+          spaceId: "s1",
+          kind: "editor",
+          title: "split-editor",
+          path: "/a/b.ts",
+          paneTree: multiLeafTree,
+          activeLeafId: "e1",
+          // no paneOrder — simulating pre-paneOrder v1 persisted data
+        },
+      ],
+    };
+
+    const migrated = migratePersistedTabs(v1WithoutPaneOrder, 0) as { tabs: Tab[] };
+    const tab = migrated.tabs[0]!;
+
+    expect(tab.paneTree).toBe(multiLeafTree);
+    expect(tab.activeLeafId).toBe("e1");
+    expect(tab.paneOrder).toEqual(leafIds(multiLeafTree));
+  });
 });
 
 describe("tabHasDirtyEditor", () => {
