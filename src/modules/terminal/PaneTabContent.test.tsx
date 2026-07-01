@@ -4,6 +4,7 @@ import { act } from "react";
 import { PaneTabContent } from "./PaneTabContent";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useEntryDragStore } from "@/modules/explorer/lib/dragEntry";
+import { useNoteDragStore } from "@/modules/notes/lib/noteDrag";
 import { leaf, splitLeaf } from "./lib/terminalLayout";
 
 vi.mock("react-i18next", () => ({
@@ -167,5 +168,51 @@ describe("PaneTabContent file-drop dispatch", () => {
     expect(screen.getByText("paneCapacityAlert")).toBeInTheDocument();
     const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
     expect(updated.paneOrder).toHaveLength(8);
+  });
+});
+
+describe("PaneTabContent note-drop dispatch", () => {
+  beforeEach(() => {
+    useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+    useNoteDragStore.setState({ hover: null, paneHover: null, pendingPaneDrop: null });
+  });
+
+  it("center drop always replaces the pane with the note (no per-target-kind branching)", () => {
+    const { tabId, leafId } = makeSinglePaneTab();
+    useTabsStore.getState().setPaneContent(tabId, leafId, { kind: "editor", path: "/old.ts" });
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    render(<PaneTabContent tab={tab} />);
+
+    act(() => {
+      useNoteDragStore.setState({
+        pendingPaneDrop: { leafId, noteId: "/notes/todo.md", noteTitle: "Todo", xPct: 50, yPct: 50 },
+      });
+    });
+
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual({
+      kind: "leaf",
+      id: leafId,
+      pane: { kind: "note", noteId: "/notes/todo.md" },
+    });
+  });
+
+  it("right-edge drop splits row with the note pane after the existing one", () => {
+    const { tabId, leafId } = makeSinglePaneTab();
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    render(<PaneTabContent tab={tab} />);
+
+    act(() => {
+      useNoteDragStore.setState({
+        pendingPaneDrop: { leafId, noteId: "/notes/todo.md", noteTitle: "Todo", xPct: 95, yPct: 50 },
+      });
+    });
+
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree.kind).toBe("split");
+    if (updated.paneTree.kind === "split") {
+      const second = updated.paneTree.children[1];
+      expect(second.kind === "leaf" && second.pane).toEqual({ kind: "note", noteId: "/notes/todo.md" });
+    }
   });
 });

@@ -40,6 +40,7 @@ import {
   type DraggedEntry,
 } from "@/modules/explorer/lib/dragEntry";
 import { insertLinkIntoNote } from "@/modules/notes/lib/noteBus";
+import { useNoteDragStore } from "@/modules/notes/lib/noteDrag";
 import { deleteTerminalHistory } from "./lib/terminalHistory";
 import { useTabsStore, type Tab } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -87,6 +88,8 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const hoverLeaf = useEntryDragStore((s) => s.hoverLeafId);
   const hoverPointerPct = useEntryDragStore((s) => s.hoverPointerPct);
   const pendingDrop = useEntryDragStore((s) => s.pendingDrop);
+  const pendingNotePaneDrop = useNoteDragStore((s) => s.pendingPaneDrop);
+  const notePaneHover = useNoteDragStore((s) => s.paneHover);
   // New terminal panes (incl. splits) start in the explorer's current dir, not
   // the tab's original cwd — so a split follows where you've navigated to.
   const rootPath = useWorkspaceStore((s) => s.rootPath);
@@ -104,7 +107,17 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
           pointerYPct: hoverPointerPct.yPct,
           isFolder: draggedEntry?.isDir ?? false,
         })
-      : null;
+      : notePaneHover
+        ? resolveDropZone({
+            paneRect: panes.find((p) => p.id === notePaneHover.leafId)?.rect ?? { left: 0, top: 0, width: 100, height: 100 },
+            rootDirection,
+            pointerXPct: notePaneHover.xPct,
+            pointerYPct: notePaneHover.yPct,
+            isFolder: false,
+          })
+        : null;
+  const activeHoverLeaf = hoverLeaf ?? notePaneHover?.leafId ?? null;
+  const anyDragging = dragging || notePaneHover !== null;
 
   // When this tab's active pane is an SSH terminal, point the file explorer at
   // that host's remote files. A local (or non-active) pane yields null, so the
@@ -218,6 +231,43 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
     }
     useEntryDragStore.getState().clearPendingDrop();
   }, [pendingDrop, rootDirection, tab.id, tab.paneOrder.length]);
+
+  // Parallel to the file-drop effect above, but for notes dragged out of the
+  // Notes sidebar: there's no per-target-kind center behavior for notes, so
+  // center always just replaces the pane's content with the note.
+  useEffect(() => {
+    if (!pendingNotePaneDrop) {
+      return;
+    }
+    const pane = panesRef.current.find((p) => p.id === pendingNotePaneDrop.leafId);
+    if (!pane) {
+      return;
+    }
+    const zone = resolveDropZone({
+      paneRect: pane.rect,
+      rootDirection,
+      pointerXPct: pendingNotePaneDrop.xPct,
+      pointerYPct: pendingNotePaneDrop.yPct,
+      isFolder: false,
+    });
+    const newContent: PaneContent = { kind: "note", noteId: pendingNotePaneDrop.noteId };
+    if (zone.kind === "center") {
+      setPaneContent(tab.id, pendingNotePaneDrop.leafId, newContent);
+      useNoteDragStore.getState().clearPendingPaneDrop();
+      return;
+    }
+    if (tab.paneOrder.length >= 8) {
+      setAtCapacity(true);
+      useNoteDragStore.getState().clearPendingPaneDrop();
+      return;
+    }
+    if (zone.scope === "individual") {
+      splitPaneWith(tab.id, pendingNotePaneDrop.leafId, newContent, zone.direction, zone.anchor);
+    } else {
+      wrapPaneWith(tab.id, newContent, zone.direction, zone.anchor);
+    }
+    useNoteDragStore.getState().clearPendingPaneDrop();
+  }, [pendingNotePaneDrop, rootDirection, tab.id, tab.paneOrder.length]);
 
   function startDrag(e: ReactMouseEvent, splitter: SplitterInfo) {
     e.preventDefault();
@@ -367,14 +417,14 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   explorer entry. The drop itself is handled by the document-level
                   drag/dragend listeners above, since WKWebView swallows the
                   webview's own HTML5 drop events when dragDropEnabled is on. */}
-              {dragging && pane.id === hoverLeaf && (hoverZone === null || hoverZone.kind !== "split" || hoverZone.scope !== "outer") && (
+              {anyDragging && pane.id === activeHoverLeaf && (hoverZone === null || hoverZone.kind !== "split" || hoverZone.scope !== "outer") && (
                 <div className={dropOverlayClassName(hoverZone, dropOk)} />
               )}
             </div>
           );
         })}
 
-        {dragging && hoverZone?.kind === "split" && hoverZone.scope === "outer" && (
+        {anyDragging && hoverZone?.kind === "split" && hoverZone.scope === "outer" && (
           <div className={outerBandOverlayClassName(hoverZone.direction, hoverZone.anchor)} />
         )}
 

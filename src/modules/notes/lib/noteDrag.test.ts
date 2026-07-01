@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyNoteDrop, resolveNoteDrop } from "./noteDrag";
+import { applyNoteDrop, resolveNoteDrop, useNoteDragStore } from "./noteDrag";
 
 describe("resolveNoteDrop", () => {
   it("resolves a folder header to a folder target carrying its path", () => {
@@ -26,6 +26,34 @@ describe("resolveNoteDrop", () => {
   it("returns null when the cursor is outside any drop zone", () => {
     expect(resolveNoteDrop(document.createElement("div"))).toBeNull();
     expect(resolveNoteDrop(null)).toBeNull();
+  });
+});
+
+describe("resolveNoteDrop pane targeting", () => {
+  it("resolves a pane-leaf element to a pane target", () => {
+    const el = document.createElement("div");
+    el.dataset.paneLeaf = "leaf-1";
+    expect(resolveNoteDrop(el)).toEqual({ kind: "pane", leafId: "leaf-1" });
+  });
+
+  it("still prefers a folder over a pane when both markers are ancestors", () => {
+    const outer = document.createElement("div");
+    outer.dataset.paneLeaf = "leaf-1";
+    const inner = document.createElement("div");
+    inner.dataset.folderPath = "/notes/work";
+    outer.appendChild(inner);
+    expect(resolveNoteDrop(inner)).toEqual({ kind: "folder", path: "/notes/work" });
+  });
+
+  it("still returns null when nothing matches", () => {
+    expect(resolveNoteDrop(document.createElement("span"))).toBeNull();
+  });
+});
+
+describe("useNoteDragStore pane-drop fields", () => {
+  it("starts with paneHover and pendingPaneDrop both null", () => {
+    expect(useNoteDragStore.getState().paneHover).toBeNull();
+    expect(useNoteDragStore.getState().pendingPaneDrop).toBeNull();
   });
 });
 
