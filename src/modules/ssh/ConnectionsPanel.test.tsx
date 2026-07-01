@@ -45,15 +45,27 @@ describe("ConnectionsPanel opening a connection", () => {
     });
   });
 
-  it("alerts and does not open a second connection when one is already open", () => {
-    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+  it("shows an InfoDialog and does not open a second connection when one is already open", () => {
     render(<ConnectionsPanel />);
 
     fireEvent.click(screen.getByText("prod-box"));
     fireEvent.click(screen.getByText("prod-box"));
 
     expect(useTabsStore.getState().tabs).toHaveLength(1);
-    expect(alertSpy).toHaveBeenCalledTimes(1);
-    expect(alertSpy).toHaveBeenCalledWith("connectionsPanel.alreadyOpenAlert:prod-box");
+    expect(
+      screen.getByText("connectionsPanel.alreadyOpenAlert:prod-box"),
+    ).toBeInTheDocument();
+  });
+
+  it("closes the InfoDialog when its OK button is clicked", () => {
+    render(<ConnectionsPanel />);
+
+    fireEvent.click(screen.getByText("prod-box"));
+    fireEvent.click(screen.getByText("prod-box"));
+    fireEvent.click(screen.getByRole("button", { name: "actions.confirm" }));
+
+    expect(
+      screen.queryByText("connectionsPanel.alreadyOpenAlert:prod-box"),
+    ).not.toBeInTheDocument();
   });
 });

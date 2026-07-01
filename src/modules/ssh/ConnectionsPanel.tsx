@@ -5,6 +5,7 @@ import { Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { useConnectionsStore, type SshConnection, type PortForward } from "@/stores/connectionsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { ConnectionForm } from "@/modules/ssh/ConnectionForm";
+import { InfoDialog } from "@/components/InfoDialog";
 import { useLiveSessionsStore } from "@/modules/ssh/lib/liveSessionsStore";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
 import { startForward, stopForward } from "@/modules/ssh/lib/ssh-bridge";
@@ -132,6 +133,7 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const { t } = useTranslation("common");
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [alreadyOpenAlert, setAlreadyOpenAlert] = useState(false);
 
   // Subscribe to live sessions for this connection. Use a direct field lookup
   // with a stable EMPTY_SESSIONS fallback so the selector returns the same
@@ -148,7 +150,7 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
       connection.name,
     );
     if (result.status === "already-connected") {
-      window.alert(t("connectionsPanel.alreadyOpenAlert", { name: connection.name }));
+      setAlreadyOpenAlert(true);
     }
   }
 
@@ -245,6 +247,15 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
             />
           ))}
         </div>
+      )}
+
+      {alreadyOpenAlert && (
+        <InfoDialog
+          title={t("connectionsPanel.title")}
+          message={t("connectionsPanel.alreadyOpenAlert", { name: connection.name })}
+          confirmLabel={t("actions.confirm")}
+          onConfirm={() => setAlreadyOpenAlert(false)}
+        />
       )}
     </li>
   );
