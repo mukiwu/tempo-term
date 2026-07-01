@@ -69,3 +69,31 @@ describe("NotesSidebar at pane capacity", () => {
     expect(screen.getByText("paneCapacityAlert")).toBeInTheDocument();
   });
 });
+
+describe("NotesSidebar context menu: open in new tab", () => {
+  beforeEach(() => {
+    useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+    useSettingsStore.setState({ notesFolderPath: "/notes" });
+    useNotesStore.setState({
+      tree: [
+        { kind: "note", name: "todo.md", title: "todo", path: "/notes/todo.md", isConflict: false },
+      ],
+    });
+  });
+
+  it("always opens a new tab via right-click, even when the note is already open", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    render(<NotesSidebar />);
+
+    fireEvent.contextMenu(screen.getByText("todo"));
+    fireEvent.click(screen.getByText("openInNewTab"));
+
+    expect(useTabsStore.getState().tabs).toHaveLength(2);
+    const newTab = useTabsStore.getState().tabs[1];
+    const pane = newTab.paneTree;
+    expect(pane.kind === "leaf" && pane.pane).toMatchObject({
+      kind: "note",
+      noteId: "/notes/todo.md",
+    });
+  });
+});

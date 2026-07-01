@@ -8,7 +8,9 @@ import {
   FileText,
   Folder,
   Trash2,
+  SquarePlus,
 } from "lucide-react";
+import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { InfoDialog } from "@/components/InfoDialog";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -21,13 +23,19 @@ function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
   const { t } = useTranslation("notes");
   const { t: tCommon } = useTranslation("common");
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
+  const openInNewTab = useTabsStore((s) => s.openInNewTab);
   const deleteNote = useNotesStore((s) => s.deleteNote);
   const [atCapacity, setAtCapacity] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   return (
     <li
       data-note-path={note.path}
       onPointerDown={(e) => beginNoteDrag(note.path, note.title || "Untitled", e)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
       className="group flex items-center"
     >
       <button
@@ -64,6 +72,22 @@ function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
       >
         <Trash2 size={13} />
       </button>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              id: "openInNewTab",
+              label: t("openInNewTab"),
+              icon: SquarePlus,
+              group: 0,
+              onSelect: () => openInNewTab({ kind: "note", noteId: note.path }, note.title || "Untitled"),
+            } satisfies ContextMenuItem,
+          ]}
+        />
+      )}
       {atCapacity && (
         <InfoDialog
           title={t("newNote")}
