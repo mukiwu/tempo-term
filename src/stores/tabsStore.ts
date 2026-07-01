@@ -782,23 +782,31 @@ export const useTabsStore = create<TabsState>()(
       return { tabs };
     }),
 
-  splitActivePane: (direction) =>
+  splitActivePane: (_direction) => {
+    const tab = get().tabs.find((t) => t.id === get().activeId);
+    if (!tab) {
+      return;
+    }
+    if (tab.paneOrder.length >= 8) {
+      return;
+    }
+    const newId = nextPaneId();
+    const panes: OrderedPane[] = [
+      ...tab.paneOrder.map((id) => ({
+        id,
+        content: findPaneContent(tab.paneTree, id)!,
+      })),
+      { id: newId, content: { kind: "launcher" } },
+    ];
+    const paneTree = gridLayout(panes);
     set((state) => ({
-      tabs: state.tabs.map((tab) => {
-        if (tab.id !== state.activeId) {
-          return tab;
-        }
-        const newId = nextPaneId();
-        return {
-          ...tab,
-          // A fresh split shows the launcher so the user picks what goes in it.
-          paneTree: splitLeaf(tab.paneTree, tab.activeLeafId, direction, newId, {
-            kind: "launcher",
-          }),
-          activeLeafId: newId,
-        };
-      }),
-    })),
+      tabs: state.tabs.map((t) =>
+        t.id === tab.id
+          ? { ...t, paneTree, paneOrder: [...tab.paneOrder, newId], activeLeafId: newId }
+          : t,
+      ),
+    }));
+  },
 
   setActiveLeaf: (tabId, leafId) =>
     set((state) => ({

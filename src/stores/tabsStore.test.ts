@@ -948,6 +948,47 @@ describe("closePane keeps paneOrder in sync", () => {
   });
 });
 
+describe("splitActivePane keeps paneOrder in sync (regression: Phase 2 final review)", () => {
+  beforeEach(reset);
+
+  it("appends the new leaf to paneOrder", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().splitActivePane("row");
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(tab.paneOrder).toHaveLength(2);
+  });
+
+  it("does not lose the Cmd+D pane when a sidebar click runs the grid rebuild afterward", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().splitActivePane("row");
+    const afterSplit = activeTab();
+    expect(afterSplit.paneOrder).toHaveLength(2);
+
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/b.ts" });
+    const afterSidebarClick = activeTab();
+    expect(afterSidebarClick.paneOrder).toHaveLength(3);
+    const panes = computeLayout(afterSidebarClick.paneTree);
+    expect(panes).toHaveLength(3);
+    // The Cmd+D pane (a fresh launcher leaf) must still be present, not dropped.
+    expect(panes.some((p) => p.content.kind === "launcher")).toBe(true);
+  });
+
+  it("does not add a 9th pane when the tab already has 8", () => {
+    useTabsStore.getState().openEditorTab("/0.ts");
+    for (let i = 1; i < 8; i++) {
+      useTabsStore.getState().openFromSidebar({ kind: "editor", path: `/${i}.ts` });
+    }
+    const before = activeTab();
+    expect(before.paneOrder).toHaveLength(8);
+
+    useTabsStore.getState().splitActivePane("row");
+
+    const after = activeTab();
+    expect(after.paneOrder).toEqual(before.paneOrder);
+    expect(computeLayout(after.paneTree)).toHaveLength(8);
+  });
+});
+
 describe("localPreviewFilePaths", () => {
   it("includes the decoded local path for a file:// preview pane", () => {
     const tab: Tab = {
