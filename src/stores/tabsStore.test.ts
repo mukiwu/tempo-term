@@ -839,6 +839,54 @@ describe("openFromSidebar", () => {
     expect(panes).toHaveLength(2);
     expect(panes.filter((p) => p.content.kind === "editor" && p.content.path === "/a.ts")).toHaveLength(2);
   });
+
+  describe("openFromSidebar grid layout for 5+ panes", () => {
+    beforeEach(reset);
+
+    function openN(n: number) {
+      useTabsStore.getState().openEditorTab("/1.ts");
+      for (let i = 2; i <= n; i++) {
+        useTabsStore.getState().openFromSidebar({ kind: "editor", path: `/${i}.ts` });
+      }
+    }
+
+    it("stacks the 5th pane under the 1st column instead of adding a 5th column", () => {
+      openN(5);
+      const tab = activeTab();
+      const panes = computeLayout(tab.paneTree);
+      expect(panes).toHaveLength(5);
+      const columns = new Set(panes.map((p) => Math.round(p.rect.left)));
+      expect(columns.size).toBe(4);
+    });
+
+    it("keeps stacking the 6th, 7th, and 8th panes under columns 2, 3, and 4", () => {
+      openN(8);
+      const tab = activeTab();
+      const panes = computeLayout(tab.paneTree);
+      expect(panes).toHaveLength(8);
+      const columns = new Set(panes.map((p) => Math.round(p.rect.left)));
+      expect(columns.size).toBe(4);
+    });
+
+    it("blocks a 9th pane and does not mutate the tab", () => {
+      openN(8);
+      const before = activeTab();
+      const result = useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/9.ts" });
+      expect(result).toEqual({ status: "at-capacity" });
+      const after = activeTab();
+      expect(after.paneOrder).toEqual(before.paneOrder);
+      expect(computeLayout(after.paneTree)).toHaveLength(8);
+    });
+
+    it("recalculates the grid when a pane closes, going from 5 back to a clean 4 columns", () => {
+      openN(5);
+      const tab = activeTab();
+      const fifthLeafId = tab.paneOrder[4];
+      useTabsStore.getState().closePane(tab.id, fifthLeafId);
+      const after = activeTab();
+      expect(computeLayout(after.paneTree)).toHaveLength(4);
+    });
+  });
 });
 
 describe("openFromSidebar with ssh content", () => {

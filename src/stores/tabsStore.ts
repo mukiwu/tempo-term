@@ -9,6 +9,7 @@ import {
   computeLayout,
   findPaneContent,
   firstLeafId,
+  gridLayout,
   leaf,
   leafIds,
   paneOf,
@@ -17,6 +18,7 @@ import {
   setSizesById,
   splitLeaf,
   type LayoutNode,
+  type OrderedPane,
   type PaneContent,
   type SplitDirection,
 } from "@/modules/terminal/lib/terminalLayout";
@@ -33,7 +35,10 @@ export interface Space {
   name: string;
 }
 
-export type OpenFromSidebarResult = { status: "opened" } | { status: "already-connected" };
+export type OpenFromSidebarResult =
+  | { status: "opened" }
+  | { status: "already-connected" }
+  | { status: "at-capacity" };
 
 export type TabKind = "terminal" | "editor" | "note" | "preview" | "git-graph" | "launcher";
 
@@ -601,13 +606,29 @@ export const useTabsStore = create<TabsState>()(
       return { status: "opened" };
     }
 
-    const rightmost = computeLayout(activeTab.paneTree).reduce((a, b) =>
-      b.rect.left + b.rect.width > a.rect.left + a.rect.width ? b : a,
-    );
-    const newLeafId = get().splitPaneWith(activeTab.id, rightmost.id, content, "row");
-    if (isFreshSsh) {
-      markFreshSshLeaf(newLeafId);
+    if (activeTab.paneOrder.length >= 8) {
+      return { status: "at-capacity" };
     }
+
+    const newId = nextPaneId();
+    if (isFreshSsh) {
+      markFreshSshLeaf(newId);
+    }
+    const panes: OrderedPane[] = [
+      ...activeTab.paneOrder.map((id) => ({
+        id,
+        content: findPaneContent(activeTab.paneTree, id)!,
+      })),
+      { id: newId, content },
+    ];
+    const paneTree = gridLayout(panes);
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === activeTab.id
+          ? { ...t, paneTree, paneOrder: [...activeTab.paneOrder, newId], activeLeafId: newId }
+          : t,
+      ),
+    }));
     return { status: "opened" };
   },
 
