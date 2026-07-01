@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { fsListFiles } from "./lib/fsBridge";
 import { fuzzyRank } from "./lib/fuzzy";
 import { relativePath } from "./lib/paths";
+import { InfoDialog } from "@/components/InfoDialog";
 import { useTabsStore } from "@/stores/tabsStore";
 
 interface FileFinderProps {
@@ -13,10 +14,12 @@ interface FileFinderProps {
 
 export function FileFinder({ root, onClose }: FileFinderProps) {
   const { t } = useTranslation("explorer");
+  const { t: tCommon } = useTranslation("common");
   const [query, setQuery] = useState("");
   const [files, setFiles] = useState<string[]>([]);
+  const [atCapacity, setAtCapacity] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const openEditorTab = useTabsStore((s) => s.openEditorTab);
+  const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -36,7 +39,11 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
   const results = useMemo(() => fuzzyRank(query, files).slice(0, 50), [query, files]);
 
   function open(path: string) {
-    openEditorTab(path);
+    const result = openFromSidebar({ kind: "editor", path });
+    if (result.status === "at-capacity") {
+      setAtCapacity(true);
+      return;
+    }
     onClose();
   }
 
@@ -85,6 +92,15 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
         </ul>
       </div>
       <div className="absolute inset-0 -z-10" onClick={onClose} />
+
+      {atCapacity && (
+        <InfoDialog
+          title={t("findFiles")}
+          message={tCommon("paneCapacityAlert")}
+          confirmLabel={tCommon("actions.confirm")}
+          onConfirm={() => setAtCapacity(false)}
+        />
+      )}
     </div>
   );
 }

@@ -11,7 +11,8 @@
   "empty": "This folder is empty",
   "loading": "Loading…",
   "menu": {
-    "open": "Open",
+    "open": "Open in Split Pane",
+    "openInNewTab": "Open in New Tab",
     "reveal": "Reveal in Finder",
     "openInTerminal": "Open in Terminal",
     "newFile": "New File",

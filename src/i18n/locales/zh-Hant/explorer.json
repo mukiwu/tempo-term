@@ -11,7 +11,8 @@
   "empty": "這個資料夾是空的",
   "loading": "載入中⋯",
   "menu": {
-    "open": "開啟",
+    "open": "在分割面板開啟",
+    "openInNewTab": "在新分頁開啟",
     "reveal": "在 Finder 中顯示",
     "openInTerminal": "從終端機開啟",
     "newFile": "新增檔案",

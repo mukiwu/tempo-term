@@ -34,6 +34,7 @@ beforeEach(() => {
         kind: "terminal",
         paneTree: leaf("p1", { kind: "terminal", cwd: "/a" }),
         activeLeafId: "p1",
+        paneOrder: ["p1"],
       },
       {
         id: "t2",
@@ -42,6 +43,7 @@ beforeEach(() => {
         kind: "terminal",
         paneTree: leaf("p2", { kind: "terminal", cwd: "/b" }),
         activeLeafId: "p2",
+        paneOrder: ["p2"],
       },
     ],
   });
@@ -172,6 +174,7 @@ describe("WorkspacePanel", () => {
             ],
           },
           activeLeafId: "p1",
+          paneOrder: ["p1", "p2"],
         },
       ],
     });
@@ -260,6 +263,7 @@ describe("WorkspacePanel", () => {
           kind: "terminal",
           paneTree: leaf("p1", { kind: "terminal", cwd: "/a" }),
           activeLeafId: "p1",
+          paneOrder: ["p1"],
         },
       ],
     });
@@ -321,6 +325,7 @@ describe("WorkspacePanel", () => {
           kind: "editor",
           paneTree: leaf("p2", { kind: "editor", path: "/file.ts" }),
           activeLeafId: "p2",
+          paneOrder: ["p2"],
         },
       ],
     });

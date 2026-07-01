@@ -3,6 +3,7 @@ import {
   activeEditorPath,
   localPreviewFilePaths,
   openEditorPaths,
+  sshAlreadyOpen,
   tabHasDirtyEditor,
   useTabsStore,
   migratePersistedTabs,
@@ -17,6 +18,7 @@ import {
   splitLeaf,
   type LayoutNode,
 } from "@/modules/terminal/lib/terminalLayout";
+import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 
 function reset() {
   useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
@@ -505,6 +507,35 @@ describe("openSshTab", () => {
   });
 });
 
+describe("paneOrder on tab creation", () => {
+  beforeEach(reset);
+
+  it("initializes paneOrder to the sole leaf for every tab-creating action", () => {
+    const cases: Array<() => string> = [
+      () => useTabsStore.getState().newTerminalTab(),
+      () => useTabsStore.getState().openSshTab("c1", "box"),
+      () => useTabsStore.getState().openLauncherTab(),
+      () => useTabsStore.getState().openEditorTab("/a.ts"),
+      () => useTabsStore.getState().openNoteTab("/n.md", "note"),
+      () => useTabsStore.getState().openPreviewTab("http://localhost"),
+      () => useTabsStore.getState().openGitGraphTab(),
+    ];
+    for (const create of cases) {
+      reset();
+      const tabId = create();
+      const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+      expect(tab.paneOrder).toEqual([tab.activeLeafId]);
+    }
+  });
+
+  it("initializes paneOrder for a tab opened via openFromSidebar", () => {
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/a.ts" });
+    const tab = activeTab();
+    expect(tab.id).toBe(useTabsStore.getState().activeId);
+    expect(tab.paneOrder).toEqual([tab.activeLeafId]);
+  });
+});
+
 describe("migratePersistedTabs", () => {
   it("migrates v0 simple tabs into single-leaf pane tabs", () => {
     const v0 = {
@@ -540,6 +571,41 @@ describe("migratePersistedTabs", () => {
     expect(byId("t2").title).toBe("b.ts");
     expect(byId("t2").activeLeafId).toBe(leafIds(byId("t2").paneTree)[0]);
   });
+
+  it("preserves a non-terminal tab's real multi-leaf split when it survives migration", () => {
+    const multiLeafTree = splitLeaf(
+      leaf("e1", { kind: "editor", path: "/a/b.ts" }),
+      "e1",
+      "row",
+      "t1",
+      { kind: "terminal" },
+    );
+
+    const v1WithoutPaneOrder = {
+      spaces: [{ id: "s1", name: "W" }],
+      activeSpaceId: "s1",
+      activeId: "tab1",
+      tabs: [
+        {
+          id: "tab1",
+          spaceId: "s1",
+          kind: "editor",
+          title: "split-editor",
+          path: "/a/b.ts",
+          paneTree: multiLeafTree,
+          activeLeafId: "e1",
+          // no paneOrder — simulating pre-paneOrder v1 persisted data
+        },
+      ],
+    };
+
+    const migrated = migratePersistedTabs(v1WithoutPaneOrder, 0) as { tabs: Tab[] };
+    const tab = migrated.tabs[0]!;
+
+    expect(tab.paneTree).toBe(multiLeafTree);
+    expect(tab.activeLeafId).toBe("e1");
+    expect(tab.paneOrder).toEqual(leafIds(multiLeafTree));
+  });
 });
 
 describe("tabHasDirtyEditor", () => {
@@ -551,6 +617,7 @@ describe("tabHasDirtyEditor", () => {
       kind: "editor",
       paneTree: leaf(leafId, { kind: "editor", path }),
       activeLeafId: leafId,
+      paneOrder: [leafId],
     };
   }
 
@@ -562,6 +629,7 @@ describe("tabHasDirtyEditor", () => {
       kind: "terminal",
       paneTree: leaf("l1", { kind: "terminal" }),
       activeLeafId: "l1",
+      paneOrder: ["l1"],
     };
     expect(tabHasDirtyEditor(tab, {})).toBe(false);
   });
@@ -598,6 +666,7 @@ describe("tabHasDirtyEditor", () => {
       kind: "editor",
       paneTree: tree,
       activeLeafId: "l1",
+      paneOrder: ["l1", "l2"],
     };
     const buffers = {
       "/a/clean.ts": { content: "ok", baseline: "ok" },
@@ -670,6 +739,389 @@ describe("openHtmlPreview", () => {
   });
 });
 
+describe("splitPaneWith", () => {
+  beforeEach(reset);
+
+  it("returns the id of the newly created leaf", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/a.ts");
+    const original = activeTab();
+    const newLeafId = useTabsStore
+      .getState()
+      .splitPaneWith(tabId, original.activeLeafId, { kind: "editor", path: "/b.ts" }, "row");
+
+    const updated = activeTab();
+    expect(updated.activeLeafId).toBe(newLeafId);
+    expect(findPaneContent(updated.paneTree, newLeafId)).toMatchObject({
+      kind: "editor",
+      path: "/b.ts",
+    });
+  });
+});
+
+describe("splitPaneWith anchor", () => {
+  beforeEach(reset);
+
+  it("defaults to placing the new pane after the existing one (unchanged behavior)", () => {
+    const tabId = useTabsStore.getState().newTerminalTab();
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const newId = useTabsStore.getState().splitPaneWith(
+      tabId,
+      tab.activeLeafId,
+      { kind: "editor", path: "/a.ts" },
+      "row",
+    );
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual({
+      kind: "split",
+      direction: "row",
+      children: [
+        { kind: "leaf", id: tab.activeLeafId, pane: { kind: "terminal" } },
+        { kind: "leaf", id: newId, pane: { kind: "editor", path: "/a.ts" } },
+      ],
+      sizes: [0.5, 0.5],
+    });
+  });
+
+  it("places the new pane before the existing one when anchor is \"before\"", () => {
+    const tabId = useTabsStore.getState().newTerminalTab();
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const newId = useTabsStore.getState().splitPaneWith(
+      tabId,
+      tab.activeLeafId,
+      { kind: "editor", path: "/a.ts" },
+      "row",
+      "before",
+    );
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual({
+      kind: "split",
+      direction: "row",
+      children: [
+        { kind: "leaf", id: newId, pane: { kind: "editor", path: "/a.ts" } },
+        { kind: "leaf", id: tab.activeLeafId, pane: { kind: "terminal" } },
+      ],
+      sizes: [0.5, 0.5],
+    });
+  });
+});
+
+describe("wrapPaneWith", () => {
+  beforeEach(reset);
+
+  it("wraps the whole existing tree as the second child, new pane first, for anchor \"before\"", () => {
+    const tabId = useTabsStore.getState().newTerminalTab();
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const existingTree = tab.paneTree;
+    const newId = useTabsStore
+      .getState()
+      .wrapPaneWith(tabId, { kind: "editor", path: "/a.ts" }, "row", "before");
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneTree).toEqual({
+      kind: "split",
+      direction: "row",
+      children: [
+        { kind: "leaf", id: newId, pane: { kind: "editor", path: "/a.ts" } },
+        existingTree,
+      ],
+      sizes: [0.5, 0.5],
+    });
+    expect(updated.activeLeafId).toBe(newId);
+    expect(updated.paneOrder).toContain(newId);
+  });
+});
+
+describe("sshAlreadyOpen (exported)", () => {
+  beforeEach(reset);
+
+  it("is importable and reports false for a connection nobody has opened", () => {
+    expect(sshAlreadyOpen(useTabsStore.getState().tabs, "space-1", "conn-x")).toBe(false);
+  });
+});
+
+describe("splitPaneWith keeps paneOrder in sync", () => {
+  beforeEach(reset);
+
+  it("appends the new leaf id to paneOrder", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/a.ts");
+    const original = activeTab();
+    const newLeafId = useTabsStore
+      .getState()
+      .splitPaneWith(tabId, original.activeLeafId, { kind: "editor", path: "/b.ts" }, "row");
+
+    const updated = activeTab();
+    expect(updated.paneOrder).toEqual([original.activeLeafId, newLeafId]);
+  });
+});
+
+describe("openFromSidebar", () => {
+  beforeEach(reset);
+
+  it("opens a brand-new tab when there is no active tab", () => {
+    const result = useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/a.ts" });
+    expect(result).toEqual({ status: "opened" });
+    const tab = activeTab();
+    expect(firstLeafContent(tab)).toMatchObject({ kind: "editor", path: "/a.ts" });
+    expect(tab.title).toBe("a.ts");
+  });
+
+  it("closes the launcher tab and opens a fresh one when the active tab is a launcher", () => {
+    // openLauncherTab's tab is identified by kind === "launcher" — TabsArea.tsx
+    // renders LauncherPanel for it directly and never looks at its paneTree, so
+    // "opening into" a launcher tab means replacing the whole tab, the same way
+    // LauncherPanel's own newTab actions do (open elsewhere, close this one).
+    const launcherId = useTabsStore.getState().openLauncherTab();
+    const result = useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "editor", path: "/a.ts" }, "a.ts");
+    expect(result).toEqual({ status: "opened" });
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].id).not.toBe(launcherId);
+    expect(tabs[0].kind).toBe("editor");
+    expect(firstLeafContent(tabs[0])).toMatchObject({ kind: "editor", path: "/a.ts" });
+    expect(tabs[0].title).toBe("a.ts");
+    expect(useTabsStore.getState().activeId).toBe(tabs[0].id);
+  });
+
+  it("splits a new pane to the right when the active tab already has content", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    const result = useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/b.ts" });
+    expect(result).toEqual({ status: "opened" });
+    const tab = activeTab();
+    const panes = computeLayout(tab.paneTree);
+    expect(panes).toHaveLength(2);
+    const rightmost = panes.reduce((a, b) =>
+      b.rect.left + b.rect.width > a.rect.left + a.rect.width ? b : a,
+    );
+    expect(rightmost.content).toMatchObject({ kind: "editor", path: "/b.ts" });
+    expect(tab.activeLeafId).toBe(rightmost.id);
+  });
+
+  it("keeps splitting to the right on repeated calls, leaving earlier panes untouched", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/b.ts" });
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/c.ts" });
+    const tab = activeTab();
+    const panes = computeLayout(tab.paneTree);
+    expect(panes).toHaveLength(3);
+    const sorted = panes.slice().sort((a, b) => a.rect.left - b.rect.left);
+    expect(sorted.map((p) => p.content)).toMatchObject([
+      { kind: "editor", path: "/a.ts" },
+      { kind: "editor", path: "/b.ts" },
+      { kind: "editor", path: "/c.ts" },
+    ]);
+  });
+
+  it("allows the same content to open as a separate pane instead of focusing the existing one", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/a.ts" });
+    const tab = activeTab();
+    const panes = computeLayout(tab.paneTree);
+    expect(panes).toHaveLength(2);
+    expect(panes.filter((p) => p.content.kind === "editor" && p.content.path === "/a.ts")).toHaveLength(2);
+  });
+
+  describe("openFromSidebar grid layout for 5+ panes", () => {
+    beforeEach(reset);
+
+    function openN(n: number) {
+      useTabsStore.getState().openEditorTab("/1.ts");
+      for (let i = 2; i <= n; i++) {
+        useTabsStore.getState().openFromSidebar({ kind: "editor", path: `/${i}.ts` });
+      }
+    }
+
+    it("stacks the 5th pane under the 1st column instead of adding a 5th column", () => {
+      openN(5);
+      const tab = activeTab();
+      const panes = computeLayout(tab.paneTree);
+      expect(panes).toHaveLength(5);
+      const columns = new Set(panes.map((p) => Math.round(p.rect.left)));
+      expect(columns.size).toBe(4);
+    });
+
+    it("keeps stacking the 6th, 7th, and 8th panes under columns 2, 3, and 4", () => {
+      openN(8);
+      const tab = activeTab();
+      const panes = computeLayout(tab.paneTree);
+      expect(panes).toHaveLength(8);
+      const columns = new Set(panes.map((p) => Math.round(p.rect.left)));
+      expect(columns.size).toBe(4);
+    });
+
+    it("blocks a 9th pane and does not mutate the tab", () => {
+      openN(8);
+      const before = activeTab();
+      const result = useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/9.ts" });
+      expect(result).toEqual({ status: "at-capacity" });
+      const after = activeTab();
+      expect(after.paneOrder).toEqual(before.paneOrder);
+      expect(computeLayout(after.paneTree)).toHaveLength(8);
+    });
+
+    it("recalculates the grid when a pane closes, going from 5 back to a clean 4 columns", () => {
+      openN(5);
+      const tab = activeTab();
+      const fifthLeafId = tab.paneOrder[4];
+      useTabsStore.getState().closePane(tab.id, fifthLeafId);
+      const after = activeTab();
+      expect(computeLayout(after.paneTree)).toHaveLength(4);
+    });
+  });
+});
+
+describe("openFromSidebar with ssh content", () => {
+  beforeEach(reset);
+
+  it("returns already-connected and does not create a tab when the connection is already open", () => {
+    useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "terminal", ssh: { connectionId: "c1" } }, "prod-box");
+    const before = useTabsStore.getState().tabs.length;
+
+    const result = useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "terminal", ssh: { connectionId: "c1" } }, "prod-box");
+
+    expect(result).toEqual({ status: "already-connected" });
+    expect(useTabsStore.getState().tabs).toHaveLength(before);
+  });
+
+  it("opens a new connection normally when it is not already open", () => {
+    const result = useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "terminal", ssh: { connectionId: "c1" } }, "prod-box");
+    expect(result).toEqual({ status: "opened" });
+    const tab = activeTab();
+    expect(firstLeafContent(tab)).toMatchObject({
+      kind: "terminal",
+      ssh: { connectionId: "c1" },
+    });
+  });
+
+  it("marks a freshly split ssh pane so it auto-connects", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore
+      .getState()
+      .openFromSidebar({ kind: "terminal", ssh: { connectionId: "c1" } }, "prod-box");
+    const tab = activeTab();
+    expect(consumeFreshSshLeaf(tab.activeLeafId)).toBe(true);
+  });
+});
+
+describe("openInNewTab", () => {
+  beforeEach(reset);
+
+  it("always creates a brand-new tab even when there is content already open", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    const result = useTabsStore.getState().openInNewTab({ kind: "editor", path: "/a.ts" });
+    expect(result).toEqual({ status: "opened" });
+    expect(useTabsStore.getState().tabs).toHaveLength(2);
+  });
+
+  it("does not split into the active tab, even when the active tab has room", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().openInNewTab({ kind: "note", noteId: "/n.md" }, "note");
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(2);
+    expect(computeLayout(tabs[0].paneTree)).toHaveLength(1);
+    expect(computeLayout(tabs[1].paneTree)).toHaveLength(1);
+  });
+
+  it("initializes paneOrder on the new tab", () => {
+    useTabsStore.getState().openInNewTab({ kind: "editor", path: "/a.ts" });
+    const tab = activeTab();
+    expect(tab.paneOrder).toEqual([tab.activeLeafId]);
+  });
+
+  it("does not touch or close an existing Launcher tab", () => {
+    const launcherId = useTabsStore.getState().openLauncherTab();
+    useTabsStore.getState().openInNewTab({ kind: "editor", path: "/a.ts" });
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(2);
+    expect(tabs.some((t) => t.id === launcherId)).toBe(true);
+  });
+
+  it("blocks and returns already-connected for an ssh connection already open, without creating a tab", () => {
+    useTabsStore.getState().openInNewTab({ kind: "terminal", ssh: { connectionId: "c1" } }, "box");
+    const before = useTabsStore.getState().tabs.length;
+
+    const result = useTabsStore
+      .getState()
+      .openInNewTab({ kind: "terminal", ssh: { connectionId: "c1" } }, "box");
+
+    expect(result).toEqual({ status: "already-connected" });
+    expect(useTabsStore.getState().tabs).toHaveLength(before);
+  });
+
+  it("marks a freshly opened ssh pane so it auto-connects", () => {
+    useTabsStore.getState().openInNewTab({ kind: "terminal", ssh: { connectionId: "c1" } }, "box");
+    const tab = activeTab();
+    expect(consumeFreshSshLeaf(tab.activeLeafId)).toBe(true);
+  });
+});
+
+describe("closePane keeps paneOrder in sync", () => {
+  beforeEach(reset);
+
+  it("removes the closed leaf id from paneOrder, preserving the order of survivors", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/a.ts");
+    const first = activeTab().activeLeafId;
+    const second = useTabsStore
+      .getState()
+      .splitPaneWith(tabId, first, { kind: "editor", path: "/b.ts" }, "row");
+    const third = useTabsStore
+      .getState()
+      .splitPaneWith(tabId, second, { kind: "editor", path: "/c.ts" }, "row");
+
+    useTabsStore.getState().closePane(tabId, second);
+
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(tab.paneOrder).toEqual([first, third]);
+  });
+});
+
+describe("splitActivePane keeps paneOrder in sync (regression: Phase 2 final review)", () => {
+  beforeEach(reset);
+
+  it("appends the new leaf to paneOrder", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().splitActivePane("row");
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(tab.paneOrder).toHaveLength(2);
+  });
+
+  it("does not lose the Cmd+D pane when a sidebar click runs the grid rebuild afterward", () => {
+    useTabsStore.getState().openEditorTab("/a.ts");
+    useTabsStore.getState().splitActivePane("row");
+    const afterSplit = activeTab();
+    expect(afterSplit.paneOrder).toHaveLength(2);
+
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/b.ts" });
+    const afterSidebarClick = activeTab();
+    expect(afterSidebarClick.paneOrder).toHaveLength(3);
+    const panes = computeLayout(afterSidebarClick.paneTree);
+    expect(panes).toHaveLength(3);
+    // The Cmd+D pane (a fresh launcher leaf) must still be present, not dropped.
+    expect(panes.some((p) => p.content.kind === "launcher")).toBe(true);
+  });
+
+  it("does not add a 9th pane when the tab already has 8", () => {
+    useTabsStore.getState().openEditorTab("/0.ts");
+    for (let i = 1; i < 8; i++) {
+      useTabsStore.getState().openFromSidebar({ kind: "editor", path: `/${i}.ts` });
+    }
+    const before = activeTab();
+    expect(before.paneOrder).toHaveLength(8);
+
+    useTabsStore.getState().splitActivePane("row");
+
+    const after = activeTab();
+    expect(after.paneOrder).toEqual(before.paneOrder);
+    expect(computeLayout(after.paneTree)).toHaveLength(8);
+  });
+});
+
 describe("localPreviewFilePaths", () => {
   it("includes the decoded local path for a file:// preview pane", () => {
     const tab: Tab = {
@@ -679,6 +1131,7 @@ describe("localPreviewFilePaths", () => {
       kind: "preview",
       paneTree: leaf("l1", { kind: "preview", url: "file:///proj/a.html" }),
       activeLeafId: "l1",
+      paneOrder: ["l1"],
     };
     expect(localPreviewFilePaths([tab])).toContain("/proj/a.html");
   });
@@ -691,6 +1144,7 @@ describe("localPreviewFilePaths", () => {
       kind: "preview",
       paneTree: leaf("l2", { kind: "preview", url: "http://localhost:3000" }),
       activeLeafId: "l2",
+      paneOrder: ["l2"],
     };
     expect(localPreviewFilePaths([tab])).toHaveLength(0);
   });
@@ -703,6 +1157,7 @@ describe("localPreviewFilePaths", () => {
       kind: "terminal",
       paneTree: leaf("l3", { kind: "terminal" }),
       activeLeafId: "l3",
+      paneOrder: ["l3"],
     };
     expect(localPreviewFilePaths([tab])).toHaveLength(0);
   });
@@ -717,6 +1172,7 @@ describe("activeEditorPath", () => {
       kind: "editor",
       paneTree: leaf(leafId, { kind: "editor", path }),
       activeLeafId: leafId,
+      paneOrder: [leafId],
     };
   }
 
@@ -733,6 +1189,7 @@ describe("activeEditorPath", () => {
       kind: "terminal",
       paneTree: leaf("l1", { kind: "terminal" }),
       activeLeafId: "l1",
+      paneOrder: ["l1"],
     };
     expect(activeEditorPath([tab], "t1")).toBeNull();
   });
@@ -759,6 +1216,7 @@ describe("activeEditorPath", () => {
       kind: "editor",
       paneTree: tree,
       activeLeafId: "l1",
+      paneOrder: ["l1", "l2"],
     };
     expect(activeEditorPath([tab], "t1")).toBe("/repo/App.vue");
     expect(activeEditorPath([{ ...tab, activeLeafId: "l2" }], "t1")).toBeNull();

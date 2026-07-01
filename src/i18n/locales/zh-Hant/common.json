@@ -99,6 +99,7 @@
     "save": "儲存",
     "confirm": "確認"
   },
+  "paneCapacityAlert": "這個分頁最多只能開 8 個面板，請先關掉一個再試",
   "placeholder": {
     "comingSoon": "即將推出",
     "terminalArea": "終端機工作階段會顯示在這裡",
@@ -142,6 +143,9 @@
     "cancelDelete": "取消",
     "emptyTitle": "尚無已儲存的連線",
     "emptyHint": "在這裡儲存 SSH 連線，即可一鍵連線",
+    "alreadyOpenAlert": "{{name}} 已在連線中，無法重複建立連線",
+    "open": "在分割面板開啟",
+    "openInNewTab": "在新分頁開啟",
     "forwards": {
       "session": "工作階段 {{id}}",
       "statusActive": "作用中",

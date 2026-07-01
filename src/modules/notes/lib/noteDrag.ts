@@ -8,16 +8,20 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";
 import { useNotesStore } from "@/stores/notesStore";
+import { useTabsStore } from "@/stores/tabsStore";
+import { nearestTabInsertion, tabRectsInTabBar } from "@/components/lib/tabBarDrop";
 
-/** Where a dragged note will land when released over the sidebar. */
+/** Where a dragged note will land when released: a sidebar folder/root (moves the note), or a pane (opens the note there). */
 export type NoteDropTarget =
   | { kind: "folder"; path: string }
-  | { kind: "root"; path: string };
+  | { kind: "root"; path: string }
+  | { kind: "pane"; leafId: string };
 
 /**
  * Resolve what the cursor is over (the element under the pointer) to a drop
- * target: a folder (`data-folder-path`) or the root container
- * (`data-notes-root` carrying the root path). A folder wins over the root.
+ * target: a folder (`data-folder-path`), the root container
+ * (`data-notes-root` carrying the root path), or a terminal pane
+ * (`data-pane-leaf`). A folder or root (sidebar) always wins over a pane.
  */
 export function resolveNoteDrop(el: Element | null): NoteDropTarget | null {
   const folder = el?.closest<HTMLElement>("[data-folder-path]");
@@ -27,6 +31,10 @@ export function resolveNoteDrop(el: Element | null): NoteDropTarget | null {
   const root = el?.closest<HTMLElement>("[data-notes-root]");
   if (root?.dataset.notesRoot) {
     return { kind: "root", path: root.dataset.notesRoot };
+  }
+  const pane = el?.closest<HTMLElement>("[data-pane-leaf]");
+  if (pane?.dataset.paneLeaf) {
+    return { kind: "pane", leafId: pane.dataset.paneLeaf };
   }
   return null;
 }
@@ -42,7 +50,7 @@ export function applyNoteDrop(
   notePath: string,
   actions: NoteDropActions,
 ): void {
-  if (!target) {
+  if (!target || target.kind === "pane") {
     return;
   }
   // Swallow a refused move (e.g. a name collision in the target folder); the
@@ -51,14 +59,25 @@ export function applyNoteDrop(
 }
 
 interface NoteDragState {
-  /** The drop target under the cursor, for the sidebar's hover indicator. */
+  /** The drop target under the cursor, for the sidebar's hover indicator (folder/root only). */
   hover: NoteDropTarget | null;
   setHover: (hover: NoteDropTarget | null) => void;
+  /** The pane under the cursor and the pointer's percentage position within it, when dragging over the pane area. Null whenever `hover` (folder/root) is set — they're mutually exclusive. */
+  paneHover: { leafId: string; xPct: number; yPct: number } | null;
+  /** A resolved pane drop waiting for its owning tab to consume it. */
+  pendingPaneDrop: { leafId: string; noteId: string; noteTitle: string; xPct: number; yPct: number } | null;
+  clearPendingPaneDrop: () => void;
+  /** Where a drop on the tab bar would insert a new tab, while dragging over it; null when not hovering the tab bar at all. */
+  tabBarHover: { insertBeforeId: string | null } | null;
 }
 
 export const useNoteDragStore = create<NoteDragState>((set) => ({
   hover: null,
   setHover: (hover) => set({ hover }),
+  paneHover: null,
+  pendingPaneDrop: null,
+  clearPendingPaneDrop: () => set({ pendingPaneDrop: null }),
+  tabBarHover: null,
 }));
 
 const DRAG_THRESHOLD = 5;
@@ -124,6 +143,31 @@ function targetAt(x: number, y: number): NoteDropTarget | null {
   return resolveNoteDrop(document.elementFromPoint(x, y));
 }
 
+// Duplicated from dragEntry.ts on purpose — noteDrag.ts and dragEntry.ts
+// already duplicate the ghost-label helpers rather than share them across
+// these sibling modules.
+function pointerToPaneAreaPct(
+  rect: { left: number; top: number; width: number; height: number },
+  clientX: number,
+  clientY: number,
+): { xPct: number; yPct: number } {
+  const xPct = rect.width > 0 ? ((clientX - rect.left) / rect.width) * 100 : 0;
+  const yPct = rect.height > 0 ? ((clientY - rect.top) / rect.height) * 100 : 0;
+  return { xPct: Math.min(100, Math.max(0, xPct)), yPct: Math.min(100, Math.max(0, yPct)) };
+}
+
+function paneAreaRectAt(x: number, y: number): DOMRect | null {
+  return (
+    document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-pane-area]")?.getBoundingClientRect() ??
+    null
+  );
+}
+
+/** True when `el` (or an ancestor) is the tab bar — takes priority over any pane target. */
+export function isOverTabBar(el: Element | null): boolean {
+  return el?.closest("[data-tab-bar]") != null;
+}
+
 /**
  * Begin a pointer drag of a note. Tracks the cursor with pointer events, follows
  * it with a ghost label, highlights the drop target underneath, and on release
@@ -161,7 +205,27 @@ export function beginNoteDrag(
       showGhost(label, e.clientX, e.clientY);
     }
     moveGhost(e.clientX, e.clientY);
-    useNoteDragStore.getState().setHover(targetAt(e.clientX, e.clientY));
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      useNoteDragStore.setState({
+        hover: null,
+        paneHover: null,
+        tabBarHover: { insertBeforeId: nearestTabInsertion(tabRectsInTabBar(), e.clientX) },
+      });
+      return;
+    }
+    useNoteDragStore.setState({ tabBarHover: null });
+    const target = targetAt(e.clientX, e.clientY);
+    if (target?.kind === "pane") {
+      const areaRect = paneAreaRectAt(e.clientX, e.clientY);
+      useNoteDragStore.setState({
+        hover: null,
+        paneHover: areaRect
+          ? { leafId: target.leafId, ...pointerToPaneAreaPct(areaRect, e.clientX, e.clientY) }
+          : null,
+      });
+    } else {
+      useNoteDragStore.setState({ hover: target, paneHover: null });
+    }
   };
 
   const onUp = (e: PointerEvent) => {
@@ -174,14 +238,37 @@ export function beginNoteDrag(
     setTimeout(() => {
       suppressClick = false;
     }, 0);
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      const insertBeforeId = nearestTabInsertion(tabRectsInTabBar(), e.clientX);
+      useNoteDragStore.setState({ hover: null, paneHover: null, tabBarHover: null });
+      const result = useTabsStore.getState().openInNewTab({ kind: "note", noteId: notePath }, label);
+      if (result.status === "opened" && insertBeforeId !== null) {
+        const newTabId = useTabsStore.getState().activeId;
+        if (newTabId) {
+          useTabsStore.getState().reorderTab(newTabId, insertBeforeId);
+        }
+      }
+      return;
+    }
+    const target = targetAt(e.clientX, e.clientY);
+    if (target?.kind === "pane") {
+      const areaRect = paneAreaRectAt(e.clientX, e.clientY);
+      const pct = areaRect ? pointerToPaneAreaPct(areaRect, e.clientX, e.clientY) : { xPct: 0, yPct: 0 };
+      useNoteDragStore.setState({
+        hover: null,
+        paneHover: null,
+        pendingPaneDrop: { leafId: target.leafId, noteId: notePath, noteTitle: label, ...pct },
+      });
+      return;
+    }
     const { moveNote } = useNotesStore.getState();
-    applyNoteDrop(targetAt(e.clientX, e.clientY), notePath, { moveNote });
-    useNoteDragStore.setState({ hover: null });
+    applyNoteDrop(target, notePath, { moveNote });
+    useNoteDragStore.setState({ hover: null, paneHover: null });
   };
 
   const onCancel = () => {
     stop();
-    useNoteDragStore.setState({ hover: null });
+    useNoteDragStore.setState({ hover: null, paneHover: null, tabBarHover: null });
   };
 
   window.addEventListener("pointermove", onMove);

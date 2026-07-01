@@ -73,24 +73,49 @@ export function splitLeaf(
   direction: SplitDirection,
   newId: string,
   newPane: PaneContent = TERMINAL_PANE,
+  anchor: "before" | "after" = "after",
 ): LayoutNode {
   if (node.kind === "leaf") {
     if (node.id !== targetId) {
       return node;
     }
+    const existing = leaf(targetId, paneOf(node));
+    const added = leaf(newId, newPane);
     return {
       kind: "split",
       direction,
-      children: [leaf(targetId, paneOf(node)), leaf(newId, newPane)],
+      children: anchor === "before" ? [added, existing] : [existing, added],
       sizes: [0.5, 0.5],
     };
   }
   return {
     ...node,
     children: [
-      splitLeaf(node.children[0], targetId, direction, newId, newPane),
-      splitLeaf(node.children[1], targetId, direction, newId, newPane),
+      splitLeaf(node.children[0], targetId, direction, newId, newPane, anchor),
+      splitLeaf(node.children[1], targetId, direction, newId, newPane, anchor),
     ],
+  };
+}
+
+/**
+ * Wrap the whole tree as one side of a brand-new top-level split, with the
+ * new pane on the other side. Used for the outer-edge drop zone, which adds
+ * an entirely new column/row alongside everything else rather than carving
+ * up any single existing pane.
+ */
+export function wrapTree(
+  tree: LayoutNode,
+  newId: string,
+  newPane: PaneContent,
+  direction: SplitDirection,
+  anchor: "before" | "after",
+): LayoutNode {
+  const added = leaf(newId, newPane);
+  return {
+    kind: "split",
+    direction,
+    children: anchor === "before" ? [added, tree] : [tree, added],
+    sizes: [0.5, 0.5],
   };
 }
 
@@ -206,6 +231,134 @@ export interface PaneRect {
   content: PaneContent;
 }
 
+/**
+ * Where a drop lands relative to the pane it's over. `center` keeps the
+ * pane's own drop behavior (unchanged from before Phase 4). `split` always
+ * needs a fresh leaf id from the caller: `scope: "individual"` splits just
+ * the hovered pane (only it moves); `scope: "outer"` wraps the *whole* tree
+ * as one side of a brand-new top-level split, so every existing pane shifts
+ * over together instead of any single pane being carved up.
+ */
+export type DropZone =
+  | { kind: "center" }
+  | {
+      kind: "split";
+      scope: "individual" | "outer";
+      direction: SplitDirection;
+      anchor: "before" | "after";
+    };
+
+export interface DropZoneInput {
+  /** The percentage rect (from `computeLayout`) of the pane under the pointer. */
+  paneRect: Rect;
+  /** The tab's root split direction, or null when the tab is a single leaf. */
+  rootDirection: SplitDirection | null;
+  /** Pointer position in the same 0-100 percentage space as `paneRect`. */
+  pointerXPct: number;
+  pointerYPct: number;
+  /** True when the dragged source is a folder — disables every edge/outer zone. */
+  isFolder: boolean;
+}
+
+/** Single-pane tabs: how close to the left/right edge (as % of the pane, which fills the container) counts as a split zone. */
+const SINGLE_PANE_EDGE_PCT = 33;
+/** Multi-pane tabs: how close to a pane's own perpendicular edge counts as an individual split zone. */
+const INDIVIDUAL_EDGE_PCT = 25;
+/** Multi-pane tabs: how close to the whole container's along-axis edge counts as the outer insert zone. */
+const OUTER_BAND_PCT = 12;
+
+interface DropZoneCandidate {
+  /** Percentage-point distance to the edge line — comparable across zones because both paneRect and the container share the same 0-100 space. */
+  distancePct: number;
+  zone: DropZone;
+}
+
+function nearestZone(candidates: DropZoneCandidate[]): DropZone {
+  if (candidates.length === 0) {
+    return { kind: "center" };
+  }
+  return candidates.reduce((best, c) => (c.distancePct < best.distancePct ? c : best)).zone;
+}
+
+/**
+ * Resolve a drop position into a zone. See spec section C for the full rule
+ * table; this implements it directly: single-pane tabs only ever offer
+ * left/right (never top/bottom); multi-pane tabs layer an individual
+ * per-pane edge (perpendicular to the root direction) under a whole-area
+ * outer band (along the root direction), rotating 90 degrees when the root
+ * is `"col"`. A corner where two zones would both qualify resolves to
+ * whichever edge line the pointer is numerically closer to.
+ */
+export function resolveDropZone(input: DropZoneInput): DropZone {
+  const { paneRect, rootDirection, pointerXPct, pointerYPct, isFolder } = input;
+  if (isFolder) {
+    return { kind: "center" };
+  }
+
+  if (rootDirection === null) {
+    const leftDist = pointerXPct - paneRect.left;
+    const rightDist = paneRect.left + paneRect.width - pointerXPct;
+    const candidates: DropZoneCandidate[] = [];
+    if (leftDist <= SINGLE_PANE_EDGE_PCT) {
+      candidates.push({
+        distancePct: leftDist,
+        zone: { kind: "split", scope: "individual", direction: "row", anchor: "before" },
+      });
+    }
+    if (rightDist <= SINGLE_PANE_EDGE_PCT) {
+      candidates.push({
+        distancePct: rightDist,
+        zone: { kind: "split", scope: "individual", direction: "row", anchor: "after" },
+      });
+    }
+    return nearestZone(candidates);
+  }
+
+  const rowOriented = rootDirection === "row";
+  const candidates: DropZoneCandidate[] = [];
+
+  const outerPointerPct = rowOriented ? pointerXPct : pointerYPct;
+  const outerBeforeDist = outerPointerPct;
+  const outerAfterDist = 100 - outerPointerPct;
+  if (outerBeforeDist <= OUTER_BAND_PCT) {
+    candidates.push({
+      distancePct: outerBeforeDist,
+      zone: { kind: "split", scope: "outer", direction: rootDirection, anchor: "before" },
+    });
+  }
+  if (outerAfterDist <= OUTER_BAND_PCT) {
+    candidates.push({
+      distancePct: outerAfterDist,
+      zone: { kind: "split", scope: "outer", direction: rootDirection, anchor: "after" },
+    });
+  }
+
+  const individualDirection: SplitDirection = rowOriented ? "col" : "row";
+  const paneStart = rowOriented ? paneRect.top : paneRect.left;
+  const paneSpan = rowOriented ? paneRect.height : paneRect.width;
+  const pointerOnAxis = rowOriented ? pointerYPct : pointerXPct;
+  const individualBeforeDist = pointerOnAxis - paneStart;
+  const individualAfterDist = paneStart + paneSpan - pointerOnAxis;
+  // Relative to this pane's own span, not the whole container — a stacked
+  // pane's span can be as little as 50, and an absolute threshold that large
+  // would swallow its entire center, making it impossible to ever drop there.
+  const individualThreshold = paneSpan * (INDIVIDUAL_EDGE_PCT / 100);
+  if (individualBeforeDist <= individualThreshold) {
+    candidates.push({
+      distancePct: individualBeforeDist,
+      zone: { kind: "split", scope: "individual", direction: individualDirection, anchor: "before" },
+    });
+  }
+  if (individualAfterDist <= individualThreshold) {
+    candidates.push({
+      distancePct: individualAfterDist,
+      zone: { kind: "split", scope: "individual", direction: individualDirection, anchor: "after" },
+    });
+  }
+
+  return nearestZone(candidates);
+}
+
 const FULL: Rect = { left: 0, top: 0, width: 100, height: 100 };
 
 /**
@@ -304,4 +457,57 @@ export function computeSplitters(node: LayoutNode, rect: Rect = FULL): SplitterI
       height: rect.height - h0,
     }),
   ];
+}
+
+/** One pane in add-order, paired with its content, for `gridLayout`. */
+export interface OrderedPane {
+  id: string;
+  content: PaneContent;
+}
+
+/**
+ * Arrange 1-8 panes into a fixed grid: up to 4 equal-width columns, each
+ * holding up to 2 equal-height stacked panes. `panes[0..3]` each get their
+ * own column; `panes[4..7]` stack under columns 0-3 respectively. The caller
+ * must cap input at 8 entries — this function does not validate or throw
+ * on more.
+ */
+export function gridLayout(panes: OrderedPane[]): LayoutNode {
+  const columnCount = Math.min(panes.length, 4);
+  const columns: LayoutNode[] = [];
+  for (let col = 0; col < columnCount; col++) {
+    const bottomIndex = col + 4;
+    if (bottomIndex < panes.length) {
+      columns.push({
+        kind: "split",
+        direction: "col",
+        children: [
+          leaf(panes[col].id, panes[col].content),
+          leaf(panes[bottomIndex].id, panes[bottomIndex].content),
+        ],
+        sizes: [0.5, 0.5],
+      });
+    } else {
+      columns.push(leaf(panes[col].id, panes[col].content));
+    }
+  }
+  return combineEqualRow(columns);
+}
+
+/** Nest `nodes` left to right as equal-width row splits ([1/n, (n-1)/n] at
+ * each level, so `computeLayout` gives every node the same width). */
+function combineEqualRow(nodes: LayoutNode[]): LayoutNode {
+  if (nodes.length === 0) {
+    throw new Error("combineEqualRow requires at least one node");
+  }
+  if (nodes.length === 1) {
+    return nodes[0];
+  }
+  const [first, ...rest] = nodes;
+  return {
+    kind: "split",
+    direction: "row",
+    children: [first, combineEqualRow(rest)],
+    sizes: [1 / nodes.length, (nodes.length - 1) / nodes.length],
+  };
 }

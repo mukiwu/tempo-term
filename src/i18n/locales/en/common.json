@@ -99,6 +99,7 @@
     "save": "Save",
     "confirm": "Confirm"
   },
+  "paneCapacityAlert": "This tab can hold at most 8 panes — close one and try again",
   "placeholder": {
     "comingSoon": "Coming soon",
     "terminalArea": "Terminal sessions will appear here",
@@ -142,6 +143,9 @@
     "cancelDelete": "Cancel",
     "emptyTitle": "No saved connections",
     "emptyHint": "Save SSH connections here to connect with one click",
+    "alreadyOpenAlert": "{{name}} is already connected, so a second one can't be opened",
+    "open": "Open in split pane",
+    "openInNewTab": "Open in new tab",
     "forwards": {
       "session": "Session {{id}}",
       "statusActive": "Active",

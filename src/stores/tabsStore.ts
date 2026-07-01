@@ -9,6 +9,7 @@ import {
   computeLayout,
   findPaneContent,
   firstLeafId,
+  gridLayout,
   leaf,
   leafIds,
   paneOf,
@@ -16,7 +17,9 @@ import {
   setLeafPane,
   setSizesById,
   splitLeaf,
+  wrapTree,
   type LayoutNode,
+  type OrderedPane,
   type PaneContent,
   type SplitDirection,
 } from "@/modules/terminal/lib/terminalLayout";
@@ -33,6 +36,11 @@ export interface Space {
   name: string;
 }
 
+export type OpenFromSidebarResult =
+  | { status: "opened" }
+  | { status: "already-connected" }
+  | { status: "at-capacity" };
+
 export type TabKind = "terminal" | "editor" | "note" | "preview" | "git-graph" | "launcher";
 
 /**
@@ -47,6 +55,10 @@ export interface Tab {
   kind: TabKind;
   paneTree: LayoutNode;
   activeLeafId: string;
+  /** Leaf ids in the order they were added to this tab — independent of the
+   * tree's own left-right shape, which the grid layout's stacking scrambles.
+   * Drives `gridLayout`'s column/row assignment. */
+  paneOrder: string[];
   /** Starting directory for new terminal panes created inside this tab. */
   cwd?: string;
   /** True once the user renames the tab, so cwd changes stop overwriting it. */
@@ -73,6 +85,27 @@ interface TabsState {
   openPreviewTab: (url: string) => string;
   openGitGraphTab: () => string;
   /**
+   * Open sidebar content (explorer file, note, or SSH connection). When the
+   * active tab is a real working tab, this splits beside its current
+   * right-most pane. When there is no active tab, or the active tab is a
+   * Launcher tab (kind === "launcher" — TabsArea.tsx renders LauncherPanel
+   * for those directly and ignores their paneTree), this opens a fresh tab
+   * and, for the launcher case, closes the old one — the same two-step
+   * LauncherPanel's own newTab actions already do. Unlike openEditorTab /
+   * openNoteTab / openSshTab, this never focuses an existing pane showing the
+   * same content — duplicates are allowed. SSH content is checked for an
+   * already-open connection in a later task.
+   */
+  openFromSidebar: (content: PaneContent, title?: string) => OpenFromSidebarResult;
+  /**
+   * Open sidebar content in a brand-new tab, unconditionally — never splits
+   * into the active tab, never touches/closes a Launcher tab. The explicit
+   * escape hatch from openFromSidebar's default splitting behavior. SSH
+   * content is still blocked from duplicating a connection already open
+   * anywhere in the space, same guard as openFromSidebar.
+   */
+  openInNewTab: (content: PaneContent, title?: string) => OpenFromSidebarResult;
+  /**
    * Open the web preview of a local HTML file with a smart target: reuse an
    * existing preview pane in this tab, else split beside a single-pane editor,
    * else open/reuse a per-space preview tab.
@@ -95,13 +128,27 @@ interface TabsState {
   /** Cycle the active tab's focused pane to the next leaf (⌘`); wraps around. */
   focusNextPane: () => void;
   resizePane: (tabId: string, splitId: string, sizes: [number, number]) => void;
-  /** Split a pane and show `content` (terminal/editor/note/preview) in the new half. */
+  /** Split a pane and show `content` (terminal/editor/note/preview) in the new half. Returns the new leaf's id. */
   splitPaneWith: (
     tabId: string,
     fromLeafId: string,
     content: PaneContent,
     direction: SplitDirection,
-  ) => void;
+    anchor?: "before" | "after",
+  ) => string;
+  /**
+   * Wrap the tab's whole current pane tree as one side of a brand-new
+   * top-level split, with `content` on the other side. Used for the
+   * outer-edge drop zone (spec section C) — every existing pane shifts over
+   * as a block instead of any single pane being split. Returns the new
+   * leaf's id.
+   */
+  wrapPaneWith: (
+    tabId: string,
+    content: PaneContent,
+    direction: SplitDirection,
+    anchor: "before" | "after",
+  ) => string;
   /**
    * Follow an in-preview navigation: update the pane's previewed url, and when
    * the preview is the tab's whole content (single pane, not user-renamed),
@@ -229,6 +276,17 @@ function singleLeafContentEquals(tab: Tab, content: PaneContent): boolean {
   return true;
 }
 
+/** True when `connectionId` is already open in some pane of some tab in `spaceId`. */
+export function sshAlreadyOpen(tabs: Tab[], spaceId: string, connectionId: string): boolean {
+  return tabs.some(
+    (t) =>
+      t.spaceId === spaceId &&
+      computeLayout(t.paneTree).some(
+        (p) => p.content.kind === "terminal" && p.content.ssh?.connectionId === connectionId,
+      ),
+  );
+}
+
 export const TABS_STORAGE_KEY = "tempoterm-tabs";
 
 /** Shape of a tab as persisted before the unified paneTree model (v0). */
@@ -245,12 +303,15 @@ interface PersistedV0Tab {
   cwd?: string;
 }
 
-/** Convert pre-paneTree (v0) persisted tabs into the unified Tab shape. */
+/** Convert pre-paneTree (v0) persisted tabs into the unified Tab shape, and
+ * backfill `paneOrder` (v1→v2) for tabs persisted before it existed — a
+ * one-time best-effort guess from the tree's own left-right leaf order, since
+ * the true add-order was never recorded before this field existed. */
 export function migratePersistedTabs(persisted: unknown, _version: number): unknown {
   if (!persisted || typeof persisted !== "object") {
     return persisted;
   }
-  const state = persisted as { tabs?: PersistedV0Tab[] };
+  const state = persisted as { tabs?: (PersistedV0Tab & { paneOrder?: string[] })[] };
   if (!Array.isArray(state.tabs)) {
     return persisted;
   }
@@ -263,6 +324,7 @@ export function migratePersistedTabs(persisted: unknown, _version: number): unkn
         kind: "terminal",
         paneTree: t.paneTree,
         activeLeafId: t.activeLeafId,
+        paneOrder: t.paneOrder ?? leafIds(t.paneTree),
         cwd: t.cwd,
       };
     }
@@ -284,13 +346,16 @@ export function migratePersistedTabs(persisted: unknown, _version: number): unkn
       default:
         content = { kind: "terminal" };
     }
+    const paneTree = t.paneTree ?? leaf(paneId, content);
+    const activeLeafId = t.activeLeafId ?? paneId;
     return {
       id: t.id,
       spaceId: t.spaceId,
       title: t.title,
       kind: t.kind,
-      paneTree: leaf(paneId, content),
-      activeLeafId: paneId,
+      paneTree,
+      activeLeafId,
+      paneOrder: t.paneOrder ?? leafIds(paneTree),
       cwd: t.cwd,
     };
   });
@@ -361,6 +426,7 @@ export const useTabsStore = create<TabsState>()(
       title: cwd ? basename(cwd) : `Terminal ${count}`,
       paneTree: leaf(paneId, { kind: "terminal" }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
       cwd,
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
@@ -393,6 +459,7 @@ export const useTabsStore = create<TabsState>()(
       title: name,
       paneTree: leaf(paneId, { kind: "terminal", ssh: { connectionId } }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
       renamed: true,
     };
     // Mark this leaf as freshly user-opened so TerminalView auto-connects on mount.
@@ -419,6 +486,7 @@ export const useTabsStore = create<TabsState>()(
       title: "New Tab",
       paneTree: leaf(paneId, { kind: "terminal" }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -445,6 +513,7 @@ export const useTabsStore = create<TabsState>()(
       title: basename(path),
       paneTree: leaf(paneId, { kind: "editor", path }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -471,6 +540,7 @@ export const useTabsStore = create<TabsState>()(
       title: title || "Untitled",
       paneTree: leaf(paneId, { kind: "note", noteId }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -487,6 +557,7 @@ export const useTabsStore = create<TabsState>()(
       title: previewTitle(url),
       paneTree: leaf(paneId, { kind: "preview", url }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -513,9 +584,109 @@ export const useTabsStore = create<TabsState>()(
       title: "Git Graph",
       paneTree: leaf(paneId, { kind: "git-graph" }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
+  },
+
+  openFromSidebar: (content, title) => {
+    const spaceId = get().ensureSpace();
+    // Checked separately from the discriminated narrowing below: TypeScript
+    // can't carry `content.kind === "terminal" && content.ssh` through a
+    // boolean variable, so the two later branches that only need a yes/no
+    // (not `content.ssh.connectionId` itself) read this flag instead of
+    // re-narrowing `content` each time.
+    const isFreshSsh = content.kind === "terminal" && !!content.ssh;
+
+    if (content.kind === "terminal" && content.ssh) {
+      if (sshAlreadyOpen(get().tabs, spaceId, content.ssh.connectionId)) {
+        return { status: "already-connected" };
+      }
+    }
+
+    const resolvedTitle =
+      title ?? (content.kind === "editor" ? basename(content.path) : "Untitled");
+    const activeTab = get().tabs.find((t) => t.id === get().activeId);
+
+    if (!activeTab || activeTab.kind === "launcher") {
+      const id = nextTabId();
+      const paneId = nextPaneId();
+      if (isFreshSsh) {
+        markFreshSshLeaf(paneId);
+      }
+      const tab: Tab = {
+        id,
+        spaceId,
+        kind: content.kind,
+        title: resolvedTitle,
+        paneTree: leaf(paneId, content),
+        activeLeafId: paneId,
+        paneOrder: [paneId],
+        ...(isFreshSsh ? { renamed: true } : {}),
+      };
+      set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+      if (activeTab) {
+        get().closeTab(activeTab.id);
+      }
+      return { status: "opened" };
+    }
+
+    if (activeTab.paneOrder.length >= 8) {
+      return { status: "at-capacity" };
+    }
+
+    const newId = nextPaneId();
+    if (isFreshSsh) {
+      markFreshSshLeaf(newId);
+    }
+    const panes: OrderedPane[] = [
+      ...activeTab.paneOrder.map((id) => ({
+        id,
+        content: findPaneContent(activeTab.paneTree, id)!,
+      })),
+      { id: newId, content },
+    ];
+    const paneTree = gridLayout(panes);
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === activeTab.id
+          ? { ...t, paneTree, paneOrder: [...activeTab.paneOrder, newId], activeLeafId: newId }
+          : t,
+      ),
+    }));
+    return { status: "opened" };
+  },
+
+  openInNewTab: (content, title) => {
+    const spaceId = get().ensureSpace();
+    const isFreshSsh = content.kind === "terminal" && !!content.ssh;
+
+    if (content.kind === "terminal" && content.ssh) {
+      if (sshAlreadyOpen(get().tabs, spaceId, content.ssh.connectionId)) {
+        return { status: "already-connected" };
+      }
+    }
+
+    const resolvedTitle =
+      title ?? (content.kind === "editor" ? basename(content.path) : "Untitled");
+    const id = nextTabId();
+    const paneId = nextPaneId();
+    if (isFreshSsh) {
+      markFreshSshLeaf(paneId);
+    }
+    const tab: Tab = {
+      id,
+      spaceId,
+      kind: content.kind,
+      title: resolvedTitle,
+      paneTree: leaf(paneId, content),
+      activeLeafId: paneId,
+      paneOrder: [paneId],
+      ...(isFreshSsh ? { renamed: true } : {}),
+    };
+    set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+    return { status: "opened" };
   },
 
   openHtmlPreview: (tabId, fromLeafId, filePath) => {
@@ -574,6 +745,7 @@ export const useTabsStore = create<TabsState>()(
       title,
       paneTree: leaf(paneId, { kind: "preview", url }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, newTab], activeId: id }));
   },
@@ -668,22 +840,30 @@ export const useTabsStore = create<TabsState>()(
     }),
 
   splitActivePane: (direction) =>
-    set((state) => ({
-      tabs: state.tabs.map((tab) => {
-        if (tab.id !== state.activeId) {
-          return tab;
-        }
-        const newId = nextPaneId();
-        return {
-          ...tab,
-          // A fresh split shows the launcher so the user picks what goes in it.
-          paneTree: splitLeaf(tab.paneTree, tab.activeLeafId, direction, newId, {
-            kind: "launcher",
-          }),
-          activeLeafId: newId,
-        };
-      }),
-    })),
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === state.activeId);
+      if (!tab || tab.paneOrder.length >= 8) {
+        return state;
+      }
+      const newId = nextPaneId();
+      return {
+        tabs: state.tabs.map((t) =>
+          t.id === tab.id
+            ? {
+                ...t,
+                // A fresh split shows the launcher so the user picks what goes in it.
+                // Directional and pane-specific (unlike openFromSidebar's grid rebuild)
+                // — the user is choosing exactly which pane to split and which way.
+                paneTree: splitLeaf(t.paneTree, t.activeLeafId, direction, newId, {
+                  kind: "launcher",
+                }),
+                activeLeafId: newId,
+                paneOrder: [...t.paneOrder, newId],
+              }
+            : t,
+        ),
+      };
+    }),
 
   setActiveLeaf: (tabId, leafId) =>
     set((state) => ({
@@ -722,20 +902,40 @@ export const useTabsStore = create<TabsState>()(
       ),
     })),
 
-  splitPaneWith: (tabId, fromLeafId, content, direction) =>
+  splitPaneWith: (tabId, fromLeafId, content, direction, anchor = "after") => {
+    const newId = nextPaneId();
     set((state) => ({
       tabs: state.tabs.map((tab) => {
         if (tab.id !== tabId) {
           return tab;
         }
-        const newId = nextPaneId();
         return {
           ...tab,
-          paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, content),
+          paneTree: splitLeaf(tab.paneTree, fromLeafId, direction, newId, content, anchor),
           activeLeafId: newId,
+          paneOrder: [...tab.paneOrder, newId],
         };
       }),
-    })),
+    }));
+    return newId;
+  },
+
+  wrapPaneWith: (tabId, content, direction, anchor) => {
+    const newId = nextPaneId();
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              paneTree: wrapTree(tab.paneTree, newId, content, direction, anchor),
+              activeLeafId: newId,
+              paneOrder: [...tab.paneOrder, newId],
+            }
+          : tab,
+      ),
+    }));
+    return newId;
+  },
 
   setPaneContent: (tabId, leafId, content) =>
     set((state) => ({
@@ -826,7 +1026,9 @@ export const useTabsStore = create<TabsState>()(
         tab.activeLeafId === leafId ? (firstLeafId(paneTree) ?? tab.activeLeafId) : tab.activeLeafId;
       return {
         tabs: state.tabs.map((t) =>
-          t.id === tabId ? { ...t, paneTree, activeLeafId } : t,
+          t.id === tabId
+            ? { ...t, paneTree, activeLeafId, paneOrder: t.paneOrder.filter((id) => id !== leafId) }
+            : t,
         ),
       };
     }),
@@ -834,7 +1036,7 @@ export const useTabsStore = create<TabsState>()(
     {
       name: TABS_STORAGE_KEY,
       storage: createJSONStorage(() => perWindowStorage()),
-      version: 1,
+      version: 2,
       migrate: migratePersistedTabs,
       partialize: (state) => ({
         spaces: state.spaces,

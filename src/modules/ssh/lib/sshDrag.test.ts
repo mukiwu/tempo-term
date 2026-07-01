@@ -1,93 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  applyNoteDrop,
-  beginNoteDrag,
-  isOverTabBar,
-  resolveNoteDrop,
-  useNoteDragStore,
-} from "./noteDrag";
+import { beginSshDrag, consumeSshDragClick, isOverTabBar, useSshDragStore } from "./sshDrag";
 import { useTabsStore } from "@/stores/tabsStore";
+import { leaf } from "@/modules/terminal/lib/terminalLayout";
 
 // jsdom has no PointerEvent constructor; a MouseEvent dispatched under the
 // pointermove/pointerup type names reaches the same window listeners since
-// beginNoteDrag's handlers only read clientX/clientY off the event.
+// beginSshDrag's handlers only read clientX/clientY off the event.
 function firePointer(type: "pointermove" | "pointerup", clientX: number, clientY: number): void {
   window.dispatchEvent(new MouseEvent(type, { clientX, clientY }));
 }
 
-describe("resolveNoteDrop", () => {
-  it("resolves a folder header to a folder target carrying its path", () => {
-    const div = document.createElement("div");
-    div.setAttribute("data-folder-path", "/root/Ideas");
-    expect(resolveNoteDrop(div)).toEqual({ kind: "folder", path: "/root/Ideas" });
-  });
-
-  it("resolves the root container to a root target carrying the root path", () => {
-    const root = document.createElement("div");
-    root.setAttribute("data-notes-root", "/root");
-    expect(resolveNoteDrop(root)).toEqual({ kind: "root", path: "/root" });
-  });
-
-  it("prefers the folder when a note row sits inside a folder subtree", () => {
-    const folderWrap = document.createElement("div");
-    folderWrap.setAttribute("data-folder-path", "/root/Ideas");
-    const li = document.createElement("li");
-    li.setAttribute("data-note-path", "/root/Ideas/n.md");
-    folderWrap.appendChild(li);
-    expect(resolveNoteDrop(li)).toEqual({ kind: "folder", path: "/root/Ideas" });
-  });
-
-  it("returns null when the cursor is outside any drop zone", () => {
-    expect(resolveNoteDrop(document.createElement("div"))).toBeNull();
-    expect(resolveNoteDrop(null)).toBeNull();
-  });
-});
-
-describe("resolveNoteDrop pane targeting", () => {
-  it("resolves a pane-leaf element to a pane target", () => {
-    const el = document.createElement("div");
-    el.dataset.paneLeaf = "leaf-1";
-    expect(resolveNoteDrop(el)).toEqual({ kind: "pane", leafId: "leaf-1" });
-  });
-
-  it("still prefers a folder over a pane when both markers are ancestors", () => {
-    const outer = document.createElement("div");
-    outer.dataset.paneLeaf = "leaf-1";
-    const inner = document.createElement("div");
-    inner.dataset.folderPath = "/notes/work";
-    outer.appendChild(inner);
-    expect(resolveNoteDrop(inner)).toEqual({ kind: "folder", path: "/notes/work" });
-  });
-
-  it("still returns null when nothing matches", () => {
-    expect(resolveNoteDrop(document.createElement("span"))).toBeNull();
-  });
-});
-
-describe("useNoteDragStore pane-drop fields", () => {
+describe("useSshDragStore", () => {
   it("starts with paneHover and pendingPaneDrop both null", () => {
-    expect(useNoteDragStore.getState().paneHover).toBeNull();
-    expect(useNoteDragStore.getState().pendingPaneDrop).toBeNull();
+    expect(useSshDragStore.getState().paneHover).toBeNull();
+    expect(useSshDragStore.getState().pendingPaneDrop).toBeNull();
+  });
+
+  it("clearPendingPaneDrop resets pendingPaneDrop to null", () => {
+    useSshDragStore.setState({
+      pendingPaneDrop: { leafId: "l1", connectionId: "c1", connectionName: "Prod", xPct: 50, yPct: 50 },
+    });
+    useSshDragStore.getState().clearPendingPaneDrop();
+    expect(useSshDragStore.getState().pendingPaneDrop).toBeNull();
   });
 });
 
-describe("applyNoteDrop", () => {
-  it("moves the note into a folder when dropped on a folder", () => {
-    const moveNote = vi.fn().mockResolvedValue("/root/Ideas/n.md");
-    applyNoteDrop({ kind: "folder", path: "/root/Ideas" }, "/root/n.md", { moveNote });
-    expect(moveNote).toHaveBeenCalledWith("/root/n.md", "/root/Ideas");
-  });
-
-  it("moves the note to the root when dropped on the root zone", () => {
-    const moveNote = vi.fn().mockResolvedValue("/root/n.md");
-    applyNoteDrop({ kind: "root", path: "/root" }, "/root/Ideas/n.md", { moveNote });
-    expect(moveNote).toHaveBeenCalledWith("/root/Ideas/n.md", "/root");
-  });
-
-  it("does nothing when there is no drop target", () => {
-    const moveNote = vi.fn();
-    applyNoteDrop(null, "/root/n.md", { moveNote });
-    expect(moveNote).not.toHaveBeenCalled();
+describe("consumeSshDragClick", () => {
+  it("is false when no drag has just finished", () => {
+    expect(consumeSshDragClick()).toBe(false);
   });
 });
 
@@ -101,7 +41,16 @@ describe("tab-bar drop priority", () => {
   });
 });
 
-describe("beginNoteDrag tab-bar drop with insertion", () => {
+describe("useSshDragStore blockedConnectionId", () => {
+  it("starts null and clearBlockedConnectionId resets it", () => {
+    expect(useSshDragStore.getState().blockedConnectionId).toBeNull();
+    useSshDragStore.setState({ blockedConnectionId: "conn-1" });
+    useSshDragStore.getState().clearBlockedConnectionId();
+    expect(useSshDragStore.getState().blockedConnectionId).toBeNull();
+  });
+});
+
+describe("beginSshDrag tab-bar drop with insertion", () => {
   beforeEach(() => {
     useTabsStore.setState({
       spaces: [{ id: "s1", name: "One" }],
@@ -117,7 +66,7 @@ describe("beginNoteDrag tab-bar drop with insertion", () => {
     // @ts-expect-error jsdom has no native elementFromPoint; tests assign one directly.
     delete document.elementFromPoint;
     document.body.innerHTML = "";
-    useNoteDragStore.setState({ hover: null, paneHover: null, tabBarHover: null });
+    useSshDragStore.setState({ paneHover: null, pendingPaneDrop: null, tabBarHover: null, blockedConnectionId: null });
   });
 
   function setUpTabBarDom(tabIdA: string, tabIdB: string): { bar: Element } {
@@ -142,14 +91,14 @@ describe("beginNoteDrag tab-bar drop with insertion", () => {
     document.elementFromPoint = vi.fn().mockReturnValue(bar);
 
     const startEvent = { clientX: 500, clientY: 10, button: 0 } as unknown as React.PointerEvent;
-    beginNoteDrag("/root/n.md", "n.md", startEvent);
+    beginSshDrag("conn-1", "Prod", startEvent);
 
     firePointer("pointermove", 10, 10);
     firePointer("pointerup", 10, 10);
 
     const tabs = useTabsStore.getState().tabs;
     expect(tabs).toHaveLength(3);
-    const newTab = tabs.find((t) => t.kind === "note")!;
+    const newTab = tabs.find((t) => t.kind === "terminal" && t.title === "Prod")!;
     expect(newTab).toBeDefined();
     const indexOfNew = tabs.findIndex((t) => t.id === newTab.id);
     const indexOfA = tabs.findIndex((t) => t.id === tabIdA);
@@ -165,14 +114,38 @@ describe("beginNoteDrag tab-bar drop with insertion", () => {
     document.elementFromPoint = vi.fn().mockReturnValue(bar);
 
     const startEvent = { clientX: 500, clientY: 10, button: 0 } as unknown as React.PointerEvent;
-    beginNoteDrag("/root/n.md", "n.md", startEvent);
+    beginSshDrag("conn-1", "Prod", startEvent);
 
     firePointer("pointermove", 280, 10);
     firePointer("pointerup", 280, 10);
 
     const tabs = useTabsStore.getState().tabs;
     expect(tabs).toHaveLength(3);
-    const newTab = tabs.find((t) => t.kind === "note")!;
+    const newTab = tabs.find((t) => t.kind === "terminal" && t.title === "Prod")!;
     expect(tabs[tabs.length - 1].id).toBe(newTab.id);
+  });
+
+  it("does not reorder and sets blockedConnectionId when the connection is already open elsewhere in the space", () => {
+    const existingId = useTabsStore.getState().newTerminalTab();
+    useTabsStore.setState((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === existingId
+          ? { ...t, paneTree: leaf(t.activeLeafId, { kind: "terminal", ssh: { connectionId: "conn-1" } }) }
+          : t,
+      ),
+    }));
+    const tabIdB = useTabsStore.getState().newTerminalTab();
+    const { bar } = setUpTabBarDom(existingId, tabIdB);
+    document.elementFromPoint = vi.fn().mockReturnValue(bar);
+
+    const startEvent = { clientX: 500, clientY: 10, button: 0 } as unknown as React.PointerEvent;
+    beginSshDrag("conn-1", "Prod", startEvent);
+
+    firePointer("pointermove", 10, 10);
+    firePointer("pointerup", 10, 10);
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(2);
+    expect(useSshDragStore.getState().blockedConnectionId).toBe("conn-1");
   });
 });

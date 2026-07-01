@@ -10,6 +10,7 @@ import {
   FolderOpen,
   FolderPlus,
   MessageSquarePlus,
+  SquarePlus,
   TerminalSquare,
   Trash2,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
 import { dirname, joinPath, relativePath } from "./lib/paths";
 import { beginEntryDrag, consumeDragClick } from "./lib/dragEntry";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
+import { InfoDialog } from "@/components/InfoDialog";
 import { useTabsStore } from "@/stores/tabsStore";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -45,15 +47,18 @@ interface TreeNodeProps {
 
 function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
   const { t } = useTranslation("explorer");
+  const { t: tCommon } = useTranslation("common");
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DirEntry[] | null>(null);
   const [menu, setMenu] = useState<MenuPosition | null>(null);
   const [creating, setCreating] = useState<Creating>(null);
+  const [atCapacity, setAtCapacity] = useState(false);
   // JS hover: CSS :hover is suppressed inside a draggable subtree (WebKit), so
   // track hover manually to highlight just this row.
   const [hovered, setHovered] = useState(false);
 
-  const openEditorTab = useTabsStore((s) => s.openEditorTab);
+  const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
+  const openInNewTab = useTabsStore((s) => s.openInNewTab);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const selectSidebar = useUiStore((s) => s.selectSidebar);
   const attachPath = useChatStore((s) => s.attachPath);
@@ -86,7 +91,10 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
 
   async function toggle() {
     if (!entry.is_dir) {
-      openEditorTab(entry.path);
+      const result = openFromSidebar({ kind: "editor", path: entry.path });
+      if (result.status === "at-capacity") {
+        setAtCapacity(true);
+      }
       return;
     }
     if (expanded) {
@@ -129,7 +137,10 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
       onReloadParent();
     }
     if (creating.kind === "file") {
-      openEditorTab(path);
+      const result = openFromSidebar({ kind: "editor", path });
+      if (result.status === "at-capacity") {
+        setAtCapacity(true);
+      }
     }
   }
 
@@ -159,6 +170,17 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
       group: 0,
       onSelect: () => void toggle(),
     },
+    ...(!entry.is_dir
+      ? [
+          {
+            id: "openInNewTab",
+            label: t("menu.openInNewTab"),
+            icon: SquarePlus,
+            group: 0,
+            onSelect: () => openInNewTab({ kind: "editor", path: entry.path }),
+          } satisfies ContextMenuItem,
+        ]
+      : []),
     {
       id: "reveal",
       label: t("menu.reveal"),
@@ -307,6 +329,15 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
           y={menu.y}
           items={menuItems}
           onClose={() => setMenu(null)}
+        />
+      )}
+
+      {atCapacity && (
+        <InfoDialog
+          title={t("menu.open")}
+          message={tCommon("paneCapacityAlert")}
+          confirmLabel={tCommon("actions.confirm")}
+          onConfirm={() => setAtCapacity(false)}
         />
       )}
     </li>

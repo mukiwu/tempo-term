@@ -3,6 +3,8 @@
   "newNote": "New note",
   "newFolder": "New folder",
   "deleteNote": "Delete note",
+  "open": "Open in split pane",
+  "openInNewTab": "Open in new tab",
   "deleteFolder": "Delete folder",
   "renameFolderHint": "Double-click to rename",
   "empty": "Global notes that persist across projects — write anytime, saved anytime.",

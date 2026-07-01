@@ -3,6 +3,8 @@
   "newNote": "新增筆記",
   "newFolder": "新增資料夾",
   "deleteNote": "刪除筆記",
+  "open": "在分割面板開啟",
+  "openInNewTab": "在新分頁開啟",
   "deleteFolder": "刪除資料夾",
   "renameFolderHint": "雙擊可重新命名",
   "empty": "跨專案保存的全域筆記，隨時記錄，隨時保存",

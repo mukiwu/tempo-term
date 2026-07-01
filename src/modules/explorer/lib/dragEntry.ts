@@ -7,6 +7,8 @@
  */
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";
+import { useTabsStore } from "@/stores/tabsStore";
+import { nearestTabInsertion, tabRectsInTabBar } from "@/components/lib/tabBarDrop";
 
 export interface DraggedEntry {
   path: string;
@@ -17,6 +19,8 @@ export interface DraggedEntry {
 interface PendingDrop {
   leafId: string;
   entry: DraggedEntry;
+  xPct: number;
+  yPct: number;
 }
 
 interface EntryDragState {
@@ -26,8 +30,13 @@ interface EntryDragState {
   dragging: boolean;
   /** Leaf id of the pane under the cursor, for the drop highlight. */
   hoverLeafId: string | null;
+  /** The pointer's live position, as a percentage of the pane-area container
+   * under it, for resolving the live drop-zone highlight while dragging. */
+  hoverPointerPct: { xPct: number; yPct: number } | null;
   /** A resolved drop waiting for its owning pane to consume it. */
   pendingDrop: PendingDrop | null;
+  /** Where a drop on the tab bar would insert a new tab, while dragging over it; null when not hovering the tab bar at all. */
+  tabBarHover: { insertBeforeId: string | null } | null;
   setHover: (leafId: string | null) => void;
   clearPendingDrop: () => void;
 }
@@ -36,7 +45,9 @@ export const useEntryDragStore = create<EntryDragState>((set) => ({
   entry: null,
   dragging: false,
   hoverLeafId: null,
+  hoverPointerPct: null,
   pendingDrop: null,
+  tabBarHover: null,
   setHover: (leafId) => set((s) => (s.hoverLeafId === leafId ? s : { hoverLeafId: leafId })),
   clearPendingDrop: () => set({ pendingDrop: null }),
 }));
@@ -69,6 +80,33 @@ function leafAt(x: number, y: number): string | null {
     document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-pane-leaf]")?.dataset.paneLeaf ??
     null
   );
+}
+
+/** Convert a client point into a 0-100 percentage of `rect`, clamped at the edges. */
+export function pointerToPaneAreaPct(
+  rect: { left: number; top: number; width: number; height: number },
+  clientX: number,
+  clientY: number,
+): { xPct: number; yPct: number } {
+  const xPct = rect.width > 0 ? ((clientX - rect.left) / rect.width) * 100 : 0;
+  const yPct = rect.height > 0 ? ((clientY - rect.top) / rect.height) * 100 : 0;
+  return {
+    xPct: Math.min(100, Math.max(0, xPct)),
+    yPct: Math.min(100, Math.max(0, yPct)),
+  };
+}
+
+/** The pane-area container rect under a client point, or null. */
+function paneAreaRectAt(x: number, y: number): DOMRect | null {
+  return (
+    document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-pane-area]")?.getBoundingClientRect() ??
+    null
+  );
+}
+
+/** True when `el` (or an ancestor) is the tab bar — takes priority over any pane target. */
+export function isOverTabBar(el: Element | null): boolean {
+  return el?.closest("[data-tab-bar]") != null;
 }
 
 let ghostEl: HTMLDivElement | null = null;
@@ -131,7 +169,20 @@ export function beginEntryDrag(entry: DraggedEntry, event: ReactPointerEvent): v
       showGhost(entry.name, e.clientX, e.clientY);
     }
     moveGhost(e.clientX, e.clientY);
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      useEntryDragStore.setState({
+        hoverLeafId: null,
+        hoverPointerPct: null,
+        tabBarHover: { insertBeforeId: nearestTabInsertion(tabRectsInTabBar(), e.clientX) },
+      });
+      return;
+    }
+    useEntryDragStore.setState({ tabBarHover: null });
     useEntryDragStore.getState().setHover(leafAt(e.clientX, e.clientY));
+    const areaRect = paneAreaRectAt(e.clientX, e.clientY);
+    useEntryDragStore.setState({
+      hoverPointerPct: areaRect ? pointerToPaneAreaPct(areaRect, e.clientX, e.clientY) : null,
+    });
   };
 
   const onUp = (e: PointerEvent) => {
@@ -144,18 +195,50 @@ export function beginEntryDrag(entry: DraggedEntry, event: ReactPointerEvent): v
     setTimeout(() => {
       suppressClick = false;
     }, 0);
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      const insertBeforeId = nearestTabInsertion(tabRectsInTabBar(), e.clientX);
+      useEntryDragStore.setState({
+        dragging: false,
+        hoverLeafId: null,
+        hoverPointerPct: null,
+        entry: null,
+        pendingDrop: null,
+        tabBarHover: null,
+      });
+      if (!entry.isDir) {
+        const result = useTabsStore.getState().openInNewTab({ kind: "editor", path: entry.path });
+        if (result.status === "opened" && insertBeforeId !== null) {
+          const newTabId = useTabsStore.getState().activeId;
+          if (newTabId) {
+            useTabsStore.getState().reorderTab(newTabId, insertBeforeId);
+          }
+        }
+      }
+      return;
+    }
     const leafId = leafAt(e.clientX, e.clientY);
+    const areaRect = paneAreaRectAt(e.clientX, e.clientY);
+    const { xPct, yPct } = areaRect
+      ? pointerToPaneAreaPct(areaRect, e.clientX, e.clientY)
+      : { xPct: 0, yPct: 0 };
     useEntryDragStore.setState({
       dragging: false,
       hoverLeafId: null,
+      hoverPointerPct: null,
       entry: null,
-      pendingDrop: leafId ? { leafId, entry } : null,
+      pendingDrop: leafId ? { leafId, entry, xPct, yPct } : null,
     });
   };
 
   const onCancel = () => {
     stop();
-    useEntryDragStore.setState({ dragging: false, hoverLeafId: null, entry: null });
+    useEntryDragStore.setState({
+      dragging: false,
+      hoverLeafId: null,
+      hoverPointerPct: null,
+      entry: null,
+      tabBarHover: null,
+    });
   };
 
   window.addEventListener("pointermove", onMove);

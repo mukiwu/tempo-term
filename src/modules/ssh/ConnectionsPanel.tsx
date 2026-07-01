@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { Pencil, Plus, Server, Trash2 } from "lucide-react";
+import { Columns2, Pencil, Plus, Server, SquarePlus, Trash2 } from "lucide-react";
 import { useConnectionsStore, type SshConnection, type PortForward } from "@/stores/connectionsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { ConnectionForm } from "@/modules/ssh/ConnectionForm";
+import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
+import { InfoDialog } from "@/components/InfoDialog";
 import { useLiveSessionsStore } from "@/modules/ssh/lib/liveSessionsStore";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
 import { startForward, stopForward } from "@/modules/ssh/lib/ssh-bridge";
+import { beginSshDrag, consumeSshDragClick, useSshDragStore } from "@/modules/ssh/lib/sshDrag";
 
 // ─── Status dot ───────────────────────────────────────────────────────────────
 
@@ -130,8 +133,11 @@ interface ConnectionRowProps {
 
 function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const { t } = useTranslation("common");
-  const openSshTab = useTabsStore((s) => s.openSshTab);
+  const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
+  const openInNewTab = useTabsStore((s) => s.openInNewTab);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [dialog, setDialog] = useState<"none" | "already-connected" | "at-capacity">("none");
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Subscribe to live sessions for this connection. Use a direct field lookup
   // with a stable EMPTY_SESSIONS fallback so the selector returns the same
@@ -142,8 +148,30 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const showForwards = hasLiveSessions && hasForwards;
   const showSessionLabels = sessionIds.length > 1;
 
+  // A boolean selector, not the raw id, so only the row that actually
+  // matches re-renders when a drag is blocked or cleared — every other row
+  // would otherwise re-render on every change to this shared store field.
+  const isBlocked = useSshDragStore((s) => s.blockedConnectionId === connection.id);
+  useEffect(() => {
+    if (isBlocked) {
+      setDialog("already-connected");
+      useSshDragStore.getState().clearBlockedConnectionId();
+    }
+  }, [isBlocked]);
+
   function handleRowClick() {
-    openSshTab(connection.id, connection.name);
+    if (consumeSshDragClick()) {
+      return;
+    }
+    const result = openFromSidebar(
+      { kind: "terminal", ssh: { connectionId: connection.id } },
+      connection.name,
+    );
+    if (result.status === "already-connected") {
+      setDialog("already-connected");
+    } else if (result.status === "at-capacity") {
+      setDialog("at-capacity");
+    }
   }
 
   function handleDeleteClick(e: React.MouseEvent) {
@@ -167,8 +195,26 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
     onEdit(connection);
   }
 
+  function handleContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  }
+
+  function handleOpenInNewTab() {
+    const result = openInNewTab(
+      { kind: "terminal", ssh: { connectionId: connection.id } },
+      connection.name,
+    );
+    if (result.status === "already-connected") {
+      setDialog("already-connected");
+    }
+  }
+
   return (
-    <li>
+    <li
+      onContextMenu={handleContextMenu}
+      onPointerDown={(e) => beginSshDrag(connection.id, connection.name, e)}
+    >
       <div className="group flex items-center">
         <button
           type="button"
@@ -239,6 +285,47 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
             />
           ))}
         </div>
+      )}
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              id: "open",
+              label: t("connectionsPanel.open"),
+              icon: Columns2,
+              group: 0,
+              onSelect: handleRowClick,
+            } satisfies ContextMenuItem,
+            {
+              id: "openInNewTab",
+              label: t("connectionsPanel.openInNewTab"),
+              icon: SquarePlus,
+              group: 0,
+              onSelect: handleOpenInNewTab,
+            } satisfies ContextMenuItem,
+          ]}
+        />
+      )}
+
+      {dialog === "already-connected" && (
+        <InfoDialog
+          title={t("connectionsPanel.title")}
+          message={t("connectionsPanel.alreadyOpenAlert", { name: connection.name })}
+          confirmLabel={t("actions.confirm")}
+          onConfirm={() => setDialog("none")}
+        />
+      )}
+      {dialog === "at-capacity" && (
+        <InfoDialog
+          title={t("connectionsPanel.title")}
+          message={t("paneCapacityAlert")}
+          confirmLabel={t("actions.confirm")}
+          onConfirm={() => setDialog("none")}
+        />
       )}
     </li>
   );
