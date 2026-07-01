@@ -45,6 +45,7 @@ describe("App shell", () => {
       // Launcher panes render a lightweight panel — no terminal, so no Tauri.
       paneTree: leaf(`${id}-leaf`, { kind: "launcher" }),
       activeLeafId: `${id}-leaf`,
+      paneOrder: [`${id}-leaf`],
     }));
     useTabsStore.setState({
       spaces: [{ id: "s1", name: "Space 1" }],
@@ -79,6 +80,7 @@ describe("App shell", () => {
           kind: "launcher" as const,
           paneTree,
           activeLeafId: "left-leaf",
+          paneOrder: ["left-leaf", "right-leaf"],
         },
       ],
       activeId: "a",
@@ -109,6 +111,7 @@ describe("App shell", () => {
       kind: "launcher" as const,
       paneTree: leaf(`${id}-leaf`, { kind: "launcher" }),
       activeLeafId: `${id}-leaf`,
+      paneOrder: [`${id}-leaf`],
     }));
     useTabsStore.setState({
       spaces: [{ id: "s1", name: "Space 1" }],

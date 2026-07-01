@@ -49,6 +49,10 @@ export interface Tab {
   kind: TabKind;
   paneTree: LayoutNode;
   activeLeafId: string;
+  /** Leaf ids in the order they were added to this tab — independent of the
+   * tree's own left-right shape, which the grid layout's stacking scrambles.
+   * Drives `gridLayout`'s column/row assignment. */
+  paneOrder: string[];
   /** Starting directory for new terminal panes created inside this tab. */
   cwd?: string;
   /** True once the user renames the tab, so cwd changes stop overwriting it. */
@@ -260,12 +264,15 @@ interface PersistedV0Tab {
   cwd?: string;
 }
 
-/** Convert pre-paneTree (v0) persisted tabs into the unified Tab shape. */
+/** Convert pre-paneTree (v0) persisted tabs into the unified Tab shape, and
+ * backfill `paneOrder` (v1→v2) for tabs persisted before it existed — a
+ * one-time best-effort guess from the tree's own left-right leaf order, since
+ * the true add-order was never recorded before this field existed. */
 export function migratePersistedTabs(persisted: unknown, _version: number): unknown {
   if (!persisted || typeof persisted !== "object") {
     return persisted;
   }
-  const state = persisted as { tabs?: PersistedV0Tab[] };
+  const state = persisted as { tabs?: (PersistedV0Tab & { paneOrder?: string[] })[] };
   if (!Array.isArray(state.tabs)) {
     return persisted;
   }
@@ -278,6 +285,7 @@ export function migratePersistedTabs(persisted: unknown, _version: number): unkn
         kind: "terminal",
         paneTree: t.paneTree,
         activeLeafId: t.activeLeafId,
+        paneOrder: t.paneOrder ?? leafIds(t.paneTree),
         cwd: t.cwd,
       };
     }
@@ -299,13 +307,16 @@ export function migratePersistedTabs(persisted: unknown, _version: number): unkn
       default:
         content = { kind: "terminal" };
     }
+    const paneTree = t.paneTree ?? leaf(paneId, content);
+    const activeLeafId = t.activeLeafId ?? paneId;
     return {
       id: t.id,
       spaceId: t.spaceId,
       title: t.title,
       kind: t.kind,
-      paneTree: leaf(paneId, content),
-      activeLeafId: paneId,
+      paneTree,
+      activeLeafId,
+      paneOrder: t.paneOrder ?? leafIds(paneTree),
       cwd: t.cwd,
     };
   });
@@ -376,6 +387,7 @@ export const useTabsStore = create<TabsState>()(
       title: cwd ? basename(cwd) : `Terminal ${count}`,
       paneTree: leaf(paneId, { kind: "terminal" }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
       cwd,
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
@@ -408,6 +420,7 @@ export const useTabsStore = create<TabsState>()(
       title: name,
       paneTree: leaf(paneId, { kind: "terminal", ssh: { connectionId } }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
       renamed: true,
     };
     // Mark this leaf as freshly user-opened so TerminalView auto-connects on mount.
@@ -434,6 +447,7 @@ export const useTabsStore = create<TabsState>()(
       title: "New Tab",
       paneTree: leaf(paneId, { kind: "terminal" }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -460,6 +474,7 @@ export const useTabsStore = create<TabsState>()(
       title: basename(path),
       paneTree: leaf(paneId, { kind: "editor", path }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -486,6 +501,7 @@ export const useTabsStore = create<TabsState>()(
       title: title || "Untitled",
       paneTree: leaf(paneId, { kind: "note", noteId }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -502,6 +518,7 @@ export const useTabsStore = create<TabsState>()(
       title: previewTitle(url),
       paneTree: leaf(paneId, { kind: "preview", url }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -528,6 +545,7 @@ export const useTabsStore = create<TabsState>()(
       title: "Git Graph",
       paneTree: leaf(paneId, { kind: "git-graph" }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
@@ -573,6 +591,7 @@ export const useTabsStore = create<TabsState>()(
         title: resolvedTitle,
         paneTree: leaf(paneId, content),
         activeLeafId: paneId,
+        paneOrder: [paneId],
         ...(isFreshSsh ? { renamed: true } : {}),
       };
       set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
@@ -648,6 +667,7 @@ export const useTabsStore = create<TabsState>()(
       title,
       paneTree: leaf(paneId, { kind: "preview", url }),
       activeLeafId: paneId,
+      paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, newTab], activeId: id }));
   },
@@ -910,7 +930,7 @@ export const useTabsStore = create<TabsState>()(
     {
       name: TABS_STORAGE_KEY,
       storage: createJSONStorage(() => perWindowStorage()),
-      version: 1,
+      version: 2,
       migrate: migratePersistedTabs,
       partialize: (state) => ({
         spaces: state.spaces,

@@ -11,6 +11,7 @@ function terminalTab(overrides: Partial<Tab> = {}): Tab {
     kind: "terminal",
     paneTree: leaf("a", { kind: "terminal" }),
     activeLeafId: "a",
+    paneOrder: ["a"],
     ...overrides,
   };
 }

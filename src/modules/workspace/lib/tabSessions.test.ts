@@ -11,6 +11,7 @@ function tabWith(paneTree: LayoutNode, cwd?: string): Tab {
     kind: "terminal",
     paneTree,
     activeLeafId: "L1",
+    paneOrder: ["L1"],
     cwd,
   };
 }

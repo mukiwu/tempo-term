@@ -43,6 +43,7 @@ beforeEach(() => {
         kind: "terminal",
         paneTree: leaf("p1", { kind: "terminal" }),
         activeLeafId: "p1",
+        paneOrder: ["p1"],
       },
     ],
     activeId: "t1",

@@ -506,6 +506,35 @@ describe("openSshTab", () => {
   });
 });
 
+describe("paneOrder on tab creation", () => {
+  beforeEach(reset);
+
+  it("initializes paneOrder to the sole leaf for every tab-creating action", () => {
+    const cases: Array<() => string> = [
+      () => useTabsStore.getState().newTerminalTab(),
+      () => useTabsStore.getState().openSshTab("c1", "box"),
+      () => useTabsStore.getState().openLauncherTab(),
+      () => useTabsStore.getState().openEditorTab("/a.ts"),
+      () => useTabsStore.getState().openNoteTab("/n.md", "note"),
+      () => useTabsStore.getState().openPreviewTab("http://localhost"),
+      () => useTabsStore.getState().openGitGraphTab(),
+    ];
+    for (const create of cases) {
+      reset();
+      const tabId = create();
+      const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+      expect(tab.paneOrder).toEqual([tab.activeLeafId]);
+    }
+  });
+
+  it("initializes paneOrder for a tab opened via openFromSidebar", () => {
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/a.ts" });
+    const tab = activeTab();
+    expect(tab.id).toBe(useTabsStore.getState().activeId);
+    expect(tab.paneOrder).toEqual([tab.activeLeafId]);
+  });
+});
+
 describe("migratePersistedTabs", () => {
   it("migrates v0 simple tabs into single-leaf pane tabs", () => {
     const v0 = {
@@ -552,6 +581,7 @@ describe("tabHasDirtyEditor", () => {
       kind: "editor",
       paneTree: leaf(leafId, { kind: "editor", path }),
       activeLeafId: leafId,
+      paneOrder: [leafId],
     };
   }
 
@@ -563,6 +593,7 @@ describe("tabHasDirtyEditor", () => {
       kind: "terminal",
       paneTree: leaf("l1", { kind: "terminal" }),
       activeLeafId: "l1",
+      paneOrder: ["l1"],
     };
     expect(tabHasDirtyEditor(tab, {})).toBe(false);
   });
@@ -599,6 +630,7 @@ describe("tabHasDirtyEditor", () => {
       kind: "editor",
       paneTree: tree,
       activeLeafId: "l1",
+      paneOrder: ["l1", "l2"],
     };
     const buffers = {
       "/a/clean.ts": { content: "ok", baseline: "ok" },
@@ -807,6 +839,7 @@ describe("localPreviewFilePaths", () => {
       kind: "preview",
       paneTree: leaf("l1", { kind: "preview", url: "file:///proj/a.html" }),
       activeLeafId: "l1",
+      paneOrder: ["l1"],
     };
     expect(localPreviewFilePaths([tab])).toContain("/proj/a.html");
   });
@@ -819,6 +852,7 @@ describe("localPreviewFilePaths", () => {
       kind: "preview",
       paneTree: leaf("l2", { kind: "preview", url: "http://localhost:3000" }),
       activeLeafId: "l2",
+      paneOrder: ["l2"],
     };
     expect(localPreviewFilePaths([tab])).toHaveLength(0);
   });
@@ -831,6 +865,7 @@ describe("localPreviewFilePaths", () => {
       kind: "terminal",
       paneTree: leaf("l3", { kind: "terminal" }),
       activeLeafId: "l3",
+      paneOrder: ["l3"],
     };
     expect(localPreviewFilePaths([tab])).toHaveLength(0);
   });
@@ -845,6 +880,7 @@ describe("activeEditorPath", () => {
       kind: "editor",
       paneTree: leaf(leafId, { kind: "editor", path }),
       activeLeafId: leafId,
+      paneOrder: [leafId],
     };
   }
 
@@ -861,6 +897,7 @@ describe("activeEditorPath", () => {
       kind: "terminal",
       paneTree: leaf("l1", { kind: "terminal" }),
       activeLeafId: "l1",
+      paneOrder: ["l1"],
     };
     expect(activeEditorPath([tab], "t1")).toBeNull();
   });
@@ -887,6 +924,7 @@ describe("activeEditorPath", () => {
       kind: "editor",
       paneTree: tree,
       activeLeafId: "l1",
+      paneOrder: ["l1", "l2"],
     };
     expect(activeEditorPath([tab], "t1")).toBe("/repo/App.vue");
     expect(activeEditorPath([{ ...tab, activeLeafId: "l2" }], "t1")).toBeNull();
