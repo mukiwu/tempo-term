@@ -3,6 +3,7 @@ import {
   consumeDragClick,
   fileUrl,
   getDraggedEntry,
+  isOverTabBar,
   markdownLink,
   pointerToPaneAreaPct,
   setDraggedEntry,
@@ -63,5 +64,19 @@ describe("pointerToPaneAreaPct", () => {
   it("clamps to 0-100 when the point is outside the container (fast pointer movement)", () => {
     const containerRect = { left: 0, top: 0, width: 100, height: 100 } as DOMRect;
     expect(pointerToPaneAreaPct(containerRect, -20, 250)).toEqual({ xPct: 0, yPct: 100 });
+  });
+});
+
+describe("tab-bar drop priority", () => {
+  it("isOverTabBar resolves true when the element is inside a data-tab-bar container", () => {
+    const outer = document.createElement("div");
+    outer.dataset.tabBar = "";
+    const inner = document.createElement("div");
+    outer.appendChild(inner);
+    expect(isOverTabBar(inner)).toBe(true);
+  });
+
+  it("isOverTabBar resolves false otherwise", () => {
+    expect(isOverTabBar(document.createElement("div"))).toBe(false);
   });
 });

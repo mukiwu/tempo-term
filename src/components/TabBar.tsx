@@ -244,6 +244,7 @@ export function TabBar() {
         onDragCancel={handleDragCancel}
       >
         <div
+          data-tab-bar
           data-tauri-drag-region
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
         >

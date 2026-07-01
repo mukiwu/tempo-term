@@ -7,6 +7,7 @@
  */
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";
+import { useTabsStore } from "@/stores/tabsStore";
 
 export interface DraggedEntry {
   path: string;
@@ -99,6 +100,11 @@ function paneAreaRectAt(x: number, y: number): DOMRect | null {
   );
 }
 
+/** True when `el` (or an ancestor) is the tab bar — takes priority over any pane target. */
+export function isOverTabBar(el: Element | null): boolean {
+  return el?.closest("[data-tab-bar]") != null;
+}
+
 let ghostEl: HTMLDivElement | null = null;
 
 function showGhost(label: string, x: number, y: number): void {
@@ -176,6 +182,19 @@ export function beginEntryDrag(entry: DraggedEntry, event: ReactPointerEvent): v
     setTimeout(() => {
       suppressClick = false;
     }, 0);
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      useEntryDragStore.setState({
+        dragging: false,
+        hoverLeafId: null,
+        hoverPointerPct: null,
+        entry: null,
+        pendingDrop: null,
+      });
+      if (!entry.isDir) {
+        useTabsStore.getState().openInNewTab({ kind: "editor", path: entry.path });
+      }
+      return;
+    }
     const leafId = leafAt(e.clientX, e.clientY);
     const areaRect = paneAreaRectAt(e.clientX, e.clientY);
     const { xPct, yPct } = areaRect

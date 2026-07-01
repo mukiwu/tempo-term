@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyNoteDrop, resolveNoteDrop, useNoteDragStore } from "./noteDrag";
+import { applyNoteDrop, isOverTabBar, resolveNoteDrop, useNoteDragStore } from "./noteDrag";
 
 describe("resolveNoteDrop", () => {
   it("resolves a folder header to a folder target carrying its path", () => {
@@ -74,5 +74,15 @@ describe("applyNoteDrop", () => {
     const moveNote = vi.fn();
     applyNoteDrop(null, "/root/n.md", { moveNote });
     expect(moveNote).not.toHaveBeenCalled();
+  });
+});
+
+describe("tab-bar drop priority", () => {
+  it("isOverTabBar resolves true when the element is inside a data-tab-bar container", () => {
+    const outer = document.createElement("div");
+    outer.dataset.tabBar = "";
+    const inner = document.createElement("div");
+    outer.appendChild(inner);
+    expect(isOverTabBar(inner)).toBe(true);
   });
 });

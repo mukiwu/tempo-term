@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { Columns2, Pencil, Plus, Server, SquarePlus, Trash2 } from "lucide-react";
@@ -10,7 +10,7 @@ import { InfoDialog } from "@/components/InfoDialog";
 import { useLiveSessionsStore } from "@/modules/ssh/lib/liveSessionsStore";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
 import { startForward, stopForward } from "@/modules/ssh/lib/ssh-bridge";
-import { beginSshDrag, consumeSshDragClick } from "@/modules/ssh/lib/sshDrag";
+import { beginSshDrag, consumeSshDragClick, useSshDragStore } from "@/modules/ssh/lib/sshDrag";
 
 // ─── Status dot ───────────────────────────────────────────────────────────────
 
@@ -147,6 +147,14 @@ function ConnectionRow({ connection, onEdit, onDelete }: ConnectionRowProps) {
   const hasForwards = (connection.portForwards?.length ?? 0) > 0;
   const showForwards = hasLiveSessions && hasForwards;
   const showSessionLabels = sessionIds.length > 1;
+
+  const blockedConnectionId = useSshDragStore((s) => s.blockedConnectionId);
+  useEffect(() => {
+    if (blockedConnectionId === connection.id) {
+      setDialog("already-connected");
+      useSshDragStore.getState().clearBlockedConnectionId();
+    }
+  }, [blockedConnectionId, connection.id]);
 
   function handleRowClick() {
     if (consumeSshDragClick()) {

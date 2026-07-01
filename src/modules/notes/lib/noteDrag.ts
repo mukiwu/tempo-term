@@ -8,6 +8,7 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";
 import { useNotesStore } from "@/stores/notesStore";
+import { useTabsStore } from "@/stores/tabsStore";
 
 /** Where a dragged note will land when released: a sidebar folder/root (moves the note), or a pane (opens the note there). */
 export type NoteDropTarget =
@@ -158,6 +159,11 @@ function paneAreaRectAt(x: number, y: number): DOMRect | null {
   );
 }
 
+/** True when `el` (or an ancestor) is the tab bar — takes priority over any pane target. */
+export function isOverTabBar(el: Element | null): boolean {
+  return el?.closest("[data-tab-bar]") != null;
+}
+
 /**
  * Begin a pointer drag of a note. Tracks the cursor with pointer events, follows
  * it with a ghost label, highlights the drop target underneath, and on release
@@ -219,6 +225,11 @@ export function beginNoteDrag(
     setTimeout(() => {
       suppressClick = false;
     }, 0);
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      useNoteDragStore.setState({ hover: null, paneHover: null });
+      useTabsStore.getState().openInNewTab({ kind: "note", noteId: notePath }, label);
+      return;
+    }
     const target = targetAt(e.clientX, e.clientY);
     if (target?.kind === "pane") {
       const areaRect = paneAreaRectAt(e.clientX, e.clientY);

@@ -57,4 +57,9 @@ describe("TabBar tab context menu", () => {
     fireEvent.contextMenu(screen.getByRole("textbox"));
     expect(screen.queryByRole("menuitem")).toBeNull();
   });
+
+  it("marks the tab strip as a drop target for open-in-new-tab", () => {
+    render(<TabBar />);
+    expect(document.querySelector("[data-tab-bar]")).not.toBeNull();
+  });
 });

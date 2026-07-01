@@ -8,6 +8,7 @@
  */
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";
+import { useTabsStore } from "@/stores/tabsStore";
 
 interface SshDragState {
   /** The pane under the cursor and the pointer's percentage position within it. */
@@ -17,12 +18,17 @@ interface SshDragState {
     | { leafId: string; connectionId: string; connectionName: string; xPct: number; yPct: number }
     | null;
   clearPendingPaneDrop: () => void;
+  /** Set when a tab-bar drop of this connection was blocked by the already-connected guard, for `ConnectionsPanel.tsx` to show its dialog. */
+  blockedConnectionId: string | null;
+  clearBlockedConnectionId: () => void;
 }
 
 export const useSshDragStore = create<SshDragState>((set) => ({
   paneHover: null,
   pendingPaneDrop: null,
   clearPendingPaneDrop: () => set({ pendingPaneDrop: null }),
+  blockedConnectionId: null,
+  clearBlockedConnectionId: () => set({ blockedConnectionId: null }),
 }));
 
 const DRAG_THRESHOLD = 5;
@@ -87,6 +93,11 @@ function paneAreaRectAt(x: number, y: number): DOMRect | null {
   );
 }
 
+/** True when `el` (or an ancestor) is the tab bar — takes priority over any pane target. */
+export function isOverTabBar(el: Element | null): boolean {
+  return el?.closest("[data-tab-bar]") != null;
+}
+
 /**
  * Begin a pointer drag of an SSH connection. Tracks the cursor with pointer
  * events, follows it with a ghost label, highlights the pane underneath, and
@@ -138,6 +149,16 @@ export function beginSshDrag(
     setTimeout(() => {
       suppressClick = false;
     }, 0);
+    if (isOverTabBar(document.elementFromPoint(e.clientX, e.clientY))) {
+      useSshDragStore.setState({ paneHover: null, pendingPaneDrop: null });
+      const result = useTabsStore
+        .getState()
+        .openInNewTab({ kind: "terminal", ssh: { connectionId } }, connectionName);
+      if (result.status === "already-connected") {
+        useSshDragStore.setState({ blockedConnectionId: connectionId });
+      }
+      return;
+    }
     const leafId = leafAt(e.clientX, e.clientY);
     const areaRect = paneAreaRectAt(e.clientX, e.clientY);
     const pct = areaRect ? pointerToPaneAreaPct(areaRect, e.clientX, e.clientY) : { xPct: 0, yPct: 0 };
