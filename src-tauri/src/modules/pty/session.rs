@@ -73,6 +73,21 @@ fn build_shell_command(
     if let Some(dir) = usable_cwd(cwd) {
         cmd.cwd(dir);
     }
+    // Windows has no OS-level cwd backend (no /proc, no lsof — see
+    // read_process_cwd below), so the shell itself reports its cwd via OSC 7 at
+    // every prompt: PowerShell through an injected prompt wrapper, cmd.exe
+    // through a PROMPT prefix. The frontend parses the sequence (see
+    // src/modules/terminal/lib/osc7.ts). Unix keeps the poll backend.
+    #[cfg(windows)]
+    {
+        for arg in super::shell::windows_integration_args(&shell) {
+            cmd.arg(arg);
+        }
+        let inherited_prompt = std::env::var("PROMPT").ok();
+        for (key, value) in super::shell::windows_integration_env(&shell, inherited_prompt) {
+            cmd.env(key, value);
+        }
+    }
     let locale_env = terminal_env(
         std::env::var("LC_ALL").ok(),
         std::env::var("LC_CTYPE").ok(),
@@ -233,7 +248,10 @@ pub fn cwd(state: &PtyState, id: u32) -> Result<Option<String>, String> {
 /// PID of the terminal's foreground process group. `portable-pty` exposes
 /// `process_group_leader` only on Unix (Windows has no process-group concept),
 /// so on other platforms this returns `None` and the cwd / foreground-command
-/// features simply report nothing there.
+/// commands simply report nothing there. Windows gets its cwd a different way:
+/// the injected shell integration (see `windows_integration_args` /
+/// `windows_integration_env` in shell.rs) makes the shell announce its own
+/// directory via OSC 7, parsed on the frontend.
 #[cfg(unix)]
 fn foreground_pid(session: &Session) -> Option<i32> {
     session.master.lock().unwrap().process_group_leader()

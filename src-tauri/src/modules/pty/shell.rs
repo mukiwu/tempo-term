@@ -3,6 +3,8 @@
 //! Kept free of side effects so the decision logic can be unit tested without
 //! spawning a real shell.
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -232,6 +234,103 @@ pub fn login_args(shell: &str) -> Vec<String> {
     }
 }
 
+/// PowerShell shell-integration snippet that reports the shell's cwd via an
+/// OSC 7 escape before every prompt. Windows' cwd source for the
+/// explorer-follows-terminal feature: macOS reads a process's cwd with `lsof`
+/// and Linux with `/proc`, but Windows has no OS-level equivalent, so the shell
+/// announces its own directory instead (the frontend parses it — see
+/// src/modules/terminal/lib/osc7.ts).
+///
+/// Wraps — never replaces — the user's `prompt`. Profiles run before the
+/// injected command, so a custom prompt (oh-my-posh, posh-git, Starship) is
+/// already in place and keeps rendering exactly as before. Non-filesystem
+/// locations (registry drives etc.) report nothing. `System.Uri` renders the
+/// path as a percent-encoded `file://` URI, which keeps spaces and non-ASCII
+/// (e.g. CJK folder names) unambiguous. The env marker makes the wrap
+/// idempotent if the snippet is ever sourced twice.
+const POWERSHELL_OSC7_SNIPPET: &str = r#"if ($env:TEMPOTERM_OSC7 -ne '1') {
+  $env:TEMPOTERM_OSC7 = '1'
+  $global:__tempoTermPrompt = $function:prompt
+  function global:prompt {
+    $text = if ($global:__tempoTermPrompt) { & $global:__tempoTermPrompt } else { "PS $($PWD.Path)> " }
+    if ($PWD.Provider.Name -eq 'FileSystem') {
+      try {
+        $uri = ([System.Uri]$PWD.ProviderPath).AbsoluteUri
+        $esc = [char]27
+        [Console]::Write("$esc]7;$uri$esc\")
+      } catch {}
+    }
+    $text
+  }
+}"#;
+
+/// The last path component, split on both separators so a Windows path still
+/// resolves when this code is unit-tested on Unix, lowercased for matching.
+fn shell_file_name(shell: &str) -> String {
+    shell
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(shell)
+        .to_ascii_lowercase()
+}
+
+/// True for Windows PowerShell (`powershell.exe`) and PowerShell 7+ (`pwsh`).
+fn is_powershell(shell: &str) -> bool {
+    matches!(
+        shell_file_name(shell).trim_end_matches(".exe"),
+        "powershell" | "pwsh"
+    )
+}
+
+/// True for `cmd.exe`, the `COMSPEC` default.
+fn is_cmd(shell: &str) -> bool {
+    shell_file_name(shell).trim_end_matches(".exe") == "cmd"
+}
+
+/// PowerShell's `-EncodedCommand` payload: base64 of the UTF-16LE script bytes.
+fn encoded_command(script: &str) -> String {
+    let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    STANDARD.encode(bytes)
+}
+
+/// Extra launch arguments that wire up cwd reporting on Windows. PowerShell
+/// gets the OSC 7 prompt wrapper via `-EncodedCommand` — never a script file,
+/// so it works under any ExecutionPolicy (a dot-sourced `.ps1` would be blocked
+/// by the client default, `Restricted`) and needs no quoting through the
+/// Windows command line. Other shells get nothing.
+pub fn windows_integration_args(shell: &str) -> Vec<String> {
+    if !is_powershell(shell) {
+        return Vec::new();
+    }
+    vec![
+        "-NoExit".to_string(),
+        "-EncodedCommand".to_string(),
+        encoded_command(POWERSHELL_OSC7_SNIPPET),
+    ]
+}
+
+/// Extra environment that wires up cwd reporting on Windows. cmd.exe has no
+/// prompt function to wrap, but its `PROMPT` string expands `$e` to ESC and
+/// `$p` to the current directory, so prefixing the user's prompt (default
+/// `$P$G`, i.e. `C:\dir>`) with an OSC 7 report does the same job. The path
+/// arrives raw — unencoded spaces and backslashes — which the frontend parser
+/// tolerates. Other shells get nothing.
+pub fn windows_integration_env(
+    shell: &str,
+    current_prompt: Option<String>,
+) -> Vec<(String, String)> {
+    if !is_cmd(shell) {
+        return Vec::new();
+    }
+    let user_prompt = current_prompt
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| "$P$G".to_string());
+    vec![(
+        "PROMPT".to_string(),
+        format!("$e]7;file://localhost/$P$e\\{user_prompt}"),
+    )]
+}
+
 /// Keep a start directory only when it is a real, existing directory. A restored
 /// session may point at a folder that has since been deleted; spawning there
 /// would fail, so fall back (the caller drops to the default) instead.
@@ -425,5 +524,76 @@ mod tests {
         assert_eq!(usable_cwd(Some("/no/such/dir/zzz_tempoterm".to_string())), None);
         assert_eq!(usable_cwd(Some("   ".to_string())), None);
         assert_eq!(usable_cwd(None), None);
+    }
+
+    /// Decode an `-EncodedCommand` payload (base64 → UTF-16LE) back to text.
+    fn decode_encoded_command(b64: &str) -> String {
+        let bytes = STANDARD.decode(b64).expect("valid base64");
+        let units: Vec<u16> = bytes
+            .chunks(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16(&units).expect("valid UTF-16LE")
+    }
+
+    #[test]
+    fn powershell_gets_the_osc7_prompt_wrapper_as_an_encoded_command() {
+        for shell in [
+            "powershell.exe",
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            "pwsh.exe",
+            "pwsh",
+            "/opt/homebrew/bin/pwsh",
+        ] {
+            let args = windows_integration_args(shell);
+            assert_eq!(args.len(), 3, "{shell}: expected 3 args, got {args:?}");
+            assert_eq!(args[0], "-NoExit");
+            assert_eq!(args[1], "-EncodedCommand");
+            // The payload must round-trip to the snippet: an OSC 7 emitter that
+            // wraps (not replaces) the user's prompt and skips non-filesystem
+            // providers like registry drives.
+            let script = decode_encoded_command(&args[2]);
+            assert_eq!(script, POWERSHELL_OSC7_SNIPPET);
+            assert!(script.contains("]7;"));
+            assert!(script.contains("$function:prompt"));
+            assert!(script.contains("FileSystem"));
+        }
+    }
+
+    #[test]
+    fn non_powershell_shells_get_no_integration_args() {
+        assert!(windows_integration_args(r"C:\Windows\System32\cmd.exe").is_empty());
+        assert!(windows_integration_args("/bin/zsh").is_empty());
+        assert!(windows_integration_args("/usr/bin/nu").is_empty());
+    }
+
+    #[test]
+    fn cmd_gets_an_osc7_prompt_prefix_keeping_the_default_prompt() {
+        for shell in ["cmd.exe", r"C:\Windows\System32\cmd.exe", "cmd"] {
+            let env = windows_integration_env(shell, None);
+            assert_eq!(
+                env,
+                vec![(
+                    "PROMPT".to_string(),
+                    r"$e]7;file://localhost/$P$e\$P$G".to_string()
+                )],
+                "{shell}"
+            );
+        }
+        // A blank inherited PROMPT falls back to the default too.
+        let env = windows_integration_env("cmd.exe", Some("   ".to_string()));
+        assert_eq!(env[0].1, r"$e]7;file://localhost/$P$e\$P$G");
+    }
+
+    #[test]
+    fn cmd_prompt_prefix_preserves_a_custom_prompt() {
+        let env = windows_integration_env("cmd.exe", Some("$D $P$G".to_string()));
+        assert_eq!(env[0].1, r"$e]7;file://localhost/$P$e\$D $P$G");
+    }
+
+    #[test]
+    fn non_cmd_shells_get_no_integration_env() {
+        assert!(windows_integration_env("powershell.exe", None).is_empty());
+        assert!(windows_integration_env("/bin/zsh", None).is_empty());
     }
 }

@@ -78,6 +78,7 @@ import { ActionCard } from "./ActionCard";
 import { buildCellPositions, gatherLogicalLine } from "./lib/cellPositions";
 import { terminalKeySequence } from "./lib/terminalKeymap";
 import { shouldCdToRoot } from "./lib/cwdSync";
+import { parseOsc7Cwd } from "./lib/osc7";
 import { debounce } from "@/lib/debounce";
 import { dropOverlayClassName } from "@/components/EntryDropOverlay";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
@@ -175,6 +176,12 @@ export function TerminalView({
   onOpenFileRef.current = onOpenFile;
   const onOpenPreviewRef = useRef(onOpenPreview);
   onOpenPreviewRef.current = onOpenPreview;
+  // Windows' cwd source: the latest directory the shell reported via OSC 7
+  // (see lib/osc7.ts). The mount-time handler below keeps the ref fresh and
+  // notifies the cwd-tracking effect through osc7ApplyRef while this pane
+  // drives the explorer. Unused on macOS/Linux, which poll the OS instead.
+  const osc7CwdRef = useRef<string | null>(null);
+  const osc7ApplyRef = useRef<((dir: string) => void) | null>(null);
   // Holds a deferred "start the SSH session now" function that is set inside the
   // main mount effect and called by the reconnect button for restored panes.
   const connectNowRef = useRef<(() => void) | null>(null);
@@ -321,6 +328,27 @@ export function TerminalView({
       }
       return true; // consume so the sequence never reaches the screen
     });
+
+    // On Windows the injected shell integration reports the shell's cwd with
+    // OSC 7 at every prompt (see lib/osc7.ts for why Windows can't poll the OS
+    // the way macOS/Linux do). Record it for session restore and pane
+    // activation, and forward it live to the cwd-tracking effect. SSH panes are
+    // skipped like the polling path skips them — a remote cwd means nothing to
+    // the local explorer, and parseOsc7Cwd rejects non-local reports anyway.
+    const osc7Handler = IS_WINDOWS
+      ? term.parser.registerOscHandler(7, (payload) => {
+          if (!sshRef.current) {
+            const dir = parseOsc7Cwd(payload);
+            if (dir) {
+              osc7CwdRef.current = dir;
+              // Remember this pane's own cwd for session restore (store dedupes).
+              onCwdChangeRef.current?.(dir);
+              osc7ApplyRef.current?.(dir);
+            }
+          }
+          return true; // consume so the sequence never reaches the screen
+        })
+      : null;
 
     async function handleTerminalPaste(kind: "ctrl" | "cmd") {
       const session = sessionRef.current;
@@ -907,6 +935,7 @@ export function TerminalView({
       document.removeEventListener("keydown", onKeyDownCapture, true);
       document.removeEventListener("paste", onPasteCapture, true);
       statusOscHandler.dispose();
+      osc7Handler?.dispose();
       if (leafIdRef.current) {
         unregisterTerminal(leafIdRef.current);
         unregisterTerminalPathDrop(leafIdRef.current);
@@ -1057,14 +1086,32 @@ export function TerminalView({
         // ignore transient failures
       }
     };
-    // Windows has no cwd/foreground backend (pty_cwd / pty_foreground_command
-    // return None there — no /proc, no lsof; see read_process_cwd in
-    // src-tauri/src/modules/pty/session.rs), so the terminal→explorer poll would
-    // only fire IPC that always comes back empty. Skip just the poll on Windows;
-    // the explorer→terminal `cd` subscription below still works there (writing a
-    // `cd` to the shell is fine), so it stays active.
+    // The cwd source differs per platform. macOS/Linux poll the OS for the
+    // foreground process's cwd (pty_cwd — lsof//proc). Windows has no such
+    // backend, so the injected shell integration reports the cwd with OSC 7 at
+    // every prompt instead (see lib/osc7.ts); the mount-time handler forwards
+    // each report here through osc7ApplyRef. Applying the last-known report on
+    // registration covers pane activation, when the shell sits at its prompt
+    // and won't re-emit until the next one — the counterpart of the poll's
+    // firstSync pass.
     let timer: ReturnType<typeof setInterval> | undefined;
-    if (!IS_WINDOWS) {
+    let applyOsc7: ((dir: string) => void) | undefined;
+    if (IS_WINDOWS) {
+      applyOsc7 = (dir: string) => {
+        if (cancelled) {
+          return;
+        }
+        if (dir !== last || firstSync) {
+          last = dir;
+          useWorkspaceStore.getState().setRoot(dir);
+        }
+        firstSync = false;
+      };
+      osc7ApplyRef.current = applyOsc7;
+      if (osc7CwdRef.current) {
+        applyOsc7(osc7CwdRef.current);
+      }
+    } else {
       void poll();
       timer = setInterval(() => void poll(), 1200);
     }
@@ -1094,6 +1141,9 @@ export function TerminalView({
       cancelled = true;
       if (timer) {
         clearInterval(timer);
+      }
+      if (applyOsc7 && osc7ApplyRef.current === applyOsc7) {
+        osc7ApplyRef.current = null;
       }
       unsubscribe();
     };
