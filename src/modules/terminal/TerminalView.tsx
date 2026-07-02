@@ -125,6 +125,8 @@ function formatSkipped(bytes: number): string {
 
 interface TerminalViewProps {
   active: boolean;
+  /** Whether the tab hosting this pane is the currently visible tab. */
+  isActiveTab?: boolean;
   /** When true, this pane drives the file explorer root from its shell CWD. */
   cwdTracking?: boolean;
   /** Directory the shell starts in. */
@@ -144,6 +146,7 @@ interface TerminalViewProps {
 
 export function TerminalView({
   active,
+  isActiveTab = true,
   cwdTracking = false,
   cwd,
   ssh,
@@ -925,9 +928,12 @@ export function TerminalView({
   }, []);
 
   // When a background tab becomes visible again its container regains size, so
-  // refit, push the new dimensions to the shell and grab focus.
+  // refit, push the new dimensions to the shell and grab focus. Keyed on
+  // isActiveTab too: switching tabs does not change this pane's `active` flag
+  // (it stays the tab's active leaf), so without it the effect would not re-run
+  // and keyboard focus would be lost until the user clicks the terminal.
   useEffect(() => {
-    if (!active) {
+    if (!active || !isActiveTab) {
       return;
     }
     const handle = handleRef.current;
@@ -947,7 +953,7 @@ export function TerminalView({
       handle.term.focus();
     });
     return () => cancelAnimationFrame(frame);
-  }, [active]);
+  }, [active, isActiveTab]);
 
   // Apply live font changes from the settings panel to an already-open terminal.
   useEffect(() => {
