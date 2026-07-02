@@ -5,13 +5,13 @@
     "terminal": "終端機",
     "fonts": "字體",
     "ai": "AI",
-    "workspace": "工作區",
+    "workspace": "群組",
     "shortcuts": "快捷鍵",
     "about": "關於"
   },
   "workspace": {
     "blocksTitle": "卡片資訊",
-    "blocksDescription": "選擇每張工作區卡片要顯示哪些資訊。",
+    "blocksDescription": "選擇每個分頁要顯示哪些資訊。",
     "blockStatus": "Claude 狀態",
     "blockBranch": "Git 分支",
     "blockCwd": "目錄路徑",

@@ -38,7 +38,7 @@
     "reconnect": "Reconnect"
   },
   "nav": {
-    "workspaces": "Workspaces",
+    "workspaces": "Groups",
     "terminal": "Terminal",
     "explorer": "Explorer",
     "editor": "Editor",
@@ -199,7 +199,7 @@
     "openFile": "Open File",
     "noWorkspaceTitle": "No folder open",
     "noWorkspaceHint": "Open a folder to start working",
-    "closeWorkspace": "Close workspace",
+    "closeWorkspace": "Close folder",
     "toggleTerminal": "Toggle terminal",
     "toggleSidebar": "Toggle sidebar",
     "terminal": "Terminal",
@@ -224,10 +224,10 @@
       "preview": "Preview",
       "git-graph": "Git Graph"
     },
-    "spaces": "Spaces",
-    "newSpace": "New space",
-    "renameSpace": "Rename space",
-    "deleteSpace": "Delete space",
+    "spaces": "Groups",
+    "newSpace": "New group",
+    "renameSpace": "Rename group",
+    "deleteSpace": "Delete group",
     "addTab": "Add tab",
     "status": {
       "active": "Running",

@@ -15,18 +15,18 @@ beforeEach(() => {
   });
 });
 
-describe("Sidebar workspace entry", () => {
-  it("shows a Workspaces entry as the leftmost sidebar tab", () => {
+describe("Sidebar groups entry", () => {
+  it("shows a Groups entry as the leftmost sidebar tab", () => {
     const { container } = render(<Sidebar />);
     const navButtons = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button[aria-pressed]"),
     );
-    expect(navButtons[0]?.getAttribute("aria-label")).toBe("Workspaces");
+    expect(navButtons[0]?.getAttribute("aria-label")).toBe("Groups");
   });
 
   it("renders the WorkspacePanel when the workspaces view is active", () => {
     render(<Sidebar />);
     // The panel footer button proves the workspaces branch rendered.
-    expect(screen.getByRole("button", { name: "New space" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New group" })).toBeInTheDocument();
   });
 });

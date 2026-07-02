@@ -63,18 +63,18 @@ describe("WorkspacePanel", () => {
     expect(useTabsStore.getState().activeId).toBe("t2");
   });
 
-  it("renames a workspace from the panel", () => {
+  it("renames a group from the panel", () => {
     render(<WorkspacePanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Rename space" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename group" }));
     const input = screen.getByDisplayValue("Salon");
     fireEvent.change(input, { target: { value: "Studio" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(useTabsStore.getState().spaces[0].name).toBe("Studio");
   });
 
-  it("deletes a workspace from the panel", () => {
+  it("deletes a group from the panel", () => {
     render(<WorkspacePanel />);
-    fireEvent.click(screen.getByRole("button", { name: "Delete space" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete group" }));
     expect(useTabsStore.getState().spaces.find((s) => s.id === "s1")).toBeUndefined();
   });
 

@@ -10,7 +10,7 @@ An AI-native terminal workspace that brings the terminal, code editor, file expl
 
 </div>
 
-TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a native PTY terminal with a code editor, file explorer, source control, web preview, notes, SSH/SFTP remote access and a bring-your-own-key AI assistant, and ships a full Traditional Chinese interface with CJK-friendly terminal fonts. It organizes your work into named workspaces, and each workspace card tracks its Claude Code or Codex CLI session status live, alongside the Git branch, worktree and matching pull request.
+TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a native PTY terminal with a code editor, file explorer, source control, web preview, notes, SSH/SFTP remote access and a bring-your-own-key AI assistant, and ships a full Traditional Chinese interface with CJK-friendly terminal fonts. It organizes your work into named groups, and each tab's card tracks its Claude Code or Codex CLI session status live, alongside the Git branch, worktree and matching pull request.
 
 <div align="center">
 
@@ -20,18 +20,18 @@ TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a nati
 
 ## Features
 
-### Workspaces & agent sessions
+### Groups & agent sessions
 
-- Organize work into named workspaces in a sidebar, with rename and delete from the list; the app opens on this panel
-- Each workspace card shows the Git branch and worktree, a live status badge for its Claude Code or Codex CLI session (working, thinking, waiting for input, waiting for approval) you can filter by, and the matching pull request status
+- Organize work into named groups in a sidebar, with rename and delete from the list; the app opens on this panel
+- Each tab's card shows the Git branch and worktree, a live status badge for its Claude Code or Codex CLI session (working, thinking, waiting for input, waiting for approval) you can filter by, and the matching pull request status
 - A tab split into several panes lists each pane's own agent and status on the card
 - Card titles are derived automatically from the session transcript
 - Session status comes from a Claude Code or Codex hook you can toggle; choose which blocks a card shows and where PR data comes from in settings
 - A desktop notification fires when a tracked agent needs approval or finishes and the window isn't focused
-- Open additional windows, each with its own tabs, workspaces and chat state; closing a window only tears down its own terminals
+- Open additional windows, each with its own tabs, groups and chat state; closing a window only tears down its own terminals
 - The launcher can start Claude Code or Codex CLI directly, with a configurable default set of arguments
 
-![Workspace sidebar with live Claude session cards](screenshots/workspaces.png)
+![Groups sidebar with live Claude session cards](screenshots/workspaces.png)
 
 ### Terminal
 
@@ -40,7 +40,7 @@ TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a nati
 - Free split layout: panels can mix types, for example a terminal next to a file editor, with draggable dividers to resize
 - Full keyboard shortcut set, zsh command autosuggestions, in-terminal search, and hover action cards for IPs, host:port pairs and archive files
 - Large-output protection with a batched writer and an overload notice, plus an optional custom shell path override
-- Drag to reorder tabs, or right-click a tab to rename or close it, with a per-workspace tab count badge in the tab bar
+- Drag to reorder tabs, or right-click a tab to rename or close it, with a per-group tab count badge in the tab bar
 - Cmd or Ctrl click a file path in the output to open it in a split pane, with a hover hint and support for paths broken across wrapped lines
 - Optionally restore each terminal's previous output as read-only scrollback on the next launch
 - Standard editing shortcuts that carry over from other terminals: Shift+Enter, word and line navigation, delete to line start/end, copy and paste

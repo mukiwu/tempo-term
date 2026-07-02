@@ -38,7 +38,7 @@
     "reconnect": "重新連線"
   },
   "nav": {
-    "workspaces": "工作區",
+    "workspaces": "群組",
     "terminal": "終端機",
     "explorer": "檔案總管",
     "editor": "編輯器",
@@ -199,7 +199,7 @@
     "openFile": "開啟檔案",
     "noWorkspaceTitle": "尚未開啟資料夾",
     "noWorkspaceHint": "開啟一個資料夾開始工作",
-    "closeWorkspace": "關閉工作區",
+    "closeWorkspace": "關閉資料夾",
     "toggleTerminal": "切換終端機",
     "toggleSidebar": "切換側邊欄",
     "terminal": "終端機",
@@ -224,10 +224,10 @@
       "preview": "網頁預覽",
       "git-graph": "Git 線圖"
     },
-    "spaces": "工作空間",
-    "newSpace": "新增工作空間",
-    "renameSpace": "重新命名工作空間",
-    "deleteSpace": "刪除工作空間",
+    "spaces": "群組",
+    "newSpace": "新增群組",
+    "renameSpace": "重新命名群組",
+    "deleteSpace": "刪除群組",
     "addTab": "新增分頁",
     "status": {
       "active": "執行中",
