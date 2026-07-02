@@ -50,12 +50,15 @@ export function parseOsc7Cwd(payload: string): string | null {
     // `C:` means "current dir on C:" to Windows, not the root).
     win += "\\";
   }
-  // Real Windows paths never contain C0 controls or DEL — but decodeURIComponent
-  // reconstitutes them from %0A/%1B *after* xterm's parser has already filtered
-  // raw control bytes. Reject them so hostile terminal output can't smuggle
-  // newlines/ESC into the persisted workspace root (which is interpolated into
-  // the AI system prompt), and bound the length since the value is persisted.
-  if (win.length > 4096 || /[\u0000-\u001f\u007f]/.test(win)) {
+  // Real Windows paths never contain control characters — but decodeURIComponent
+  // reconstitutes them from percent-encoding *after* xterm's parser has already
+  // filtered raw control bytes. Reject them so hostile terminal output can't
+  // smuggle line breaks into the persisted workspace root (interpolated verbatim
+  // into the AI system prompt — `Current workspace folder: ${root}`), and bound
+  // the length since the value is persisted. The set covers C0 and DEL plus the
+  // C1 controls (e.g. NEL U+0085) and the Unicode LINE/PARAGRAPH SEPARATOR
+  // (U+2028/U+2029) — all line-break primitives equally absent from real paths.
+  if (win.length > 4096 || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(win)) {
     return null;
   }
   return win;

@@ -62,6 +62,16 @@ describe("parseOsc7Cwd", () => {
     expect(parseOsc7Cwd("file:///C:/x%0D%0Ay")).toBeNull();
   });
 
+  it("rejects C1 controls and Unicode line separators as line-break primitives", () => {
+    // Beyond C0/DEL: NEL (U+0085, a C1 control) and LINE/PARAGRAPH SEPARATOR
+    // (U+2028/U+2029) are line breaks some renderers honour, absent from any real
+    // Windows path — reject so they can't split the persisted root's own line in
+    // the AI system prompt (`Current workspace folder: ${root}`).
+    expect(parseOsc7Cwd("file:///C:/x%C2%85IGNORE")).toBeNull(); // U+0085 NEL
+    expect(parseOsc7Cwd("file:///C:/x%E2%80%A8IGNORE")).toBeNull(); // U+2028 LS
+    expect(parseOsc7Cwd("file:///C:/x%E2%80%A9y")).toBeNull(); // U+2029 PS
+  });
+
   it("rejects unreasonably long paths since the value is persisted", () => {
     expect(parseOsc7Cwd(`file:///C:/${"a".repeat(5000)}`)).toBeNull();
   });
