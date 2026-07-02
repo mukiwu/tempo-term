@@ -4,6 +4,7 @@
   "rootPlaceholder": "Folder path",
   "go": "Go",
   "findFiles": "Find files",
+  "collapseAll": "Collapse All",
   "findPlaceholder": "Type to fuzzy-find files",
   "searchInFiles": "Search in files",
   "searchPlaceholder": "Search text in files",

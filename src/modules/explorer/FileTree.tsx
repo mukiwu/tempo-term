@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -44,9 +44,11 @@ interface TreeNodeProps {
   depth: number;
   /** Ask the parent node to reload its children (after a create/delete here). */
   onReloadParent: () => void;
+  /** Increments when the header's collapse-all button fires; folds this node. */
+  collapseSignal?: number;
 }
 
-function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
+function TreeNode({ entry, depth, onReloadParent, collapseSignal }: TreeNodeProps) {
   const { t } = useTranslation("explorer");
   const { t: tCommon } = useTranslation("common");
   const [expanded, setExpanded] = useState(false);
@@ -57,6 +59,11 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
   // JS hover: CSS :hover is suppressed inside a draggable subtree (WebKit), so
   // track hover manually to highlight just this row.
   const [hovered, setHovered] = useState(false);
+
+  // Runs on mount too, but collapsing an already-collapsed node is a no-op.
+  useEffect(() => {
+    setExpanded(false);
+  }, [collapseSignal]);
 
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const openInNewTab = useTabsStore((s) => s.openInNewTab);
@@ -320,6 +327,7 @@ function TreeNode({ entry, depth, onReloadParent }: TreeNodeProps) {
               entry={child}
               depth={depth + 1}
               onReloadParent={reloadChildren}
+              collapseSignal={collapseSignal}
             />
           ))}
         </ul>
@@ -394,9 +402,11 @@ function NewEntryInput({ kind, depth, onConfirm, onCancel }: NewEntryInputProps)
 interface FileTreeProps {
   entries: DirEntry[];
   onReloadRoot: () => void;
+  /** Increments when the header's collapse-all button fires; folds every folder. */
+  collapseSignal?: number;
 }
 
-export function FileTree({ entries, onReloadRoot }: FileTreeProps) {
+export function FileTree({ entries, onReloadRoot, collapseSignal }: FileTreeProps) {
   return (
     <ul className="select-none">
       {entries.map((entry) => (
@@ -405,6 +415,7 @@ export function FileTree({ entries, onReloadRoot }: FileTreeProps) {
           entry={entry}
           depth={0}
           onReloadParent={onReloadRoot}
+          collapseSignal={collapseSignal}
         />
       ))}
     </ul>

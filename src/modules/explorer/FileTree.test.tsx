@@ -86,6 +86,27 @@ describe("FileTree at pane capacity", () => {
   });
 });
 
+describe("FileTree collapse-all", () => {
+  it("collapses expanded folders when collapseSignal increments", async () => {
+    const { fsReadDir } = await import("./lib/fsBridge");
+    vi.mocked(fsReadDir).mockResolvedValue([
+      { name: "child.ts", path: "/p/dir/child.ts", is_dir: false, size: 0 },
+    ]);
+    const entries = [{ name: "dir", path: "/p/dir", is_dir: true, size: 0 }];
+    const { rerender } = render(
+      <FileTree entries={entries} onReloadRoot={() => {}} collapseSignal={0} />,
+    );
+
+    fireEvent.click(screen.getByText("dir"));
+    expect(await screen.findByText("child.ts")).toBeInTheDocument();
+
+    rerender(
+      <FileTree entries={entries} onReloadRoot={() => {}} collapseSignal={1} />,
+    );
+    expect(screen.queryByText("child.ts")).not.toBeInTheDocument();
+  });
+});
+
 describe("FileTree context menu: open in new tab", () => {
   beforeEach(() => {
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
