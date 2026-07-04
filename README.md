@@ -71,8 +71,6 @@ Any pane in any tab can be split four ways: click a sidebar item to auto-split, 
 - Right-click context menu: open, reveal in Finder, new file or folder, copy path, attach to the AI agent, delete to trash
 - Drag a file or folder onto any pane, with behavior per pane type
 
-![Fuzzy file finder](screenshots/fuzzy-find.png)
-
 ### SSH & remote files
 
 - Connect to SSH hosts from a dedicated connections panel; connection details and key passphrases can be remembered
