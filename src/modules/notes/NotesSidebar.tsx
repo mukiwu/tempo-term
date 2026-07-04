@@ -5,12 +5,14 @@ import {
   ChevronRight,
   Columns2,
   FilePlus,
+  FolderCog,
   FolderPlus,
   FileText,
   Folder,
   Trash2,
   SquarePlus,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { InfoDialog } from "@/components/InfoDialog";
 import { Tooltip } from "@/components/Tooltip";
@@ -20,6 +22,7 @@ import { useTabsStore } from "@/stores/tabsStore";
 import type { FolderNode, NoteNode, NotesNode } from "@/modules/notes/lib/notesTree";
 import { NotesEmptyState } from "./NotesEmptyState";
 import { beginNoteDrag, consumeNoteDragClick, useNoteDragStore } from "./lib/noteDrag";
+import { pickNotesFolder } from "./lib/pickNotesFolder";
 
 function NoteRow({ note, depth }: { note: NoteNode; depth: number }) {
   const { t } = useTranslation("notes");
@@ -249,9 +252,29 @@ export function NotesSidebar() {
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const isOverRoot = useNoteDragStore((s) => s.hover?.kind === "root");
   const [atCapacity, setAtCapacity] = useState(false);
+  const [pendingFolder, setPendingFolder] = useState<string | null>(null);
 
   if (!rootPath) {
     return <NotesEmptyState />;
+  }
+
+  function changeFolder() {
+    void (async () => {
+      const path = await pickNotesFolder();
+      if (!path || path === rootPath) {
+        return;
+      }
+      setPendingFolder(path);
+    })();
+  }
+
+  function confirmChangeFolder() {
+    if (!pendingFolder) {
+      return;
+    }
+    useSettingsStore.getState().setNotesFolderPath(pendingFolder);
+    void useNotesStore.getState().setRoot(pendingFolder);
+    setPendingFolder(null);
   }
 
   function newNote() {
@@ -302,6 +325,16 @@ export function NotesSidebar() {
               <FolderPlus size={15} />
             </button>
           </Tooltip>
+          <Tooltip label={t("changeFolder")}>
+            <button
+              type="button"
+              aria-label={t("changeFolder")}
+              onClick={changeFolder}
+              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+            >
+              <FolderCog size={15} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -326,6 +359,16 @@ export function NotesSidebar() {
           message={tCommon("paneCapacityAlert")}
           confirmLabel={tCommon("actions.confirm")}
           onConfirm={() => setAtCapacity(false)}
+        />
+      )}
+      {pendingFolder && (
+        <ConfirmDialog
+          title={t("changeFolderConfirmTitle")}
+          message={t("changeFolderConfirmMessage", { path: pendingFolder })}
+          confirmLabel={tCommon("actions.confirm")}
+          cancelLabel={tCommon("actions.cancel")}
+          onConfirm={confirmChangeFolder}
+          onCancel={() => setPendingFolder(null)}
         />
       )}
     </div>

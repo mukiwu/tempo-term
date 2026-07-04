@@ -1,12 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { NotesSidebar } from "./NotesSidebar";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { pickNotesFolder } from "./lib/pickNotesFolder";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+vi.mock("./lib/pickNotesFolder", () => ({
+  pickNotesFolder: vi.fn(),
 }));
 
 describe("NotesSidebar opening a note", () => {
@@ -94,6 +99,55 @@ describe("NotesSidebar context menu: open in split pane", () => {
       kind: "note",
       noteId: "/notes/todo.md",
     });
+  });
+});
+
+describe("NotesSidebar: change notes folder", () => {
+  beforeEach(() => {
+    vi.mocked(pickNotesFolder).mockReset();
+    useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+    useSettingsStore.setState({ notesFolderPath: "/notes" });
+    useNotesStore.setState({ tree: [], setRoot: vi.fn() });
+  });
+
+  it("asks for confirmation before switching to the picked folder", async () => {
+    vi.mocked(pickNotesFolder).mockResolvedValue("/new-notes");
+    render(<NotesSidebar />);
+
+    fireEvent.click(screen.getByLabelText("changeFolder"));
+
+    await waitFor(() => expect(screen.getByText("changeFolderConfirmTitle")).toBeInTheDocument());
+    expect(useSettingsStore.getState().notesFolderPath).toBe("/notes");
+
+    fireEvent.click(screen.getByText("actions.confirm"));
+
+    expect(useSettingsStore.getState().notesFolderPath).toBe("/new-notes");
+    expect(useNotesStore.getState().setRoot).toHaveBeenCalledWith("/new-notes");
+  });
+
+  it("keeps the current folder when the confirmation is cancelled", async () => {
+    vi.mocked(pickNotesFolder).mockResolvedValue("/new-notes");
+    render(<NotesSidebar />);
+
+    fireEvent.click(screen.getByLabelText("changeFolder"));
+    await waitFor(() => expect(screen.getByText("changeFolderConfirmTitle")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("actions.cancel"));
+
+    expect(screen.queryByText("changeFolderConfirmTitle")).not.toBeInTheDocument();
+    expect(useSettingsStore.getState().notesFolderPath).toBe("/notes");
+    expect(useNotesStore.getState().setRoot).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the folder picker is cancelled", async () => {
+    vi.mocked(pickNotesFolder).mockResolvedValue(null);
+    render(<NotesSidebar />);
+
+    fireEvent.click(screen.getByLabelText("changeFolder"));
+
+    await waitFor(() => expect(pickNotesFolder).toHaveBeenCalled());
+    expect(screen.queryByText("changeFolderConfirmTitle")).not.toBeInTheDocument();
+    expect(useNotesStore.getState().setRoot).not.toHaveBeenCalled();
   });
 });
 
