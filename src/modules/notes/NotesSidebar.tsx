@@ -260,11 +260,15 @@ export function NotesSidebar() {
 
   function changeFolder() {
     void (async () => {
-      const path = await pickNotesFolder();
-      if (!path || path === rootPath) {
-        return;
+      try {
+        const path = await pickNotesFolder();
+        if (!path || path === rootPath) {
+          return;
+        }
+        setPendingFolder(path);
+      } catch {
+        // Dialog plugin failure; nothing to recover, just don't crash the app.
       }
-      setPendingFolder(path);
     })();
   }
 

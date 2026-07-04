@@ -149,6 +149,17 @@ describe("NotesSidebar: change notes folder", () => {
     expect(screen.queryByText("changeFolderConfirmTitle")).not.toBeInTheDocument();
     expect(useNotesStore.getState().setRoot).not.toHaveBeenCalled();
   });
+
+  it("does not crash when the folder picker rejects", async () => {
+    vi.mocked(pickNotesFolder).mockRejectedValue(new Error("dialog plugin failed"));
+    render(<NotesSidebar />);
+
+    fireEvent.click(screen.getByLabelText("changeFolder"));
+
+    await waitFor(() => expect(pickNotesFolder).toHaveBeenCalled());
+    expect(screen.queryByText("changeFolderConfirmTitle")).not.toBeInTheDocument();
+    expect(useNotesStore.getState().setRoot).not.toHaveBeenCalled();
+  });
 });
 
 describe("NotesSidebar context menu: open in new tab", () => {
