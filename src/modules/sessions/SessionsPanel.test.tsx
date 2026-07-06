@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionsPanel } from "./SessionsPanel";
 import { useSessionsStore } from "./lib/sessionsStore";
 import type { SessionSummary } from "./lib/sessionsBridge";
+import { useTabsStore, type Tab } from "@/stores/tabsStore";
+import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
+import { leaf } from "@/modules/terminal/lib/terminalLayout";
 
 // vi.mock is hoisted to the top of the file, so mocks must be created with
 // vi.hoisted() to be accessible inside the factory callbacks.
@@ -84,6 +87,8 @@ describe("SessionsPanel", () => {
       agentFilter: "all",
       selectedId: null,
     });
+    useTabsStore.setState({ spaces: [], activeSpaceId: null, tabs: [], activeId: null });
+    useSessionStatusStore.setState({ statuses: {}, agents: {} });
   });
 
   it("starts the backend index and subscribes to updates on mount", async () => {
@@ -195,6 +200,44 @@ describe("SessionsPanel", () => {
     unmount();
 
     expect(mockUnlisten).toHaveBeenCalled();
+  });
+
+  it("hides the Live section when nothing is running", async () => {
+    await renderSettled();
+    expect(screen.queryByText("sessions.live")).not.toBeInTheDocument();
+  });
+
+  it("shows a running session in the Live section and jumps to its pane on click", async () => {
+    const tab: Tab = {
+      id: "tab-1",
+      spaceId: "space-1",
+      title: "My Terminal",
+      kind: "terminal",
+      paneTree: leaf("leaf-1", { kind: "terminal", cwd: "/proj" }),
+      activeLeafId: "leaf-1",
+      paneOrder: ["leaf-1"],
+    };
+    useTabsStore.setState({
+      spaces: [{ id: "space-1", name: "Space" }],
+      activeSpaceId: "space-1",
+      tabs: [tab],
+      activeId: null,
+    });
+    useSessionStatusStore.setState({
+      statuses: { "leaf-1": "thinking" },
+      agents: { "leaf-1": "claude" },
+    });
+
+    await renderSettled();
+
+    expect(screen.getByText("sessions.live")).toBeInTheDocument();
+    expect(screen.getByText("My Terminal")).toBeInTheDocument();
+    expect(screen.getByText("sessions.agents.claude", { selector: "span" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("My Terminal"));
+
+    expect(useTabsStore.getState().activeId).toBe("tab-1");
+    expect(useTabsStore.getState().tabs[0].activeLeafId).toBe("leaf-1");
   });
 
   it("releases the listener when unmounted before the subscription resolves", async () => {

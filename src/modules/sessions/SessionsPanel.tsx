@@ -1,10 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { History, Pin, PinOff, Search } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
+import { useTabsStore } from "@/stores/tabsStore";
+import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { onSessionsUpdated, type SessionAgent, type SessionSummary } from "./lib/sessionsBridge";
 import { useSessionsStore, visibleSessions } from "./lib/sessionsStore";
 import { formatRelativeTime } from "./lib/relativeTime";
+import { deriveLiveSessions, type LiveSession } from "./lib/liveSessions";
 
 /** Filter chip order, "all" first. */
 const AGENT_FILTERS: Array<SessionAgent | "all"> = ["all", "claude", "codex", "antigravity"];
@@ -19,11 +22,93 @@ const AGENT_BADGE_CLASS: Record<SessionAgent, string> = {
   antigravity: "text-warning",
 };
 
+/** `AGENT_BADGE_CLASS` lookup for a live session's agent, which is a plain
+ *  `string | undefined` (see liveSessions.ts) rather than the narrower
+ *  `SessionAgent` union — the foreground poll that classifies a pane can
+ *  lag its status, so the value isn't always a known agent yet. */
+function agentBadgeClass(agent: string | undefined): string {
+  return agent && agent in AGENT_BADGE_CLASS ? AGENT_BADGE_CLASS[agent as SessionAgent] : "text-fg-subtle";
+}
+
+/** Status dot color, same semantic tokens as WorkspacePanel's `STATUS_STYLE`
+ *  badge (`src/modules/workspace/WorkspacePanel.tsx`) so a session reads the
+ *  same way whether it's seen from the workspace cards or this sidebar. */
+const STATUS_DOT_CLASS: Record<string, string> = {
+  active: "bg-accent",
+  thinking: "bg-fg-muted",
+  "waiting-approval": "bg-danger",
+  idle: "bg-warning",
+};
+
 /** The last path segment of a cwd, for the row's secondary line. Split on
  *  both separators so a Windows path (C:\...) basenames correctly too. */
 function basename(path: string): string {
   const parts = path.split(/[/\\]/).filter(Boolean);
   return parts[parts.length - 1] ?? path;
+}
+
+/** One running session pinned in the Live section: status dot, agent badge
+ *  (when the pane's agent is already classified), and the tab it lives in.
+ *  Clicking jumps straight to that pane. */
+function LiveRow({ session }: { session: LiveSession }) {
+  const { t } = useTranslation();
+  const setActive = useTabsStore((s) => s.setActive);
+  const setActiveLeaf = useTabsStore((s) => s.setActiveLeaf);
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => {
+          setActive(session.tabId);
+          setActiveLeaf(session.tabId, session.leafId);
+        }}
+        className="flex w-full min-w-0 items-center gap-2 px-3 py-1.5 text-left hover:bg-bg-elevated"
+      >
+        <span
+          aria-hidden="true"
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT_CLASS[session.status] ?? "bg-fg-subtle"}`}
+        />
+        {session.agent && (
+          <span className={`shrink-0 text-[10px] font-medium uppercase ${agentBadgeClass(session.agent)}`}>
+            {t(`sessions.agents.${session.agent}`)}
+          </span>
+        )}
+        <span className="min-w-0 flex-1 truncate text-sm text-fg-muted">{session.tabTitle}</span>
+      </button>
+    </li>
+  );
+}
+
+/** Running agent sessions, pinned above the indexed history so jumping back
+ *  to one in progress never waits for it to end and get indexed. Hidden
+ *  entirely when nothing is currently running. */
+function LiveSection() {
+  const { t } = useTranslation();
+  const tabs = useTabsStore((s) => s.tabs);
+  const statuses = useSessionStatusStore((s) => s.statuses);
+  const agents = useSessionStatusStore((s) => s.agents);
+  const liveSessions = useMemo(
+    () => deriveLiveSessions(tabs, statuses, agents),
+    [tabs, statuses, agents],
+  );
+
+  if (liveSessions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div>
+      <div className="px-3 py-1 text-[11px] font-semibold uppercase text-fg-subtle">
+        {t("sessions.live")}
+      </div>
+      <ul>
+        {liveSessions.map((session) => (
+          <LiveRow key={session.leafId} session={session} />
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 interface SessionRowProps {
@@ -158,7 +243,7 @@ export function SessionsPanel() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
-        {/* Live section (Task 11 fills this in with in-progress agent sessions). */}
+        <LiveSection />
 
         {!loaded ? (
           <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
