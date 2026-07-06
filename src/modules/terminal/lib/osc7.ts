@@ -69,3 +69,33 @@ export function parseOsc7Cwd(payload: string): string | null {
   }
   return win;
 }
+
+/**
+ * Parse an OSC 7 payload from a *remote* shell into a POSIX absolute path, or
+ * null when it isn't one. Unlike `parseOsc7Cwd` (Windows-local, drive-lettered,
+ * localhost-only) this accepts any host: the report arrives on an SSH pane's
+ * own byte stream, so the pane's connectionId — not the URI host — identifies
+ * the machine. Applies the same size and control-character hardening, since the
+ * result becomes the persisted workspace root.
+ */
+export function parseOsc7RemotePath(payload: string): string | null {
+  if (payload.length > 8192 || !payload.startsWith("file://")) {
+    return null;
+  }
+  const rest = payload.slice("file://".length);
+  const cut = rest.indexOf("/");
+  if (cut === -1) {
+    return null;
+  }
+  let path = rest.slice(cut);
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // A bare `%` from a naive emitter; keep the raw text.
+  }
+  const clean = path.replace(/\/+$/, "") || "/";
+  if (clean.length > 4096 || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(clean)) {
+    return null;
+  }
+  return clean;
+}

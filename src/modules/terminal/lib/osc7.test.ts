@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseOsc7Cwd } from "./osc7";
+import { parseOsc7Cwd, parseOsc7RemotePath } from "./osc7";
 
 describe("parseOsc7Cwd", () => {
   it("parses PowerShell's percent-encoded file URI", () => {
@@ -89,3 +89,24 @@ describe("parseOsc7Cwd", () => {
     );
   });
 });
+
+describe("parseOsc7RemotePath", () => {
+  it("accepts any host and returns the POSIX path", () => {
+    expect(parseOsc7RemotePath("file://myserver/home/me/proj")).toBe("/home/me/proj");
+    expect(parseOsc7RemotePath("file:///home/me")).toBe("/home/me");
+  });
+
+  it("percent-decodes and trims trailing slashes", () => {
+    expect(parseOsc7RemotePath("file://h/home/f%20o")).toBe("/home/f o");
+    expect(parseOsc7RemotePath("file://h/home/me/")).toBe("/home/me");
+    expect(parseOsc7RemotePath("file://h/")).toBe("/");
+  });
+
+  it("rejects non-file payloads, relative paths and control characters", () => {
+    expect(parseOsc7RemotePath("not-a-uri")).toBeNull();
+    expect(parseOsc7RemotePath("file://host-only")).toBeNull();
+    expect(parseOsc7RemotePath("file://h/home/%0abad")).toBeNull();
+    expect(parseOsc7RemotePath(`file://h/${"a".repeat(9000)}`)).toBeNull();
+  });
+});
+
