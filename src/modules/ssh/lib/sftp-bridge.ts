@@ -33,3 +33,19 @@ export function sftpWriteFile(id: number, path: string, contents: string): Promi
 export function sftpClose(id: number): Promise<void> {
   return invoke("sftp_close", { id });
 }
+
+export function sftpCreateFile(id: number, path: string): Promise<void> {
+  return invoke("sftp_create_file", { id, path });
+}
+
+export function sftpCreateDir(id: number, path: string): Promise<void> {
+  return invoke("sftp_create_dir", { id, path });
+}
+
+export function sftpDelete(id: number, path: string, isDir: boolean): Promise<void> {
+  return invoke("sftp_delete", { id, path, isDir });
+}
+
+export function sftpRename(id: number, from: string, to: string): Promise<void> {
+  return invoke("sftp_rename", { id, from, to });
+}
