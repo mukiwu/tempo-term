@@ -32,8 +32,8 @@ databases that agentsview reads directly without decryption. Feasible.
   dashboard (default), session transcript viewer, project view.
 - Dashboard: stat cards, calendar activity heatmap, Top Sessions
   (must-have), date range filter, weekly digest card.
-- Management: resume in a new terminal tab, pin, delete (to system trash),
-  export to Markdown.
+- Management: resume in a new terminal tab, pin, delete (to system trash via
+  the `trash` crate already in Cargo.toml), export to Markdown.
 - Differentiators over AgentsView (it is an offline viewer; tempo-term is
   where sessions actually happen): Live section that jumps to the running
   tab, project view with one-click "new tab at this cwd", session ↔ git
@@ -41,8 +41,8 @@ databases that agentsview reads directly without decryption. Feasible.
 - Hard constraint: keep the app lightweight. No new npm packages (charts
   are hand-rolled CSS/SVG). Only new Rust crate is `rusqlite` — linked
   against the system SQLite on macOS, `bundled` only on Windows (~+1 MB).
-  Protobuf is hand-decoded (no prost). Trash uses `osascript` /
-  PowerShell shell-out (no trash crate). Watching reuses existing `notify`.
+  Protobuf is hand-decoded (no prost). Trash reuses the `trash` crate the
+  file explorer already depends on. Watching reuses existing `notify`.
 
 ## Non-goals (v1)
 
@@ -119,11 +119,14 @@ daily_stats(agent, project_cwd, date, hour,
 meta(key PK, value)   -- schema_version, last_full_scan
 ```
 
-Incremental sync: per-file `mtime`/`size`/`offset`; JSONL files parse only
-appended lines (reuse `claude_progress::read_new_lines` tail primitives);
-Antigravity uses a composite fingerprint (db + `-wal` + `-shm` mtime/size)
-and re-parses the whole file on change. Daily-stat rows for a changed
-session are recomputed by delta, not full rescan. Initial full index runs
+Incremental sync (v1): per-file `mtime`/`size` skip-cache; a changed file is
+re-parsed whole (per-file cost, on a background thread), unchanged files are
+skipped entirely. Byte-offset tail parsing is a later optimization if
+profiling demands it — Claude's DAG main-path selection makes append-only
+counting fragile, so whole-file re-parse is the simpler correct baseline.
+Antigravity uses a composite fingerprint (db + `-wal` + `-shm` mtime/size).
+Per-day activity rows are keyed by session id and replaced together with
+their session row, so a re-parse never double-counts. Initial full index runs
 on a background thread at first watch, never blocking the UI. After each
 sync batch the backend emits `sessions-index:updated`; the frontend
 re-queries lazily only while the view is visible.
