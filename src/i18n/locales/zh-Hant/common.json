@@ -235,7 +235,8 @@
       "editor": "檔案",
       "note": "筆記",
       "preview": "網頁預覽",
-      "git-graph": "Git 線圖"
+      "git-graph": "Git 線圖",
+      "sessions": "AI 對話"
     },
     "spaces": "群組",
     "newSpace": "新增群組",
@@ -269,10 +270,18 @@
     "selectPrompt": "從側邊欄選一場對話",
     "resumeUnavailable": "這個 agent 不支援接續",
     "indexing": "正在建立索引…",
+    "totalCount": "已索引 {{count}} 場對話",
+    "loading": "正在載入對話記錄…",
+    "loadError": "無法載入這場對話記錄",
     "agents": {
       "claude": "Claude",
       "codex": "Codex",
       "antigravity": "Antigravity"
+    },
+    "roles": {
+      "user": "你",
+      "assistant": "Assistant",
+      "tool": "工具"
     }
   }
 }

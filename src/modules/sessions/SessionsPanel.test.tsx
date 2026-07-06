@@ -183,6 +183,26 @@ describe("SessionsPanel", () => {
     );
   });
 
+  it("opens the sessions content tab on row click, reusing it on a second click", async () => {
+    seedSessions([
+      session({ id: "a", title: "Deploy script" }),
+      session({ id: "b", title: "Refactor bridge" }),
+    ]);
+    await renderSettled();
+
+    fireEvent.click(screen.getByText("Deploy script"));
+    const tabId = useTabsStore.getState().activeId;
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(useTabsStore.getState().tabs[0].kind).toBe("sessions");
+
+    fireEvent.click(screen.getByText("Refactor bridge"));
+    // Selecting a second session focuses the same singleton tab instead of
+    // opening a new one.
+    expect(useSessionsStore.getState().selectedId).toBe("b");
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(useTabsStore.getState().activeId).toBe(tabId);
+  });
+
   it("toggles pin via the row's pin button without selecting the row", async () => {
     seedSessions([session({ id: "a", title: "Deploy script", pinned: false })]);
     await renderSettled();

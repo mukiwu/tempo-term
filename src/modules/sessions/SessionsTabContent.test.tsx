@@ -1,0 +1,186 @@
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SessionsTabContent } from "./SessionsTabContent";
+import { useSessionsStore } from "./lib/sessionsStore";
+import type { SessionSummary, TranscriptMessage } from "./lib/sessionsBridge";
+
+// vi.mock is hoisted to the top of the file, so mocks must be created with
+// vi.hoisted() to be accessible inside the factory callbacks.
+const { mockInvoke, transcripts } = vi.hoisted(() => ({
+  mockInvoke: vi.fn(),
+  // Backs "sessions_get" invoke responses per session id. Each entry is a
+  // resolver the test controls directly, so responses can be made to land in
+  // any order (needed for the stale-response race test below).
+  transcripts: new Map<string, Promise<TranscriptMessage[]>>(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (cmd: string, args?: { id?: string }) => {
+    mockInvoke(cmd, args);
+    if (cmd === "sessions_get" && args?.id) {
+      return transcripts.get(args.id) ?? Promise.resolve([]);
+    }
+    return Promise.resolve(undefined);
+  },
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts?.count !== undefined ? `${key}:${opts.count}` : key,
+  }),
+}));
+
+function session(overrides: Partial<SessionSummary>): SessionSummary {
+  return {
+    id: "id",
+    agent: "claude",
+    project_cwd: "/Users/muki/project",
+    title: "Untitled",
+    started_at: 0,
+    ended_at: 0,
+    message_count: 0,
+    user_message_count: 0,
+    output_tokens: null,
+    model: null,
+    file_path: "/tmp/session.jsonl",
+    pinned: false,
+    ...overrides,
+  };
+}
+
+function message(overrides: Partial<TranscriptMessage>): TranscriptMessage {
+  return {
+    role: "user",
+    text: "hello",
+    timestamp: null,
+    tool_name: null,
+    ...overrides,
+  };
+}
+
+describe("SessionsTabContent", () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    transcripts.clear();
+    useSessionsStore.setState({
+      sessions: [],
+      loaded: false,
+      query: "",
+      agentFilter: "all",
+      selectedId: null,
+    });
+  });
+
+  it("shows the select prompt and total session count when nothing is selected", () => {
+    useSessionsStore.setState({
+      sessions: [session({ id: "a" }), session({ id: "b" })],
+      selectedId: null,
+    });
+
+    render(<SessionsTabContent />);
+
+    expect(screen.getByText("sessions.selectPrompt")).toBeInTheDocument();
+    expect(screen.getByText("sessions.totalCount:2")).toBeInTheDocument();
+  });
+
+  it("fetches and renders the transcript for the selected session", async () => {
+    const target = session({ id: "a", title: "Fix flaky test", agent: "codex" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set(
+      "a",
+      Promise.resolve([
+        message({ role: "user", text: "Why is this test flaky?" }),
+        message({ role: "assistant", text: "Let me investigate." }),
+        message({ role: "tool", text: "grep output here", tool_name: "grep" }),
+        message({ role: "system", text: "Session resumed." }),
+      ]),
+    );
+
+    render(<SessionsTabContent />);
+
+    expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" });
+    await waitFor(() => expect(screen.getByText("Why is this test flaky?")).toBeInTheDocument());
+
+    expect(screen.getByText("Fix flaky test")).toBeInTheDocument();
+    expect(screen.getByText("sessions.agents.codex")).toBeInTheDocument();
+    expect(screen.getByText("/Users/muki/project")).toBeInTheDocument();
+    expect(screen.getByText("Let me investigate.")).toBeInTheDocument();
+    expect(screen.getByText("grep")).toBeInTheDocument();
+    expect(screen.getByText("Session resumed.")).toBeInTheDocument();
+  });
+
+  it("shows a loading indicator while the transcript is in flight", async () => {
+    useSessionsStore.setState({ sessions: [session({ id: "a" })], selectedId: "a" });
+    let resolve!: (messages: TranscriptMessage[]) => void;
+    transcripts.set(
+      "a",
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+
+    render(<SessionsTabContent />);
+
+    expect(screen.getByText("sessions.loading")).toBeInTheDocument();
+
+    resolve([message({ text: "done loading" })]);
+    await waitFor(() => expect(screen.getByText("done loading")).toBeInTheDocument());
+    expect(screen.queryByText("sessions.loading")).not.toBeInTheDocument();
+  });
+
+  it("keeps the previous transcript on screen and shows a muted error line when a new selection fails to load", async () => {
+    const sessionA = session({ id: "a" });
+    const sessionB = session({ id: "b" });
+    useSessionsStore.setState({ sessions: [sessionA, sessionB], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([message({ text: "first load" })]));
+    const { rerender } = render(<SessionsTabContent />);
+    await waitFor(() => expect(screen.getByText("first load")).toBeInTheDocument());
+
+    // Switching to session b, whose fetch fails.
+    transcripts.set("b", Promise.reject(new Error("disk read failed")));
+    act(() => {
+      useSessionsStore.setState({ selectedId: "b" });
+    });
+    rerender(<SessionsTabContent />);
+
+    await waitFor(() =>
+      expect(screen.getByText("sessions.loadError: disk read failed")).toBeInTheDocument(),
+    );
+    // The transcript already on screen is untouched by the failed fetch.
+    expect(screen.getByText("first load")).toBeInTheDocument();
+  });
+
+  it("ignores a stale transcript response for a session the user has already navigated away from", async () => {
+    const sessionA = session({ id: "a" });
+    const sessionB = session({ id: "b" });
+    useSessionsStore.setState({ sessions: [sessionA, sessionB], selectedId: "a" });
+
+    let resolveA!: (messages: TranscriptMessage[]) => void;
+    transcripts.set(
+      "a",
+      new Promise((r) => {
+        resolveA = r;
+      }),
+    );
+    transcripts.set("b", Promise.resolve([message({ text: "session b message" })]));
+
+    const { rerender } = render(<SessionsTabContent />);
+
+    // Navigate to session b before a's fetch resolves.
+    act(() => {
+      useSessionsStore.setState({ selectedId: "b" });
+    });
+    rerender(<SessionsTabContent />);
+    await waitFor(() => expect(screen.getByText("session b message")).toBeInTheDocument());
+
+    // a's stale response now lands — it must not clobber b's transcript.
+    await act(async () => {
+      resolveA([message({ text: "session a message" })]);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("session b message")).toBeInTheDocument();
+    expect(screen.queryByText("session a message")).not.toBeInTheDocument();
+  });
+});

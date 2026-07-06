@@ -336,6 +336,18 @@ describe("tabsStore", () => {
     expect(g2).toBe(g1);
   });
 
+  it("opens a sessions tab as a singleton, focusing the existing one", () => {
+    const s1 = useTabsStore.getState().openSessionsTab();
+    expect(activeTab().kind).toBe("sessions");
+    expect(activeTab().title).toBe("AI Sessions");
+    expect(firstLeafContent(activeTab())).toEqual({ kind: "sessions" });
+
+    const s2 = useTabsStore.getState().openSessionsTab();
+    expect(s2).toBe(s1);
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(useTabsStore.getState().activeId).toBe(s1);
+  });
+
   it("does not dedupe an editor tab once it has been split", () => {
     const first = useTabsStore.getState().openEditorTab("/a/b.ts");
     useTabsStore

@@ -8,27 +8,10 @@ import { onSessionsUpdated, type SessionAgent, type SessionSummary } from "./lib
 import { useSessionsStore, visibleSessions } from "./lib/sessionsStore";
 import { formatRelativeTime } from "./lib/relativeTime";
 import { deriveLiveSessions, type LiveSession } from "./lib/liveSessions";
+import { AGENT_BADGE_CLASS, agentBadgeClass } from "./lib/agentBadge";
 
 /** Filter chip order, "all" first. */
 const AGENT_FILTERS: Array<SessionAgent | "all"> = ["all", "claude", "codex", "antigravity"];
-
-/** Badge color per agent, reusing the theme's existing semantic color
- *  tokens — none of these are agent-specific, they're just distinct enough
- *  to tell the three badges apart at a glance. Display labels live in i18n
- *  under `sessions.agents.*`. */
-const AGENT_BADGE_CLASS: Record<SessionAgent, string> = {
-  claude: "text-accent",
-  codex: "text-fg-subtle",
-  antigravity: "text-warning",
-};
-
-/** `AGENT_BADGE_CLASS` lookup for a live session's agent, which is a plain
- *  `string | undefined` (see liveSessions.ts) rather than the narrower
- *  `SessionAgent` union — the foreground poll that classifies a pane can
- *  lag its status, so the value isn't always a known agent yet. */
-function agentBadgeClass(agent: string | undefined): string {
-  return agent && agent in AGENT_BADGE_CLASS ? AGENT_BADGE_CLASS[agent as SessionAgent] : "text-fg-subtle";
-}
 
 /** Status dot color, same semantic tokens as WorkspacePanel's `STATUS_STYLE`
  *  badge (`src/modules/workspace/WorkspacePanel.tsx`) so a session reads the
@@ -120,6 +103,7 @@ function SessionRow({ session, selected }: SessionRowProps) {
   const { t } = useTranslation();
   const select = useSessionsStore((s) => s.select);
   const togglePin = useSessionsStore((s) => s.togglePin);
+  const openSessionsTab = useTabsStore((s) => s.openSessionsTab);
   const pinLabel = t(session.pinned ? "sessions.unpin" : "sessions.pin");
 
   return (
@@ -127,7 +111,10 @@ function SessionRow({ session, selected }: SessionRowProps) {
       <button
         type="button"
         aria-current={selected ? "true" : undefined}
-        onClick={() => select(session.id)}
+        onClick={() => {
+          select(session.id);
+          openSessionsTab();
+        }}
         className={`flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left ${
           selected ? "bg-bg-elevated" : "hover:bg-bg-elevated"
         }`}

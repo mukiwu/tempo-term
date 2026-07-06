@@ -33,6 +33,11 @@ const GitGraphTabContent = lazy(() =>
 const DiffTabContent = lazy(() =>
   import("@/modules/diff/DiffTabContent").then((m) => ({ default: m.DiffTabContent })),
 );
+const SessionsTabContent = lazy(() =>
+  import("@/modules/sessions/SessionsTabContent").then((m) => ({
+    default: m.SessionsTabContent,
+  })),
+);
 import { LauncherPanel } from "@/components/LauncherPanel";
 import { dropOverlayClassName, outerBandOverlayClassName } from "@/components/EntryDropOverlay";
 import { InfoDialog } from "@/components/InfoDialog";
@@ -159,10 +164,11 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
     : undefined;
 
   // Single-file panes reject folders; terminal/note take both. Dropping a file
-  // onto a launcher pane opens it, so a launcher accepts a file too. A diff
-  // pane is a read-only comparison with no drop action, so it accepts nothing.
+  // onto a launcher pane opens it, so a launcher accepts a file too. A diff or
+  // sessions pane is a read-only browser with no drop action, so it accepts
+  // nothing.
   function canDrop(content: PaneContent, entry: DraggedEntry): boolean {
-    if (content.kind === "diff") {
+    if (content.kind === "diff" || content.kind === "sessions") {
       return false;
     }
     if (
@@ -461,6 +467,8 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   <GitGraphTabContent />
                 ) : pane.content.kind === "diff" ? (
                   <DiffTabContent path={pane.content.path} staged={pane.content.staged} />
+                ) : pane.content.kind === "sessions" ? (
+                  <SessionsTabContent />
                 ) : pane.content.kind === "launcher" ? (
                   <LauncherPanel
                     target={{ mode: "replacePane", tabId: tab.id, leafId: pane.id }}

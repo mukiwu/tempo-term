@@ -9,8 +9,8 @@ export type SplitDirection = "row" | "col";
 
 /**
  * What a leaf pane shows: a terminal, an open file, a note, a preview, the git
- * graph, a file's uncommitted diff, or the launcher (a freshly split pane that
- * hasn't been chosen yet).
+ * graph, a file's uncommitted diff, the AI sessions browser, or the launcher
+ * (a freshly split pane that hasn't been chosen yet).
  */
 export type PaneContent =
   | { kind: "terminal"; cwd?: string; ssh?: { connectionId: string } }
@@ -19,6 +19,7 @@ export type PaneContent =
   | { kind: "preview"; url: string }
   | { kind: "git-graph" }
   | { kind: "diff"; path: string; staged: boolean }
+  | { kind: "sessions" }
   | { kind: "launcher" };
 
 export const TERMINAL_PANE: PaneContent = { kind: "terminal" };

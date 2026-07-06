@@ -10,6 +10,7 @@ import {
   GitCompare,
   GitPullRequest,
   Globe,
+  History,
   LayoutGrid,
   Pencil,
   Plus,
@@ -55,6 +56,8 @@ function tabIcon(kind: TabKind): LucideIcon {
       return GitBranch;
     case "diff":
       return GitCompare;
+    case "sessions":
+      return History;
     case "launcher":
       return LayoutGrid;
   }

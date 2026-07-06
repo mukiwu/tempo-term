@@ -235,7 +235,8 @@
       "editor": "File",
       "note": "Note",
       "preview": "Preview",
-      "git-graph": "Git Graph"
+      "git-graph": "Git Graph",
+      "sessions": "AI Sessions"
     },
     "spaces": "Groups",
     "newSpace": "New group",
@@ -269,10 +270,18 @@
     "selectPrompt": "Select a session from the sidebar",
     "resumeUnavailable": "Resume is not available for this agent",
     "indexing": "Indexing sessions…",
+    "totalCount": "{{count}} sessions indexed",
+    "loading": "Loading transcript…",
+    "loadError": "Couldn't load this transcript",
     "agents": {
       "claude": "Claude",
       "codex": "Codex",
       "antigravity": "Antigravity"
+    },
+    "roles": {
+      "user": "You",
+      "assistant": "Assistant",
+      "tool": "Tool"
     }
   }
 }

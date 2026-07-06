@@ -40,7 +40,15 @@ export type OpenFromSidebarResult =
   | { status: "already-connected" }
   | { status: "at-capacity" };
 
-export type TabKind = "terminal" | "editor" | "note" | "preview" | "git-graph" | "diff" | "launcher";
+export type TabKind =
+  | "terminal"
+  | "editor"
+  | "note"
+  | "preview"
+  | "git-graph"
+  | "diff"
+  | "sessions"
+  | "launcher";
 
 /**
  * A single tab. `kind` is only the tab's creation type, used for the tab-bar
@@ -84,6 +92,8 @@ interface TabsState {
   openPreviewTab: (url: string) => string;
   openGitGraphTab: () => string;
   openDiffTab: (path: string, staged: boolean) => string;
+  /** Open the AI sessions browser tab (singleton per space). */
+  openSessionsTab: () => string;
   /**
    * Open sidebar content (explorer file, note, or SSH connection). When the
    * active tab is a real working tab, this splits beside its current
@@ -592,6 +602,33 @@ export const useTabsStore = create<TabsState>()(
       kind: "git-graph",
       title: "Git Graph",
       paneTree: leaf(paneId, { kind: "git-graph" }),
+      activeLeafId: paneId,
+      paneOrder: [paneId],
+    };
+    set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+    return id;
+  },
+
+  openSessionsTab: () => {
+    const spaceId = get().ensureSpace();
+    const existing = get().tabs.find(
+      (t) =>
+        t.kind === "sessions" &&
+        t.spaceId === spaceId &&
+        singleLeafContentEquals(t, { kind: "sessions" }),
+    );
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
+    const id = nextTabId();
+    const paneId = nextPaneId();
+    const tab: Tab = {
+      id,
+      spaceId,
+      kind: "sessions",
+      title: "AI Sessions",
+      paneTree: leaf(paneId, { kind: "sessions" }),
       activeLeafId: paneId,
       paneOrder: [paneId],
     };
