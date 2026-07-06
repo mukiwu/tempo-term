@@ -55,6 +55,9 @@ use modules::session_log::session_logs_enforce_retention;
 use modules::sysmon::{system_stats, SysinfoState};
 use modules::ports::{kill_port_process, list_ports, PortsState};
 use modules::editor_watch::{editor_watch_set, EditorWatchState};
+use modules::sessions_index::{
+    sessions_get, sessions_index_start, sessions_list, sessions_pin, SessionsIndexState,
+};
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,6 +104,7 @@ pub fn run() {
         .manage(SysinfoState::new())
         .manage(PortsState::new())
         .manage(EditorWatchState::new())
+        .manage(SessionsIndexState::new())
         .setup(|app| {
             // window-state restores the last size/position, but it can persist a
             // corrupt tiny / off-screen value (observed 360x240 at a negative
@@ -249,7 +253,11 @@ pub fn run() {
             system_stats,
             list_ports,
             kill_port_process,
-            editor_watch_set
+            editor_watch_set,
+            sessions_index_start,
+            sessions_list,
+            sessions_get,
+            sessions_pin
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

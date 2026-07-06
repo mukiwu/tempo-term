@@ -87,7 +87,9 @@ pub fn discover(home: &Path) -> Vec<SessionFile> {
 
 /// Core discovery logic, decoupled from env resolution so it can be tested
 /// against arbitrary temp-dir roots without ever touching process env.
-fn discover_from_roots(roots: &[(&'static str, PathBuf)]) -> Vec<SessionFile> {
+/// `pub(crate)` (rather than private) so sync.rs's full-sync tests can reuse
+/// the same hermetic, env-free entry point instead of mutating process env.
+pub(crate) fn discover_from_roots(roots: &[(&'static str, PathBuf)]) -> Vec<SessionFile> {
     let mut out = Vec::new();
     for (agent, root) in roots {
         match *agent {
