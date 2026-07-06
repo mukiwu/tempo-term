@@ -11,13 +11,21 @@ vi.mock("@/modules/ssh/lib/sftpSessionStore", () => ({
 const sftpReadDir = vi.fn();
 const sftpReadFile = vi.fn();
 const sftpWriteFile = vi.fn();
+const sftpCreateFile = vi.fn();
+const sftpCreateDir = vi.fn();
+const sftpDelete = vi.fn();
+const sftpRename = vi.fn();
 vi.mock("@/modules/ssh/lib/sftp-bridge", () => ({
   sftpReadDir: (...a: unknown[]) => sftpReadDir(...a),
   sftpReadFile: (...a: unknown[]) => sftpReadFile(...a),
   sftpWriteFile: (...a: unknown[]) => sftpWriteFile(...a),
+  sftpCreateFile: (...a: unknown[]) => sftpCreateFile(...a),
+  sftpCreateDir: (...a: unknown[]) => sftpCreateDir(...a),
+  sftpDelete: (...a: unknown[]) => sftpDelete(...a),
+  sftpRename: (...a: unknown[]) => sftpRename(...a),
 }));
 
-import { canSearchRoot, fsReadDir, fsReadFile, fsWriteFile } from "./fsBridge";
+import { canSearchRoot, fsCreateDir, fsCreateFile, fsDelete, fsReadDir, fsReadFile, fsRename, fsWriteFile } from "./fsBridge";
 
 beforeEach(() => {
   invoke.mockReset();
@@ -25,6 +33,10 @@ beforeEach(() => {
   sftpReadDir.mockReset();
   sftpReadFile.mockReset();
   sftpWriteFile.mockReset();
+  sftpCreateFile.mockReset();
+  sftpCreateDir.mockReset();
+  sftpDelete.mockReset();
+  sftpRename.mockReset();
 });
 
 describe("fsBridge routing", () => {
@@ -72,5 +84,53 @@ describe("canSearchRoot", () => {
 
   it("rejects no open folder", () => {
     expect(canSearchRoot(null)).toBe(false);
+  });
+});
+
+describe("fsBridge write-op routing", () => {
+  it("creates local entries through fs_create_file / fs_create_dir", async () => {
+    invoke.mockResolvedValue(undefined);
+    await fsCreateFile("/p/x.txt");
+    expect(invoke).toHaveBeenCalledWith("fs_create_file", { path: "/p/x.txt" });
+    await fsCreateDir("/p/dir");
+    expect(invoke).toHaveBeenCalledWith("fs_create_dir", { path: "/p/dir" });
+  });
+
+  it("creates remote entries over sftp", async () => {
+    ensure.mockResolvedValue(7);
+    await fsCreateFile("ssh://c1/home/me/x.txt");
+    expect(sftpCreateFile).toHaveBeenCalledWith(7, "/home/me/x.txt");
+    await fsCreateDir("ssh://c1/home/me/dir");
+    expect(sftpCreateDir).toHaveBeenCalledWith(7, "/home/me/dir");
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("deletes locally through fs_delete, ignoring isDir", async () => {
+    invoke.mockResolvedValue(undefined);
+    await fsDelete("/p/dir", true);
+    expect(invoke).toHaveBeenCalledWith("fs_delete", { path: "/p/dir" });
+  });
+
+  it("deletes remotely over sftp, passing the entry kind through", async () => {
+    ensure.mockResolvedValue(7);
+    await fsDelete("ssh://c1/home/me/dir", true);
+    expect(sftpDelete).toHaveBeenCalledWith(7, "/home/me/dir", true);
+  });
+
+  it("renames locally through fs_rename", async () => {
+    invoke.mockResolvedValue(undefined);
+    await fsRename("/p/a.txt", "/p/b.txt");
+    expect(invoke).toHaveBeenCalledWith("fs_rename", { from: "/p/a.txt", to: "/p/b.txt" });
+  });
+
+  it("renames remotely over sftp with both paths unwrapped", async () => {
+    ensure.mockResolvedValue(7);
+    await fsRename("ssh://c1/a/old.txt", "ssh://c1/a/new.txt");
+    expect(sftpRename).toHaveBeenCalledWith(7, "/a/old.txt", "/a/new.txt");
+  });
+
+  it("rejects a rename that crosses hosts", async () => {
+    await expect(fsRename("ssh://c1/a.txt", "ssh://c2/a.txt")).rejects.toThrow();
+    expect(sftpRename).not.toHaveBeenCalled();
   });
 });

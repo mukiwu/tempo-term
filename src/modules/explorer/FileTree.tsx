@@ -226,7 +226,7 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
 
   async function handleDelete() {
     try {
-      await fsDelete(entry.path);
+      await fsDelete(entry.path, entry.is_dir);
     } catch {
       return;
     }

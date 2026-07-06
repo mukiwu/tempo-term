@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { buildRemoteUri, isRemoteUri, parseRemoteUri } from "@/modules/ssh/lib/remotePath";
-import { sftpReadDir, sftpReadFile, sftpWriteFile } from "@/modules/ssh/lib/sftp-bridge";
+import { sftpReadDir, sftpReadFile, sftpWriteFile, sftpCreateFile, sftpCreateDir, sftpDelete, sftpRename } from "@/modules/ssh/lib/sftp-bridge";
 import { sftpSessionStore } from "@/modules/ssh/lib/sftpSessionStore";
 
 export interface DirEntry {
@@ -66,19 +66,46 @@ export function fsGrep(
   return invoke<GrepMatch[]>("fs_grep", { root, query, limit });
 }
 
-export function fsCreateFile(path: string): Promise<void> {
+export async function fsCreateFile(path: string): Promise<void> {
+  const remote = parseRemoteUri(path);
+  if (remote) {
+    const id = await sftpSessionStore.getState().ensure(remote.connectionId);
+    return sftpCreateFile(id, remote.path);
+  }
   return invoke("fs_create_file", { path });
 }
 
-export function fsCreateDir(path: string): Promise<void> {
+export async function fsCreateDir(path: string): Promise<void> {
+  const remote = parseRemoteUri(path);
+  if (remote) {
+    const id = await sftpSessionStore.getState().ensure(remote.connectionId);
+    return sftpCreateDir(id, remote.path);
+  }
   return invoke("fs_create_dir", { path });
 }
 
-export function fsDelete(path: string): Promise<void> {
+/** `isDir` is only consulted on the remote branch — SFTP deletes files and
+ *  directories with different calls, and the caller already knows the kind
+ *  from the DirEntry it is deleting. The local `fs_delete` infers it itself. */
+export async function fsDelete(path: string, isDir: boolean): Promise<void> {
+  const remote = parseRemoteUri(path);
+  if (remote) {
+    const id = await sftpSessionStore.getState().ensure(remote.connectionId);
+    return sftpDelete(id, remote.path, isDir);
+  }
   return invoke("fs_delete", { path });
 }
 
-export function fsRename(from: string, to: string): Promise<void> {
+export async function fsRename(from: string, to: string): Promise<void> {
+  const remote = parseRemoteUri(from);
+  if (remote) {
+    const toRemote = parseRemoteUri(to);
+    if (!toRemote || toRemote.connectionId !== remote.connectionId) {
+      throw new Error("cannot rename across hosts");
+    }
+    const id = await sftpSessionStore.getState().ensure(remote.connectionId);
+    return sftpRename(id, remote.path, toRemote.path);
+  }
   return invoke("fs_rename", { from, to });
 }
 

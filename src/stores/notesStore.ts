@@ -161,7 +161,7 @@ export const useNotesStore = create<NotesState>()((set, get) => ({
   },
 
   deleteNote: async (path) => {
-    await fsDelete(path);
+    await fsDelete(path, false);
     await get().refresh();
   },
 

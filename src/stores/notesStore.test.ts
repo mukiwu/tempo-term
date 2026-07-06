@@ -147,7 +147,7 @@ describe("notesStore.moveNote", () => {
 describe("notesStore.deleteNote / read / write", () => {
   it("deletes via fsDelete", async () => {
     await useNotesStore.getState().deleteNote("/root/a.md");
-    expect(mocked.fsDelete).toHaveBeenCalledWith("/root/a.md");
+    expect(mocked.fsDelete).toHaveBeenCalledWith("/root/a.md", false);
   });
 
   it("reads and writes note content via the bridge", async () => {
