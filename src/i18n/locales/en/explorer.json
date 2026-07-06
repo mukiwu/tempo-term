@@ -26,6 +26,7 @@
     "copyRelativePath": "Copy Relative Path",
     "attachToAgent": "Attach to Agent",
     "rename": "Rename",
-    "delete": "Delete"
+    "delete": "Delete",
+    "deleteRemoteConfirm": "Permanently delete \"{{name}}\" from the remote host? There is no trash over SFTP — this cannot be undone."
   }
 }

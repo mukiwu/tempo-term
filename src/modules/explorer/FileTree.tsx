@@ -27,7 +27,9 @@ import {
 } from "./lib/fsBridge";
 import { dirname, joinPath, relativePath } from "./lib/paths";
 import { beginEntryDrag, consumeDragClick } from "./lib/dragEntry";
+import { isRemoteUri } from "@/modules/ssh/lib/remotePath";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InfoDialog } from "@/components/InfoDialog";
 import { Tooltip } from "@/components/Tooltip";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -85,6 +87,7 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
   const [creating, setCreating] = useState<Creating>(null);
   const [renaming, setRenaming] = useState(false);
   const [atCapacity, setAtCapacity] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   // JS hover: CSS :hover is suppressed inside a draggable subtree (WebKit), so
   // track hover manually to highlight just this row.
   const [hovered, setHovered] = useState(false);
@@ -350,7 +353,16 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
       icon: Trash2,
       group: 4,
       danger: true,
-      onSelect: () => void handleDelete(),
+      // Local deletes go to the OS trash and are recoverable, so they fire
+      // immediately as before. Remote (SFTP) deletes are permanent, so gate
+      // them behind a confirm dialog first.
+      onSelect: () => {
+        if (isRemoteUri(entry.path)) {
+          setConfirmingDelete(true);
+        } else {
+          void handleDelete();
+        }
+      },
     },
   ];
 
@@ -460,6 +472,20 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
           onConfirm={() => setAtCapacity(false)}
         />
       )}
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={t("menu.delete")}
+          message={t("menu.deleteRemoteConfirm", { name: entry.name })}
+          confirmLabel={t("menu.delete")}
+          cancelLabel={tCommon("actions.cancel")}
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            void handleDelete();
+          }}
+          onCancel={() => setConfirmingDelete(false)}
+        />
+      )}
     </li>
   );
 }
@@ -496,6 +522,11 @@ function NewEntryInput({ kind, depth, initialValue, onConfirm, onCancel }: NewEn
         aria-label={kind === "file" ? t("menu.newFile") : t("menu.newFolder")}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
+          // Ignore the Enter that commits an IME candidate (CJK input), so it
+          // doesn't also confirm/cancel this entry mid-composition.
+          if (event.nativeEvent.isComposing || event.keyCode === 229) {
+            return;
+          }
           if (event.key === "Enter") {
             event.preventDefault();
             onConfirm(value);

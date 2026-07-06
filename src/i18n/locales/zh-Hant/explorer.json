@@ -26,6 +26,7 @@
     "copyRelativePath": "複製相對路徑",
     "attachToAgent": "附加到 AI 助手",
     "rename": "重新命名",
-    "delete": "刪除"
+    "delete": "刪除",
+    "deleteRemoteConfirm": "確定要從遠端主機永久刪除「{{name}}」嗎？SFTP 沒有垃圾桶，刪了救不回來。"
   }
 }
