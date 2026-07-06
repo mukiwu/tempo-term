@@ -25,6 +25,7 @@
     "copyPath": "複製路徑",
     "copyRelativePath": "複製相對路徑",
     "attachToAgent": "附加到 AI 助手",
+    "rename": "重新命名",
     "delete": "刪除"
   }
 }

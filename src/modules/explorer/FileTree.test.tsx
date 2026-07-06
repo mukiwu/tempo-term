@@ -13,6 +13,7 @@ vi.mock("./lib/fsBridge", () => ({
   fsCreateDir: vi.fn(),
   fsCreateFile: vi.fn(),
   fsDelete: vi.fn(),
+  fsRename: vi.fn(),
   fsReveal: vi.fn(),
 }));
 
@@ -307,5 +308,47 @@ describe("FileTree context menu: open in new tab", () => {
     fireEvent.click(screen.getByText("menu.openInNewTab"));
 
     expect(useTabsStore.getState().tabs).toHaveLength(2);
+  });
+});
+
+describe("FileTree rename", () => {
+  // fsRename is a shared mock across both tests below; vitest does not clear
+  // call history between tests in the same file (no clearMocks/restoreMocks
+  // configured), so without this reset the second test would see the first
+  // test's call and fail its `not.toHaveBeenCalled()` assertion.
+  beforeEach(async () => {
+    const { fsRename } = await import("./lib/fsBridge");
+    vi.mocked(fsRename).mockClear();
+  });
+
+  it("renames an entry in place and reloads the parent", async () => {
+    const { fsRename } = await import("./lib/fsBridge");
+    vi.mocked(fsRename).mockResolvedValue(undefined);
+    const onReloadRoot = vi.fn();
+    const entries = [{ name: "old.ts", path: "/p/old.ts", is_dir: false, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={onReloadRoot} />);
+
+    fireEvent.contextMenu(screen.getByText("old.ts"));
+    fireEvent.click(screen.getByText("menu.rename"));
+    const input = screen.getByDisplayValue("old.ts");
+    fireEvent.change(input, { target: { value: "new.ts" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await vi.waitFor(() => expect(fsRename).toHaveBeenCalledWith("/p/old.ts", "/p/new.ts"));
+    expect(onReloadRoot).toHaveBeenCalled();
+  });
+
+  it("does nothing when the name is unchanged", async () => {
+    const { fsRename } = await import("./lib/fsBridge");
+    const entries = [{ name: "same.ts", path: "/p/same.ts", is_dir: false, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+
+    fireEvent.contextMenu(screen.getByText("same.ts"));
+    fireEvent.click(screen.getByText("menu.rename"));
+    const input = screen.getByDisplayValue("same.ts");
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await Promise.resolve();
+    expect(fsRename).not.toHaveBeenCalled();
   });
 });
