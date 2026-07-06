@@ -142,3 +142,8 @@ pnpm build          # build the frontend
 pnpm test                       # frontend unit and integration tests (Vitest)
 cd src-tauri && cargo test      # backend Rust tests
 ```
+
+## License
+
+TempoTerm is licensed under the [Apache License 2.0](LICENSE).
+The TempoTerm name and logo are not licensed for use by derivative works (see [NOTICE](NOTICE)).
