@@ -281,7 +281,14 @@
     "roles": {
       "user": "You",
       "assistant": "Assistant",
-      "tool": "Tool"
+      "tool": "Tool",
+      "system": "System"
+    },
+    "time": {
+      "justNow": "just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
     }
   }
 }

@@ -24,7 +24,7 @@ function getErrorMessage(error: unknown): string {
  */
 function TranscriptEntry({ message }: { message: TranscriptMessage }) {
   const { t } = useTranslation();
-  const timestamp = message.timestamp !== null ? formatRelativeTime(message.timestamp) : null;
+  const timestamp = message.timestamp !== null ? formatRelativeTime(message.timestamp, t) : null;
 
   if (message.role === "tool") {
     return (

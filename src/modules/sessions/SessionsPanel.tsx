@@ -137,7 +137,7 @@ function SessionRow({ session, selected }: SessionRowProps) {
             </span>
           </div>
           <div className="truncate text-xs text-fg-subtle">
-            {basename(session.project_cwd)} · {formatRelativeTime(session.ended_at)} ·{" "}
+            {basename(session.project_cwd)} · {formatRelativeTime(session.ended_at, t)} ·{" "}
             {t("sessions.messages", { count: session.message_count })}
           </div>
         </div>
