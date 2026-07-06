@@ -43,6 +43,24 @@ pub enum SftpControl {
         contents: String,
         reply: oneshot::Sender<Result<(), String>>,
     },
+    CreateFile {
+        path: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    CreateDir {
+        path: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Delete {
+        path: String,
+        is_dir: bool,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Rename {
+        from: String,
+        to: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
     Close,
 }
 
@@ -189,6 +207,22 @@ async fn run(
             } => {
                 let _ = reply.send(write_file(&sftp, &path, &contents).await);
             }
+            SftpControl::CreateFile { path, reply } => {
+                let _ = reply.send(create_file(&sftp, &path).await);
+            }
+            SftpControl::CreateDir { path, reply } => {
+                let _ = reply.send(
+                    sftp.create_dir(path).await.map_err(|e| e.to_string()),
+                );
+            }
+            SftpControl::Delete { path, is_dir, reply } => {
+                let _ = reply.send(delete(&sftp, &path, is_dir).await);
+            }
+            SftpControl::Rename { from, to, reply } => {
+                let _ = reply.send(
+                    sftp.rename(from, to).await.map_err(|e| e.to_string()),
+                );
+            }
             SftpControl::Close => break,
         }
     }
@@ -209,6 +243,12 @@ async fn fail(mut rx: mpsc::UnboundedReceiver<SftpControl>, reason: String) {
                 let _ = reply.send(Err(reason.clone()));
             }
             SftpControl::WriteFile { reply, .. } => {
+                let _ = reply.send(Err(reason.clone()));
+            }
+            SftpControl::CreateFile { reply, .. }
+            | SftpControl::CreateDir { reply, .. }
+            | SftpControl::Delete { reply, .. }
+            | SftpControl::Rename { reply, .. } => {
                 let _ = reply.send(Err(reason.clone()));
             }
             SftpControl::Close => break,
@@ -269,6 +309,31 @@ async fn write_file(sftp: &SftpSession, path: &str, contents: &str) -> Result<()
     Ok(())
 }
 
+/// Create an empty file, failing when it already exists — the same contract as
+/// the local `fs/ops.rs::create_file`, via SFTP's EXCLUDE open flag.
+async fn create_file(sftp: &SftpSession, path: &str) -> Result<(), String> {
+    use russh_sftp::protocol::OpenFlags;
+    use tokio::io::AsyncWriteExt;
+    let mut file = sftp
+        .open_with_flags(
+            path.to_string(),
+            OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::EXCLUDE,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    file.shutdown().await.map_err(|e| e.to_string())
+}
+
+/// SFTP splits delete into two calls by entry kind; the caller passes the kind
+/// it already knows from the DirEntry it is deleting.
+async fn delete(sftp: &SftpSession, path: &str, is_dir: bool) -> Result<(), String> {
+    if is_dir {
+        sftp.remove_dir(path.to_string()).await.map_err(|e| e.to_string())
+    } else {
+        sftp.remove_file(path.to_string()).await.map_err(|e| e.to_string())
+    }
+}
+
 fn send(state: &State<'_, SftpState>, id: u32, msg: SftpControl) -> Result<(), String> {
     let sessions = state.sessions.lock().unwrap();
     let handle = sessions
@@ -322,6 +387,48 @@ pub async fn write_file_cmd(
             reply: tx,
         },
     )?;
+    rx.await.map_err(|_| "sftp session closed".to_string())?
+}
+
+pub async fn create_file_cmd(
+    state: &State<'_, SftpState>,
+    id: u32,
+    path: String,
+) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    send(state, id, SftpControl::CreateFile { path, reply: tx })?;
+    rx.await.map_err(|_| "sftp session closed".to_string())?
+}
+
+pub async fn create_dir_cmd(
+    state: &State<'_, SftpState>,
+    id: u32,
+    path: String,
+) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    send(state, id, SftpControl::CreateDir { path, reply: tx })?;
+    rx.await.map_err(|_| "sftp session closed".to_string())?
+}
+
+pub async fn delete_cmd(
+    state: &State<'_, SftpState>,
+    id: u32,
+    path: String,
+    is_dir: bool,
+) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    send(state, id, SftpControl::Delete { path, is_dir, reply: tx })?;
+    rx.await.map_err(|_| "sftp session closed".to_string())?
+}
+
+pub async fn rename_cmd(
+    state: &State<'_, SftpState>,
+    id: u32,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    let (tx, rx) = oneshot::channel();
+    send(state, id, SftpControl::Rename { from, to, reply: tx })?;
     rx.await.map_err(|_| "sftp session closed".to_string())?
 }
 

@@ -44,7 +44,8 @@ use modules::ssh::{
     ssh_write, SshState,
 };
 use modules::sftp::{
-    sftp_close, sftp_home, sftp_read_dir, sftp_read_file, sftp_start, sftp_write_file, SftpState,
+    sftp_close, sftp_create_dir, sftp_create_file, sftp_delete, sftp_home, sftp_read_dir,
+    sftp_read_file, sftp_rename, sftp_start, sftp_write_file, SftpState,
 };
 use modules::terminal_history::{
     terminal_history_clear, terminal_history_delete, terminal_history_load,
@@ -238,6 +239,10 @@ pub fn run() {
             sftp_read_dir,
             sftp_read_file,
             sftp_write_file,
+            sftp_create_file,
+            sftp_create_dir,
+            sftp_delete,
+            sftp_rename,
             sftp_close,
             ssh_secret_set,
             ssh_secret_delete,
