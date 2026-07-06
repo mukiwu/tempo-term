@@ -89,3 +89,47 @@ describe("ExplorerView expand/collapse toggle", () => {
     expect(screen.queryByText("leaf.ts")).not.toBeInTheDocument();
   });
 });
+
+describe("ExplorerView refresh", () => {
+  it("re-fetches the root listing when the refresh button is clicked", async () => {
+    const { fsReadDir } = await import("./lib/fsBridge");
+    vi.mocked(fsReadDir).mockReset().mockResolvedValue([]);
+
+    useWorkspaceStore.setState({ rootPath: "/home/me" });
+    render(<ExplorerView />);
+
+    await waitFor(() => expect(vi.mocked(fsReadDir)).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByLabelText("Refresh"));
+
+    await waitFor(() => expect(vi.mocked(fsReadDir)).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(fsReadDir)).toHaveBeenLastCalledWith("/home/me");
+  });
+
+  it("discards cached expanded children on refresh, rendering the tree collapsed again", async () => {
+    const { fsReadDir } = await import("./lib/fsBridge");
+    vi.mocked(fsReadDir).mockImplementation(async (path: string) => {
+      if (path === "/home/me") {
+        return [{ name: "a-dir", path: "/home/me/a-dir", is_dir: true, size: 0 }];
+      }
+      if (path === "/home/me/a-dir") {
+        return [{ name: "leaf.ts", path: "/home/me/a-dir/leaf.ts", is_dir: false, size: 0 }];
+      }
+      return [];
+    });
+
+    useWorkspaceStore.setState({ rootPath: "/home/me" });
+    render(<ExplorerView />);
+    await screen.findByText("a-dir");
+
+    // Expand everything so "a-dir" caches its child listing.
+    fireEvent.click(screen.getByLabelText("Expand All"));
+    await screen.findByText("leaf.ts");
+
+    fireEvent.click(screen.getByLabelText("Refresh"));
+
+    // A fresh tree renders fully collapsed again: the cached child is gone.
+    await screen.findByText("a-dir");
+    expect(screen.queryByText("leaf.ts")).not.toBeInTheDocument();
+  });
+});

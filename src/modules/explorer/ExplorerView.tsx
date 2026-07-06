@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronsDownUp, ChevronsUpDown, FolderOpen } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, FolderOpen, RotateCw } from "lucide-react";
 import { FileTree } from "./FileTree";
 import { Tooltip } from "@/components/Tooltip";
 import { fsReadDir, type DirEntry } from "./lib/fsBridge";
@@ -21,6 +21,12 @@ export function ExplorerView() {
   // false whenever the root changes rather than trying to inspect every
   // node's live expanded state.
   const [treeExpanded, setTreeExpanded] = useState(false);
+  // Bumped on manual refresh; used as <FileTree>'s key so a refresh remounts
+  // the whole tree instead of just re-fetching the root. TreeNode caches its
+  // own `children` state once expanded, so a bare loadEntries() call would
+  // leave stale subfolders in place — remounting is the only way to discard
+  // that cache and guarantee a truly fresh listing.
+  const [refreshTick, setRefreshTick] = useState(0);
 
   // A remote (SFTP) root hides local-only controls and shows the remote path
   // rather than the raw ssh:// uri.
@@ -75,6 +81,16 @@ export function ExplorerView() {
     setTreeExpanded((v) => !v);
   }
 
+  // Mirrors the root-change reset above: a refresh must render as if a brand
+  // new root had just been opened, fully collapsed with no cached children.
+  function refresh() {
+    setTreeExpanded(false);
+    setCollapseSignal(0);
+    setExpandSignal(0);
+    setRefreshTick((v) => v + 1);
+    loadEntries();
+  }
+
   return (
     <div className="relative flex h-full flex-col bg-bg-inset">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
@@ -91,6 +107,18 @@ export function ExplorerView() {
                 className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
               >
                 <FolderOpen size={15} />
+              </button>
+            </Tooltip>
+          )}
+          {rootPath && (
+            <Tooltip label={t("refresh")}>
+              <button
+                type="button"
+                aria-label={t("refresh")}
+                onClick={refresh}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              >
+                <RotateCw size={15} />
               </button>
             </Tooltip>
           )}
@@ -124,6 +152,7 @@ export function ExplorerView() {
           <p className="px-3 py-2 text-xs text-fg-subtle">{t("empty")}</p>
         ) : (
           <FileTree
+            key={refreshTick}
             entries={entries}
             onReloadRoot={loadEntries}
             collapseSignal={collapseSignal}
