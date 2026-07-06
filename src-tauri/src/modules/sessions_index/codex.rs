@@ -60,16 +60,21 @@ fn join_content_text(content: Option<&Value>) -> String {
         .join("\n")
 }
 
-/// Add one message to its local-day/hour activity bucket.
-fn bump_message_bucket(buckets: &mut HashMap<(String, u8), ActivityBucket>, ts: i64, is_user: bool) {
+/// The local-day/hour activity bucket for a timestamp, created on first use.
+fn get_or_create_bucket(buckets: &mut HashMap<(String, u8), ActivityBucket>, ts: i64) -> &mut ActivityBucket {
     let (date, hour) = local_bucket(ts);
-    let bucket = buckets.entry((date.clone(), hour)).or_insert_with(|| ActivityBucket {
+    buckets.entry((date.clone(), hour)).or_insert_with(|| ActivityBucket {
         date,
         hour,
         messages: 0,
         user_messages: 0,
         output_tokens: 0,
-    });
+    })
+}
+
+/// Add one message to its local-day/hour activity bucket.
+fn bump_message_bucket(buckets: &mut HashMap<(String, u8), ActivityBucket>, ts: i64, is_user: bool) {
+    let bucket = get_or_create_bucket(buckets, ts);
     bucket.messages += 1;
     if is_user {
         bucket.user_messages += 1;
@@ -164,14 +169,7 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
                             output_tokens = Some(total);
                             if delta > 0 {
                                 if let Some(ts) = ts {
-                                    let (date, hour) = local_bucket(ts);
-                                    let bucket = buckets.entry((date.clone(), hour)).or_insert_with(|| ActivityBucket {
-                                        date,
-                                        hour,
-                                        messages: 0,
-                                        user_messages: 0,
-                                        output_tokens: 0,
-                                    });
+                                    let bucket = get_or_create_bucket(&mut buckets, ts);
                                     bucket.output_tokens = bucket.output_tokens.saturating_add(delta);
                                 }
                             }
@@ -199,8 +197,9 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
                         }
                     }
                 }
-                // function_call/function_call_output are tool plumbing, not
-                // conversational messages; they don't affect message_count.
+                // function_call/custom_tool_call and their *_output records
+                // are tool plumbing, not conversational messages; they don't
+                // affect message_count.
             }
             _ => {}
         }
@@ -285,10 +284,15 @@ pub fn parse_codex_transcript(path: &Path) -> Vec<TranscriptMessage> {
                             }
                         }
                     }
-                    "function_call" => {
+                    // custom_tool_call is the same thing under another name
+                    // (real files: apply_patch arrives this way, with the
+                    // payload in `input` instead of `arguments`) — same as
+                    // codexNormalize.ts, which treats the two as equivalent.
+                    "function_call" | "custom_tool_call" => {
                         let name = payload.get("name").and_then(Value::as_str).unwrap_or("tool").to_string();
                         let text: String = payload
                             .get("arguments")
+                            .or_else(|| payload.get("input"))
                             .and_then(Value::as_str)
                             .unwrap_or("")
                             .chars()
@@ -369,5 +373,29 @@ mod tests {
     fn garbage_lines_are_skipped() {
         let contents = format!("garbage\n{}", ROLLOUT);
         assert!(parse_codex_meta(&write_fixture("garbage", &contents)).is_some());
+    }
+
+    // Real rollouts carry apply_patch (and other custom tools) as
+    // `custom_tool_call` with the payload in `input` rather than
+    // `arguments`; it must render as a tool row exactly like function_call
+    // (consistent with codexNormalize.ts, which treats them as equivalent).
+    #[test]
+    fn custom_tool_call_renders_as_tool_row() {
+        let contents = concat!(
+            r#"{"timestamp":"2026-07-06T02:00:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"patch it"}}"#, "\n",
+            r#"{"timestamp":"2026-07-06T02:00:02.000Z","type":"response_item","payload":{"type":"custom_tool_call","status":"completed","call_id":"call_1","name":"apply_patch","input":"*** Begin Patch"}}"#, "\n",
+            r#"{"timestamp":"2026-07-06T02:00:03.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}"#, "\n",
+        );
+        let path = write_fixture("customtool", contents);
+
+        let t = parse_codex_transcript(&path);
+        let roles: Vec<&str> = t.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, vec!["user", "tool", "assistant"]);
+        assert_eq!(t[1].tool_name.as_deref(), Some("apply_patch"));
+        assert_eq!(t[1].text, "*** Begin Patch");
+
+        // Tool plumbing still never counts as a conversational message.
+        let meta = parse_codex_meta(&path).unwrap();
+        assert_eq!(meta.message_count, 2);
     }
 }
