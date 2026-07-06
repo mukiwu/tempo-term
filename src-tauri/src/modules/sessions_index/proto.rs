@@ -87,12 +87,18 @@ pub fn parse_fields(buf: &[u8]) -> Vec<(u32, ProtoValue)> {
                     None => break,
                 };
                 pos = next_pos;
-                let len = len as usize;
-                if pos + len > buf.len() {
-                    break;
-                }
-                let data = buf[pos..pos + len].to_vec();
-                pos += len;
+                // Checked math: `len` is attacker-controlled and can be up to
+                // u64::MAX, so a plain `pos + len` could overflow usize.
+                let end = match len
+                    .try_into()
+                    .ok()
+                    .and_then(|len: usize| pos.checked_add(len))
+                {
+                    Some(end) if end <= buf.len() => end,
+                    _ => break,
+                };
+                let data = buf[pos..end].to_vec();
+                pos = end;
                 fields.push((field_no, ProtoValue::Bytes(data)));
             }
             5 => {
@@ -139,12 +145,15 @@ pub fn first_varint(fields: &[(u32, ProtoValue)], field_no: u32) -> Option<u64> 
 /// Decodes a nested `google.protobuf.Timestamp`-shaped message stored as
 /// the `Bytes` field `field_no` (seconds in sub-field 1, nanos in
 /// sub-field 2), returning the value in milliseconds since epoch.
+///
+/// Returns `None` if the field is missing, malformed, or if the
+/// millisecond math would overflow `i64` (absurd varint values).
 pub fn timestamp_ms(fields: &[(u32, ProtoValue)], field_no: u32) -> Option<i64> {
     let ts_bytes = first_bytes(fields, field_no)?;
     let ts_fields = parse_fields(ts_bytes);
     let seconds = first_varint(&ts_fields, 1)? as i64;
     let nanos = first_varint(&ts_fields, 2).unwrap_or(0) as i64;
-    Some(seconds * 1000 + nanos / 1_000_000)
+    seconds.checked_mul(1000)?.checked_add(nanos / 1_000_000)
 }
 
 #[cfg(test)]
@@ -208,5 +217,46 @@ mod tests {
         field_varint(6, 1, &mut buf);
         let fields = parse_fields(&buf);
         assert_eq!(first_varint(&fields, 6), Some(1));
+    }
+
+    #[test]
+    fn huge_length_delimited_length_does_not_overflow_usize() {
+        // A valid field first, so we can assert partial collection.
+        let mut buf = Vec::new();
+        field_varint(1, 7, &mut buf);
+        // Field 2, wire type 2, length = u64::MAX (10-byte varint) plus a
+        // couple of stray bytes: `pos + len` must not overflow usize.
+        varint((2 << 3) | 2, &mut buf);
+        buf.extend_from_slice(&[
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+        ]);
+        buf.extend_from_slice(&[0xaa, 0xbb]);
+        let fields = parse_fields(&buf);
+        assert_eq!(first_varint(&fields, 1), Some(7));
+        assert_eq!(first_bytes(&fields, 2), None);
+    }
+
+    #[test]
+    fn moderate_length_past_buffer_end_stops_cleanly() {
+        let mut buf = Vec::new();
+        field_varint(1, 7, &mut buf);
+        // Field 2, wire type 2, claims 100 bytes but only 3 follow.
+        varint((2 << 3) | 2, &mut buf);
+        varint(100, &mut buf);
+        buf.extend_from_slice(&[0x01, 0x02, 0x03]);
+        let fields = parse_fields(&buf);
+        assert_eq!(first_varint(&fields, 1), Some(7));
+        assert_eq!(first_bytes(&fields, 2), None);
+    }
+
+    #[test]
+    fn timestamp_overflow_returns_none_not_panic() {
+        let mut ts = Vec::new();
+        field_varint(1, i64::MAX as u64, &mut ts); // seconds too large for ms math
+        field_varint(2, 0, &mut ts);
+        let mut buf = Vec::new();
+        field_bytes(5, &ts, &mut buf);
+        let fields = parse_fields(&buf);
+        assert_eq!(timestamp_ms(&fields, 5), None);
     }
 }
