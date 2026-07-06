@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { History, Loader2, Pin, PinOff } from "lucide-react";
+import { History, Loader2, Pin, PinOff, Play } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import { sessionsGet, type TranscriptMessage } from "./lib/sessionsBridge";
 import { useSessionsStore } from "./lib/sessionsStore";
 import { formatRelativeTime } from "./lib/relativeTime";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
+import { resumeCommand, resumeSession } from "./lib/resume";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -139,8 +140,26 @@ export function SessionsTabContent() {
             <p className="truncate text-xs text-fg-subtle">{session.project_cwd}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {/* Resume (re-attach this session to a live agent process) ships
-                in Task 13 — this header only exposes pin for now. */}
+            {/* Header keeps Resume visible-but-disabled for antigravity
+                (tooltip explains why) instead of hiding it — rows hide it
+                outright, since there's no room there for an explanation. */}
+            <Tooltip
+              label={
+                resumeCommand(session.agent, session.id) === null
+                  ? t("sessions.resumeUnavailable")
+                  : t("sessions.resume")
+              }
+            >
+              <button
+                type="button"
+                aria-label={t("sessions.resume")}
+                disabled={resumeCommand(session.agent, session.id) === null}
+                onClick={() => resumeSession(session)}
+                className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+              >
+                <Play size={14} />
+              </button>
+            </Tooltip>
             <Tooltip label={t(session.pinned ? "sessions.unpin" : "sessions.pin")}>
               <button
                 type="button"

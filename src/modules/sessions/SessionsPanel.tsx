@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { History, Pin, PinOff, Search } from "lucide-react";
+import { History, Pin, PinOff, Play, Search } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
@@ -9,6 +9,7 @@ import { useSessionsStore, visibleSessions } from "./lib/sessionsStore";
 import { formatRelativeTime } from "./lib/relativeTime";
 import { deriveLiveSessions, type LiveSession } from "./lib/liveSessions";
 import { AGENT_BADGE_CLASS, agentBadgeClass } from "./lib/agentBadge";
+import { resumeCommand, resumeSession } from "./lib/resume";
 
 /** Filter chip order, "all" first. */
 const AGENT_FILTERS: Array<SessionAgent | "all"> = ["all", "claude", "codex", "antigravity"];
@@ -105,6 +106,11 @@ function SessionRow({ session, selected }: SessionRowProps) {
   const togglePin = useSessionsStore((s) => s.togglePin);
   const openSessionsTab = useTabsStore((s) => s.openSessionsTab);
   const pinLabel = t(session.pinned ? "sessions.unpin" : "sessions.pin");
+  const resumeLabel = t("sessions.resume");
+  // Rows have no room to explain an unsupported agent, so the button is
+  // hidden outright here — the viewer header shows it disabled-with-tooltip
+  // instead, since there's space there for the explanation.
+  const canResume = resumeCommand(session.agent, session.id) !== null;
 
   return (
     <li className="group flex items-center">
@@ -137,6 +143,21 @@ function SessionRow({ session, selected }: SessionRowProps) {
         </div>
       </button>
       <div className="flex shrink-0 items-center opacity-0 pr-2 group-hover:opacity-100">
+        {canResume && (
+          <Tooltip label={resumeLabel}>
+            <button
+              type="button"
+              aria-label={resumeLabel}
+              onClick={(e) => {
+                e.stopPropagation();
+                resumeSession(session);
+              }}
+              className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
+            >
+              <Play size={13} />
+            </button>
+          </Tooltip>
+        )}
         <Tooltip label={pinLabel}>
           <button
             type="button"

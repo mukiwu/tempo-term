@@ -1,7 +1,8 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionsTabContent } from "./SessionsTabContent";
 import { useSessionsStore } from "./lib/sessionsStore";
+import { useTabsStore } from "@/stores/tabsStore";
 import type { SessionSummary, TranscriptMessage } from "./lib/sessionsBridge";
 
 // vi.mock is hoisted to the top of the file, so mocks must be created with
@@ -70,6 +71,7 @@ describe("SessionsTabContent", () => {
       agentFilter: "all",
       selectedId: null,
     });
+    useTabsStore.setState({ spaces: [], activeSpaceId: null, tabs: [], activeId: null });
   });
 
   it("shows the select prompt and total session count when nothing is selected", () => {
@@ -182,5 +184,34 @@ describe("SessionsTabContent", () => {
 
     expect(screen.getByText("session b message")).toBeInTheDocument();
     expect(screen.queryByText("session a message")).not.toBeInTheDocument();
+  });
+
+  it("resumes a claude session via the header button, opening a new terminal tab at its project cwd", async () => {
+    const target = session({ id: "a", agent: "claude", project_cwd: "/repo/app" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    const button = screen.getByRole("button", { name: "sessions.resume" });
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].kind).toBe("terminal");
+    expect(tabs[0].cwd).toBe("/repo/app");
+  });
+
+  it("disables the header resume button for antigravity sessions instead of hiding it", async () => {
+    const target = session({ id: "a", agent: "antigravity" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    expect(screen.getByRole("button", { name: "sessions.resume" })).toBeDisabled();
   });
 });

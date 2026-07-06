@@ -213,6 +213,26 @@ describe("SessionsPanel", () => {
     expect(useSessionsStore.getState().sessions[0].pinned).toBe(true);
   });
 
+  it("resumes a session via the row's resume button without selecting the row", async () => {
+    seedSessions([session({ id: "a", agent: "claude", project_cwd: "/repo/app" })]);
+    await renderSettled();
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.resume" }));
+
+    expect(useSessionsStore.getState().selectedId).toBe(null);
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].kind).toBe("terminal");
+    expect(tabs[0].cwd).toBe("/repo/app");
+  });
+
+  it("hides the resume button on rows for agents with no supported resume command", async () => {
+    seedSessions([session({ id: "a", agent: "antigravity" })]);
+    await renderSettled();
+
+    expect(screen.queryByRole("button", { name: "sessions.resume" })).not.toBeInTheDocument();
+  });
+
   it("unsubscribes from session updates on unmount", async () => {
     const { unmount } = await renderSettled();
     await waitFor(() => expect(mockListen).toHaveBeenCalled());
