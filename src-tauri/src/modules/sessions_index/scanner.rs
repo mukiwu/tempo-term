@@ -96,6 +96,8 @@ fn discover_from_roots(roots: &[(&'static str, PathBuf)]) -> Vec<SessionFile> {
                 // The two Codex roots share the "codex" tag; tell them apart
                 // by directory name, which is always exactly "sessions" or
                 // "archived_sessions" no matter how CODEX_HOME is set.
+                // Implicit contract: roots() is the only producer of these
+                // pairs, so the basename check can't misclassify a root.
                 if root.file_name().and_then(|n| n.to_str()) == Some("archived_sessions") {
                     discover_codex_archived(root, &mut out);
                 } else {
@@ -366,10 +368,14 @@ mod tests {
 
     #[test]
     fn discover_on_a_home_with_no_agent_trees_returns_empty() {
-        // Exercises the public discover() entry point (env-backed roots)
-        // against a home dir with none of the three trees present at all.
+        // A home dir with none of the three trees present at all yields
+        // nothing. Blank overrides mean "unset" (falling back to the
+        // home-relative defaults), keeping the test hermetic on machines
+        // where the real CLAUDE_CONFIG_DIR / CODEX_HOME / ANTIGRAVITY_CLI_DIR
+        // env vars are set — the env-backed discover() would honor those and
+        // walk real data trees.
         let home = temp_home("empty-home");
-        let found = discover(&home);
+        let found = discover_from_roots(&roots(&home, Some(""), Some(""), Some("")));
         assert!(found.is_empty());
         let _ = std::fs::remove_dir_all(&home);
     }
