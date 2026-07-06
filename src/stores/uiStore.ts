@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type SidebarView = "workspaces" | "explorer" | "sourceControl" | "ai" | "notes" | "connections";
+export type SidebarView = "workspaces" | "explorer" | "sourceControl" | "ai" | "notes" | "connections" | "sessions";
 
 interface UiState {
   sidebarView: SidebarView;

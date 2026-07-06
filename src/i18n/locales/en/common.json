@@ -48,7 +48,8 @@
     "notes": "Notes",
     "gitGraph": "Git Graph",
     "settings": "Settings",
-    "connections": "Connections"
+    "connections": "Connections",
+    "sessions": "AI Sessions"
   },
   "statusBar": {
     "ready": "Ready",
@@ -254,5 +255,19 @@
       "thinking": "Thinking",
       "waiting-approval": "Needs Approval"
     }
+  },
+  "sessions": {
+    "live": "Live",
+    "pinned": "Pinned",
+    "searchPlaceholder": "Search sessions…",
+    "all": "All",
+    "empty": "No sessions found",
+    "messages": "{{count}} msgs",
+    "resume": "Resume",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "selectPrompt": "Select a session from the sidebar",
+    "resumeUnavailable": "Resume is not available for this agent",
+    "indexing": "Indexing sessions…"
   }
 }

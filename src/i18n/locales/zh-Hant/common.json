@@ -48,7 +48,8 @@
     "notes": "筆記",
     "gitGraph": "Git 線圖",
     "settings": "設定",
-    "connections": "SSH 連線"
+    "connections": "SSH 連線",
+    "sessions": "AI 對話"
   },
   "statusBar": {
     "ready": "就緒",
@@ -254,5 +255,19 @@
       "thinking": "思考中",
       "waiting-approval": "等待批准"
     }
+  },
+  "sessions": {
+    "live": "進行中",
+    "pinned": "已釘選",
+    "searchPlaceholder": "搜尋對話…",
+    "all": "全部",
+    "empty": "沒有符合的對話",
+    "messages": "{{count}} 則訊息",
+    "resume": "接續對話",
+    "pin": "釘選",
+    "unpin": "取消釘選",
+    "selectPrompt": "從側邊欄選一場對話",
+    "resumeUnavailable": "這個 agent 不支援接續",
+    "indexing": "正在建立索引…"
   }
 }

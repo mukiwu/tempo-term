@@ -1,11 +1,12 @@
 import { useTranslation } from "react-i18next";
-import { Bot, FolderTree, GitBranch, LayoutGrid, NotebookPen, Server, type LucideIcon } from "lucide-react";
+import { Bot, FolderTree, GitBranch, History, LayoutGrid, NotebookPen, Server, type LucideIcon } from "lucide-react";
 import { ExplorerView } from "@/modules/explorer/ExplorerView";
 import { SourceControlView } from "@/modules/source-control/SourceControlView";
 import { AIView } from "@/modules/ai/AIView";
 import { NotesSidebar } from "@/modules/notes/NotesSidebar";
 import { WorkspacePanel } from "@/modules/workspace/WorkspacePanel";
 import { ConnectionsPanel } from "@/modules/ssh/ConnectionsPanel";
+import { SessionsPanel } from "@/modules/sessions/SessionsPanel";
 import { Tooltip } from "@/components/Tooltip";
 import { useUiStore, type SidebarView } from "@/stores/uiStore";
 import { probeStart } from "@/lib/perfProbe";
@@ -23,6 +24,7 @@ const SIDEBAR_TABS: SidebarTab[] = [
   { id: "notes", icon: NotebookPen, labelKey: "nav.notes" },
   { id: "ai", icon: Bot, labelKey: "nav.ai" },
   { id: "connections", icon: Server, labelKey: "nav.connections" },
+  { id: "sessions", icon: History, labelKey: "nav.sessions" },
 ];
 
 /**
@@ -82,6 +84,7 @@ export function Sidebar() {
         {sidebarView === "notes" && <NotesSidebar />}
         {sidebarView === "ai" && <AIView />}
         {sidebarView === "connections" && <ConnectionsPanel />}
+        {sidebarView === "sessions" && <SessionsPanel />}
       </div>
     </div>
   );

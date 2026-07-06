@@ -1,0 +1,194 @@
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SessionsPanel } from "./SessionsPanel";
+import { useSessionsStore } from "./lib/sessionsStore";
+import type { SessionSummary } from "./lib/sessionsBridge";
+
+// vi.mock is hoisted to the top of the file, so mocks must be created with
+// vi.hoisted() to be accessible inside the factory callbacks.
+const { mockInvoke, mockListen, mockUnlisten, sessionsFixture } = vi.hoisted(() => ({
+  mockInvoke: vi.fn(),
+  mockListen: vi.fn(),
+  mockUnlisten: vi.fn(),
+  // Backs the "sessions_list" invoke response. Kept in sync with whatever a
+  // test seeds into the store, so the panel's own on-mount refresh resolves
+  // to the same fixture instead of clobbering it with stale/empty data.
+  sessionsFixture: { current: [] as SessionSummary[] },
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (cmd: string) => {
+    mockInvoke(cmd);
+    if (cmd === "sessions_list") {
+      return Promise.resolve(sessionsFixture.current);
+    }
+    return Promise.resolve(undefined);
+  },
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: mockListen,
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts?.count !== undefined ? `${key}:${opts.count}` : key,
+  }),
+}));
+
+function session(overrides: Partial<SessionSummary>): SessionSummary {
+  return {
+    id: "id",
+    agent: "claude",
+    project_cwd: "/Users/muki/project",
+    title: "Untitled",
+    started_at: 0,
+    ended_at: 0,
+    message_count: 0,
+    user_message_count: 0,
+    output_tokens: null,
+    model: null,
+    file_path: "/tmp/session.jsonl",
+    pinned: false,
+    ...overrides,
+  };
+}
+
+/** Seeds both the store and the mocked backend response, so the panel's own
+ *  fire-and-forget `start()` on mount can't race the test with different data. */
+function seedSessions(sessions: SessionSummary[]) {
+  sessionsFixture.current = sessions;
+  useSessionsStore.setState({ sessions, loaded: true });
+}
+
+/** Renders the panel and waits for its on-mount `start()` (and the resulting
+ *  `refresh()`) to settle, so later assertions never race a pending state
+ *  update — and so that update happens inside `waitFor`'s act() wrapper. */
+async function renderSettled() {
+  const result = render(<SessionsPanel />);
+  await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_index_start"));
+  return result;
+}
+
+describe("SessionsPanel", () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockListen.mockReset().mockResolvedValue(mockUnlisten);
+    mockUnlisten.mockReset();
+    sessionsFixture.current = [];
+    useSessionsStore.setState({
+      sessions: [],
+      loaded: false,
+      query: "",
+      agentFilter: "all",
+      selectedId: null,
+    });
+  });
+
+  it("starts the backend index and subscribes to updates on mount", async () => {
+    await renderSettled();
+    expect(mockListen).toHaveBeenCalledWith("sessions-index:updated", expect.any(Function));
+  });
+
+  it("shows the indexing placeholder before the store has loaded", async () => {
+    render(<SessionsPanel />);
+    // Assert before the on-mount start()/refresh() pipeline can resolve.
+    expect(screen.getByText("sessions.indexing")).toBeInTheDocument();
+    // Then drain it under act(), so it can't update state after this test
+    // ends and spill an act() warning into whichever test runs next.
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_index_start"));
+  });
+
+  it("shows the empty state once loaded with no sessions", async () => {
+    seedSessions([]);
+    await renderSettled();
+    expect(screen.getByText("sessions.empty")).toBeInTheDocument();
+  });
+
+  it("renders pinned and history sections with agent badge, project, and message count", async () => {
+    const pinnedSession = session({
+      id: "p1",
+      title: "Fix flaky test",
+      pinned: true,
+      agent: "codex",
+      project_cwd: "/Users/muki/tempo-term",
+      message_count: 4,
+    });
+    const historySession = session({
+      id: "h1",
+      title: "Refactor bridge",
+      agent: "claude",
+      message_count: 2,
+    });
+    seedSessions([pinnedSession, historySession]);
+
+    await renderSettled();
+
+    expect(screen.getByText("sessions.pinned")).toBeInTheDocument();
+    expect(screen.getByText("Fix flaky test")).toBeInTheDocument();
+    // "Codex"/"Claude" also appear as filter-chip button labels, so scope the
+    // badge assertion to the <span> the row renders it in.
+    expect(screen.getByText("Codex", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText("Refactor bridge")).toBeInTheDocument();
+    expect(screen.getByText("Claude", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText(/tempo-term/)).toBeInTheDocument();
+    expect(screen.getByText(/sessions\.messages:4/)).toBeInTheDocument();
+  });
+
+  it("filters the list as the search query changes", async () => {
+    seedSessions([
+      session({ id: "a", title: "Deploy script" }),
+      session({ id: "b", title: "Unrelated" }),
+    ]);
+    await renderSettled();
+
+    fireEvent.change(screen.getByPlaceholderText("sessions.searchPlaceholder"), {
+      target: { value: "deploy" },
+    });
+
+    expect(screen.getByText("Deploy script")).toBeInTheDocument();
+    expect(screen.queryByText("Unrelated")).not.toBeInTheDocument();
+  });
+
+  it("filters the list by agent chip", async () => {
+    seedSessions([
+      session({ id: "a", title: "Claude session", agent: "claude" }),
+      session({ id: "b", title: "Codex session", agent: "codex" }),
+    ]);
+    await renderSettled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Codex", pressed: false }));
+
+    expect(screen.getByText("Codex session")).toBeInTheDocument();
+    expect(screen.queryByText("Claude session")).not.toBeInTheDocument();
+  });
+
+  it("selects a session on row click", async () => {
+    seedSessions([session({ id: "a", title: "Deploy script" })]);
+    await renderSettled();
+
+    fireEvent.click(screen.getByText("Deploy script"));
+
+    expect(useSessionsStore.getState().selectedId).toBe("a");
+  });
+
+  it("toggles pin via the row's pin button without selecting the row", async () => {
+    seedSessions([session({ id: "a", title: "Deploy script", pinned: false })]);
+    await renderSettled();
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.pin" }));
+
+    expect(useSessionsStore.getState().selectedId).toBe(null);
+    expect(useSessionsStore.getState().sessions[0].pinned).toBe(true);
+  });
+
+  it("unsubscribes from session updates on unmount", async () => {
+    const { unmount } = await renderSettled();
+    await waitFor(() => expect(mockListen).toHaveBeenCalled());
+
+    unmount();
+
+    expect(mockUnlisten).toHaveBeenCalled();
+  });
+});
