@@ -78,7 +78,9 @@ import { ActionCard } from "./ActionCard";
 import { buildCellPositions, gatherLogicalLine } from "./lib/cellPositions";
 import { terminalKeySequence } from "./lib/terminalKeymap";
 import { shouldCdToRoot } from "./lib/cwdSync";
-import { parseOsc7Cwd } from "./lib/osc7";
+import { parseOsc7Cwd, parseOsc7RemotePath } from "./lib/osc7";
+import { remoteCwdStore } from "@/modules/ssh/lib/remoteCwdStore";
+import { buildRemoteUri } from "@/modules/ssh/lib/remotePath";
 import { applyTerminalPadding } from "./lib/terminalPadding";
 import { debounce } from "@/lib/debounce";
 import { dropOverlayClassName } from "@/components/EntryDropOverlay";
@@ -340,15 +342,24 @@ export function TerminalView({
       return true; // consume so the sequence never reaches the screen
     });
 
-    // On Windows the injected shell integration reports the shell's cwd with
-    // OSC 7 at every prompt (see lib/osc7.ts for why Windows can't poll the OS
-    // the way macOS/Linux do). Record it for session restore and pane
-    // activation, and forward it live to the cwd-tracking effect. SSH panes are
-    // skipped like the polling path skips them — a remote cwd means nothing to
-    // the local explorer, and parseOsc7Cwd rejects non-local reports anyway.
-    const osc7Handler = IS_WINDOWS
+    // OSC 7 cwd reports. Two emitters use this pane-lifetime handler: the
+    // Windows local shell integration (see lib/osc7.ts), and — on every
+    // platform — a remote shell over SSH that the user has configured to
+    // announce its cwd (see the connection form's setup snippet). Local
+    // macOS/Linux panes keep polling the OS instead and register no handler.
+    const osc7Handler = IS_WINDOWS || sshRef.current
       ? term.parser.registerOscHandler(7, (payload) => {
-          if (!sshRef.current) {
+          const paneSsh = sshRef.current;
+          if (paneSsh) {
+            const dir = parseOsc7RemotePath(payload);
+            if (dir) {
+              // Record for pane re-activation and the fallback hint even while
+              // inactive; the cwd-tracking effect applies it live when active.
+              remoteCwdStore.getState().report(paneSsh.connectionId, dir);
+              osc7CwdRef.current = dir;
+              osc7ApplyRef.current?.(dir);
+            }
+          } else {
             const dir = parseOsc7Cwd(payload);
             if (dir) {
               osc7CwdRef.current = dir;
@@ -842,7 +853,7 @@ export function TerminalView({
         // A freshly opened tracking pane drives the explorer to its start dir
         // right away instead of waiting for the next cwd poll. (Lets "open in
         // terminal" sync the explorer via the NEW pane, leaving others untouched.)
-        if (cwdTracking && cwdRef.current) {
+        if (cwdTracking && !sshRef.current && cwdRef.current) {
           useWorkspaceStore.getState().setRoot(cwdRef.current);
         }
         setSshDisconnected(false);
@@ -1051,11 +1062,36 @@ export function TerminalView({
   }, [terminalPadding]);
 
   // While this pane is the live one, follow its shell's working directory so
-  // the file explorer tracks `cd`. SSH panes skip this entirely — they have no
-  // cwd() or foregroundCommand() methods.
+  // the file explorer tracks `cd`. SSH panes take a different path below — no
+  // cwd() or foregroundCommand() methods, so they ride OSC 7 reports instead.
   useEffect(() => {
-    if (!cwdTracking || sshRef.current) {
+    if (!cwdTracking) {
       return;
+    }
+    const paneSsh = sshRef.current;
+    if (paneSsh) {
+      // Remote pane: OSC 7 reports (already recorded by the mount handler)
+      // drive the explorer root while this pane is the active driver. No lsof
+      // poll (the shell is on another machine), no reverse explorer→shell cd,
+      // and no tab title sync — SSH tabs are user-named.
+      let last = "";
+      let firstSync = true;
+      const applyRemote = (dir: string) => {
+        if (dir !== last || firstSync) {
+          last = dir;
+          firstSync = false;
+          useWorkspaceStore.getState().setRoot(buildRemoteUri(paneSsh.connectionId, dir));
+        }
+      };
+      osc7ApplyRef.current = applyRemote;
+      if (osc7CwdRef.current) {
+        applyRemote(osc7CwdRef.current);
+      }
+      return () => {
+        if (osc7ApplyRef.current === applyRemote) {
+          osc7ApplyRef.current = null;
+        }
+      };
     }
     let cancelled = false;
     // Seed with the shell's starting dir so the mount-time setRoot (which fires

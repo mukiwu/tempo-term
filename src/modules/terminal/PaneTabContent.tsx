@@ -468,10 +468,9 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     active={active}
                     isActiveTab={isActiveTab}
                     cwdTracking={
-                      active &&
-                      isActiveTab &&
-                      // SSH panes have no cwd; skip cwd tracking for them.
-                      (pane.content.kind !== "terminal" || !pane.content.ssh)
+                      // SSH panes track cwd through OSC 7 reports from the
+                      // remote shell instead of the local poll.
+                      active && isActiveTab
                     }
                     cwd={resolveTerminalCwd(
                       pane.content.kind === "terminal" ? pane.content.cwd : undefined,
