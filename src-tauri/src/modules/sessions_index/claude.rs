@@ -228,7 +228,10 @@ pub fn parse_claude_meta(path: &Path) -> Option<ParsedSession> {
             .and_then(|u| u.get("output_tokens"))
             .and_then(Value::as_i64);
         if let Some(tokens) = tokens {
-            *output_tokens.get_or_insert(0) += tokens;
+            // Saturate rather than overflow on absurd token counts from
+            // corrupt files.
+            let total = output_tokens.get_or_insert(0);
+            *total = total.saturating_add(tokens);
         }
         if !is_user {
             if let Some(m) = entry.value.get("message").and_then(|m| m.get("model")).and_then(Value::as_str) {
@@ -250,7 +253,7 @@ pub fn parse_claude_meta(path: &Path) -> Option<ParsedSession> {
                 bucket.user_messages += 1;
             }
             if let Some(tokens) = tokens {
-                bucket.output_tokens += tokens;
+                bucket.output_tokens = bucket.output_tokens.saturating_add(tokens);
             }
         }
     }
@@ -275,17 +278,19 @@ pub fn parse_claude_meta(path: &Path) -> Option<ParsedSession> {
         ended_at = 0;
     }
 
+    // First NON-EMPTY value wins; a present-but-empty field on an early line
+    // must not short-circuit the search.
     let id = entries
         .iter()
-        .find_map(|e| e.value.get("sessionId").and_then(Value::as_str))
-        .filter(|s| !s.is_empty())
+        .filter_map(|e| e.value.get("sessionId").and_then(Value::as_str))
+        .find(|s| !s.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
 
     let project_cwd = entries
         .iter()
-        .find_map(|e| e.value.get("cwd").and_then(Value::as_str))
-        .filter(|s| !s.is_empty())
+        .filter_map(|e| e.value.get("cwd").and_then(Value::as_str))
+        .find(|s| !s.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| {
             path.parent()
@@ -355,6 +360,12 @@ pub fn parse_claude_transcript(path: &Path) -> Vec<TranscriptMessage> {
     let mut out = Vec::new();
     for &i in &main {
         let entry = &entries[i];
+        // Same skip rules as the meta pass: meta/sidechain lines and
+        // tool_result-only user lines never render in the viewer, even when
+        // they sit on the main path.
+        if !is_countable(&entry.value) {
+            continue;
+        }
         let type_ = entry.value.get("type").and_then(Value::as_str).unwrap_or("");
         let timestamp = entry.value.get("timestamp").and_then(Value::as_str).and_then(epoch_ms);
         let content = match entry.value.get("message").and_then(|m| m.get("content")) {
@@ -485,6 +496,88 @@ mod tests {
         let t = parse_claude_transcript(&path);
         let texts: Vec<&str> = t.iter().map(|m| m.text.as_str()).collect();
         assert_eq!(texts, vec!["root", "second try", "go on"]);
+    }
+
+    // An isMeta user line with real text sitting on a NON-forked (single-child)
+    // main-path segment: the skip rule itself must hide it from the transcript,
+    // not fork selection (BASIC's isMeta line is only dropped because it loses
+    // a fork).
+    const META_ON_MAIN_PATH: &str = concat!(
+        r#"{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"s","timestamp":"2026-07-06T01:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}"#, "\n",
+        r#"{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-07-06T01:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}"#, "\n",
+        r#"{"type":"user","uuid":"m1","parentUuid":"a1","isMeta":true,"timestamp":"2026-07-06T01:00:02.000Z","message":{"role":"user","content":[{"type":"text","text":"meta noise"}]}}"#, "\n",
+        r#"{"type":"user","uuid":"u2","parentUuid":"m1","timestamp":"2026-07-06T01:00:03.000Z","message":{"role":"user","content":[{"type":"text","text":"next"}]}}"#, "\n",
+    );
+
+    #[test]
+    fn transcript_skips_meta_lines_on_the_main_path() {
+        let path = write_fixture("meta-main", META_ON_MAIN_PATH);
+        let t = parse_claude_transcript(&path);
+        let texts: Vec<&str> = t.iter().map(|m| m.text.as_str()).collect();
+        assert_eq!(texts, vec!["hello", "hi", "next"]);
+    }
+
+    // Real transcripts open with house-keeping records (last-prompt, mode,
+    // permission-mode...) that carry no uuid at all. They must never be
+    // mistaken for the conversation root, or the DAG walk dead-ends at once.
+    #[test]
+    fn uuid_less_housekeeping_lines_never_claim_the_root() {
+        let contents = format!(
+            "{}\n{}",
+            r#"{"type":"last-prompt","leafUuid":"x","sessionId":"sess-1"}"#,
+            BASIC
+        );
+        let path = write_fixture("housekeeping-root", &contents);
+        let meta = parse_claude_meta(&path).unwrap();
+        assert_eq!(meta.message_count, 3);
+        assert_eq!(meta.user_message_count, 1);
+    }
+
+    // A present-but-empty sessionId/cwd on an early line must not shadow a
+    // later non-empty value.
+    #[test]
+    fn later_non_empty_session_id_and_cwd_win_over_empty_ones() {
+        let contents = concat!(
+            r#"{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"","cwd":"","timestamp":"2026-07-06T01:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}"#, "\n",
+            r#"{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"sess-9","cwd":"/p/beta","timestamp":"2026-07-06T01:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}"#, "\n",
+        );
+        let path = write_fixture("empty-ids", contents);
+        let meta = parse_claude_meta(&path).unwrap();
+        assert_eq!(meta.id, "sess-9");
+        assert_eq!(meta.project_cwd, "/p/beta");
+    }
+
+    // Corrupt DAG data: a mutual parentUuid cycle (a2 <-> a3) and a
+    // self-referencing entry alongside a normal rooted chain. Parsing must
+    // terminate and keep the rooted chain.
+    const CYCLIC: &str = concat!(
+        r#"{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"s","timestamp":"2026-07-06T01:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"start"}]}}"#, "\n",
+        r#"{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-07-06T01:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"one"}]}}"#, "\n",
+        r#"{"type":"assistant","uuid":"a2","parentUuid":"a3","timestamp":"2026-07-06T01:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"two"}]}}"#, "\n",
+        r#"{"type":"assistant","uuid":"a3","parentUuid":"a2","timestamp":"2026-07-06T01:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"three"}]}}"#, "\n",
+        r#"{"type":"assistant","uuid":"x","parentUuid":"x","timestamp":"2026-07-06T01:00:04.000Z","message":{"role":"assistant","content":[{"type":"text","text":"selfie"}]}}"#, "\n",
+    );
+
+    // A file where EVERY entry sits in a cycle (no root at all): the walk must
+    // fall back to linear order instead of returning nothing or hanging.
+    const ALL_CYCLIC: &str = concat!(
+        r#"{"type":"user","uuid":"a","parentUuid":"b","sessionId":"s","timestamp":"2026-07-06T01:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"ping"}]}}"#, "\n",
+        r#"{"type":"assistant","uuid":"b","parentUuid":"a","timestamp":"2026-07-06T01:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"pong"}]}}"#, "\n",
+    );
+
+    #[test]
+    fn cyclic_parent_data_terminates_with_sane_output() {
+        let path = write_fixture("cycle", CYCLIC);
+        let meta = parse_claude_meta(&path).unwrap();
+        // The unreachable cycles are dropped; the rooted u1 -> a1 chain remains.
+        assert_eq!(meta.message_count, 2);
+        assert_eq!(parse_claude_transcript(&path).len(), 2);
+
+        let path = write_fixture("all-cycle", ALL_CYCLIC);
+        let meta = parse_claude_meta(&path).unwrap();
+        // No root exists, so linear order keeps both countable messages.
+        assert_eq!(meta.message_count, 2);
+        assert_eq!(meta.user_message_count, 1);
     }
 
     #[test]
