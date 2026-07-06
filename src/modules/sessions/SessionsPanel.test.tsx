@@ -127,11 +127,11 @@ describe("SessionsPanel", () => {
 
     expect(screen.getByText("sessions.pinned")).toBeInTheDocument();
     expect(screen.getByText("Fix flaky test")).toBeInTheDocument();
-    // "Codex"/"Claude" also appear as filter-chip button labels, so scope the
+    // Agent labels also appear as filter-chip button labels, so scope the
     // badge assertion to the <span> the row renders it in.
-    expect(screen.getByText("Codex", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText("sessions.agents.codex", { selector: "span" })).toBeInTheDocument();
     expect(screen.getByText("Refactor bridge")).toBeInTheDocument();
-    expect(screen.getByText("Claude", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText("sessions.agents.claude", { selector: "span" })).toBeInTheDocument();
     expect(screen.getByText(/tempo-term/)).toBeInTheDocument();
     expect(screen.getByText(/sessions\.messages:4/)).toBeInTheDocument();
   });
@@ -158,7 +158,7 @@ describe("SessionsPanel", () => {
     ]);
     await renderSettled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Codex", pressed: false }));
+    fireEvent.click(screen.getByRole("button", { name: "sessions.agents.codex", pressed: false }));
 
     expect(screen.getByText("Codex session")).toBeInTheDocument();
     expect(screen.queryByText("Claude session")).not.toBeInTheDocument();
@@ -171,6 +171,11 @@ describe("SessionsPanel", () => {
     fireEvent.click(screen.getByText("Deploy script"));
 
     expect(useSessionsStore.getState().selectedId).toBe("a");
+    // The selected row's button is announced as current to assistive tech.
+    expect(screen.getByText("Deploy script").closest("button")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
   });
 
   it("toggles pin via the row's pin button without selecting the row", async () => {
@@ -190,5 +195,26 @@ describe("SessionsPanel", () => {
     unmount();
 
     expect(mockUnlisten).toHaveBeenCalled();
+  });
+
+  it("releases the listener when unmounted before the subscription resolves", async () => {
+    // Hold the listen promise open so unmount happens first — the race that
+    // fast sidebar-tab switching hits in the real app.
+    let resolveListen!: (fn: () => void) => void;
+    mockListen.mockImplementation(
+      () =>
+        new Promise<() => void>((resolve) => {
+          resolveListen = resolve;
+        }),
+    );
+    const { unmount } = render(<SessionsPanel />);
+
+    unmount();
+    expect(mockUnlisten).not.toHaveBeenCalled();
+
+    resolveListen(mockUnlisten);
+
+    // The late-arriving unlisten fn must still be invoked, not leaked.
+    await waitFor(() => expect(mockUnlisten).toHaveBeenCalled());
   });
 });

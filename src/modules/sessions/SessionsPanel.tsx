@@ -9,13 +9,14 @@ import { formatRelativeTime } from "./lib/relativeTime";
 /** Filter chip order, "all" first. */
 const AGENT_FILTERS: Array<SessionAgent | "all"> = ["all", "claude", "codex", "antigravity"];
 
-/** Display label and accent color per agent, reusing the theme's existing
- *  semantic color tokens — none of these are agent-specific, they're just
- *  distinct enough to tell the three badges apart at a glance. */
-const AGENT_BADGE: Record<SessionAgent, { label: string; className: string }> = {
-  claude: { label: "Claude", className: "text-accent" },
-  codex: { label: "Codex", className: "text-fg-subtle" },
-  antigravity: { label: "Antigravity", className: "text-warning" },
+/** Badge color per agent, reusing the theme's existing semantic color
+ *  tokens — none of these are agent-specific, they're just distinct enough
+ *  to tell the three badges apart at a glance. Display labels live in i18n
+ *  under `sessions.agents.*`. */
+const AGENT_BADGE_CLASS: Record<SessionAgent, string> = {
+  claude: "text-accent",
+  codex: "text-fg-subtle",
+  antigravity: "text-warning",
 };
 
 /** The last path segment of a cwd, for the row's secondary line. Split on
@@ -34,13 +35,13 @@ function SessionRow({ session, selected }: SessionRowProps) {
   const { t } = useTranslation();
   const select = useSessionsStore((s) => s.select);
   const togglePin = useSessionsStore((s) => s.togglePin);
-  const badge = AGENT_BADGE[session.agent];
   const pinLabel = t(session.pinned ? "sessions.unpin" : "sessions.pin");
 
   return (
     <li className="group flex items-center">
       <button
         type="button"
+        aria-current={selected ? "true" : undefined}
         onClick={() => select(session.id)}
         className={`flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left ${
           selected ? "bg-bg-elevated" : "hover:bg-bg-elevated"
@@ -51,8 +52,10 @@ function SessionRow({ session, selected }: SessionRowProps) {
             <span className="min-w-0 truncate text-sm text-fg-muted group-hover:text-fg">
               {session.title}
             </span>
-            <span className={`shrink-0 text-[10px] font-medium uppercase ${badge.className}`}>
-              {badge.label}
+            <span
+              className={`shrink-0 text-[10px] font-medium uppercase ${AGENT_BADGE_CLASS[session.agent]}`}
+            >
+              {t(`sessions.agents.${session.agent}`)}
             </span>
           </div>
           <div className="truncate text-xs text-fg-subtle">
@@ -93,14 +96,24 @@ export function SessionsPanel() {
   useEffect(() => {
     void useSessionsStore.getState().start();
 
+    // The subscription resolves asynchronously. If the panel unmounts before
+    // it lands (fast sidebar-tab switching — the panel is conditionally
+    // rendered), release the listener the moment it arrives instead of
+    // leaking it for the rest of the app's lifetime.
+    let disposed = false;
     let unlisten: (() => void) | undefined;
     void onSessionsUpdated(() => {
       void useSessionsStore.getState().refresh();
     }).then((fn) => {
-      unlisten = fn;
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
     });
 
     return () => {
+      disposed = true;
       unlisten?.();
     };
   }, []);
@@ -138,7 +151,7 @@ export function SessionsPanel() {
                 agentFilter === key ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
               }`}
             >
-              {key === "all" ? t("sessions.all") : AGENT_BADGE[key].label}
+              {key === "all" ? t("sessions.all") : t(`sessions.agents.${key}`)}
             </button>
           ))}
         </div>

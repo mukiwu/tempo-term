@@ -268,6 +268,11 @@
     "unpin": "取消釘選",
     "selectPrompt": "從側邊欄選一場對話",
     "resumeUnavailable": "這個 agent 不支援接續",
-    "indexing": "正在建立索引…"
+    "indexing": "正在建立索引…",
+    "agents": {
+      "claude": "Claude",
+      "codex": "Codex",
+      "antigravity": "Antigravity"
+    }
   }
 }
