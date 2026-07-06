@@ -101,6 +101,11 @@
     "close": "關閉"
   },
   "paneCapacityAlert": "這個分頁最多只能開 8 個面板，請先關掉一個再試",
+  "osc7Hint": {
+    "title": "跟隨遠端 cd",
+    "message": "這個 SSH 連線尚未回報工作目錄，檔案總管無法跟隨遠端的 cd。編輯這個連線可複製一段 shell 設定片段來啟用。",
+    "confirm": "知道了"
+  },
   "placeholder": {
     "comingSoon": "即將推出",
     "terminalArea": "終端機工作階段會顯示在這裡",

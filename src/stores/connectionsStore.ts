@@ -22,6 +22,8 @@ export interface SshConnection {
   keyPath?: string;
   rememberSecret: boolean;
   portForwards?: PortForward[];
+  /** The OSC 7 setup hint was dismissed for this connection — never show it again. */
+  osc7HintDismissed?: boolean;
 }
 
 interface ConnectionsState {

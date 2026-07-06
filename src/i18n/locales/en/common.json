@@ -101,6 +101,11 @@
     "close": "Close"
   },
   "paneCapacityAlert": "This tab can hold at most 8 panes — close one and try again",
+  "osc7Hint": {
+    "title": "Follow remote cd",
+    "message": "This SSH session hasn't reported its working directory, so the file explorer can't follow cd on the remote host. Edit this connection to copy a one-line shell setup snippet that enables it.",
+    "confirm": "Got it"
+  },
   "placeholder": {
     "comingSoon": "Coming soon",
     "terminalArea": "Terminal sessions will appear here",
