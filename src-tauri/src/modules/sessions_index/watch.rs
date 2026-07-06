@@ -6,7 +6,8 @@
 //! `recv_timeout(500ms)` batches, maps each drained path back to its owning
 //! agent by matching it against the resolved root list (a `-wal`/`-shm`
 //! companion maps back to its `.db` first), re-syncs the dirty files via
-//! `sync::sync_file`, and emits one `sessions-index:updated` event per batch
+//! `sync::sync_file_unlocked` (which only ever locks the index briefly, never
+//! while parsing), and emits one `sessions-index:updated` event per batch
 //! that actually changed something — so a burst of writes from an actively
 //! streaming session collapses into a single frontend refresh instead of one
 //! per filesystem event.
@@ -27,7 +28,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::index::Index;
 use super::scanner;
-use super::sync::sync_file;
+use super::sync::sync_file_unlocked;
 
 /// How long the worker thread waits for another event before flushing the
 /// batch it has collected so far.
@@ -148,20 +149,22 @@ fn drain_loop(
             batch.push(path);
         }
 
+        // Each file is synced via sync_file_unlocked, which locks the index
+        // only for its brief needs_sync check and its commit — never while
+        // parsing — so a burst of changed files never holds the lock for
+        // the whole batch (see sync.rs's doc comment on the same shape in
+        // full_sync).
         let mut dirty = 0usize;
-        {
-            let index = index.lock().unwrap();
-            let mut synced_this_batch: HashSet<PathBuf> = HashSet::new();
-            for path in batch {
-                let Some((agent, session_path)) = resolve(&roots, &path) else { continue };
-                // A single write can fire several raw events for the same
-                // file (data + metadata); only sync it once per batch.
-                if !synced_this_batch.insert(session_path.clone()) {
-                    continue;
-                }
-                if sync_file(&index, agent, &session_path) {
-                    dirty += 1;
-                }
+        let mut synced_this_batch: HashSet<PathBuf> = HashSet::new();
+        for path in batch {
+            let Some((agent, session_path)) = resolve(&roots, &path) else { continue };
+            // A single write can fire several raw events for the same
+            // file (data + metadata); only sync it once per batch.
+            if !synced_this_batch.insert(session_path.clone()) {
+                continue;
+            }
+            if sync_file_unlocked(&index, agent, &session_path) {
+                dirty += 1;
             }
         }
 

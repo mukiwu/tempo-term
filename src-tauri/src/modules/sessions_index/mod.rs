@@ -73,13 +73,13 @@ pub fn sessions_index_start(app: AppHandle, state: State<SessionsIndexState>) ->
 
     // A full sync walks every session file on disk, which can take a while
     // on a machine with years of history; never block this command (and
-    // therefore the caller awaiting it) on that.
+    // therefore the caller awaiting it) on that. `full_sync` itself never
+    // holds `index`'s lock across that whole walk either — see its doc
+    // comment — so `sessions_list` stays responsive on the main thread
+    // while this background sync is still running.
     let app_bg = app.clone();
     std::thread::spawn(move || {
-        let count = {
-            let index = index.lock().unwrap();
-            sync::full_sync(&index, &home)
-        };
+        let count = sync::full_sync(&index, &home);
         watch::emit_updated(&app_bg, count);
     });
 
@@ -88,13 +88,26 @@ pub fn sessions_index_start(app: AppHandle, state: State<SessionsIndexState>) ->
 
 /// Every indexed session, newest-first, pinned sessions flagged. Empty
 /// before `sessions_index_start` has run.
+///
+/// Async and offloaded to a blocking pool thread — mirrors `sessions_get`'s
+/// rationale — so that even brief, incidental contention on the index lock
+/// (e.g. the startup full sync mid-commit) never blocks the main thread the
+/// IPC runtime would otherwise run this on. Returns `Result` only because
+/// Tauri requires it of async commands taking a `State` reference; the
+/// error case here is just `spawn_blocking`'s own join failure, never a
+/// real lookup failure (those already degrade to an empty `Vec`).
 #[tauri::command]
-pub fn sessions_list(state: State<SessionsIndexState>) -> Vec<SessionSummary> {
-    let guard = state.inner.lock().unwrap();
-    match guard.as_ref() {
-        Some(inner) => inner.index.lock().unwrap().list(),
-        None => Vec::new(),
-    }
+pub async fn sessions_list(state: State<'_, SessionsIndexState>) -> Result<Vec<SessionSummary>, String> {
+    let index = {
+        let guard = state.inner.lock().unwrap();
+        guard.as_ref().map(|inner| Arc::clone(&inner.index))
+    };
+    let Some(index) = index else {
+        return Ok(Vec::new());
+    };
+    tauri::async_runtime::spawn_blocking(move || index.lock().unwrap().list())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Re-parses a session's full transcript from its source file, for the
