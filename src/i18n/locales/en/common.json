@@ -198,6 +198,12 @@
       "destHost": "Destination host",
       "destPort": "Destination port",
       "enabled": "Enabled"
+    },
+    "osc7": {
+      "toggle": "Follow remote cd (shell setup)",
+      "explanation": "To let the file explorer follow cd on the remote host, the remote shell must announce its working directory (OSC 7). Paste this into the remote shell's rc file:",
+      "copy": "Copy snippet",
+      "copied": "Copied"
     }
   },
   "workspace": {

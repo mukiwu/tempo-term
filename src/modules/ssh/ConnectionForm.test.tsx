@@ -338,4 +338,23 @@ describe("ConnectionForm", () => {
     // The row should be pre-filled with the saved destHost
     expect(screen.getByDisplayValue("internal.server")).toBeInTheDocument();
   });
+
+  // ──────────────────────────────────────────────
+  // OSC 7 setup section
+  // ──────────────────────────────────────────────
+
+  describe("OSC 7 setup section", () => {
+    it("reveals the snippet on toggle and copies it", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.assign(navigator, { clipboard: { writeText } });
+
+      render(<ConnectionForm onClose={() => {}} />);
+      fireEvent.click(screen.getByText(/follow remote cd/i));
+      expect(screen.getByText(/PROMPT_COMMAND/)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /copy snippet/i }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+      expect(writeText.mock.calls[0][0]).toContain("add-zsh-hook precmd");
+    });
+  });
 });

@@ -8,6 +8,7 @@ import { useTabsStore } from "@/stores/tabsStore";
 import type { SshAuthMethod } from "@/modules/ssh/lib/parseSshCommand";
 import { pickFile } from "@/lib/dialog";
 import { useOverlayGuard } from "@/lib/overlayGuard";
+import { OSC7_SNIPPET } from "./lib/osc7Snippet";
 
 interface ConnectionFormProps {
   /** When provided, the form is in edit mode pre-filled from this connection. */
@@ -121,6 +122,8 @@ export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
   const [pasteIgnored, setPasteIgnored] = useState<string[]>([]);
   const [pasteWarnings, setPasteWarnings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [showOsc7, setShowOsc7] = useState(false);
+  const [osc7Copied, setOsc7Copied] = useState(false);
 
   const isEdit = !!connection;
 
@@ -516,6 +519,41 @@ export function ConnectionForm({ connection, onClose }: ConnectionFormProps) {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border" />
+
+          {/* OSC 7 / follow remote cd */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowOsc7((v) => !v)}
+              className="text-xs font-medium text-fg-muted hover:text-fg"
+            >
+              {showOsc7 ? "▾" : "▸"} {t("connectionForm.osc7.toggle")}
+            </button>
+            {showOsc7 && (
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-fg-subtle">
+                  {t("connectionForm.osc7.explanation")}
+                </p>
+                <pre className="overflow-x-auto rounded border border-border bg-bg-inset p-2 text-[11px] leading-relaxed text-fg-muted font-mono">
+                  {OSC7_SNIPPET}
+                </pre>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(OSC7_SNIPPET);
+                    setOsc7Copied(true);
+                  }}
+                  className="rounded border border-border px-2 py-1 text-xs text-fg-muted hover:bg-bg-inset hover:text-fg"
+                >
+                  {osc7Copied
+                    ? t("connectionForm.osc7.copied")
+                    : t("connectionForm.osc7.copy")}
+                </button>
               </div>
             )}
           </div>

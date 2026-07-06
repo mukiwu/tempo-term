@@ -198,6 +198,12 @@
       "destHost": "目標主機",
       "destPort": "目標埠號",
       "enabled": "啟用"
+    },
+    "osc7": {
+      "toggle": "跟隨遠端 cd（shell 設定）",
+      "explanation": "要讓檔案總管跟隨遠端主機上的 cd，遠端 shell 必須回報工作目錄（OSC 7）。把這段貼進遠端 shell 的 rc 檔：",
+      "copy": "複製片段",
+      "copied": "已複製"
     }
   },
   "workspace": {
