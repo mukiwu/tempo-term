@@ -396,6 +396,104 @@ mod tests {
         assert!(parse_antigravity_meta(std::path::Path::new("/nope/x.db")).is_none());
     }
 
+    /// Encodes a `step_payload` using the REAL nested shape observed in
+    /// production DBs (see the module doc's "Correction" section):
+    ///
+    ///   - field 5 = step-metadata wrapper whose sub-field 1 is the
+    ///     `Timestamp` message (seconds field 1, nanos field 2), alongside
+    ///     sibling bookkeeping fields the parser must ignore;
+    ///   - text inside a role-specific wrapper: field 19 sub-field 2 for
+    ///     user steps, field 20 sub-field 3 for assistant steps, again with
+    ///     sibling fields present.
+    ///
+    /// `text: None` builds a tool-call-only turn: the role wrapper exists
+    /// but carries no text sub-field, which the parser must skip.
+    fn real_step_payload(is_user: bool, ts_seconds: u64, ts_nanos: u64, text: Option<&str>) -> Vec<u8> {
+        let mut ts = Vec::new();
+        field_varint(1, ts_seconds, &mut ts);
+        field_varint(2, ts_nanos, &mut ts);
+        let mut ts_wrapper = Vec::new();
+        field_bytes(1, &ts, &mut ts_wrapper);
+        field_varint(3, 4, &mut ts_wrapper); // sibling status code, as in real data
+
+        let (wrapper_no, text_no) = if is_user { (19u32, 2u32) } else { (20u32, 3u32) };
+        let mut content = Vec::new();
+        field_bytes(6, b"bot-uuid-noise", &mut content); // sibling field, as in real data
+        if let Some(text) = text {
+            field_bytes(text_no, text.as_bytes(), &mut content);
+        }
+
+        let mut buf = Vec::new();
+        field_varint(1, if is_user { 14 } else { 15 }, &mut buf); // step type echo, as in real data
+        field_bytes(5, &ts_wrapper, &mut buf);
+        field_bytes(wrapper_no, &content, &mut buf);
+        buf
+    }
+
+    /// A fixture DB whose payloads use the real nested encoding, plus one
+    /// `gen_metadata` row shaped like production (field 1 submessage with
+    /// the model display name at sub-field 21).
+    fn real_shape_fixture_db(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("tt-ag-real-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE steps(idx INTEGER PRIMARY KEY, step_type INTEGER NOT NULL DEFAULT 0,
+               status INTEGER NOT NULL DEFAULT 0, step_payload BLOB, step_format INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE gen_metadata(idx INTEGER PRIMARY KEY, data BLOB, size INTEGER NOT NULL DEFAULT 0);",
+        ).unwrap();
+        conn.execute("INSERT INTO steps(idx, step_type, step_payload) VALUES(0, 14, ?1)",
+            params![real_step_payload(true, 1_751_760_000, 500_000_000, Some("real user prompt"))]).unwrap();
+        conn.execute("INSERT INTO steps(idx, step_type, step_payload) VALUES(1, 15, ?1)",
+            params![real_step_payload(false, 1_751_760_060, 0, Some("real assistant reply"))]).unwrap();
+        // Tool-call-only assistant turn: wrapper present, no text sub-field.
+        conn.execute("INSERT INTO steps(idx, step_type, step_payload) VALUES(2, 15, ?1)",
+            params![real_step_payload(false, 1_751_760_070, 0, None)]).unwrap();
+        // Non-conversational step type, ignored outright.
+        conn.execute("INSERT INTO steps(idx, step_type, step_payload) VALUES(3, 7, ?1)",
+            params![real_step_payload(true, 1_751_760_080, 0, Some("ignored step type"))]).unwrap();
+
+        let mut inner = Vec::new();
+        field_bytes(19, b"gemini-slug-noise", &mut inner);
+        field_bytes(21, b"Gemini Test Model", &mut inner);
+        let mut gm = Vec::new();
+        field_bytes(1, &inner, &mut gm);
+        conn.execute("INSERT INTO gen_metadata(idx, data, size) VALUES(0, ?1, ?2)",
+            params![gm.clone(), gm.len() as i64]).unwrap();
+        path
+    }
+
+    #[test]
+    fn meta_from_real_shape_trajectory_db() {
+        let meta = parse_antigravity_meta(&real_shape_fixture_db("meta")).unwrap();
+        assert_eq!(meta.id, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        assert_eq!(meta.agent, "antigravity");
+        assert_eq!(meta.title, "real user prompt");
+        // The text-less tool-call-only turn and the type-7 step don't count.
+        assert_eq!(meta.message_count, 2);
+        assert_eq!(meta.user_message_count, 1);
+        // Exact values prove the nested Timestamp (incl. nanos -> ms) was
+        // decoded, not the file-mtime fallback.
+        assert_eq!(meta.started_at, 1_751_760_000_500);
+        assert_eq!(meta.ended_at, 1_751_760_060_000);
+        assert_eq!(meta.model.as_deref(), Some("Gemini Test Model"));
+        assert_eq!(meta.output_tokens, None);
+    }
+
+    #[test]
+    fn transcript_from_real_shape_maps_roles_and_text() {
+        let t = parse_antigravity_transcript(&real_shape_fixture_db("transcript"));
+        assert_eq!(t.len(), 2);
+        assert_eq!(t[0].role, "user");
+        assert_eq!(t[0].text, "real user prompt");
+        assert_eq!(t[0].timestamp, Some(1_751_760_000_500));
+        assert_eq!(t[1].role, "assistant");
+        assert_eq!(t[1].text, "real assistant reply");
+        assert_eq!(t[1].timestamp, Some(1_751_760_060_000));
+    }
+
     /// Prints one decoded protobuf field for the spike/sanity dumps: field
     /// number, wire type, and either the varint value or a UTF-8/hex preview
     /// of bytes. Recurses (bounded by `depth`) into `Bytes` fields since the
@@ -410,7 +508,9 @@ mod tests {
             ProtoValue::Bytes(data) => {
                 let preview = match std::str::from_utf8(data) {
                     Ok(s) if !s.chars().any(|c| c.is_control() && c != '\n' && c != '\t') => {
-                        format!("UTF8 {:?}", &s[..s.len().min(120)])
+                        // chars(), not a byte slice: slicing at byte 120 can
+                        // panic on a multibyte (e.g. CJK) char boundary.
+                        format!("UTF8 {:?}", s.chars().take(120).collect::<String>())
                     }
                     _ => format!("hex {}", data.iter().take(24).map(|b| format!("{b:02x}")).collect::<String>()),
                 };
