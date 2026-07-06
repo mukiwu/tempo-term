@@ -133,4 +133,11 @@ describe("fsBridge write-op routing", () => {
     await expect(fsRename("ssh://c1/a.txt", "ssh://c2/a.txt")).rejects.toThrow();
     expect(sftpRename).not.toHaveBeenCalled();
   });
+
+  it("rejects a rename that mixes local and remote paths", async () => {
+    await expect(fsRename("/p/a.txt", "ssh://c1/a.txt")).rejects.toThrow();
+    await expect(fsRename("ssh://c1/a.txt", "/p/a.txt")).rejects.toThrow();
+    expect(sftpRename).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  });
 });

@@ -97,14 +97,14 @@ export async function fsDelete(path: string, isDir: boolean): Promise<void> {
 }
 
 export async function fsRename(from: string, to: string): Promise<void> {
-  const remote = parseRemoteUri(from);
-  if (remote) {
-    const toRemote = parseRemoteUri(to);
-    if (!toRemote || toRemote.connectionId !== remote.connectionId) {
+  const fromRemote = parseRemoteUri(from);
+  const toRemote = parseRemoteUri(to);
+  if (fromRemote || toRemote) {
+    if (!fromRemote || !toRemote || fromRemote.connectionId !== toRemote.connectionId) {
       throw new Error("cannot rename across hosts");
     }
-    const id = await sftpSessionStore.getState().ensure(remote.connectionId);
-    return sftpRename(id, remote.path, toRemote.path);
+    const id = await sftpSessionStore.getState().ensure(fromRemote.connectionId);
+    return sftpRename(id, fromRemote.path, toRemote.path);
   }
   return invoke("fs_rename", { from, to });
 }
