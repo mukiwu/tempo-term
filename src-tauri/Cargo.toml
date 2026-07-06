@@ -57,6 +57,10 @@ wait-timeout = "0.2"
 # Windows (and Linux); no subprocess spawning. get_all() returns TCP+UDP and all
 # socket states, so the caller filters to TCP + LISTEN.
 listeners = "0.6"
+# Reads the Antigravity CLI's per-session SQLite trajectory databases and backs
+# the sessions index cache. macOS links the system libsqlite3 to keep the
+# binary lean; Windows/Linux have no system SQLite so they compile it in.
+rusqlite = "0.32"
 
 # keyring 3.x ships no credential store by default; each platform must opt into
 # its native backend or every keychain operation fails silently.
@@ -68,6 +72,8 @@ keyring = { version = "3", features = ["windows-native"] }
 # Synchronous Win32 clipboard access (text + copied-file list) for terminal
 # paste, so Ctrl+V never spawns a subprocess on the hot path.
 clipboard-win = "5"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service"] }
+rusqlite = { version = "0.32", features = ["bundled"] }

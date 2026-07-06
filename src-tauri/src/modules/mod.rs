@@ -18,5 +18,6 @@ pub mod preview;
 pub mod pty;
 pub mod secrets;
 pub mod session_log;
+pub mod sessions_index;
 pub mod sysmon;
 pub mod terminal_history;
