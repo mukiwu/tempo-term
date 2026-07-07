@@ -118,11 +118,13 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
       projects: 0,
       active_days: 0,
       messages_per_session: 0,
+      output_tokens: 0,
     },
     heatmap: [],
     top_by_messages: [],
     top_by_tokens: [],
     weekly: [],
+    range_models: [],
     ...overrides,
   };
 }

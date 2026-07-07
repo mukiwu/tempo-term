@@ -21,6 +21,10 @@ pub struct SessionsStats {
     pub top_by_tokens: Vec<TopSession>,
     /// Last 7 local days, one row per agent seen in that window.
     pub weekly: Vec<WeeklyAgentRow>,
+    /// Per-model output tokens over the selected range, for a rough total
+    /// cost estimate on the cards. NULL-model tokens are excluded here but
+    /// still counted in `cards.output_tokens`.
+    pub range_models: Vec<ModelTokens>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -34,6 +38,8 @@ pub struct StatsCards {
     pub active_days: i64,
     /// `0.0` when `sessions == 0`.
     pub messages_per_session: f64,
+    /// Total assistant output tokens in range (0 when none are recorded).
+    pub output_tokens: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -60,7 +66,7 @@ pub struct WeeklyAgentRow {
     pub models: Vec<ModelTokens>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ModelTokens {
     pub model: String,
     pub output_tokens: i64,
@@ -76,11 +82,13 @@ pub(crate) fn empty_stats() -> SessionsStats {
             projects: 0,
             active_days: 0,
             messages_per_session: 0.0,
+            output_tokens: 0,
         },
         heatmap: Vec::new(),
         top_by_messages: Vec::new(),
         top_by_tokens: Vec::new(),
         weekly: Vec::new(),
+        range_models: Vec::new(),
     }
 }
 
@@ -133,21 +141,24 @@ impl Index {
             top_by_messages: self.stats_top_by_messages(days, &cutoff),
             top_by_tokens: self.stats_top_by_tokens(days, &cutoff),
             weekly: self.stats_weekly(),
+            range_models: self.stats_range_models(&cutoff),
         }
     }
 
     fn stats_cards(&self, cutoff: &str) -> StatsCards {
-        let totals: Option<(i64, i64, i64, i64)> = self
+        let totals: Option<(i64, i64, i64, i64, i64)> = self
             .conn
             .query_row(
                 "SELECT COUNT(DISTINCT session_id), COALESCE(SUM(messages),0),
-                        COALESCE(SUM(user_messages),0), COUNT(DISTINCT date)
+                        COALESCE(SUM(user_messages),0), COUNT(DISTINCT date),
+                        COALESCE(SUM(output_tokens),0)
                  FROM activity WHERE date >= ?1",
                 params![cutoff],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .ok();
-        let (sessions, messages, user_messages, active_days) = totals.unwrap_or((0, 0, 0, 0));
+        let (sessions, messages, user_messages, active_days, output_tokens) =
+            totals.unwrap_or((0, 0, 0, 0, 0));
 
         let projects: i64 = self
             .conn
@@ -163,7 +174,35 @@ impl Index {
         let messages_per_session =
             if sessions == 0 { 0.0 } else { messages as f64 / sessions as f64 };
 
-        StatsCards { sessions, messages, user_messages, projects, active_days, messages_per_session }
+        StatsCards {
+            sessions,
+            messages,
+            user_messages,
+            projects,
+            active_days,
+            messages_per_session,
+            output_tokens,
+        }
+    }
+
+    /// Per-model output-token totals over the range, for a rough cost card.
+    /// NULL-model sessions are omitted (their tokens can't be priced) but are
+    /// still part of `cards.output_tokens`.
+    fn stats_range_models(&self, cutoff: &str) -> Vec<ModelTokens> {
+        let Ok(mut stmt) = self.conn.prepare(
+            "SELECT s.model, COALESCE(SUM(a.output_tokens),0)
+             FROM activity a JOIN sessions s ON s.id = a.session_id
+             WHERE a.date >= ?1 AND s.model IS NOT NULL
+             GROUP BY s.model ORDER BY s.model",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map(params![cutoff], |r| {
+            Ok(ModelTokens { model: r.get(0)?, output_tokens: r.get(1)? })
+        }) else {
+            return Vec::new();
+        };
+        rows.flatten().collect()
     }
 
     fn stats_heatmap(&self, cutoff: &str) -> Vec<HeatmapDay> {
@@ -366,10 +405,12 @@ mod tests {
         assert_eq!(stats.cards.projects, 0);
         assert_eq!(stats.cards.active_days, 0);
         assert_eq!(stats.cards.messages_per_session, 0.0);
+        assert_eq!(stats.cards.output_tokens, 0);
         assert!(stats.heatmap.is_empty());
         assert!(stats.top_by_messages.is_empty());
         assert!(stats.top_by_tokens.is_empty());
         assert!(stats.weekly.is_empty());
+        assert!(stats.range_models.is_empty());
     }
 
     #[test]
@@ -382,6 +423,23 @@ mod tests {
         assert_eq!(stats.cards.projects, 2);
         assert_eq!(stats.cards.active_days, 3);
         assert!((stats.cards.messages_per_session - (20.0 / 3.0)).abs() < 1e-9);
+        // Only s1 carries tokens (100 on claude-sonnet-5).
+        assert_eq!(stats.cards.output_tokens, 100);
+        assert_eq!(
+            stats.range_models,
+            vec![ModelTokens { model: "claude-sonnet-5".into(), output_tokens: 100 }]
+        );
+    }
+
+    #[test]
+    fn range_filter_excludes_out_of_window_tokens_from_the_cards() {
+        let index = seeded_index("cards-ranged-tokens");
+        // s1 (today, 100 tokens) is in the 30-day window; s3 (40 days ago) is
+        // out. s1 is the only token-bearing session, so both windows total 100,
+        // but this pins that the token sum honors the cutoff like the counts do.
+        let stats = index.stats(Some(30));
+        assert_eq!(stats.cards.output_tokens, 100);
+        assert_eq!(stats.range_models.len(), 1);
     }
 
     #[test]

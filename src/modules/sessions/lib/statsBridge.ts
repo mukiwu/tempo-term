@@ -20,6 +20,8 @@ export interface StatsCards {
   active_days: number;
   /** `0` when `sessions === 0`; unrounded, format for display. */
   messages_per_session: number;
+  /** Total assistant output tokens in range (0 when none recorded). */
+  output_tokens: number;
 }
 
 /** One calendar date with activity. Only dates with at least one message are
@@ -63,6 +65,10 @@ export interface SessionsStats {
   /** Last 7 local days, one row per agent seen in that window — independent
    *  of the `days` range filter. */
   weekly: WeeklyAgentRow[];
+  /** Per-model output tokens over the selected range, for the cards' rough
+   *  cost estimate. Excludes NULL-model tokens (which are still in
+   *  `cards.output_tokens`). */
+  range_models: ModelTokens[];
 }
 
 /** Fetches aggregated dashboard stats. `days` narrows cards/heatmap/top

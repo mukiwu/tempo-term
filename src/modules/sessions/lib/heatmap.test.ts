@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { heatmapWeeks } from "./heatmap";
+import { heatmapMonthLabels, heatmapWeeks } from "./heatmap";
 import type { HeatmapDay } from "./statsBridge";
+
+describe("heatmapMonthLabels", () => {
+  it("labels a week column with the month index only when its month first appears", () => {
+    const days: HeatmapDay[] = [
+      { date: "2026-05-20", messages: 1 },
+      { date: "2026-06-10", messages: 2 },
+      { date: "2026-07-01", messages: 3 },
+    ];
+    const weeks = heatmapWeeks(days, new Date(2026, 6, 6));
+    const labels = heatmapMonthLabels(weeks);
+
+    // Same length as the grid, one entry per week column.
+    expect(labels).toHaveLength(weeks.length);
+    // The distinct month indices appear in calendar order (May=4, Jun=5, Jul=6),
+    // each once, at the column where that month starts.
+    const shown = labels.filter((m): m is number => m !== null);
+    expect(shown).toEqual([4, 5, 6]);
+  });
+
+  it("returns an empty array for an empty grid", () => {
+    expect(heatmapMonthLabels([])).toEqual([]);
+  });
+});
 
 describe("heatmapWeeks", () => {
   it("returns no columns for empty input", () => {

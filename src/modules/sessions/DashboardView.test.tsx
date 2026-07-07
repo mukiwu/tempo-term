@@ -32,6 +32,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
       opts?.count !== undefined ? `${key}:${opts.count}` : key,
+    i18n: { language: "en" },
   }),
 }));
 
@@ -44,6 +45,7 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
       projects: 4,
       active_days: 9,
       messages_per_session: 28.3333,
+      output_tokens: 12500,
     },
     heatmap: [
       { date: "2026-07-01", messages: 5 },
@@ -64,6 +66,7 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
         models: [{ model: "claude-sonnet-5", output_tokens: 500 }],
       },
     ],
+    range_models: [{ model: "claude-sonnet-5", output_tokens: 12500 }],
     ...overrides,
   };
 }
@@ -92,6 +95,10 @@ describe("DashboardView", () => {
     expect(screen.getByText("4")).toBeInTheDocument();
     expect(screen.getByText("9")).toBeInTheDocument();
     expect(screen.getByText("28.3")).toBeInTheDocument();
+    // Output-token card compacts 12,500 → "12.5K"; the cost card prices the
+    // fixture's 12,500 sonnet tokens (15 $/Mtok) at ≈ $0.19.
+    expect(screen.getByText("12.5K")).toBeInTheDocument();
+    expect(screen.getByText("≈ $0.19")).toBeInTheDocument();
   });
 
   it("refetches with the chosen range when a chip is clicked", async () => {
@@ -130,15 +137,15 @@ describe("DashboardView", () => {
     render(<DashboardView />);
 
     // The agent badge also appears on the top-sessions row, so scope to the
-    // weekly digest's <li> rows specifically.
+    // weekly digest table's data row specifically.
     await waitFor(() => expect(screen.getByText("sessions.dashboard.weeklyTitle")).toBeInTheDocument());
     const weeklyRow = screen
       .getByText("sessions.dashboard.weeklyTitle")
       .closest("div")
-      ?.querySelector("li");
-    // Sessions/messages/tokens/cost render as separate text nodes. The fixture
-    // has a known model (sonnet-5) with 500 tokens, so cost will display as ≈ $0.01.
-    expect(weeklyRow?.textContent).toBe("sessions.agents.claude3 · 80 · 500≈ $0.01");
+      ?.querySelector("tbody tr");
+    // Agent, sessions, messages, tokens, cost as labelled table cells. The
+    // fixture's known model (sonnet-5) with 500 tokens costs ≈ $0.01.
+    expect(weeklyRow?.textContent).toBe("sessions.agents.claude380500≈ $0.01");
   });
 
   it("shows ≈ $0.00+ when a weekly row has only unpriced-model tokens", async () => {
@@ -161,10 +168,10 @@ describe("DashboardView", () => {
     const weeklyRow = screen
       .getByText("sessions.dashboard.weeklyTitle")
       .closest("div")
-      ?.querySelector("li");
-    // All tokens are unpriced: the cost column must still render, as a $0.00
-    // floor with the "+" marker — not an empty span.
-    expect(weeklyRow?.textContent).toBe("sessions.agents.claude2 · 40 · 1,200≈ $0.00+");
+      ?.querySelector("tbody tr");
+    // All tokens are unpriced: the cost cell must still render, as a $0.00
+    // floor with the "+" marker — not a dash. Tokens compact to "1.2K".
+    expect(weeklyRow?.textContent).toBe("sessions.agents.claude2401.2K≈ $0.00+");
   });
 
   it("renders heatmap cells with a date · message-count tooltip", async () => {

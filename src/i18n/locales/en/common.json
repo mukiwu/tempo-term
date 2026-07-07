@@ -310,7 +310,13 @@
         "messages": "Messages",
         "projects": "Projects",
         "activeDays": "Active days",
-        "mps": "Msgs / session"
+        "mps": "Msgs / session",
+        "messagesHint": "you sent {{count}}",
+        "mpsHint": "messages ÷ sessions",
+        "outputTokens": "Output tokens",
+        "outputTokensHint": "assistant, this range",
+        "cost": "Est. cost",
+        "costHint": "≈ output tokens only"
       },
       "heatmapTitle": "Activity",
       "topTitle": "Top sessions",
@@ -320,7 +326,15 @@
       "back": "Back",
       "costNote": "≈ output tokens only, rough estimate",
       "open": "Open dashboard",
-      "heatmapTooltip": "{{date}} · {{count}} messages"
+      "heatmapTooltip": "{{date}} · {{count}} messages",
+      "legendLess": "less",
+      "legendMore": "more",
+      "weeklyEmpty": "No activity in the last 7 days",
+      "weeklyAgent": "Agent",
+      "weeklySessions": "Sess.",
+      "weeklyMessages": "Msgs",
+      "weeklyTokens": "Tokens",
+      "weeklyCost": "Cost"
     }
   }
 }

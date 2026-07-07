@@ -310,7 +310,13 @@
         "messages": "訊息數",
         "projects": "專案數",
         "activeDays": "活躍天數",
-        "mps": "每場訊息"
+        "mps": "每場訊息",
+        "messagesHint": "你發了 {{count}} 則",
+        "mpsHint": "訊息數 ÷ 對話數",
+        "outputTokens": "輸出 Token",
+        "outputTokensHint": "此範圍 AI 回覆",
+        "cost": "估算成本",
+        "costHint": "≈ 僅計輸出 token"
       },
       "heatmapTitle": "活動",
       "topTitle": "熱門對話",
@@ -320,7 +326,15 @@
       "back": "返回",
       "costNote": "≈ 僅計輸出 token，粗估",
       "open": "開啟儀表板",
-      "heatmapTooltip": "{{date}} · {{count}} 則訊息"
+      "heatmapTooltip": "{{date}} · {{count}} 則訊息",
+      "legendLess": "少",
+      "legendMore": "多",
+      "weeklyEmpty": "近 7 天沒有活動",
+      "weeklyAgent": "Agent",
+      "weeklySessions": "對話",
+      "weeklyMessages": "訊息",
+      "weeklyTokens": "Token",
+      "weeklyCost": "成本"
     }
   }
 }

@@ -98,3 +98,27 @@ export function heatmapWeeks(days: HeatmapDay[], end: Date): (HeatmapDay | null)
   }
   return weeks;
 }
+
+/**
+ * One label per week column for the month strip above the heatmap: the
+ * month index (0=Jan..11=Dec) of a week whose earliest real day belongs to a
+ * month not yet seen, and `null` for every other column. Mirrors GitHub's
+ * contribution graph, which prints a month name only where that month first
+ * enters the grid. The component formats the index into a localized short
+ * month name.
+ */
+export function heatmapMonthLabels(weeks: (HeatmapDay | null)[][]): (number | null)[] {
+  let lastMonth = -1;
+  return weeks.map((week) => {
+    const firstReal = week.find((cell): cell is HeatmapDay => cell !== null);
+    if (!firstReal) {
+      return null;
+    }
+    const month = parseLocalDate(firstReal.date).getMonth();
+    if (month === lastMonth) {
+      return null;
+    }
+    lastMonth = month;
+    return month;
+  });
+}
