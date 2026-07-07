@@ -29,6 +29,8 @@ export function estimateOutputCost(
     let found = false;
 
     for (const [pattern, pricePerM] of OUTPUT_PRICES_PER_MTOK) {
+      // Case-insensitive on purpose: model ids from different agents vary in
+      // casing (e.g. "GPT-5" vs "gpt-5"), and the table patterns are lowercase.
       if (model.toLowerCase().includes(pattern.toLowerCase())) {
         usd += (output_tokens / 1_000_000) * pricePerM;
         found = true;

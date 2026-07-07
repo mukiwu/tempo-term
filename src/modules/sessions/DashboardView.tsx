@@ -240,11 +240,12 @@ export function DashboardView() {
           <ul className="mt-2 flex flex-col gap-1">
             {stats.weekly.map((row) => {
               const costInfo = estimateOutputCost(row.models);
+              // Show the column whenever the agent had any tokens this week —
+              // even fully unpriced ones render as a "≈ $0.00+" floor.
               const hasCost = costInfo.usd > 0 || costInfo.unpricedTokens > 0;
-              const costStr =
-                costInfo.usd > 0
-                  ? `≈ $${costInfo.usd.toFixed(2)}${costInfo.unpricedTokens > 0 ? "+" : ""}`
-                  : "";
+              const costStr = `≈ $${costInfo.usd.toFixed(2)}${
+                costInfo.unpricedTokens > 0 ? "+" : ""
+              }`;
 
               return (
                 <li

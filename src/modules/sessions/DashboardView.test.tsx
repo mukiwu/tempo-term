@@ -141,6 +141,32 @@ describe("DashboardView", () => {
     expect(weeklyRow?.textContent).toBe("sessions.agents.claude3 · 80 · 500≈ $0.01");
   });
 
+  it("shows ≈ $0.00+ when a weekly row has only unpriced-model tokens", async () => {
+    statsFixture.current = stats({
+      weekly: [
+        {
+          agent: "claude",
+          sessions: 2,
+          messages: 40,
+          output_tokens: 1200,
+          models: [{ model: "mystery-model-x", output_tokens: 1200 }],
+        },
+      ],
+    });
+    render(<DashboardView />);
+
+    await waitFor(() =>
+      expect(screen.getByText("sessions.dashboard.weeklyTitle")).toBeInTheDocument(),
+    );
+    const weeklyRow = screen
+      .getByText("sessions.dashboard.weeklyTitle")
+      .closest("div")
+      ?.querySelector("li");
+    // All tokens are unpriced: the cost column must still render, as a $0.00
+    // floor with the "+" marker — not an empty span.
+    expect(weeklyRow?.textContent).toBe("sessions.agents.claude2 · 40 · 1,200≈ $0.00+");
+  });
+
   it("renders heatmap cells with a date · message-count tooltip", async () => {
     render(<DashboardView />);
 
