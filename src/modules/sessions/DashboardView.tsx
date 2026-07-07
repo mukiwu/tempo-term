@@ -107,11 +107,16 @@ export function DashboardView() {
     // `cancelled` scopes the fetch to the (range, tick) that triggered it:
     // a later change or unmount flips it before a stale response can land.
     let cancelled = false;
-    void sessionsStats(range).then((next) => {
-      if (!cancelled) {
-        setStats(next);
-      }
-    });
+    sessionsStats(range)
+      .then((next) => {
+        if (!cancelled) {
+          setStats(next);
+        }
+      })
+      // The command is designed never to reject; a rejection would only be a
+      // spawn_blocking panic. Swallow it rather than leave the last-good
+      // stats on screen behind an unhandled-rejection console error.
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -165,10 +170,22 @@ export function DashboardView() {
       </div>
 
       <div className="mt-4 grid grid-cols-5 gap-2">
-        <StatCard label={t("sessions.dashboard.cards.sessions")} value={stats.cards.sessions} />
-        <StatCard label={t("sessions.dashboard.cards.messages")} value={stats.cards.messages} />
-        <StatCard label={t("sessions.dashboard.cards.projects")} value={stats.cards.projects} />
-        <StatCard label={t("sessions.dashboard.cards.activeDays")} value={stats.cards.active_days} />
+        <StatCard
+          label={t("sessions.dashboard.cards.sessions")}
+          value={stats.cards.sessions.toLocaleString()}
+        />
+        <StatCard
+          label={t("sessions.dashboard.cards.messages")}
+          value={stats.cards.messages.toLocaleString()}
+        />
+        <StatCard
+          label={t("sessions.dashboard.cards.projects")}
+          value={stats.cards.projects.toLocaleString()}
+        />
+        <StatCard
+          label={t("sessions.dashboard.cards.activeDays")}
+          value={stats.cards.active_days.toLocaleString()}
+        />
         <StatCard
           label={t("sessions.dashboard.cards.mps")}
           value={stats.cards.messages_per_session.toFixed(1)}
@@ -187,7 +204,14 @@ export function DashboardView() {
             week.map((day, dayIndex) => (
               <div
                 key={`${weekIndex}-${dayIndex}`}
-                title={day ? `${day.date} · ${day.messages} messages` : undefined}
+                title={
+                  day
+                    ? t("sessions.dashboard.heatmapTooltip", {
+                        date: day.date,
+                        count: day.messages,
+                      })
+                    : undefined
+                }
                 className={`h-[10px] w-[10px] rounded-sm ${
                   day ? heatmapBucketClass(day.messages) : "bg-transparent"
                 }`}

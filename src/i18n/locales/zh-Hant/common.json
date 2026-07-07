@@ -267,10 +267,8 @@
     "resume": "接續對話",
     "pin": "釘選",
     "unpin": "取消釘選",
-    "selectPrompt": "從側邊欄選一場對話",
     "resumeUnavailable": "這個 agent 不支援接續",
     "indexing": "正在建立索引…",
-    "totalCount": "已索引 {{count}} 場對話",
     "loading": "正在載入對話記錄…",
     "loadError": "無法載入這場對話記錄",
     "delete": "刪除",
@@ -321,7 +319,8 @@
       "weeklyTitle": "本週",
       "back": "返回",
       "costNote": "≈ 僅計輸出 token，粗估",
-      "open": "開啟儀表板"
+      "open": "開啟儀表板",
+      "heatmapTooltip": "{{date}} · {{count}} 則訊息"
     }
   }
 }

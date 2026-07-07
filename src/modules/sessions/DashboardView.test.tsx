@@ -170,8 +170,12 @@ describe("DashboardView", () => {
   it("renders heatmap cells with a date · message-count tooltip", async () => {
     render(<DashboardView />);
 
+    // The mocked `t` echoes `key:count`; the tooltip is now i18n-keyed
+    // (real interpolation of date + count happens with the live catalog).
     await waitFor(() =>
-      expect(screen.getByTitle("2026-07-02 · 12 messages")).toBeInTheDocument(),
+      expect(
+        screen.getByTitle("sessions.dashboard.heatmapTooltip:12"),
+      ).toBeInTheDocument(),
     );
   });
 

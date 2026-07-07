@@ -267,10 +267,8 @@
     "resume": "Resume",
     "pin": "Pin",
     "unpin": "Unpin",
-    "selectPrompt": "Select a session from the sidebar",
     "resumeUnavailable": "Resume is not available for this agent",
     "indexing": "Indexing sessions…",
-    "totalCount": "{{count}} sessions indexed",
     "loading": "Loading transcript…",
     "loadError": "Couldn't load this transcript",
     "delete": "Delete",
@@ -321,7 +319,8 @@
       "weeklyTitle": "This week",
       "back": "Back",
       "costNote": "≈ output tokens only, rough estimate",
-      "open": "Open dashboard"
+      "open": "Open dashboard",
+      "heatmapTooltip": "{{date}} · {{count}} messages"
     }
   }
 }
