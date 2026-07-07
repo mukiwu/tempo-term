@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectView } from "./ProjectView";
 import { useSessionsStore } from "./lib/sessionsStore";
@@ -78,7 +78,7 @@ describe("ProjectView", () => {
     // Fire the callback the component registered — e.g. the open project's last
     // session was just deleted; the tiles/recent list must not show stale data.
     const callback = mockListen.mock.calls[0][1] as () => void;
-    callback();
+    act(() => callback());
 
     await waitFor(() =>
       expect(mockInvoke).toHaveBeenCalledWith("sessions_project_stats", { projectCwd: "/tmp/proj-a" }),
