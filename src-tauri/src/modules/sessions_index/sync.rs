@@ -44,19 +44,25 @@ fn companion_path(path: &Path, suffix: &str) -> PathBuf {
 }
 
 /// Change-detection fingerprint for a session source file: mtime + size. For
-/// an Antigravity `.db` file, the fingerprint also folds in its `-wal` and
-/// `-shm` companions' mtime/size (summed into the same two numbers), so a
-/// commit that only touches the WAL file (not yet checkpointed back into the
-/// main `.db`) still changes the fingerprint and triggers a re-parse. Claude
-/// and Codex sources are plain single files with no such companions.
+/// an Antigravity `.db` file, the fingerprint also folds in its `-wal`
+/// companion's mtime/size (summed into the same two numbers), so a commit
+/// that only touches the WAL file (not yet checkpointed back into the main
+/// `.db`) still changes the fingerprint and triggers a re-parse. Claude and
+/// Codex sources are plain single files with no such companions.
+///
+/// The `-shm` companion is deliberately excluded: SQLite touches the
+/// shared-memory file merely from OPENING a WAL-mode database — even
+/// read-only, as our own parser does — so folding it in makes every re-parse
+/// move the fingerprint, which the watcher then treats as a fresh change and
+/// re-syncs, touching `-shm` again: a self-sustaining 500 ms sync loop
+/// (observed in the field). Real new data always reaches the WAL or the main
+/// file; `-shm` carries no persistent state.
 pub fn fingerprint(path: &Path) -> (i64, i64) {
     let (mut mtime, mut size) = stat(path);
     if path.extension().and_then(|e| e.to_str()) == Some("db") {
-        for suffix in ["-wal", "-shm"] {
-            let (m, s) = stat(&companion_path(path, suffix));
-            mtime += m;
-            size += s;
-        }
+        let (m, s) = stat(&companion_path(path, "-wal"));
+        mtime += m;
+        size += s;
     }
     (mtime, size)
 }
@@ -381,15 +387,36 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_of_a_db_sums_wal_and_shm_companions() {
+    fn fingerprint_of_a_db_sums_only_the_wal_companion() {
         let dir = temp_dir("fp-db-companions");
         let path = dir.join("convo.db");
         write(&path, "aaaa"); // 4
         write(&dir.join("convo.db-wal"), "bb"); // 2
-        write(&dir.join("convo.db-shm"), "c"); // 1
+        write(&dir.join("convo.db-shm"), "c"); // 1 — must NOT be folded in
 
         let (_, size) = fingerprint(&path);
-        assert_eq!(size, 7);
+        assert_eq!(size, 6);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fingerprint_is_stable_across_shm_only_touches() {
+        // Opening a WAL-mode SQLite database — even read-only, as our own
+        // parser does — touches the -shm file. If that moved the fingerprint,
+        // every re-parse would schedule the next one: a self-sustaining sync
+        // loop (observed in the field as a 500 ms watch-batch heartbeat).
+        let dir = temp_dir("fp-shm-only");
+        let path = dir.join("convo.db");
+        write(&path, "aaaa");
+        write(&dir.join("convo.db-wal"), "bb");
+        write(&dir.join("convo.db-shm"), "c");
+        let before = fingerprint(&path);
+
+        write(&dir.join("convo.db-shm"), "cccccccc"); // grew; db + wal untouched
+        let after = fingerprint(&path);
+
+        assert_eq!(before, after);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

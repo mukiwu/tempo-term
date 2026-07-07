@@ -65,17 +65,21 @@ fn watch_mode(agent: &str, root: &Path) -> RecursiveMode {
     }
 }
 
-/// Maps a raw changed path back to its `.db` file when it is actually a
-/// SQLite `-wal`/`-shm` companion (Antigravity CLI checkpoints those into
-/// the main file lazily, so a write can land on the companion only). Any
-/// other path is returned unchanged.
-fn strip_wal_shm(path: &Path) -> PathBuf {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-        return path.to_path_buf();
-    };
-    match name.strip_suffix("-wal").or_else(|| name.strip_suffix("-shm")) {
-        Some(base) => path.with_file_name(base),
-        None => path.to_path_buf(),
+/// Maps a raw changed path back to its `.db` file when it is a SQLite `-wal`
+/// companion (Antigravity CLI checkpoints the WAL into the main file lazily,
+/// so a write can land on the companion only). A `-shm` companion returns
+/// `None` — SQLite touches shared memory merely from opening the database
+/// (even read-only, as our own parser does), so reacting to `-shm` events
+/// turns every re-parse into the trigger for the next one. Real data changes
+/// always come with a `.db` or `-wal` event. Any other path passes through.
+fn strip_wal_shm(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name().and_then(|n| n.to_str())?;
+    if name.ends_with("-shm") {
+        return None;
+    }
+    match name.strip_suffix("-wal") {
+        Some(base) => Some(path.with_file_name(base)),
+        None => Some(path.to_path_buf()),
     }
 }
 
@@ -83,7 +87,7 @@ fn strip_wal_shm(path: &Path) -> PathBuf {
 /// to, or `None` when it falls outside every watched root (e.g. a
 /// `.db-journal` companion, or a decoy file the scanner would also reject).
 fn resolve(roots: &[(&'static str, PathBuf)], changed_path: &Path) -> Option<(&'static str, PathBuf)> {
-    let mapped = strip_wal_shm(changed_path);
+    let mapped = strip_wal_shm(changed_path)?;
     let (agent, root) = roots.iter().find(|(_, root)| mapped.starts_with(root))?;
     if !is_session_file(agent, root, &mapped) {
         return None;
@@ -230,15 +234,36 @@ mod tests {
     }
 
     #[test]
-    fn strip_wal_shm_maps_companions_back_to_the_db() {
-        assert_eq!(strip_wal_shm(Path::new("/a/convo.db-wal")), PathBuf::from("/a/convo.db"));
-        assert_eq!(strip_wal_shm(Path::new("/a/convo.db-shm")), PathBuf::from("/a/convo.db"));
+    fn strip_wal_shm_maps_a_wal_companion_back_to_the_db() {
+        assert_eq!(
+            strip_wal_shm(Path::new("/a/convo.db-wal")),
+            Some(PathBuf::from("/a/convo.db"))
+        );
+    }
+
+    #[test]
+    fn strip_wal_shm_drops_shm_events_entirely() {
+        // -shm changes are a side effect of merely opening the DB (our own
+        // parser included); reacting to them re-arms the sync loop forever.
+        assert_eq!(strip_wal_shm(Path::new("/a/convo.db-shm")), None);
     }
 
     #[test]
     fn strip_wal_shm_leaves_other_paths_unchanged() {
-        assert_eq!(strip_wal_shm(Path::new("/a/convo.db")), PathBuf::from("/a/convo.db"));
-        assert_eq!(strip_wal_shm(Path::new("/a/session.jsonl")), PathBuf::from("/a/session.jsonl"));
+        assert_eq!(strip_wal_shm(Path::new("/a/convo.db")), Some(PathBuf::from("/a/convo.db")));
+        assert_eq!(
+            strip_wal_shm(Path::new("/a/session.jsonl")),
+            Some(PathBuf::from("/a/session.jsonl"))
+        );
+    }
+
+    #[test]
+    fn resolve_ignores_shm_events() {
+        let roots = sample_roots();
+        assert_eq!(
+            resolve(&roots, Path::new("/home/u/.gemini/antigravity-cli/conversations/convo1.db-shm")),
+            None
+        );
     }
 
     #[test]
