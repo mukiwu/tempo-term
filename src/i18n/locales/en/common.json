@@ -289,6 +289,12 @@
       "minutesAgo": "{{count}}m ago",
       "hoursAgo": "{{count}}h ago",
       "daysAgo": "{{count}}d ago"
+    },
+    "injected": {
+      "teammate": "Teammate message",
+      "system-reminder": "System reminder",
+      "task-notification": "Task notification",
+      "command": "Command"
     }
   }
 }

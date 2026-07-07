@@ -97,6 +97,27 @@ fn is_countable(value: &Value) -> bool {
     true
 }
 
+/// Classifies a user turn's text as a harness injection rather than the
+/// user's own words, returning the source tag the viewer shows on the
+/// collapsed card. Claude Code records teammate messages, system reminders,
+/// background task notifications, and slash-command envelopes all as
+/// `type: "user"` turns; labelling them "user" in the viewer is misleading
+/// and counting them inflates user_message_count.
+fn injected_source(text: &str) -> Option<&'static str> {
+    let t = text.trim_start();
+    if t.starts_with("<teammate-message") || t.starts_with("Another Claude session sent a message:") {
+        Some("teammate")
+    } else if t.starts_with("<system-reminder>") {
+        Some("system-reminder")
+    } else if t.starts_with("<task-notification>") {
+        Some("task-notification")
+    } else if t.starts_with("<local-command-caveat>") || t.starts_with("<command-name>") {
+        Some("command")
+    } else {
+        None
+    }
+}
+
 /// DFS count of countable `user` entries in the subtree rooted at `i`
 /// (inclusive). Guards against cyclic parent data so malformed input can
 /// never hang the walk.
@@ -215,7 +236,15 @@ pub fn parse_claude_meta(path: &Path) -> Option<ParsedSession> {
         if !is_countable(&entry.value) {
             continue;
         }
-        let is_user = entry.value.get("type").and_then(Value::as_str) == Some("user");
+        // Injected harness turns (teammate messages, reminders, …) are still
+        // messages, but they are not the user speaking.
+        let is_user = entry.value.get("type").and_then(Value::as_str) == Some("user")
+            && entry
+                .value
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(user_text_from_content)
+                .map_or(true, |text| injected_source(&text).is_none());
         message_count += 1;
         if is_user {
             user_message_count += 1;
@@ -376,12 +405,20 @@ pub fn parse_claude_transcript(path: &Path) -> Vec<TranscriptMessage> {
         match type_ {
             "user" => {
                 if let Some(text) = user_text_from_content(content) {
-                    out.push(TranscriptMessage {
-                        role: "user".to_string(),
-                        text,
-                        timestamp,
-                        tool_name: None,
-                    });
+                    match injected_source(&text) {
+                        Some(source) => out.push(TranscriptMessage {
+                            role: "injected".to_string(),
+                            text,
+                            timestamp,
+                            tool_name: Some(source.to_string()),
+                        }),
+                        None => out.push(TranscriptMessage {
+                            role: "user".to_string(),
+                            text,
+                            timestamp,
+                            tool_name: None,
+                        }),
+                    }
                 }
             }
             "assistant" => match content {
@@ -479,6 +516,43 @@ mod tests {
         assert_eq!(roles, vec!["user", "assistant", "tool", "assistant"]);
         assert_eq!(t[2].tool_name.as_deref(), Some("Bash"));
         assert_eq!(t[3].text, "done");
+    }
+
+    // Harness-injected turns are recorded as `type: "user"` but are not the
+    // user's own words: teammate messages, system reminders, background task
+    // notifications, and slash-command envelopes.
+    const INJECTED: &str = concat!(
+        r#"{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"s","cwd":"/p","timestamp":"2026-07-06T01:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"real question"}]}}"#, "\n",
+        r#"{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-07-06T01:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"answer"}]}}"#, "\n",
+        r#"{"type":"user","uuid":"u2","parentUuid":"a1","timestamp":"2026-07-06T01:01:00.000Z","message":{"role":"user","content":[{"type":"text","text":"Another Claude session sent a message:\n<teammate-message teammate_id=\"scan\">## report\n- **finding** one</teammate-message>"}]}}"#, "\n",
+        r#"{"type":"assistant","uuid":"a2","parentUuid":"u2","timestamp":"2026-07-06T01:02:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"noted"}]}}"#, "\n",
+        r#"{"type":"user","uuid":"u3","parentUuid":"a2","timestamp":"2026-07-06T01:03:00.000Z","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>hooks fired</system-reminder>"}]}}"#, "\n",
+        r#"{"type":"user","uuid":"u4","parentUuid":"u3","timestamp":"2026-07-06T01:04:00.000Z","message":{"role":"user","content":[{"type":"text","text":"<task-notification>\n<task-id>x</task-id>\n</task-notification>"}]}}"#, "\n",
+    );
+
+    #[test]
+    fn injected_turns_render_as_injected_role_with_their_source() {
+        let path = write_fixture("injected", INJECTED);
+        let t = parse_claude_transcript(&path);
+        let roles: Vec<&str> = t.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, vec!["user", "assistant", "injected", "assistant", "injected", "injected"]);
+        assert_eq!(t[2].tool_name.as_deref(), Some("teammate"));
+        assert_eq!(t[4].tool_name.as_deref(), Some("system-reminder"));
+        assert_eq!(t[5].tool_name.as_deref(), Some("task-notification"));
+        // The full injected text is preserved for the expanded view.
+        assert!(t[2].text.contains("**finding** one"));
+    }
+
+    #[test]
+    fn injected_turns_do_not_count_as_user_messages() {
+        let path = write_fixture("injected-meta", INJECTED);
+        let meta = parse_claude_meta(&path).unwrap();
+        // u1 is the only real user turn; u2/u3/u4 are injected. All six
+        // countable entries still count as messages.
+        assert_eq!(meta.user_message_count, 1);
+        assert_eq!(meta.message_count, 6);
+        // The title never comes from an injected turn.
+        assert_eq!(meta.title, "real question");
     }
 
     // A fork where the first child's branch has only 1 user turn (<= threshold 3):

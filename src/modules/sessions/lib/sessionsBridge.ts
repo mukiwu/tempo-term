@@ -26,7 +26,10 @@ export interface SessionSummary {
 }
 
 export interface TranscriptMessage {
-  role: "user" | "assistant" | "tool" | "system";
+  /** "injected" marks harness-generated turns recorded as user input
+   *  (teammate messages, system reminders, task notifications, command
+   *  envelopes); `tool_name` then carries the source tag. */
+  role: "user" | "assistant" | "tool" | "system" | "injected";
   text: string;
   timestamp: number | null;
   tool_name: string | null;

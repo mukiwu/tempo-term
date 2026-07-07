@@ -132,6 +132,31 @@ describe("SessionsTabContent", () => {
     expect(screen.getByText("please make **this** bold")).toBeInTheDocument();
   });
 
+  it("collapses injected harness turns behind a labelled card", async () => {
+    useSessionsStore.setState({ sessions: [session({ id: "a" })], selectedId: "a" });
+    transcripts.set(
+      "a",
+      Promise.resolve([
+        message({ role: "user", text: "real question" }),
+        message({
+          role: "injected",
+          text: "Another Claude session sent a message:\n## report with **bold**",
+          tool_name: "teammate",
+        }),
+      ]),
+    );
+
+    render(<SessionsTabContent />);
+
+    await waitFor(() => expect(screen.getByText("real question")).toBeInTheDocument());
+    // Collapsed by default: the source label is visible, the body is inside
+    // a <details> and renders as markdown when expanded.
+    const summary = screen.getByText("sessions.injected.teammate");
+    expect(summary.closest("details")).not.toBeNull();
+    // The body renders as markdown: "## report…" becomes a heading.
+    expect(screen.getByRole("heading", { level: 2, name: /report with/ })).toBeInTheDocument();
+  });
+
   it("shows a loading indicator while the transcript is in flight", async () => {
     useSessionsStore.setState({ sessions: [session({ id: "a" })], selectedId: "a" });
     let resolve!: (messages: TranscriptMessage[]) => void;

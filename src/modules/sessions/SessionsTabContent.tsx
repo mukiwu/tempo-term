@@ -40,6 +40,21 @@ function TranscriptEntry({ message }: { message: TranscriptMessage }) {
     );
   }
 
+  if (message.role === "injected") {
+    // A harness-generated turn (teammate report, system reminder, …):
+    // collapsed by default so long injected reports never bury the real
+    // conversation; the expanded body renders as markdown.
+    const source = message.tool_name ?? "teammate";
+    return (
+      <details className="rounded-md border border-border bg-bg-inset px-3 py-2">
+        <summary className="cursor-pointer select-none text-xs font-medium text-fg-subtle">
+          {t(`sessions.injected.${source}`)}
+        </summary>
+        <MarkdownView content={message.text} className="mt-2 text-sm" />
+      </details>
+    );
+  }
+
   if (message.role === "system") {
     return <p className="text-xs italic text-fg-subtle">{message.text}</p>;
   }
