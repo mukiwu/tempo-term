@@ -46,6 +46,10 @@ pub struct StatsCards {
 pub struct HeatmapDay {
     pub date: String,
     pub messages: i64,
+    /// Distinct sessions active on this date.
+    pub sessions: i64,
+    /// Total assistant output tokens on this date.
+    pub output_tokens: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -207,13 +211,19 @@ impl Index {
 
     fn stats_heatmap(&self, cutoff: &str) -> Vec<HeatmapDay> {
         let Ok(mut stmt) = self.conn.prepare(
-            "SELECT date, COALESCE(SUM(messages),0) FROM activity
-             WHERE date >= ?1 GROUP BY date ORDER BY date ASC",
+            "SELECT date, COALESCE(SUM(messages),0), COUNT(DISTINCT session_id),
+                    COALESCE(SUM(output_tokens),0)
+             FROM activity WHERE date >= ?1 GROUP BY date ORDER BY date ASC",
         ) else {
             return Vec::new();
         };
         let Ok(rows) = stmt.query_map(params![cutoff], |r| {
-            Ok(HeatmapDay { date: r.get(0)?, messages: r.get(1)? })
+            Ok(HeatmapDay {
+                date: r.get(0)?,
+                messages: r.get(1)?,
+                sessions: r.get(2)?,
+                output_tokens: r.get(3)?,
+            })
         }) else {
             return Vec::new();
         };
@@ -463,6 +473,18 @@ mod tests {
         let mut sorted = dates.clone();
         sorted.sort();
         assert_eq!(dates, sorted);
+    }
+
+    #[test]
+    fn heatmap_carries_messages_sessions_and_tokens_per_day() {
+        let index = seeded_index("heatmap-metrics");
+        let stats = index.stats(None);
+        // s1 is today with 10 messages, 1 session, 100 output tokens.
+        let today = day_string(0);
+        let day = stats.heatmap.iter().find(|d| d.date == today).unwrap();
+        assert_eq!(day.messages, 10);
+        assert_eq!(day.sessions, 1);
+        assert_eq!(day.output_tokens, 100);
     }
 
     #[test]

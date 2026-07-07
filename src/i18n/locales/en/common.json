@@ -334,7 +334,10 @@
       "weeklySessions": "Sess.",
       "weeklyMessages": "Msgs",
       "weeklyTokens": "Tokens",
-      "weeklyCost": "Cost"
+      "weeklyCost": "Cost",
+      "metricMessages": "Messages",
+      "metricSessions": "Sessions",
+      "metricTokens": "Output tokens"
     }
   }
 }

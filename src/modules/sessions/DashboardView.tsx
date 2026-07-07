@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { onSessionsUpdated } from "./lib/sessionsBridge";
-import { sessionsStats, type SessionsStats, type TopSession } from "./lib/statsBridge";
+import {
+  sessionsStats,
+  type HeatmapMetric,
+  type SessionsStats,
+  type TopSession,
+} from "./lib/statsBridge";
 import { useSessionsStore } from "./lib/sessionsStore";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
-import { heatmapMonthLabels, heatmapWeeks } from "./lib/heatmap";
+import { heatmapLevel, heatmapMax, heatmapMonthLabels, heatmapWeeks } from "./lib/heatmap";
 import { estimateOutputCost } from "./lib/cost";
 
 type RangeDays = 30 | 90 | 365 | null;
@@ -33,21 +38,18 @@ const EMPTY_STATS: SessionsStats = {
   range_models: [],
 };
 
-/** Sample messages/day at the midpoint of each intensity bucket, so the
- *  legend swatches use the exact same class function the cells do. */
-const LEGEND_SAMPLES = [0, 2, 6, 15, 30];
+/** Tailwind class per intensity level (0..4). Level 0 is a faint visible tile
+ *  so empty days read as a continuous calendar, not scattered dots; 1..4 ramp
+ *  the accent up. Levels come from `heatmapLevel`, scaled to the range's max
+ *  for whichever metric is shown. */
+const HEATMAP_LEVEL_CLASS = ["bg-border", "bg-accent/30", "bg-accent/55", "bg-accent/78", "bg-accent"];
 
-/** Intensity bucket for a heatmap cell: 0 / 1-3 / 4-9 / 10-24 / 25+, the same
- *  buckets GitHub's own contribution graph uses. An empty (zero) day still
- *  gets a visible tile so the grid reads as a continuous calendar, not
- *  scattered dots. */
-function heatmapBucketClass(messages: number): string {
-  if (messages <= 0) return "bg-border";
-  if (messages <= 3) return "bg-accent/30";
-  if (messages <= 9) return "bg-accent/50";
-  if (messages <= 24) return "bg-accent/75";
-  return "bg-accent";
-}
+/** The heatmap metrics the user can toggle between, and their card/legend key. */
+const HEATMAP_METRICS: Array<{ key: HeatmapMetric; labelKey: string }> = [
+  { key: "messages", labelKey: "sessions.dashboard.metricMessages" },
+  { key: "sessions", labelKey: "sessions.dashboard.metricSessions" },
+  { key: "output_tokens", labelKey: "sessions.dashboard.metricTokens" },
+];
 
 /** Compact token count: 1.2M / 340K / 512. Keeps big output-token totals
  *  readable on a small tile instead of a 7-digit run. */
@@ -60,12 +62,26 @@ function formatTokens(n: number): string {
 /** A summary tile: a big value, a label, and an optional muted hint that
  *  explains what the number actually means (the labels alone were too terse
  *  to read). */
-function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
+function StatCard({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+  accent?: boolean;
+}) {
   return (
-    <div className="rounded-md border border-border bg-bg px-3 py-2">
-      <div className="text-lg font-semibold text-fg">{value}</div>
-      <div className="text-xs text-fg-subtle">{label}</div>
-      {hint && <div className="mt-0.5 text-[10px] text-fg-subtle/70">{hint}</div>}
+    <div className="flex flex-col gap-0.5 rounded-lg border border-border bg-bg px-3.5 py-3">
+      <div
+        className={`text-[22px] font-bold leading-none tabular-nums ${accent ? "text-accent" : "text-fg"}`}
+      >
+        {value}
+      </div>
+      <div className="mt-1 text-[11px] text-fg-subtle">{label}</div>
+      {hint && <div className="text-[10px] text-fg-subtle/70">{hint}</div>}
     </div>
   );
 }
@@ -116,6 +132,7 @@ export function DashboardView() {
   const [range, setRange] = useState<RangeDays>(365);
   const [stats, setStats] = useState<SessionsStats>(EMPTY_STATS);
   const [topTab, setTopTab] = useState<"messages" | "tokens">("messages");
+  const [metric, setMetric] = useState<HeatmapMetric>("messages");
   // Bumped by every sessions-index:updated event. The fetch effect depends
   // on it, so index updates refetch with the *current* range without the
   // subscription effect having to close over `range` (which would force a
@@ -167,6 +184,7 @@ export function DashboardView() {
   const weeks = useMemo(() => heatmapWeeks(stats.heatmap, new Date()), [stats.heatmap]);
   const monthLabels = useMemo(() => heatmapMonthLabels(weeks), [weeks]);
   const rangeCost = useMemo(() => estimateOutputCost(stats.range_models), [stats.range_models]);
+  const heatmapPeak = useMemo(() => heatmapMax(stats.heatmap, metric), [stats.heatmap, metric]);
   const topSessions = topTab === "messages" ? stats.top_by_messages : stats.top_by_tokens;
 
   // Localized short month names (Jan / 1月) for the heatmap month strip,
@@ -235,36 +253,42 @@ export function DashboardView() {
           hint={t("sessions.dashboard.cards.outputTokensHint")}
         />
         <StatCard
+          accent
           label={t("sessions.dashboard.cards.cost")}
-          value={`≈ $${rangeCost.usd.toFixed(2)}${rangeCost.unpricedTokens > 0 ? "+" : ""}`}
+          value={`≈ US$ ${rangeCost.usd.toFixed(2)}${rangeCost.unpricedTokens > 0 ? "+" : ""}`}
           hint={t("sessions.dashboard.cards.costHint")}
         />
       </div>
 
-      <div className="mt-4 rounded-md border border-border bg-bg p-3">
+      <div className="mt-3 rounded-lg border border-border bg-bg p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase text-fg-subtle">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
             {t("sessions.dashboard.heatmapTitle")}
           </h2>
-          {/* Legend: what the tile shades mean, less → more. */}
-          <div className="flex items-center gap-1 text-[10px] text-fg-subtle">
-            <span>{t("sessions.dashboard.legendLess")}</span>
-            {LEGEND_SAMPLES.map((sample) => (
-              <span
-                key={sample}
-                className={`h-[10px] w-[10px] rounded-[2px] ${heatmapBucketClass(sample)}`}
-              />
+          {/* Which metric the tile intensity encodes. */}
+          <div className="flex items-center gap-0.5">
+            {HEATMAP_METRICS.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                aria-pressed={metric === m.key}
+                onClick={() => setMetric(m.key)}
+                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                  metric === m.key ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
+                }`}
+              >
+                {t(m.labelKey)}
+              </button>
             ))}
-            <span>{t("sessions.dashboard.legendMore")}</span>
           </div>
         </div>
 
-        <div className="mt-2 overflow-x-auto">
-          <div className="inline-block">
-            {/* Month strip, aligned to the week columns below it. */}
-            <div className="ml-8 flex gap-[3px] text-[10px] text-fg-subtle">
+        <div className="mt-3 overflow-x-auto pb-1">
+          <div className="inline-flex flex-col gap-1.5">
+            {/* Month strip, aligned to the week columns below (14px cell + 4px gap). */}
+            <div className="ml-[30px] flex text-[10px] text-fg-subtle">
               {monthLabels.map((month, weekIndex) => (
-                <span key={weekIndex} className="w-[10px] shrink-0 whitespace-nowrap">
+                <span key={weekIndex} className="w-[18px] shrink-0 whitespace-nowrap">
                   {month !== null ? monthNames[month] : ""}
                 </span>
               ))}
@@ -273,19 +297,19 @@ export function DashboardView() {
             <div className="flex">
               {/* Weekday labels down the left edge (Mon / Wed / Fri). */}
               <div
-                className="mr-1 grid w-7 shrink-0 text-right text-[10px] text-fg-subtle"
-                style={{ gridTemplateRows: "repeat(7, 10px)", rowGap: "3px" }}
+                className="mr-1.5 grid w-6 shrink-0 text-right text-[10px] text-fg-subtle"
+                style={{ gridTemplateRows: "repeat(7, 14px)", rowGap: "4px" }}
               >
                 {weekdayNames.map((name, row) => (
-                  <span key={row} className="leading-[10px]">
+                  <span key={row} className="leading-[14px]">
                     {row % 2 === 1 ? name : ""}
                   </span>
                 ))}
               </div>
 
               <div
-                className="grid grid-flow-col gap-[3px]"
-                style={{ gridTemplateRows: "repeat(7, 10px)" }}
+                className="grid grid-flow-col gap-1"
+                style={{ gridTemplateRows: "repeat(7, 14px)" }}
               >
                 {weeks.map((week, weekIndex) =>
                   week.map((day, dayIndex) => (
@@ -295,17 +319,26 @@ export function DashboardView() {
                         day
                           ? t("sessions.dashboard.heatmapTooltip", {
                               date: day.date,
-                              count: day.messages,
+                              count: day[metric],
                             })
                           : undefined
                       }
-                      className={`h-[10px] w-[10px] rounded-[2px] ${
-                        day ? heatmapBucketClass(day.messages) : "bg-transparent"
+                      className={`h-[14px] w-[14px] rounded-[3px] ${
+                        day ? HEATMAP_LEVEL_CLASS[heatmapLevel(day[metric], heatmapPeak)] : "bg-transparent"
                       }`}
                     />
                   )),
                 )}
               </div>
+            </div>
+
+            {/* Legend: what the tile shades mean, less → more. */}
+            <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-fg-subtle">
+              <span>{t("sessions.dashboard.legendLess")}</span>
+              {HEATMAP_LEVEL_CLASS.map((cls, i) => (
+                <span key={i} className={`h-[12px] w-[12px] rounded-[3px] ${cls}`} />
+              ))}
+              <span>{t("sessions.dashboard.legendMore")}</span>
             </div>
           </div>
         </div>

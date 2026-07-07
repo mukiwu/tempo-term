@@ -334,7 +334,10 @@
       "weeklySessions": "對話",
       "weeklyMessages": "訊息",
       "weeklyTokens": "Token",
-      "weeklyCost": "成本"
+      "weeklyCost": "成本",
+      "metricMessages": "訊息數",
+      "metricSessions": "對話數",
+      "metricTokens": "輸出 Token"
     }
   }
 }

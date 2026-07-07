@@ -1,4 +1,4 @@
-import type { HeatmapDay } from "./statsBridge";
+import type { HeatmapDay, HeatmapMetric } from "./statsBridge";
 
 /** Cap on how many week columns the calendar heatmap renders, even for the
  *  "all time" range filter — mirrors GitHub's own contribution graph, which
@@ -91,12 +91,33 @@ export function heatmapWeeks(days: HeatmapDay[], end: Date): (HeatmapDay | null)
         week.push(null);
       } else {
         const key = toDateKey(cellDate);
-        week.push(byDate.get(key) ?? { date: key, messages: 0 });
+        week.push(byDate.get(key) ?? { date: key, messages: 0, sessions: 0, output_tokens: 0 });
       }
     }
     weeks.push(week);
   }
   return weeks;
+}
+
+/** The largest value of `metric` across all days, for scaling intensity.
+ *  Returns 0 for an empty set, which callers treat as "everything level 0". */
+export function heatmapMax(days: HeatmapDay[], metric: HeatmapMetric): number {
+  return days.reduce((max, d) => Math.max(max, d[metric]), 0);
+}
+
+/**
+ * Intensity level 0..4 for a cell's `value` relative to the range's `max`.
+ * Level 0 is no activity; 1..4 split the (0, max] span into quartiles, so the
+ * ramp adapts to whichever metric is shown (a few sessions/day and thousands
+ * of tokens/day both fill the scale) instead of fixed message thresholds that
+ * would peg tokens permanently at the top and sessions at the bottom.
+ */
+export function heatmapLevel(value: number, max: number): 0 | 1 | 2 | 3 | 4 {
+  if (value <= 0 || max <= 0) {
+    return 0;
+  }
+  const level = Math.ceil((value / max) * 4);
+  return Math.min(Math.max(level, 1), 4) as 1 | 2 | 3 | 4;
 }
 
 /**

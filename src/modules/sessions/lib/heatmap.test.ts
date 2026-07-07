@@ -1,13 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { heatmapMonthLabels, heatmapWeeks } from "./heatmap";
+import { heatmapLevel, heatmapMax, heatmapMonthLabels, heatmapWeeks } from "./heatmap";
 import type { HeatmapDay } from "./statsBridge";
+
+const day = (date: string, over: Partial<HeatmapDay> = {}): HeatmapDay => ({
+  date,
+  messages: 0,
+  sessions: 0,
+  output_tokens: 0,
+  ...over,
+});
+
+describe("heatmapMax / heatmapLevel", () => {
+  it("scales intensity to the max of the chosen metric", () => {
+    const days = [
+      day("2026-07-01", { messages: 2, output_tokens: 5000 }),
+      day("2026-07-02", { messages: 40, output_tokens: 100 }),
+    ];
+    expect(heatmapMax(days, "messages")).toBe(40);
+    expect(heatmapMax(days, "output_tokens")).toBe(5000);
+    // Same day is top intensity by tokens but low by messages.
+    expect(heatmapLevel(days[0].output_tokens, 5000)).toBe(4);
+    expect(heatmapLevel(days[0].messages, 40)).toBe(1);
+  });
+
+  it("returns 0 for no activity and clamps to the 1..4 range", () => {
+    expect(heatmapLevel(0, 100)).toBe(0);
+    expect(heatmapLevel(5, 0)).toBe(0); // empty range
+    expect(heatmapLevel(1, 100)).toBe(1);
+    expect(heatmapLevel(100, 100)).toBe(4);
+  });
+
+  it("heatmapMax is 0 for an empty set", () => {
+    expect(heatmapMax([], "messages")).toBe(0);
+  });
+});
 
 describe("heatmapMonthLabels", () => {
   it("labels a week column with the month index only when its month first appears", () => {
     const days: HeatmapDay[] = [
-      { date: "2026-05-20", messages: 1 },
-      { date: "2026-06-10", messages: 2 },
-      { date: "2026-07-01", messages: 3 },
+      day("2026-05-20", { messages: 1 }),
+      day("2026-06-10", { messages: 2 }),
+      day("2026-07-01", { messages: 3 }),
     ];
     const weeks = heatmapWeeks(days, new Date(2026, 6, 6));
     const labels = heatmapMonthLabels(weeks);
@@ -32,7 +65,7 @@ describe("heatmapWeeks", () => {
 
   it("pads with null before the first date and after `end`, in a single-week grid of 7 rows", () => {
     // 2026-01-07 is a Wednesday (day 3); its week starts Sunday 2026-01-04.
-    const days: HeatmapDay[] = [{ date: "2026-01-07", messages: 5 }];
+    const days: HeatmapDay[] = [day("2026-01-07", { messages: 5 })];
     const end = new Date(2026, 0, 7);
 
     const weeks = heatmapWeeks(days, end);
@@ -43,7 +76,7 @@ describe("heatmapWeeks", () => {
       null,
       null,
       null,
-      { date: "2026-01-07", messages: 5 },
+      day("2026-01-07", { messages: 5 }),
       null,
       null,
       null,
@@ -54,8 +87,8 @@ describe("heatmapWeeks", () => {
     // 2026-01-05 (Mon) and 2026-01-12 (Mon, the following week); end is the
     // later date, so the second week's Tue-Sat cells trail off into null.
     const days: HeatmapDay[] = [
-      { date: "2026-01-05", messages: 2 },
-      { date: "2026-01-12", messages: 7 },
+      day("2026-01-05", { messages: 2 }),
+      day("2026-01-12", { messages: 7 }),
     ];
     const end = new Date(2026, 0, 12);
 
@@ -64,16 +97,16 @@ describe("heatmapWeeks", () => {
     expect(weeks).toHaveLength(2);
     expect(weeks[0]).toEqual([
       null,
-      { date: "2026-01-05", messages: 2 },
-      { date: "2026-01-06", messages: 0 },
-      { date: "2026-01-07", messages: 0 },
-      { date: "2026-01-08", messages: 0 },
-      { date: "2026-01-09", messages: 0 },
-      { date: "2026-01-10", messages: 0 },
+      day("2026-01-05", { messages: 2 }),
+      day("2026-01-06", { messages: 0 }),
+      day("2026-01-07", { messages: 0 }),
+      day("2026-01-08", { messages: 0 }),
+      day("2026-01-09", { messages: 0 }),
+      day("2026-01-10", { messages: 0 }),
     ]);
     expect(weeks[1]).toEqual([
-      { date: "2026-01-11", messages: 0 },
-      { date: "2026-01-12", messages: 7 },
+      day("2026-01-11", { messages: 0 }),
+      day("2026-01-12", { messages: 7 }),
       null,
       null,
       null,
@@ -84,8 +117,8 @@ describe("heatmapWeeks", () => {
 
   it("caps the grid at 53 weeks, dropping older weeks entirely instead of exceeding the cap", () => {
     const days: HeatmapDay[] = [
-      { date: "2024-04-21", messages: 1 }, // ~800 days before `end`
-      { date: "2026-06-28", messages: 3 },
+      day("2024-04-21", { messages: 1 }), // ~800 days before `end`
+      day("2026-06-28", { messages: 3 }),
     ];
     const end = new Date(2026, 5, 30); // Tue 2026-06-30
 
@@ -97,16 +130,13 @@ describe("heatmapWeeks", () => {
     const flat = weeks.flat();
     expect(flat.find((d) => d?.date === "2024-04-21")).toBeUndefined();
     // The recent date is still present.
-    expect(flat.find((d) => d?.date === "2026-06-28")).toEqual({
-      date: "2026-06-28",
-      messages: 3,
-    });
+    expect(flat.find((d) => d?.date === "2026-06-28")).toEqual(day("2026-06-28", { messages: 3 }));
   });
 
   it("every week has exactly 7 rows", () => {
     const days: HeatmapDay[] = [
-      { date: "2026-01-01", messages: 1 },
-      { date: "2026-02-01", messages: 1 },
+      day("2026-01-01", { messages: 1 }),
+      day("2026-02-01", { messages: 1 }),
     ];
     const weeks = heatmapWeeks(days, new Date(2026, 1, 1));
 
@@ -129,8 +159,8 @@ describe("heatmapWeeks", () => {
     process.env.TZ = "America/New_York";
     try {
       const days: HeatmapDay[] = [
-        { date: "2026-02-05", messages: 1 },
-        { date: "2026-06-10", messages: 2 },
+        day("2026-02-05", { messages: 1 }),
+        day("2026-06-10", { messages: 2 }),
       ];
       const weeks = heatmapWeeks(days, new Date(2026, 5, 15));
 

@@ -25,11 +25,17 @@ export interface StatsCards {
 }
 
 /** One calendar date with activity. Only dates with at least one message are
- *  present — the backend never emits zero-activity days. */
+ *  present — the backend never emits zero-activity days. Carries all three
+ *  metrics so the heatmap can toggle what its intensity encodes. */
 export interface HeatmapDay {
   date: string;
   messages: number;
+  sessions: number;
+  output_tokens: number;
 }
+
+/** Which per-day metric the activity heatmap shades by. */
+export type HeatmapMetric = "messages" | "sessions" | "output_tokens";
 
 export interface TopSession {
   id: string;

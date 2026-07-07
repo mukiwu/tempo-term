@@ -48,8 +48,8 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
       output_tokens: 12500,
     },
     heatmap: [
-      { date: "2026-07-01", messages: 5 },
-      { date: "2026-07-02", messages: 12 },
+      { date: "2026-07-01", messages: 5, sessions: 2, output_tokens: 800 },
+      { date: "2026-07-02", messages: 12, sessions: 3, output_tokens: 2100 },
     ],
     top_by_messages: [
       { id: "s1", agent: "claude", title: "Fix flaky test", project_cwd: "/repo/app", value: 42 },
@@ -96,9 +96,9 @@ describe("DashboardView", () => {
     expect(screen.getByText("9")).toBeInTheDocument();
     expect(screen.getByText("28.3")).toBeInTheDocument();
     // Output-token card compacts 12,500 → "12.5K"; the cost card prices the
-    // fixture's 12,500 sonnet tokens (15 $/Mtok) at ≈ $0.19.
+    // fixture's 12,500 sonnet tokens (15 $/Mtok) at ≈ US$ 0.19.
     expect(screen.getByText("12.5K")).toBeInTheDocument();
-    expect(screen.getByText("≈ $0.19")).toBeInTheDocument();
+    expect(screen.getByText("≈ US$ 0.19")).toBeInTheDocument();
   });
 
   it("refetches with the chosen range when a chip is clicked", async () => {
@@ -179,10 +179,25 @@ describe("DashboardView", () => {
 
     // The mocked `t` echoes `key:count`; the tooltip is now i18n-keyed
     // (real interpolation of date + count happens with the live catalog).
+    // Default metric is messages, so the busiest day's count (12) shows.
     await waitFor(() =>
       expect(
         screen.getByTitle("sessions.dashboard.heatmapTooltip:12"),
       ).toBeInTheDocument(),
+    );
+  });
+
+  it("switches the heatmap metric to output tokens on toggle", async () => {
+    render(<DashboardView />);
+    await waitFor(() =>
+      expect(screen.getByTitle("sessions.dashboard.heatmapTooltip:12")).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.metricTokens" }));
+
+    // The tooltip now reflects that day's output tokens (2100), not messages.
+    await waitFor(() =>
+      expect(screen.getByTitle("sessions.dashboard.heatmapTooltip:2100")).toBeInTheDocument(),
     );
   });
 
