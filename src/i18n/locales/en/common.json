@@ -295,6 +295,26 @@
       "system-reminder": "System reminder",
       "task-notification": "Task notification",
       "command": "Command"
+    },
+    "dashboard": {
+      "title": "Statistics",
+      "range30": "30d",
+      "range90": "90d",
+      "range365": "1y",
+      "rangeAll": "All",
+      "cards": {
+        "sessions": "Sessions",
+        "messages": "Messages",
+        "projects": "Projects",
+        "activeDays": "Active days",
+        "mps": "Msgs / session"
+      },
+      "heatmapTitle": "Activity",
+      "topTitle": "Top sessions",
+      "topByMessages": "By messages",
+      "topByTokens": "By tokens",
+      "weeklyTitle": "This week",
+      "back": "Back"
     }
   }
 }

@@ -1,0 +1,178 @@
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DashboardView } from "./DashboardView";
+import { useSessionsStore } from "./lib/sessionsStore";
+import type { SessionsStats } from "./lib/statsBridge";
+
+// vi.mock is hoisted to the top of the file, so mocks must be created with
+// vi.hoisted() to be accessible inside the factory callbacks.
+const { mockInvoke, mockListen, mockUnlisten, statsFixture } = vi.hoisted(() => ({
+  mockInvoke: vi.fn(),
+  mockListen: vi.fn(),
+  mockUnlisten: vi.fn(),
+  // Backs the "sessions_stats" invoke response, seeded per test.
+  statsFixture: { current: null as unknown },
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (cmd: string, args?: Record<string, unknown>) => {
+    mockInvoke(cmd, args);
+    if (cmd === "sessions_stats") {
+      return Promise.resolve(statsFixture.current);
+    }
+    return Promise.resolve(undefined);
+  },
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: mockListen,
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts?.count !== undefined ? `${key}:${opts.count}` : key,
+  }),
+}));
+
+function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
+  return {
+    cards: {
+      sessions: 12,
+      messages: 340,
+      user_messages: 150,
+      projects: 4,
+      active_days: 9,
+      messages_per_session: 28.3333,
+    },
+    heatmap: [
+      { date: "2026-07-01", messages: 5 },
+      { date: "2026-07-02", messages: 12 },
+    ],
+    top_by_messages: [
+      { id: "s1", agent: "claude", title: "Fix flaky test", project_cwd: "/repo/app", value: 42 },
+    ],
+    top_by_tokens: [
+      { id: "s2", agent: "codex", title: "Refactor bridge", project_cwd: "/repo/app2", value: 900 },
+    ],
+    weekly: [
+      {
+        agent: "claude",
+        sessions: 3,
+        messages: 80,
+        output_tokens: 500,
+        models: [{ model: "claude-sonnet-5", output_tokens: 500 }],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+describe("DashboardView", () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockListen.mockReset().mockResolvedValue(mockUnlisten);
+    mockUnlisten.mockReset();
+    statsFixture.current = stats();
+    useSessionsStore.setState({
+      sessions: [],
+      loaded: false,
+      query: "",
+      agentFilter: "all",
+      selectedId: null,
+    });
+  });
+
+  it("fetches stats on mount for the default range and renders card values", async () => {
+    render(<DashboardView />);
+
+    expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 365 });
+    await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
+    expect(screen.getByText("340")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getByText("9")).toBeInTheDocument();
+    expect(screen.getByText("28.3")).toBeInTheDocument();
+  });
+
+  it("refetches with the chosen range when a chip is clicked", async () => {
+    render(<DashboardView />);
+    await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.range30" }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 }));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.rangeAll" }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: null }));
+  });
+
+  it("shows top-by-messages rows by default and switches to top-by-tokens on tab click", async () => {
+    render(<DashboardView />);
+
+    await waitFor(() => expect(screen.getByText("Fix flaky test")).toBeInTheDocument());
+    expect(screen.queryByText("Refactor bridge")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.topByTokens" }));
+
+    expect(screen.getByText("Refactor bridge")).toBeInTheDocument();
+    expect(screen.queryByText("Fix flaky test")).not.toBeInTheDocument();
+  });
+
+  it("selects a session when a top-sessions row is clicked", async () => {
+    render(<DashboardView />);
+    await waitFor(() => expect(screen.getByText("Fix flaky test")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("Fix flaky test"));
+
+    expect(useSessionsStore.getState().selectedId).toBe("s1");
+  });
+
+  it("renders the weekly digest with per-agent sessions/messages/tokens", async () => {
+    render(<DashboardView />);
+
+    // The agent badge also appears on the top-sessions row, so scope to the
+    // weekly digest's <li> rows specifically.
+    await waitFor(() => expect(screen.getByText("sessions.dashboard.weeklyTitle")).toBeInTheDocument());
+    const weeklyRow = screen
+      .getByText("sessions.dashboard.weeklyTitle")
+      .closest("div")
+      ?.querySelector("li");
+    // Sessions/messages/tokens render as separate text nodes, so match on
+    // the row's combined text content instead of a single node.
+    expect(weeklyRow?.textContent).toBe("sessions.agents.claude3 · 80 · 500");
+  });
+
+  it("renders heatmap cells with a date · message-count tooltip", async () => {
+    render(<DashboardView />);
+
+    await waitFor(() =>
+      expect(screen.getByTitle("2026-07-02 · 12 messages")).toBeInTheDocument(),
+    );
+  });
+
+  it("resubscribes to sessions-index:updated and releases the listener on unmount", async () => {
+    const { unmount } = render(<DashboardView />);
+    await waitFor(() => expect(mockListen).toHaveBeenCalledWith("sessions-index:updated", expect.any(Function)));
+
+    unmount();
+
+    expect(mockUnlisten).toHaveBeenCalled();
+  });
+
+  it("releases the listener when unmounted before the subscription resolves", async () => {
+    let resolveListen!: (fn: () => void) => void;
+    mockListen.mockImplementation(
+      () =>
+        new Promise<() => void>((resolve) => {
+          resolveListen = resolve;
+        }),
+    );
+    const { unmount } = render(<DashboardView />);
+
+    unmount();
+    expect(mockUnlisten).not.toHaveBeenCalled();
+
+    resolveListen(mockUnlisten);
+
+    await waitFor(() => expect(mockUnlisten).toHaveBeenCalled());
+  });
+});

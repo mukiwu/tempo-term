@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { History, Loader2, Pin, PinOff, Play } from "lucide-react";
+import { ArrowLeft, Loader2, Pin, PinOff, Play } from "lucide-react";
 import { MarkdownView } from "@/components/MarkdownView";
 import { Tooltip } from "@/components/Tooltip";
 import { sessionsGet, type TranscriptMessage } from "./lib/sessionsBridge";
@@ -8,6 +8,7 @@ import { useSessionsStore } from "./lib/sessionsStore";
 import { formatRelativeTime } from "./lib/relativeTime";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
 import { resumeCommand, resumeSession } from "./lib/resume";
+import { DashboardView } from "./DashboardView";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -91,6 +92,7 @@ export function SessionsTabContent() {
   const sessions = useSessionsStore((s) => s.sessions);
   const selectedId = useSessionsStore((s) => s.selectedId);
   const togglePin = useSessionsStore((s) => s.togglePin);
+  const select = useSessionsStore((s) => s.select);
 
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -136,13 +138,7 @@ export function SessionsTabContent() {
   }, [selectedId]);
 
   if (!selectedId) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 bg-bg-inset text-center text-fg-subtle">
-        <History size={32} strokeWidth={1} />
-        <p className="text-sm">{t("sessions.selectPrompt")}</p>
-        <p className="text-xs">{t("sessions.totalCount", { count: sessions.length })}</p>
-      </div>
-    );
+    return <DashboardView />;
   }
 
   const session = sessions.find((s) => s.id === selectedId) ?? null;
@@ -151,6 +147,16 @@ export function SessionsTabContent() {
     <div className="flex h-full flex-col bg-bg">
       {session && (
         <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
+          <Tooltip label={t("sessions.dashboard.back")}>
+            <button
+              type="button"
+              aria-label={t("sessions.dashboard.back")}
+              onClick={() => select(null)}
+              className="shrink-0 rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+            >
+              <ArrowLeft size={14} />
+            </button>
+          </Tooltip>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-sm font-medium text-fg">{session.title}</h2>

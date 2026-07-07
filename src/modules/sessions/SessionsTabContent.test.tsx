@@ -4,15 +4,21 @@ import { SessionsTabContent } from "./SessionsTabContent";
 import { useSessionsStore } from "./lib/sessionsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import type { SessionSummary, TranscriptMessage } from "./lib/sessionsBridge";
+import type { SessionsStats } from "./lib/statsBridge";
 
 // vi.mock is hoisted to the top of the file, so mocks must be created with
 // vi.hoisted() to be accessible inside the factory callbacks.
-const { mockInvoke, transcripts } = vi.hoisted(() => ({
+const { mockInvoke, mockListen, mockUnlisten, transcripts, statsFixture } = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
+  mockListen: vi.fn(),
+  mockUnlisten: vi.fn(),
   // Backs "sessions_get" invoke responses per session id. Each entry is a
   // resolver the test controls directly, so responses can be made to land in
   // any order (needed for the stale-response race test below).
   transcripts: new Map<string, Promise<TranscriptMessage[]>>(),
+  // Backs the "sessions_stats" invoke response the dashboard fetches whenever
+  // nothing is selected.
+  statsFixture: { current: null as unknown },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -21,8 +27,15 @@ vi.mock("@tauri-apps/api/core", () => ({
     if (cmd === "sessions_get" && args?.id) {
       return transcripts.get(args.id) ?? Promise.resolve([]);
     }
+    if (cmd === "sessions_stats") {
+      return Promise.resolve(statsFixture.current);
+    }
     return Promise.resolve(undefined);
   },
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: mockListen,
 }));
 
 vi.mock("react-i18next", () => ({
@@ -60,10 +73,31 @@ function message(overrides: Partial<TranscriptMessage>): TranscriptMessage {
   };
 }
 
+function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
+  return {
+    cards: {
+      sessions: 0,
+      messages: 0,
+      user_messages: 0,
+      projects: 0,
+      active_days: 0,
+      messages_per_session: 0,
+    },
+    heatmap: [],
+    top_by_messages: [],
+    top_by_tokens: [],
+    weekly: [],
+    ...overrides,
+  };
+}
+
 describe("SessionsTabContent", () => {
   beforeEach(() => {
     mockInvoke.mockReset();
+    mockListen.mockReset().mockResolvedValue(mockUnlisten);
+    mockUnlisten.mockReset();
     transcripts.clear();
+    statsFixture.current = stats();
     useSessionsStore.setState({
       sessions: [],
       loaded: false,
@@ -74,16 +108,44 @@ describe("SessionsTabContent", () => {
     useTabsStore.setState({ spaces: [], activeSpaceId: null, tabs: [], activeId: null });
   });
 
-  it("shows the select prompt and total session count when nothing is selected", () => {
-    useSessionsStore.setState({
-      sessions: [session({ id: "a" }), session({ id: "b" })],
-      selectedId: null,
+  it("renders the dashboard instead of a viewer when nothing is selected", async () => {
+    statsFixture.current = stats({
+      top_by_messages: [
+        { id: "a", agent: "claude", title: "Fix flaky test", project_cwd: "/repo/app", value: 42 },
+      ],
     });
 
     render(<SessionsTabContent />);
 
-    expect(screen.getByText("sessions.selectPrompt")).toBeInTheDocument();
-    expect(screen.getByText("sessions.totalCount:2")).toBeInTheDocument();
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 365 }));
+    expect(screen.getByText("sessions.dashboard.title")).toBeInTheDocument();
+  });
+
+  it("selects a session and shows the viewer when a dashboard top-session row is clicked, then returns via the back button", async () => {
+    const target = session({ id: "a", title: "Fix flaky test", agent: "claude" });
+    useSessionsStore.setState({ sessions: [target], selectedId: null });
+    statsFixture.current = stats({
+      top_by_messages: [
+        { id: "a", agent: "claude", title: "Fix flaky test", project_cwd: "/Users/muki/project", value: 42 },
+      ],
+    });
+    transcripts.set("a", Promise.resolve([]));
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(screen.getByText("Fix flaky test")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("Fix flaky test"));
+
+    // The viewer takes over: its header (with the resume button) appears.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "sessions.resume" })).toBeInTheDocument(),
+    );
+    expect(useSessionsStore.getState().selectedId).toBe("a");
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.back" }));
+
+    expect(useSessionsStore.getState().selectedId).toBe(null);
+    await waitFor(() => expect(screen.getByText("sessions.dashboard.title")).toBeInTheDocument());
   });
 
   it("fetches and renders the transcript for the selected session", async () => {

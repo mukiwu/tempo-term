@@ -295,6 +295,26 @@
       "system-reminder": "系統提醒",
       "task-notification": "背景任務通知",
       "command": "指令"
+    },
+    "dashboard": {
+      "title": "統計",
+      "range30": "30 天",
+      "range90": "90 天",
+      "range365": "1 年",
+      "rangeAll": "全部",
+      "cards": {
+        "sessions": "對話數",
+        "messages": "訊息數",
+        "projects": "專案數",
+        "activeDays": "活躍天數",
+        "mps": "每場訊息"
+      },
+      "heatmapTitle": "活動",
+      "topTitle": "熱門對話",
+      "topByMessages": "依訊息數",
+      "topByTokens": "依 token",
+      "weeklyTitle": "本週",
+      "back": "返回"
     }
   }
 }
