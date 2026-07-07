@@ -51,6 +51,14 @@ describe("toSessionsCsv", () => {
     expect(row.startsWith('"\'@cmd,tail",')).toBe(true);
   });
 
+  it("guards a leading line feed that spreadsheets strip before evaluating", () => {
+    // Excel/Sheets drop a leading "\n" before parsing, exposing the "=" as a
+    // formula — so the field must be prefixed with "'". The "\n" also forces
+    // RFC-4180 quoting, giving a wrapped "'\n=SUM(A1)".
+    const csv = toSessionsCsv([s({ title: "\n=SUM(A1)" })]);
+    expect(csv.includes("\"'\n=SUM(A1)\"")).toBe(true);
+  });
+
   it("returns just the header for an empty list", () => {
     expect(toSessionsCsv([])).toBe(
       "title,agent,model,project,started_at,ended_at,messages,user_messages,output_tokens,pinned",

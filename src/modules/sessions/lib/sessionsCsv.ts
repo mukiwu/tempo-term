@@ -6,11 +6,11 @@ const HEADER = [
 ] as const;
 
 /** Neutralizes CSV formula injection: a field starting with a formula trigger
- *  (`=` `+` `-` `@`, or a leading tab/CR that some parsers strip to reveal one)
- *  is prefixed with a single quote so a spreadsheet treats it as inert text
- *  instead of executing it on open. */
+ *  (`=` `+` `-` `@`, or a leading tab/CR/LF that a spreadsheet strips to reveal
+ *  one) is prefixed with a single quote so it is treated as inert text instead
+ *  of executing on open. */
 function guardFormula(value: string): string {
-  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return /^[=+\-@\t\r\n]/.test(value) ? `'${value}` : value;
 }
 
 /** RFC-4180 quote: wrap in double quotes and double any inner quote when the

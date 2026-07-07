@@ -57,6 +57,14 @@ export function ProjectView() {
   const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
+    // Clear stats the instant the project changes so the tiles/recent list
+    // don't flash the previous project's numbers until the new fetch lands.
+    // Scoped to `cwd` only (not refreshTick), so a background index-update
+    // refetch updates in place without blanking the screen.
+    setStats(EMPTY);
+  }, [cwd]);
+
+  useEffect(() => {
     // `cancelled` scopes this fetch to the cwd/tick that triggered it: switching
     // projects (or unmounting) before it resolves must not overwrite state
     // with a stale project's stats.
