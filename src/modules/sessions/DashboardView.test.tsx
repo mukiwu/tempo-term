@@ -136,9 +136,9 @@ describe("DashboardView", () => {
       .getByText("sessions.dashboard.weeklyTitle")
       .closest("div")
       ?.querySelector("li");
-    // Sessions/messages/tokens render as separate text nodes, so match on
-    // the row's combined text content instead of a single node.
-    expect(weeklyRow?.textContent).toBe("sessions.agents.claude3 · 80 · 500");
+    // Sessions/messages/tokens/cost render as separate text nodes. The fixture
+    // has a known model (sonnet-5) with 500 tokens, so cost will display as ≈ $0.01.
+    expect(weeklyRow?.textContent).toBe("sessions.agents.claude3 · 80 · 500≈ $0.01");
   });
 
   it("renders heatmap cells with a date · message-count tooltip", async () => {

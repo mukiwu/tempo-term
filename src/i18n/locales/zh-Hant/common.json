@@ -314,7 +314,8 @@
       "topByMessages": "依訊息數",
       "topByTokens": "依 token",
       "weeklyTitle": "本週",
-      "back": "返回"
+      "back": "返回",
+      "costNote": "≈ 僅計輸出 token，粗估"
     }
   }
 }

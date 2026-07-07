@@ -314,7 +314,8 @@
       "topByMessages": "By messages",
       "topByTokens": "By tokens",
       "weeklyTitle": "This week",
-      "back": "Back"
+      "back": "Back",
+      "costNote": "≈ output tokens only, rough estimate"
     }
   }
 }

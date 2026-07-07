@@ -5,6 +5,7 @@ import { sessionsStats, type SessionsStats, type TopSession } from "./lib/statsB
 import { useSessionsStore } from "./lib/sessionsStore";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
 import { heatmapWeeks } from "./lib/heatmap";
+import { estimateOutputCost } from "./lib/cost";
 
 type RangeDays = 30 | 90 | 365 | null;
 
@@ -237,18 +238,31 @@ export function DashboardView() {
             {t("sessions.dashboard.weeklyTitle")}
           </h2>
           <ul className="mt-2 flex flex-col gap-1">
-            {stats.weekly.map((row) => (
-              <li key={row.agent} className="flex items-center justify-between text-sm">
-                <span className={`text-xs font-medium uppercase ${AGENT_BADGE_CLASS[row.agent]}`}>
-                  {t(`sessions.agents.${row.agent}`)}
-                </span>
-                <span className="text-fg-subtle">
-                  {row.sessions} · {row.messages} · {row.output_tokens}
-                </span>
-                {/* Task 3: ≈cost column goes here, computed from row.models */}
-              </li>
-            ))}
+            {stats.weekly.map((row) => {
+              const costInfo = estimateOutputCost(row.models);
+              const hasCost = costInfo.usd > 0 || costInfo.unpricedTokens > 0;
+              const costStr =
+                costInfo.usd > 0
+                  ? `≈ $${costInfo.usd.toFixed(2)}${costInfo.unpricedTokens > 0 ? "+" : ""}`
+                  : "";
+
+              return (
+                <li
+                  key={row.agent}
+                  className="flex items-center justify-between gap-3 text-sm"
+                >
+                  <span className={`text-xs font-medium uppercase ${AGENT_BADGE_CLASS[row.agent]}`}>
+                    {t(`sessions.agents.${row.agent}`)}
+                  </span>
+                  <span className="text-fg-subtle">
+                    {row.sessions} · {row.messages} · {row.output_tokens.toLocaleString()}
+                  </span>
+                  {hasCost && <span className="shrink-0 text-xs text-fg-subtle">{costStr}</span>}
+                </li>
+              );
+            })}
           </ul>
+          <p className="mt-3 text-[11px] text-fg-subtle">{t("sessions.dashboard.costNote")}</p>
         </div>
       </div>
     </div>
