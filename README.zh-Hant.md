@@ -114,7 +114,7 @@ TempoTerm 是一個用 Tauri 2 加 Rust 與 React 19 打造的桌面 app，把�
 
 ### AI 對話瀏覽
 
-- 在同一處瀏覽 Claude Code、Codex 與 Antigravity CLI 的所有歷史對話，直接讀取本機的 session 檔案，不會複製到 TempoTerm 自己的資料庫
+- 在同一處瀏覽 Claude Code、Codex 與 Antigravity CLI 的所有歷史對話，直接讀取本機的 session 檔案，因此不會複製到 TempoTerm 自己的資料庫
 - 儀表板彙整你的紀錄：全期間活動熱圖、今日時段分布、model 使用量圓餅圖、各 agent 的本週統計、熱門對話，以及以美金估算的成本
 - 從任一對話的專案名進入專案視角，看該專案的累積統計、最近對話，並一鍵在該目錄開新終端
 - 在對話內文下方直接看到這次對話期間該專案產生的本機 git commit
