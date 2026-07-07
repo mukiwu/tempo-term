@@ -6051,7 +6051,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-term"
-version = "0.0.15"
+version = "0.0.16"
 dependencies = [
  "base64 0.22.1",
  "chrono",

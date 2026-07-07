@@ -110,6 +110,16 @@ TempoTerm 是一个用 Tauri 2 加 Rust 与 React 19 打造的桌面 app，把�
 
 ![AI 助手面板与 Markdown 回复](screenshots/ai-assistant.png)
 
+### AI 对话浏览
+
+- 在同一处浏览 Claude Code、Codex 与 Antigravity CLI 的所有历史对话，直接读取本机的 session 文件，不会复制到 TempoTerm 自己的数据库
+- 仪表板汇总你的记录：全周期活动热图、今日时段分布、model 使用量饼图、各 agent 的本周统计、热门对话，以及以美元估算的成本
+- 从任一对话的项目名进入项目视图，查看该项目的累计统计、最近对话，并一键在该目录打开新终端
+- 在对话正文下方直接看到本次对话期间该项目产生的本机 git commit
+- 按 agent 或 model 筛选列表；置顶、删除到回收站、把正文导出为 Markdown，或把筛选后的列表导出为 CSV
+
+![AI 对话浏览仪表板](screenshots/ai-sessions-dashboard.png)
+
 ### 状态栏
 
 - 实时显示 CPU、内存与网络上下行流量

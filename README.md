@@ -112,6 +112,16 @@ Any pane in any tab can be split four ways: click a sidebar item to auto-split, 
 
 ![AI assistant panel with a Markdown reply](screenshots/ai-assistant.png)
 
+### AI Sessions
+
+- Browse every past AI CLI conversation from Claude Code, Codex and Antigravity CLI in one place, read directly from their local session files, so nothing is ever copied into TempoTerm's own storage
+- A dashboard summarizes your history: a full-range activity heatmap, today's hour-of-day distribution, model usage as a share donut, a per-agent weekly breakdown, top conversations, and an estimated cost in USD
+- Open a project view from any conversation's project name to see its aggregate stats, recent sessions, and a one-click terminal rooted at that project
+- See the local git commits made during a session, right below its transcript
+- Filter the list by agent or model; pin, delete to trash, export a transcript to Markdown, or export the filtered list to CSV
+
+![AI Sessions dashboard](screenshots/ai-sessions-dashboard.png)
+
 ### Status bar
 
 - Live CPU, memory and network throughput
