@@ -9,6 +9,7 @@ pub mod codex;
 pub mod index;
 pub mod proto;
 pub mod scanner;
+pub mod stats;
 pub mod sync;
 pub mod types;
 pub mod watch;
@@ -19,6 +20,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, State};
 
 use index::Index;
+use stats::SessionsStats;
 use types::{SessionSummary, TranscriptMessage};
 
 /// The index's on-disk file, under the app's data directory.
@@ -163,4 +165,26 @@ pub fn sessions_pin(state: State<SessionsIndexState>, id: String, pinned: bool) 
     let inner = guard.as_ref().ok_or_else(|| "sessions index not started".to_string())?;
     let result = inner.index.lock().unwrap().set_pinned(&id, pinned);
     result
+}
+
+/// Dashboard aggregates (cards, heatmap, top sessions, weekly breakdown) for
+/// sessions active in the last `days` local days (`None` = all time).
+///
+/// Async and offloaded to a blocking pool thread for the same reason as
+/// `sessions_list`: several SQL aggregates run here, and none of them should
+/// ever block the main thread on incidental lock contention with a
+/// background sync. Degrades to zeroed stats — never an error — before
+/// `sessions_index_start` has run.
+#[tauri::command]
+pub async fn sessions_stats(state: State<'_, SessionsIndexState>, days: Option<i64>) -> Result<SessionsStats, String> {
+    let index = {
+        let guard = state.inner.lock().unwrap();
+        guard.as_ref().map(|inner| Arc::clone(&inner.index))
+    };
+    let Some(index) = index else {
+        return Ok(stats::empty_stats());
+    };
+    tauri::async_runtime::spawn_blocking(move || index.lock().unwrap().stats(days))
+        .await
+        .map_err(|e| e.to_string())
 }
