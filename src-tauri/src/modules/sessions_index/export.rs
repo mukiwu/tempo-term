@@ -30,6 +30,27 @@ fn local_date(ms: i64) -> String {
         .to_string()
 }
 
+/// Sanitizes a value that gets interpolated into a markdown-structural
+/// label line (`**Tool call: {name}**`, `> **{source}**`): backticks become
+/// apostrophes and all whitespace runs (including newlines) collapse to a
+/// single space, so a corrupted transcript's tool_name can never break out
+/// of its label — e.g. open a rogue fence above the real fenced body.
+fn sanitize_label(s: &str) -> String {
+    s.replace('`', "'").split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// `sanitize_label` over an optional raw value, falling back to `fallback`
+/// both when the value is absent and when nothing survives sanitizing
+/// (a whitespace-only name would otherwise leave an empty label).
+fn label_or(raw: Option<&str>, fallback: &str) -> String {
+    let label = sanitize_label(raw.unwrap_or(fallback));
+    if label.is_empty() {
+        fallback.to_string()
+    } else {
+        label
+    }
+}
+
 /// Longest run of consecutive backticks anywhere in `text`. The fence that
 /// wraps `text` in a code block must be longer than this, or a tool call
 /// that itself echoes a fenced block (e.g. a `write_file` call whose input
@@ -74,13 +95,16 @@ fn blockquote(text: &str) -> String {
 /// italic line. An empty transcript renders just the header: still a valid,
 /// readable file rather than an error.
 pub fn transcript_to_markdown(summary: &SessionSummary, messages: &[TranscriptMessage]) -> String {
+    let start = local_date(summary.started_at);
+    let end = local_date(summary.ended_at);
+    // A session that starts and ends on the same local day reads better as
+    // a single date than as "X – X".
+    let dates = if start == end { start } else { format!("{start} – {end}") };
     let mut out = format!(
-        "# {title}\n\n{agent} · {project} · {start} – {end}\n",
+        "# {title}\n\n{agent} · {project} · {dates}\n",
         title = summary.title,
         agent = agent_label(&summary.agent),
         project = summary.project_cwd,
-        start = local_date(summary.started_at),
-        end = local_date(summary.ended_at),
     );
 
     for message in messages {
@@ -93,11 +117,11 @@ pub fn transcript_to_markdown(summary: &SessionSummary, messages: &[TranscriptMe
                 out.push_str(&format!("## Assistant\n\n{}\n", message.text));
             }
             "tool" => {
-                let name = message.tool_name.as_deref().unwrap_or("tool");
+                let name = label_or(message.tool_name.as_deref(), "tool");
                 out.push_str(&format!("**Tool call: {name}**\n\n{}", fenced_block(&message.text)));
             }
             "injected" => {
-                let source = message.tool_name.as_deref().unwrap_or("injected");
+                let source = label_or(message.tool_name.as_deref(), "injected");
                 out.push_str(&format!("> **{source}**\n>\n{}\n", blockquote(&message.text)));
             }
             "system" => {
@@ -216,5 +240,42 @@ mod tests {
         let messages = vec![msg("system", "Session resumed.", None)];
         let md = transcript_to_markdown(&summary(), &messages);
         assert!(md.contains("_Session resumed._\n"));
+    }
+
+    #[test]
+    fn tool_name_with_newlines_and_backticks_renders_as_a_single_clean_label_line() {
+        // A corrupted transcript could carry markdown-structural characters
+        // in tool_name; the label must stay on one line and must not open a
+        // fence of its own, or the block structure below it breaks.
+        let messages = vec![msg("tool", "output", Some("evil\n```\ninjected"))];
+        let md = transcript_to_markdown(&summary(), &messages);
+        assert!(md.contains("**Tool call: evil ''' injected**\n"), "label not sanitized in:\n{md}");
+        // The real fence structure around the body is intact.
+        assert!(md.contains("```\noutput\n```\n"));
+    }
+
+    #[test]
+    fn injected_source_with_newlines_and_backticks_renders_as_a_single_clean_label_line() {
+        let messages = vec![msg("injected", "body", Some("bad\r\n`source`"))];
+        let md = transcript_to_markdown(&summary(), &messages);
+        assert!(md.contains("> **bad 'source'**\n>\n> body\n"), "label not sanitized in:\n{md}");
+    }
+
+    #[test]
+    fn whitespace_only_tool_name_falls_back_to_the_generic_label() {
+        let messages = vec![msg("tool", "output", Some(" \n\t "))];
+        let md = transcript_to_markdown(&summary(), &messages);
+        assert!(md.contains("**Tool call: tool**\n"));
+    }
+
+    #[test]
+    fn same_day_session_renders_a_single_date_instead_of_a_range() {
+        let mut s = summary();
+        // Two timestamps a few hours apart on the same local calendar day.
+        s.ended_at = s.started_at + 3 * 60 * 60 * 1000;
+        let md = transcript_to_markdown(&s, &[]);
+        let date = super::local_date(s.started_at);
+        assert!(md.contains(&format!("Claude · /repo/app · {date}\n")), "single date not found in:\n{md}");
+        assert!(!md.contains(" – "));
     }
 }
