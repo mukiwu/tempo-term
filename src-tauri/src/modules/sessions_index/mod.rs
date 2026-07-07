@@ -79,7 +79,10 @@ pub fn sessions_index_start(app: AppHandle, state: State<SessionsIndexState>) ->
     // while this background sync is still running.
     let app_bg = app.clone();
     std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        eprintln!("[sessions] full sync: begin");
         let count = sync::full_sync(&index, &home);
+        eprintln!("[sessions] full sync: {count} dirty in {:?}", started.elapsed());
         watch::emit_updated(&app_bg, count);
     });
 
@@ -114,20 +117,24 @@ pub async fn sessions_list(state: State<'_, SessionsIndexState>) -> Result<Vec<S
 /// viewer. Never reads from the index (it stores metadata only).
 #[tauri::command]
 pub async fn sessions_get(state: State<'_, SessionsIndexState>, id: String) -> Result<Vec<TranscriptMessage>, String> {
-    let lookup = {
+    let started = std::time::Instant::now();
+    eprintln!("[sessions] get {id}: begin");
+    let index = {
         let guard = state.inner.lock().unwrap();
         let inner = guard.as_ref().ok_or_else(|| "sessions index not started".to_string())?;
-        let result = inner.index.lock().unwrap().lookup_file(&id);
-        result
-    };
-    let Some((agent, file_path)) = lookup else {
-        return Ok(Vec::new());
+        Arc::clone(&inner.index)
     };
 
-    // A transcript can be multiple MBs; parsing it must never run inline on
-    // whatever thread is awaiting this command (see claude_session_title for
-    // the same rationale).
-    tauri::async_runtime::spawn_blocking(move || {
+    // Both the id lookup and the transcript parse run on a blocking-pool
+    // thread: the lookup so this async worker never parks on the index
+    // mutex while a sync batch holds it, and the parse because a transcript
+    // can be multiple MBs (see claude_session_title for the same rationale).
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let lookup = index.lock().unwrap().lookup_file(&id);
+        let Some((agent, file_path)) = lookup else {
+            eprintln!("[sessions] get {id}: not in index");
+            return Vec::new();
+        };
         let path = Path::new(&file_path);
         match agent.as_str() {
             "claude" => claude::parse_claude_transcript(path),
@@ -137,7 +144,16 @@ pub async fn sessions_get(state: State<'_, SessionsIndexState>, id: String) -> R
         }
     })
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string());
+    match &result {
+        Ok(messages) => eprintln!(
+            "[sessions] get: {} messages in {:?}",
+            messages.len(),
+            started.elapsed()
+        ),
+        Err(err) => eprintln!("[sessions] get: error after {:?}: {err}", started.elapsed()),
+    }
+    result
 }
 
 /// Pin or unpin a session. Errors if the index hasn't been started yet.

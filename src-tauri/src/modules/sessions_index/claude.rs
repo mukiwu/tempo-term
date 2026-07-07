@@ -651,3 +651,18 @@ mod tests {
         }
     }
 }
+
+#[test]
+#[ignore]
+fn repro_transcript_json_size() {
+    // throwaway: measure the serialized IPC payload size for big transcripts
+    for p in [
+        "/Users/muki/.claude/projects/-Users-muki-Documents-01-project-tempo-term/885f7e3a-3e3f-4565-911e-23b55cdaea50.jsonl",
+        "/Users/muki/.claude/projects/-Users-muki-Documents-01-project-hyday-source/a22e255d-db43-40e3-bb77-ab3be5e82ed5.jsonl",
+    ] {
+        let t = parse_claude_transcript(std::path::Path::new(p));
+        let json = serde_json::to_string(&t).unwrap();
+        let max = t.iter().map(|m| m.text.len()).max().unwrap_or(0);
+        println!("{}: {} msgs, JSON {} bytes ({:.1} MB), largest text {} bytes", p.rsplit('/').next().unwrap(), t.len(), json.len(), json.len() as f64/1e6, max);
+    }
+}

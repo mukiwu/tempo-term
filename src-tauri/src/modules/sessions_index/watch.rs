@@ -84,10 +84,45 @@ fn strip_wal_shm(path: &Path) -> PathBuf {
 /// `.db-journal` companion, or a decoy file the scanner would also reject).
 fn resolve(roots: &[(&'static str, PathBuf)], changed_path: &Path) -> Option<(&'static str, PathBuf)> {
     let mapped = strip_wal_shm(changed_path);
-    roots
-        .iter()
-        .find(|(_, root)| mapped.starts_with(root))
-        .map(|(agent, _)| (*agent, mapped))
+    let (agent, root) = roots.iter().find(|(_, root)| mapped.starts_with(root))?;
+    if !is_session_file(agent, root, &mapped) {
+        return None;
+    }
+    Some((*agent, mapped))
+}
+
+/// Mirrors the scanner's per-agent discovery rules for a single changed path,
+/// so watcher events only re-sync files the scanner would also index. The
+/// recursive Claude watch otherwise floods the sync loop with `subagents/`
+/// and `tool-results/` companion writes — every one a wasted whole-file
+/// parse whose result is always `None` (their entries are all sidechain).
+fn is_session_file(agent: &str, root: &Path, path: &Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str());
+    match agent {
+        // Only `<root>/<project-dir>/<session>.jsonl` — exactly two levels
+        // below the projects root, never inside a session's companion dirs.
+        "claude" => {
+            ext == Some("jsonl")
+                && path
+                    .parent()
+                    .and_then(Path::parent)
+                    .is_some_and(|grandparent| grandparent == root)
+        }
+        // Rollouts under sessions/YYYY/MM/DD, plain .jsonl in archived_sessions.
+        "codex" => {
+            ext == Some("jsonl")
+                && path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|name| {
+                        name.starts_with("rollout-")
+                            || root.file_name().and_then(|n| n.to_str()) == Some("archived_sessions")
+                    })
+        }
+        // The strip_wal_shm mapping already folded companions into the .db.
+        "antigravity" => ext == Some("db"),
+        _ => false,
+    }
 }
 
 /// Start watching every agent root that already exists under `home`, and
@@ -171,6 +206,11 @@ fn drain_loop(
         // Only emit when the batch actually changed something the frontend
         // would need to refetch; a batch of decoy/no-op events stays silent.
         if dirty > 0 {
+            eprintln!(
+                "[sessions] watch batch: {} synced of {} events",
+                dirty,
+                synced_this_batch.len()
+            );
             emit_updated(&app, dirty);
         }
     }
@@ -206,6 +246,38 @@ mod tests {
         let roots = sample_roots();
         let path = Path::new("/home/u/.claude/projects/projA/session1.jsonl");
         assert_eq!(resolve(&roots, path), Some(("claude", path.to_path_buf())));
+    }
+
+    #[test]
+    fn resolve_rejects_claude_companion_files_the_scanner_would_skip() {
+        let roots = sample_roots();
+        // Subagent transcripts and tool-result dumps live BELOW a session's
+        // companion dir; the recursive watch sees them but they are not
+        // sessions and must not trigger a re-sync.
+        assert_eq!(
+            resolve(&roots, Path::new("/home/u/.claude/projects/projA/sess-1/subagents/agent-x.jsonl")),
+            None
+        );
+        assert_eq!(
+            resolve(&roots, Path::new("/home/u/.claude/projects/projA/sess-1/tool-results/t1.txt")),
+            None
+        );
+        // A directory-level event on the project dir itself is not a session.
+        assert_eq!(resolve(&roots, Path::new("/home/u/.claude/projects/projA")), None);
+    }
+
+    #[test]
+    fn resolve_rejects_codex_non_rollout_noise_but_keeps_archived_jsonl() {
+        let roots = sample_roots();
+        assert_eq!(
+            resolve(&roots, Path::new("/home/u/.codex/sessions/2026/07/07/rollout-x.jsonl")),
+            Some(("codex", PathBuf::from("/home/u/.codex/sessions/2026/07/07/rollout-x.jsonl")))
+        );
+        assert_eq!(resolve(&roots, Path::new("/home/u/.codex/sessions/2026/07/07/notes.txt")), None);
+        assert_eq!(
+            resolve(&roots, Path::new("/home/u/.codex/archived_sessions/old.jsonl")),
+            Some(("codex", PathBuf::from("/home/u/.codex/archived_sessions/old.jsonl")))
+        );
     }
 
     #[test]
