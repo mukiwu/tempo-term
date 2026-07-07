@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { History, Loader2, Pin, PinOff, Play } from "lucide-react";
+import { MarkdownView } from "@/components/MarkdownView";
 import { Tooltip } from "@/components/Tooltip";
 import { sessionsGet, type TranscriptMessage } from "./lib/sessionsBridge";
 import { useSessionsStore } from "./lib/sessionsStore";
@@ -17,9 +18,9 @@ function getErrorMessage(error: unknown): string {
 
 /**
  * One transcript entry, styled by role instead of as a chat bubble: a left
- * accent bar marks the user's own turns, the assistant's replies are plain
- * text, a tool call collapses behind its tool name, and system notices are
- * muted italic. Mirrors how `SessionRow` in SessionsPanel keeps chrome
+ * accent bar marks the user's own turns, the assistant's replies render as
+ * markdown, a tool call collapses behind its tool name, and system notices
+ * are muted italic. Mirrors how `SessionRow` in SessionsPanel keeps chrome
  * minimal — this is a transcript, not a chat UI.
  */
 function TranscriptEntry({ message }: { message: TranscriptMessage }) {
@@ -51,7 +52,14 @@ function TranscriptEntry({ message }: { message: TranscriptMessage }) {
         <span>{t(`sessions.roles.${message.role}`)}</span>
         {timestamp && <span className="font-normal normal-case">{timestamp}</span>}
       </div>
-      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-fg">{message.text}</p>
+      {isUser ? (
+        // The user's own words are never interpreted as markup.
+        <p className="mt-1 whitespace-pre-wrap break-words text-sm text-fg">{message.text}</p>
+      ) : (
+        // Assistant replies render through the shared markdown component, so
+        // code blocks and tables look the same as notes and AI chat.
+        <MarkdownView content={message.text} className="mt-1 text-sm" />
+      )}
     </div>
   );
 }

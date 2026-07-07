@@ -112,6 +112,26 @@ describe("SessionsTabContent", () => {
     expect(screen.getByText("Session resumed.")).toBeInTheDocument();
   });
 
+  it("renders assistant messages as markdown but keeps user messages plain", async () => {
+    useSessionsStore.setState({ sessions: [session({ id: "a" })], selectedId: "a" });
+    transcripts.set(
+      "a",
+      Promise.resolve([
+        message({ role: "user", text: "please make **this** bold" }),
+        message({ role: "assistant", text: "Some **bold** and `code` here." }),
+      ]),
+    );
+
+    render(<SessionsTabContent />);
+
+    await waitFor(() => expect(screen.getByText("bold")).toBeInTheDocument());
+    // Assistant markdown is rendered: **bold** becomes a <strong> element.
+    expect(screen.getByText("bold").tagName).toBe("STRONG");
+    expect(screen.getByText("code").tagName).toBe("CODE");
+    // The user's own text is never interpreted as markdown.
+    expect(screen.getByText("please make **this** bold")).toBeInTheDocument();
+  });
+
   it("shows a loading indicator while the transcript is in flight", async () => {
     useSessionsStore.setState({ sessions: [session({ id: "a" })], selectedId: "a" });
     let resolve!: (messages: TranscriptMessage[]) => void;
