@@ -339,6 +339,16 @@
       "modelsTitle": "Model 使用量",
       "modelsEmpty": "此範圍沒有 model 資料",
       "modelsOthers": "其他"
+    },
+    "project": {
+      "back": "返回",
+      "openTerminal": "在此開新終端",
+      "sessions": "對話數",
+      "messages": "訊息數",
+      "tokens": "輸出 token",
+      "activeDays": "活躍天數",
+      "topModel": "最常用 model",
+      "recent": "最近對話"
     }
   }
 }

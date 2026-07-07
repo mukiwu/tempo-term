@@ -14,6 +14,7 @@ import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
 import { resumeCommand, resumeSession } from "./lib/resume";
 import { slugifyTitle } from "./lib/slug";
 import { DashboardView } from "./DashboardView";
+import { ProjectView } from "./ProjectView";
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -96,6 +97,7 @@ export function SessionsTabContent() {
   const { t } = useTranslation();
   const sessions = useSessionsStore((s) => s.sessions);
   const selectedId = useSessionsStore((s) => s.selectedId);
+  const selectedProject = useSessionsStore((s) => s.selectedProject);
   const togglePin = useSessionsStore((s) => s.togglePin);
   const select = useSessionsStore((s) => s.select);
 
@@ -155,6 +157,9 @@ export function SessionsTabContent() {
     };
   }, [selectedId]);
 
+  if (selectedProject) {
+    return <ProjectView />;
+  }
   if (!selectedId) {
     return <DashboardView />;
   }

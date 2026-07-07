@@ -136,9 +136,10 @@ function StatCard({
 interface TopSessionRowProps {
   session: TopSession;
   onSelect: (id: string) => void;
+  onSelectProject: (cwd: string) => void;
 }
 
-function TopSessionRow({ session, onSelect }: TopSessionRowProps) {
+function TopSessionRow({ session, onSelect, onSelectProject }: TopSessionRowProps) {
   const { t } = useTranslation();
   return (
     <li>
@@ -156,7 +157,29 @@ function TopSessionRow({ session, onSelect }: TopSessionRowProps) {
               {t(`sessions.agents.${session.agent}`)}
             </span>
           </div>
-          <p className="truncate text-xs text-fg-subtle">{session.project_cwd}</p>
+          {/* Nested inside the row's own select-session button, so a click
+              here must stop propagation or it would also select the session;
+              role="button" + a keydown handler keep it reachable from the
+              keyboard despite not being a real <button> (which can't nest
+              inside another button). */}
+          <p
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectProject(session.project_cwd);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onSelectProject(session.project_cwd);
+              }
+            }}
+            className="truncate text-xs text-fg-subtle hover:text-fg hover:underline"
+          >
+            {session.project_cwd}
+          </p>
         </div>
         {/* Token counts easily reach 6-7 digits; group them for readability. */}
         <span className="shrink-0 text-xs text-fg-subtle">{session.value.toLocaleString()}</span>
@@ -176,6 +199,7 @@ function TopSessionRow({ session, onSelect }: TopSessionRowProps) {
 export function DashboardView() {
   const { t, i18n } = useTranslation();
   const select = useSessionsStore((s) => s.select);
+  const selectProject = useSessionsStore((s) => s.selectProject);
   const [range, setRange] = useState<RangeDays>(365);
   const [stats, setStats] = useState<SessionsStats>(EMPTY_STATS);
   const [topTab, setTopTab] = useState<"messages" | "tokens">("messages");
@@ -433,7 +457,12 @@ export function DashboardView() {
           </div>
           <ul className="mt-2">
             {topSessions.map((session) => (
-              <TopSessionRow key={session.id} session={session} onSelect={select} />
+              <TopSessionRow
+                key={session.id}
+                session={session}
+                onSelect={select}
+                onSelectProject={selectProject}
+              />
             ))}
           </ul>
         </div>

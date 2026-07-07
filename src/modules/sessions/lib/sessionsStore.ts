@@ -13,6 +13,11 @@ interface SessionsState {
   query: string;
   agentFilter: SessionAgent | "all";
   selectedId: string | null;
+  /** The project cwd shown by the project view, or `null` when it's not
+   *  open. Mutually exclusive with `selectedId` — selecting one clears the
+   *  other, since the main area shows exactly one of dashboard / project
+   *  view / session transcript at a time. */
+  selectedProject: string | null;
   /** Reloads `sessions` from the index. Leaves state unchanged on error. */
   refresh: () => Promise<void>;
   /** Starts the backend index (idempotent), then refreshes. */
@@ -20,6 +25,7 @@ interface SessionsState {
   setQuery: (query: string) => void;
   setAgentFilter: (filter: SessionAgent | "all") => void;
   select: (id: string | null) => void;
+  selectProject: (cwd: string | null) => void;
   /** Flips a session's pinned state optimistically, then persists it;
    *  re-syncs from the backend if the write fails. */
   togglePin: (id: string) => Promise<void>;
@@ -31,6 +37,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   query: "",
   agentFilter: "all",
   selectedId: null,
+  selectedProject: null,
 
   refresh: async () => {
     try {
@@ -52,7 +59,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
 
   setQuery: (query) => set({ query }),
   setAgentFilter: (agentFilter) => set({ agentFilter }),
-  select: (selectedId) => set({ selectedId }),
+  select: (selectedId) => set({ selectedId, selectedProject: null }),
+  selectProject: (selectedProject) => set({ selectedProject, selectedId: null }),
 
   togglePin: async (id) => {
     const before = get().sessions;

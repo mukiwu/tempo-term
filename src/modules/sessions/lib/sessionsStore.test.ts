@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { visibleSessions } from "./sessionsStore";
+import { useSessionsStore, visibleSessions } from "./sessionsStore";
 import type { SessionSummary } from "./sessionsBridge";
 
 function session(overrides: Partial<SessionSummary>): SessionSummary {
@@ -115,5 +115,21 @@ describe("visibleSessions", () => {
     const { pinned } = visibleSessions([pinnedMatch, pinnedNoMatch], "release", "all");
 
     expect(pinned).toEqual([pinnedMatch]);
+  });
+});
+
+describe("useSessionsStore", () => {
+  it("selectProject sets the project and clears any selected session", () => {
+    useSessionsStore.setState({ selectedId: "s1", selectedProject: null });
+    useSessionsStore.getState().selectProject("/tmp/proj-a");
+    expect(useSessionsStore.getState().selectedProject).toBe("/tmp/proj-a");
+    expect(useSessionsStore.getState().selectedId).toBeNull();
+  });
+
+  it("select clears any selected project", () => {
+    useSessionsStore.setState({ selectedProject: "/tmp/proj-a", selectedId: null });
+    useSessionsStore.getState().select("s2");
+    expect(useSessionsStore.getState().selectedId).toBe("s2");
+    expect(useSessionsStore.getState().selectedProject).toBeNull();
   });
 });

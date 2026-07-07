@@ -339,6 +339,16 @@
       "modelsTitle": "Model usage",
       "modelsEmpty": "No model data in this range",
       "modelsOthers": "Others"
+    },
+    "project": {
+      "back": "Back",
+      "openTerminal": "Open terminal here",
+      "sessions": "Sessions",
+      "messages": "Messages",
+      "tokens": "Output tokens",
+      "activeDays": "Active days",
+      "topModel": "Top model",
+      "recent": "Recent sessions"
     }
   }
 }

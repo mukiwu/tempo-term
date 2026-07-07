@@ -105,6 +105,7 @@ interface SessionRowProps {
 function SessionRow({ session, selected }: SessionRowProps) {
   const { t } = useTranslation();
   const select = useSessionsStore((s) => s.select);
+  const selectProject = useSessionsStore((s) => s.selectProject);
   const togglePin = useSessionsStore((s) => s.togglePin);
   const openSessionsTab = useTabsStore((s) => s.openSessionsTab);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -162,7 +163,32 @@ function SessionRow({ session, selected }: SessionRowProps) {
               </span>
             </div>
             <div className="truncate text-xs text-fg-subtle">
-              {basename(session.project_cwd)} · {formatRelativeTime(session.ended_at, t)} ·{" "}
+              {/* Nested inside the row's own select-session button, so a click
+                  here must stop propagation or it would also select the
+                  session; role="button" + a keydown handler keep it reachable
+                  from the keyboard despite not being a real <button> (which
+                  can't nest inside another button). */}
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  selectProject(session.project_cwd);
+                  openSessionsTab();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selectProject(session.project_cwd);
+                    openSessionsTab();
+                  }
+                }}
+                className="hover:text-fg hover:underline"
+              >
+                {basename(session.project_cwd)}
+              </span>{" "}
+              · {formatRelativeTime(session.ended_at, t)} ·{" "}
               {t("sessions.messages", { count: session.message_count })}
             </div>
           </div>
