@@ -191,21 +191,26 @@ impl Index {
     }
 
     /// Remove one session's rows (sessions, activity, and any pin) from the
-    /// index. Idempotent — deleting an unknown id is not an error, since a
+    /// index, atomically — either all three tables lose their rows or none
+    /// do, so a failure mid-way can't leave orphaned activity or a stale pin.
+    /// Idempotent — deleting an unknown id is not an error, since a
     /// concurrent full sync could have already pruned it. Does not touch the
     /// source file on disk; that's the caller's job (trashing it) before or
     /// after this call.
+    ///
+    /// `unchecked_transaction` because this method takes `&self` (matching
+    /// every other method on `Index`, whose callers share it behind a
+    /// `Mutex`); the mutex already guarantees the exclusive access that
+    /// `transaction()`'s `&mut self` would otherwise enforce at compile time.
     pub fn delete_session(&self, id: &str) -> Result<(), String> {
-        self.conn
-            .execute("DELETE FROM activity WHERE session_id=?1", params![id])
+        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM activity WHERE session_id=?1", params![id])
             .map_err(|e| e.to_string())?;
-        self.conn
-            .execute("DELETE FROM pins WHERE session_id=?1", params![id])
+        tx.execute("DELETE FROM pins WHERE session_id=?1", params![id])
             .map_err(|e| e.to_string())?;
-        self.conn
-            .execute("DELETE FROM sessions WHERE id=?1", params![id])
+        tx.execute("DELETE FROM sessions WHERE id=?1", params![id])
             .map_err(|e| e.to_string())?;
-        Ok(())
+        tx.commit().map_err(|e| e.to_string())
     }
 
     /// Drop sessions whose source file no longer exists on disk.

@@ -108,6 +108,10 @@ function SessionRow({ session, selected }: SessionRowProps) {
   const togglePin = useSessionsStore((s) => s.togglePin);
   const openSessionsTab = useTabsStore((s) => s.openSessionsTab);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Delete is destructive (even if recoverable from the Trash), so a failure
+  // must never pass silently: this renders an error line under the row until
+  // the next delete attempt replaces it.
+  const [deleteError, setDeleteError] = useState(false);
   const pinLabel = t(session.pinned ? "sessions.unpin" : "sessions.pin");
   const resumeLabel = t("sessions.resume");
   const deleteLabel = t("sessions.delete");
@@ -124,6 +128,7 @@ function SessionRow({ session, selected }: SessionRowProps) {
     try {
       await sessionsDelete(session.id);
     } catch {
+      setDeleteError(true);
       return;
     }
     if (selected) {
@@ -132,78 +137,86 @@ function SessionRow({ session, selected }: SessionRowProps) {
   }
 
   return (
-    <li className="group flex items-center">
-      <button
-        type="button"
-        aria-current={selected ? "true" : undefined}
-        onClick={() => {
-          select(session.id);
-          openSessionsTab();
-        }}
-        className={`flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left ${
-          selected ? "bg-bg-elevated" : "hover:bg-bg-elevated"
-        }`}
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="min-w-0 truncate text-sm text-fg-muted group-hover:text-fg">
-              {session.title}
-            </span>
-            <span
-              className={`shrink-0 text-[10px] font-medium uppercase ${AGENT_BADGE_CLASS[session.agent]}`}
-            >
-              {t(`sessions.agents.${session.agent}`)}
-            </span>
+    <li className="group">
+      <div className="flex items-center">
+        <button
+          type="button"
+          aria-current={selected ? "true" : undefined}
+          onClick={() => {
+            select(session.id);
+            openSessionsTab();
+          }}
+          className={`flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left ${
+            selected ? "bg-bg-elevated" : "hover:bg-bg-elevated"
+          }`}
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="min-w-0 truncate text-sm text-fg-muted group-hover:text-fg">
+                {session.title}
+              </span>
+              <span
+                className={`shrink-0 text-[10px] font-medium uppercase ${AGENT_BADGE_CLASS[session.agent]}`}
+              >
+                {t(`sessions.agents.${session.agent}`)}
+              </span>
+            </div>
+            <div className="truncate text-xs text-fg-subtle">
+              {basename(session.project_cwd)} · {formatRelativeTime(session.ended_at, t)} ·{" "}
+              {t("sessions.messages", { count: session.message_count })}
+            </div>
           </div>
-          <div className="truncate text-xs text-fg-subtle">
-            {basename(session.project_cwd)} · {formatRelativeTime(session.ended_at, t)} ·{" "}
-            {t("sessions.messages", { count: session.message_count })}
-          </div>
-        </div>
-      </button>
-      <div className="flex shrink-0 items-center opacity-0 pr-2 group-hover:opacity-100">
-        {canResume && (
-          <Tooltip label={resumeLabel}>
+        </button>
+        <div className="flex shrink-0 items-center opacity-0 pr-2 group-hover:opacity-100">
+          {canResume && (
+            <Tooltip label={resumeLabel}>
+              <button
+                type="button"
+                aria-label={resumeLabel}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  resumeSession(session);
+                }}
+                className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
+              >
+                <Play size={13} />
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip label={pinLabel}>
             <button
               type="button"
-              aria-label={resumeLabel}
+              aria-label={pinLabel}
               onClick={(e) => {
                 e.stopPropagation();
-                resumeSession(session);
+                void togglePin(session.id);
               }}
               className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
             >
-              <Play size={13} />
+              {session.pinned ? <PinOff size={13} /> : <Pin size={13} />}
             </button>
           </Tooltip>
-        )}
-        <Tooltip label={pinLabel}>
-          <button
-            type="button"
-            aria-label={pinLabel}
-            onClick={(e) => {
-              e.stopPropagation();
-              void togglePin(session.id);
-            }}
-            className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
-          >
-            {session.pinned ? <PinOff size={13} /> : <Pin size={13} />}
-          </button>
-        </Tooltip>
-        <Tooltip label={deleteLabel}>
-          <button
-            type="button"
-            aria-label={deleteLabel}
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirmingDelete(true);
-            }}
-            className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-danger"
-          >
-            <Trash2 size={13} />
-          </button>
-        </Tooltip>
+          <Tooltip label={deleteLabel}>
+            <button
+              type="button"
+              aria-label={deleteLabel}
+              onClick={(e) => {
+                e.stopPropagation();
+                // A fresh attempt supersedes any stale error from the last one.
+                setDeleteError(false);
+                setConfirmingDelete(true);
+              }}
+              className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-danger"
+            >
+              <Trash2 size={13} />
+            </button>
+          </Tooltip>
+        </div>
       </div>
+
+      {deleteError && (
+        <p className="px-3 pb-1 text-xs text-danger/80">{t("sessions.deleteError")}</p>
+      )}
 
       {confirmingDelete && (
         <ConfirmDialog

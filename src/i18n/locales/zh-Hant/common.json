@@ -275,6 +275,7 @@
     "loadError": "無法載入這場對話記錄",
     "delete": "刪除",
     "deleteConfirm": "把這場對話的檔案丟到垃圾桶？",
+    "deleteError": "無法把檔案丟到垃圾桶",
     "agents": {
       "claude": "Claude",
       "codex": "Codex",

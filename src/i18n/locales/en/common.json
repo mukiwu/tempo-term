@@ -275,6 +275,7 @@
     "loadError": "Couldn't load this transcript",
     "delete": "Delete",
     "deleteConfirm": "Move this session's files to the Trash?",
+    "deleteError": "Could not move the files to the Trash",
     "agents": {
       "claude": "Claude",
       "codex": "Codex",

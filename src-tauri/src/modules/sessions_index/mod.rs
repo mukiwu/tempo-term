@@ -176,12 +176,34 @@ fn move_to_trash(path: &Path) -> Result<(), String> {
     trash::delete(path).map_err(|e| e.to_string())
 }
 
+/// Move a session's source file and its existing companions to the OS trash.
+/// A source file that is already gone is a success, not an error — the row
+/// is stale (the file was deleted externally) and the caller should still
+/// clean up the index. The main file failing to trash is a hard error; a
+/// companion failing is logged unconditionally (it's the only path where
+/// data can be quietly orphaned) but never blocks removing the session.
+fn trash_session_files(agent: &str, path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    move_to_trash(path)?;
+    for companion in sync::companion_paths(agent, path) {
+        if companion.exists() {
+            if let Err(err) = move_to_trash(&companion) {
+                eprintln!("sessions_index: failed to trash companion {}: {err}", companion.display());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Move a session's source file and its companions (a sibling
 /// subagents/tool-results directory for Claude, `-wal`/`-shm` for
 /// Antigravity) to the OS trash, then drop the session from the index and
 /// emit `sessions-index:updated`. Never permanently deletes anything — trash
-/// moves are always recoverable — and a missing companion is skipped
-/// silently rather than treated as an error.
+/// moves are always recoverable — and a missing companion (or an
+/// already-missing source file) is skipped silently rather than treated as
+/// an error.
 #[tauri::command]
 pub async fn sessions_delete(app: AppHandle, state: State<'_, SessionsIndexState>, id: String) -> Result<(), String> {
     let index = {
@@ -200,22 +222,9 @@ pub async fn sessions_delete(app: AppHandle, state: State<'_, SessionsIndexState
 
     // The trash calls can block on IPC to Finder (macOS) or the desktop
     // shell, so they run on a blocking-pool thread rather than the async
-    // runtime's own worker threads. The main file trashing is a hard error;
-    // a companion failing to trash is logged and skipped, since it's
-    // secondary data (subagent transcripts, WAL/SHM) and losing it should
-    // never block removing the session itself.
-    let trashed = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        let path = Path::new(&file_path);
-        move_to_trash(path)?;
-        for companion in sync::companion_paths(&agent, path) {
-            if companion.exists() {
-                if let Err(err) = move_to_trash(&companion) {
-                    #[cfg(debug_assertions)]
-                    eprintln!("sessions_index: failed to trash companion {}: {err}", companion.display());
-                }
-            }
-        }
-        Ok(())
+    // runtime's own worker threads.
+    let trashed = tauri::async_runtime::spawn_blocking(move || {
+        trash_session_files(&agent, Path::new(&file_path))
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -224,6 +233,57 @@ pub async fn sessions_delete(app: AppHandle, state: State<'_, SessionsIndexState
     index.lock().unwrap().delete_session(&id)?;
     watch::emit_updated(&app, 1);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A source file that is already gone (deleted externally, or a stale
+    /// index row) counts as success: nothing to trash, but the caller should
+    /// still drop the index row instead of erroring out and leaving the
+    /// phantom session in the list. This test never touches the real OS
+    /// trash — the path doesn't exist, so no trash call is ever made.
+    #[test]
+    fn trash_session_files_with_a_missing_source_file_is_a_success() {
+        let path = std::env::temp_dir()
+            .join(format!("tt-sessions-delete-missing-{}", std::process::id()))
+            .join("gone.jsonl");
+        assert!(trash_session_files("claude", &path).is_ok());
+    }
+
+    /// The command flow for a stale row, minus the Tauri plumbing: a session
+    /// whose file no longer exists still gets its index rows removed.
+    #[test]
+    fn deleting_a_session_whose_file_is_gone_still_removes_the_row() {
+        use crate::modules::sessions_index::types::ParsedSession;
+
+        let dir = std::env::temp_dir().join(format!("tt-sessions-delete-stale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let index = Index::open(&dir.join("index.db")).unwrap();
+        let missing = dir.join("never-created.jsonl");
+        let session = ParsedSession {
+            id: "stale".into(),
+            agent: "claude",
+            project_cwd: "/p".into(),
+            title: "t".into(),
+            started_at: 0,
+            ended_at: 0,
+            message_count: 1,
+            user_message_count: 1,
+            output_tokens: None,
+            model: None,
+            activity: Vec::new(),
+        };
+        index.upsert_session(&session, &missing.to_string_lossy(), 1, 1).unwrap();
+
+        assert!(trash_session_files("claude", &missing).is_ok());
+        index.delete_session("stale").unwrap();
+
+        assert!(index.list().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 /// Dashboard aggregates (cards, heatmap, top sessions, weekly breakdown) for

@@ -8,7 +8,7 @@ import type { SessionsStats } from "./lib/statsBridge";
 
 // vi.mock is hoisted to the top of the file, so mocks must be created with
 // vi.hoisted() to be accessible inside the factory callbacks.
-const { mockInvoke, mockListen, mockUnlisten, transcripts, statsFixture } = vi.hoisted(() => ({
+const { mockInvoke, mockListen, mockUnlisten, transcripts, statsFixture, deleteFailure } = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
   mockListen: vi.fn(),
   mockUnlisten: vi.fn(),
@@ -19,6 +19,8 @@ const { mockInvoke, mockListen, mockUnlisten, transcripts, statsFixture } = vi.h
   // Backs the "sessions_stats" invoke response the dashboard fetches whenever
   // nothing is selected.
   statsFixture: { current: null as unknown },
+  // When set, "sessions_delete" rejects — for the failure-surfacing tests.
+  deleteFailure: { current: false },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -29,6 +31,9 @@ vi.mock("@tauri-apps/api/core", () => ({
     }
     if (cmd === "sessions_stats") {
       return Promise.resolve(statsFixture.current);
+    }
+    if (cmd === "sessions_delete" && deleteFailure.current) {
+      return Promise.reject(new Error("trash failed"));
     }
     return Promise.resolve(undefined);
   },
@@ -98,6 +103,7 @@ describe("SessionsTabContent", () => {
     mockUnlisten.mockReset();
     transcripts.clear();
     statsFixture.current = stats();
+    deleteFailure.current = false;
     useSessionsStore.setState({
       sessions: [],
       loaded: false,
@@ -358,6 +364,26 @@ describe("SessionsTabContent", () => {
     );
     expect(useSessionsStore.getState().selectedId).toBe(null);
     await waitFor(() => expect(screen.getByText("sessions.dashboard.title")).toBeInTheDocument());
+  });
+
+  it("shows an error line and stays on the viewer when the header delete fails", async () => {
+    const target = session({ id: "a", title: "Fix flaky test" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+    deleteFailure.current = true;
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.delete" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "sessions.delete" }));
+
+    // The failure is surfaced in the viewer, and the session stays selected
+    // (no bounce back to the dashboard).
+    await waitFor(() => expect(screen.getByText("sessions.deleteError")).toBeInTheDocument());
+    expect(useSessionsStore.getState().selectedId).toBe("a");
+    expect(screen.getByText("Fix flaky test")).toBeInTheDocument();
   });
 
   it("disables the header resume button for antigravity sessions instead of hiding it", async () => {

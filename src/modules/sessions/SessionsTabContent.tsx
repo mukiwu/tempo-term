@@ -100,12 +100,18 @@ export function SessionsTabContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Delete is destructive (even if recoverable from the Trash), so a failure
+  // must never pass silently: this renders an error line in the transcript
+  // area, same style as `error` above, until the selection changes or a new
+  // delete attempt replaces it.
+  const [deleteError, setDeleteError] = useState(false);
 
   useEffect(() => {
     if (!selectedId) {
       setTranscript([]);
       setError(null);
       setLoading(false);
+      setDeleteError(false);
       return;
     }
     // `cancelled` scopes this fetch to the selectedId that triggered it: a
@@ -115,6 +121,7 @@ export function SessionsTabContent() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setDeleteError(false);
     sessionsGet(selectedId)
       .then((messages) => {
         if (cancelled) {
@@ -157,6 +164,7 @@ export function SessionsTabContent() {
     try {
       await sessionsDelete(session.id);
     } catch {
+      setDeleteError(true);
       return;
     }
     select(null);
@@ -222,7 +230,11 @@ export function SessionsTabContent() {
               <button
                 type="button"
                 aria-label={t("sessions.delete")}
-                onClick={() => setConfirmingDelete(true)}
+                onClick={() => {
+                  // A fresh attempt supersedes any stale error from the last one.
+                  setDeleteError(false);
+                  setConfirmingDelete(true);
+                }}
                 className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-danger"
               >
                 <Trash2 size={14} />
@@ -254,6 +266,9 @@ export function SessionsTabContent() {
           <p className="mb-3 text-xs text-danger/80">
             {t("sessions.loadError")}: {error}
           </p>
+        )}
+        {deleteError && (
+          <p className="mb-3 text-xs text-danger/80">{t("sessions.deleteError")}</p>
         )}
         <div className="flex flex-col gap-3">
           {transcript.map((message, index) => (
