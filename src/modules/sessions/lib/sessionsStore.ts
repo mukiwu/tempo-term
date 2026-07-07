@@ -102,11 +102,20 @@ export function visibleSessions(
 ): { pinned: SessionSummary[]; history: SessionSummary[] } {
   const q = query.trim().toLowerCase();
 
+  // Self-heal a stranded model filter: if the selected model is no longer in
+  // the dataset at all (its sessions were deleted while the sidebar — and its
+  // reset effect — was unmounted), ignore it instead of returning an empty
+  // list with no visible way back to "all". Keyed off the raw model set, so a
+  // model that still exists but is narrowed to zero by other filters is
+  // honored, not clamped.
+  const effectiveModelFilter =
+    modelFilter === "all" || sessions.some((s) => s.model === modelFilter) ? modelFilter : "all";
+
   const filtered = sessions.filter((s) => {
     if (agentFilter !== "all" && s.agent !== agentFilter) {
       return false;
     }
-    if (modelFilter !== "all" && s.model !== modelFilter) {
+    if (effectiveModelFilter !== "all" && s.model !== effectiveModelFilter) {
       return false;
     }
     if (q === "") {

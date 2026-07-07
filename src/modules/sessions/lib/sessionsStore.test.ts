@@ -130,6 +130,23 @@ describe("visibleSessions", () => {
     // null-model sessions never match a specific model.
     expect(visibleSessions(sessions, "", "all", "claude-opus-4-8").history.map((s) => s.id)).toEqual(["a"]);
   });
+
+  it("ignores a model filter for a model absent from the dataset (self-heals stranding)", () => {
+    const mk = (id: string, model: string | null) =>
+      ({ id, agent: "claude", project_cwd: "/p", title: id, started_at: 0, ended_at: 0,
+         message_count: 0, user_message_count: 0, output_tokens: null, model, file_path: "/f",
+         pinned: false }) as SessionSummary;
+    // The selected model "gpt-5.5" no longer exists in any session (its sessions
+    // were deleted). Rather than strand an empty list, the filter is ignored.
+    const sessions = [mk("a", "claude-opus-4-8"), mk("b", null)];
+    expect(visibleSessions(sessions, "", "all", "gpt-5.5").history.map((s) => s.id)).toEqual(["a", "b"]);
+
+    // But a model that DOES exist is still honored even when other filters
+    // narrow it to zero — absence-clamp must key off the raw model set, not the
+    // post-filter result.
+    const present = [mk("x", "claude-opus-4-8")];
+    expect(visibleSessions(present, "nomatch-query", "all", "claude-opus-4-8").history).toEqual([]);
+  });
 });
 
 describe("useSessionsStore", () => {
