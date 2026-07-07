@@ -3,9 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectView } from "./ProjectView";
 import { useSessionsStore } from "./lib/sessionsStore";
 
-const { mockInvoke, mockOpenTerminal } = vi.hoisted(() => ({
+const { mockInvoke, mockOpenTerminal, mockListen, mockUnlisten } = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
   mockOpenTerminal: vi.fn(),
+  mockListen: vi.fn(),
+  mockUnlisten: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: mockListen,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -46,6 +52,8 @@ describe("ProjectView", () => {
   beforeEach(() => {
     mockInvoke.mockClear();
     mockOpenTerminal.mockClear();
+    mockListen.mockReset().mockResolvedValue(mockUnlisten);
+    mockUnlisten.mockReset();
     useSessionsStore.setState({ selectedProject: "/tmp/proj-a", selectedId: null });
   });
 
@@ -56,6 +64,32 @@ describe("ProjectView", () => {
     expect(screen.getByText("14")).toBeInTheDocument();
     expect(screen.getByText("claude-sonnet-5")).toBeInTheDocument();
     expect(screen.getByText("Fix bug")).toBeInTheDocument();
+  });
+
+  it("refetches the project's stats when a sessions-index:updated event fires", async () => {
+    render(<ProjectView />);
+    // Initial fetch on mount.
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("sessions_project_stats", { projectCwd: "/tmp/proj-a" }),
+    );
+    await waitFor(() => expect(mockListen).toHaveBeenCalledWith("sessions-index:updated", expect.any(Function)));
+    mockInvoke.mockClear();
+
+    // Fire the callback the component registered — e.g. the open project's last
+    // session was just deleted; the tiles/recent list must not show stale data.
+    const callback = mockListen.mock.calls[0][1] as () => void;
+    callback();
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("sessions_project_stats", { projectCwd: "/tmp/proj-a" }),
+    );
+  });
+
+  it("releases the sessions-index:updated listener on unmount", async () => {
+    const { unmount } = render(<ProjectView />);
+    await waitFor(() => expect(mockListen).toHaveBeenCalled());
+    unmount();
+    await waitFor(() => expect(mockUnlisten).toHaveBeenCalled());
   });
 
   it("opens a terminal at the project cwd when the button is clicked", async () => {

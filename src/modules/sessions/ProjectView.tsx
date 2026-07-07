@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSessionsStore } from "./lib/sessionsStore";
+import { onSessionsUpdated } from "./lib/sessionsBridge";
 import { sessionsProjectStats, type ProjectStats } from "./lib/projectBridge";
 import { openTerminalAt } from "./lib/openTerminalAt";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
@@ -49,9 +50,14 @@ export function ProjectView() {
   const selectProject = useSessionsStore((s) => s.selectProject);
   const select = useSessionsStore((s) => s.select);
   const [stats, setStats] = useState<ProjectStats>(EMPTY);
+  // Bumped by every sessions-index:updated event so the fetch effect re-runs
+  // with the current cwd — e.g. deleting this project's last session from the
+  // always-present sidebar must refresh the tiles and recent list instead of
+  // leaving stale counts and a phantom row.
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
-    // `cancelled` scopes this fetch to the cwd that triggered it: switching
+    // `cancelled` scopes this fetch to the cwd/tick that triggered it: switching
     // projects (or unmounting) before it resolves must not overwrite state
     // with a stale project's stats.
     let cancelled = false;
@@ -71,7 +77,29 @@ export function ProjectView() {
     return () => {
       cancelled = true;
     };
-  }, [cwd]);
+  }, [cwd, refreshTick]);
+
+  useEffect(() => {
+    // Subscribed once for the component's lifetime. The listen subscription
+    // resolves asynchronously, so an unmount before it lands releases the
+    // listener the moment it arrives instead of leaking it (mirrors
+    // DashboardView / SessionsPanel).
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onSessionsUpdated(() => setRefreshTick((tick) => tick + 1)).then((fn) => {
+      if (disposed) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const name = useMemo(() => cwd.split(/[/\\]/).filter(Boolean).pop() ?? cwd, [cwd]);
 
