@@ -167,28 +167,40 @@ function SessionRow({ session, selected }: SessionRowProps) {
                   here must stop propagation or it would also select the
                   session; role="button" + a keydown handler keep it reachable
                   from the keyboard despite not being a real <button> (which
-                  can't nest inside another button). */}
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  selectProject(session.project_cwd);
-                  openSessionsTab();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    selectProject(session.project_cwd);
-                    openSessionsTab();
-                  }
-                }}
-                className="hover:text-fg hover:underline"
-              >
-                {basename(session.project_cwd)}
-              </span>{" "}
-              · {formatRelativeTime(session.ended_at, t)} ·{" "}
+                  can't nest inside another button). An empty cwd has nothing
+                  to route to (selectProject("") would fall through to the
+                  dashboard), so it's skipped entirely rather than rendered as
+                  a no-op link. */}
+              {session.project_cwd && (
+                <>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (session.project_cwd) {
+                        selectProject(session.project_cwd);
+                        openSessionsTab();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (session.project_cwd) {
+                          selectProject(session.project_cwd);
+                          openSessionsTab();
+                        }
+                      }
+                    }}
+                    className="hover:text-fg hover:underline"
+                  >
+                    {basename(session.project_cwd)}
+                  </span>{" "}
+                  ·{" "}
+                </>
+              )}
+              {formatRelativeTime(session.ended_at, t)} ·{" "}
               {t("sessions.messages", { count: session.message_count })}
             </div>
           </div>

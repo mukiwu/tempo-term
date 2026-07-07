@@ -132,6 +132,29 @@ describe("DashboardView", () => {
     expect(useSessionsStore.getState().selectedId).toBe("s1");
   });
 
+  it("clicks a top-sessions row's project name to open the project view without selecting the session", async () => {
+    render(<DashboardView />);
+    await waitFor(() => expect(screen.getByText("Fix flaky test")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("/repo/app"));
+
+    expect(useSessionsStore.getState().selectedProject).toBe("/repo/app");
+    // The row's own onSelect(session.id) must not have fired.
+    expect(useSessionsStore.getState().selectedId).toBe(null);
+  });
+
+  it("renders no clickable project element when a top-sessions row's project_cwd is empty", async () => {
+    statsFixture.current = stats({
+      top_by_messages: [
+        { id: "s1", agent: "claude", title: "Fix flaky test", project_cwd: "", value: 42 },
+      ],
+    });
+    render(<DashboardView />);
+
+    await waitFor(() => expect(screen.getByText("Fix flaky test")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "" })).not.toBeInTheDocument();
+  });
+
   it("renders the weekly digest with per-agent sessions/messages/tokens", async () => {
     render(<DashboardView />);
 

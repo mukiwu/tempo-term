@@ -251,6 +251,41 @@ describe("SessionsPanel", () => {
     expect(tabs[0].cwd).toBe("/repo/app");
   });
 
+  it("clicks the project name to open the project view without selecting the session", async () => {
+    seedSessions([
+      session({ id: "a", title: "Deploy script", project_cwd: "/Users/muki/tempo-term" }),
+    ]);
+    await renderSettled();
+
+    fireEvent.click(screen.getByText("tempo-term"));
+
+    expect(useSessionsStore.getState().selectedProject).toBe("/Users/muki/tempo-term");
+    // The row's own select(id) must not have fired.
+    expect(useSessionsStore.getState().selectedId).toBe(null);
+  });
+
+  it("activates the project name via keyboard without selecting the session", async () => {
+    seedSessions([
+      session({ id: "a", title: "Deploy script", project_cwd: "/Users/muki/tempo-term" }),
+    ]);
+    await renderSettled();
+
+    fireEvent.keyDown(screen.getByText("tempo-term"), { key: "Enter" });
+
+    expect(useSessionsStore.getState().selectedProject).toBe("/Users/muki/tempo-term");
+    expect(useSessionsStore.getState().selectedId).toBe(null);
+  });
+
+  it("renders no clickable project element when project_cwd is empty", async () => {
+    seedSessions([session({ id: "a", title: "Deploy script", project_cwd: "" })]);
+    await renderSettled();
+
+    expect(screen.queryByRole("button", { name: "" })).not.toBeInTheDocument();
+    // basename("") falls back to "" too, so there's simply nothing to click;
+    // the rest of the meta line (time · message count) still renders.
+    expect(screen.getByText(/sessions\.messages:0/)).toBeInTheDocument();
+  });
+
   it("hides the resume button on rows for agents with no supported resume command", async () => {
     seedSessions([session({ id: "a", agent: "antigravity" })]);
     await renderSettled();

@@ -161,25 +161,33 @@ function TopSessionRow({ session, onSelect, onSelectProject }: TopSessionRowProp
               here must stop propagation or it would also select the session;
               role="button" + a keydown handler keep it reachable from the
               keyboard despite not being a real <button> (which can't nest
-              inside another button). */}
-          <p
-            role="button"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectProject(session.project_cwd);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
+              inside another button). An empty cwd has nothing to route to
+              (onSelectProject("") would fall through to the dashboard), so
+              it's skipped entirely rather than rendered as a no-op link. */}
+          {session.project_cwd && (
+            <p
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
                 e.stopPropagation();
-                onSelectProject(session.project_cwd);
-              }
-            }}
-            className="truncate text-xs text-fg-subtle hover:text-fg hover:underline"
-          >
-            {session.project_cwd}
-          </p>
+                if (session.project_cwd) {
+                  onSelectProject(session.project_cwd);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (session.project_cwd) {
+                    onSelectProject(session.project_cwd);
+                  }
+                }
+              }}
+              className="truncate text-xs text-fg-subtle hover:text-fg hover:underline"
+            >
+              {session.project_cwd}
+            </p>
+          )}
         </div>
         {/* Token counts easily reach 6-7 digits; group them for readability. */}
         <span className="shrink-0 text-xs text-fg-subtle">{session.value.toLocaleString()}</span>
