@@ -307,11 +307,17 @@ describe("DashboardView", () => {
     await waitFor(() => expect(mockUnlisten).toHaveBeenCalled());
   });
 
-  it("exports the filtered session list as CSV via saveFile + fsWriteFile", async () => {
+  it("exports only the filtered session list as CSV via saveFile + fsWriteFile", async () => {
+    // Two sessions that only the agent filter distinguishes: with
+    // agentFilter:"codex" the export must include the kept row and exclude
+    // the other one, proving it serializes the filtered list, not raw `sessions`.
     useSessionsStore.setState({
-      sessions: [session({ id: "a", title: "Fix bug", agent: "codex", model: "gpt-5.5" })],
+      sessions: [
+        session({ id: "a", title: "Keep me", agent: "codex", model: "gpt-5.5" }),
+        session({ id: "b", title: "Drop me", agent: "claude", model: "claude-sonnet-5" }),
+      ],
       query: "",
-      agentFilter: "all",
+      agentFilter: "codex",
       modelFilter: "all",
     });
     mockSaveFile.mockResolvedValue("/path.csv");
@@ -324,8 +330,10 @@ describe("DashboardView", () => {
     await waitFor(() =>
       expect(mockSaveFile).toHaveBeenCalledWith("ai-sessions.csv", [{ name: "CSV", extensions: ["csv"] }]),
     );
-    await waitFor(() =>
-      expect(mockFsWriteFile).toHaveBeenCalledWith("/path.csv", expect.stringContaining("title,agent,model")),
-    );
+    await waitFor(() => expect(mockFsWriteFile).toHaveBeenCalledWith("/path.csv", expect.any(String)));
+
+    const csv = mockFsWriteFile.mock.calls[0][1] as string;
+    expect(csv).toContain("Keep me");
+    expect(csv).not.toContain("Drop me");
   });
 });

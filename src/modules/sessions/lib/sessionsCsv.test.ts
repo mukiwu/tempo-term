@@ -23,6 +23,17 @@ describe("toSessionsCsv", () => {
     expect(row.startsWith('"a,""b""\nc",claude,')).toBe(true);
   });
 
+  it("emits an empty model field for a null model", () => {
+    const csv = toSessionsCsv([s({ agent: "codex", model: null, project_cwd: "/proj" })]);
+    const row = csv.split("\n")[1];
+    const fields = row.split(",");
+    // Header order is title,agent,model,project,... — model is index 2, and
+    // must be empty (the `s.model ?? ""` branch), not the literal "null".
+    expect(fields[1]).toBe("codex");
+    expect(fields[2]).toBe("");
+    expect(fields[3]).toBe("/proj");
+  });
+
   it("returns just the header for an empty list", () => {
     expect(toSessionsCsv([])).toBe(
       "title,agent,model,project,started_at,ended_at,messages,user_messages,output_tokens,pinned",
