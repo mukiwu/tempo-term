@@ -451,6 +451,52 @@ pub fn log(repo_path: &str, limit: usize) -> Result<Vec<CommitInfo>, String> {
     Ok(stdout.lines().filter_map(parse_commit_info).collect())
 }
 
+/// Commits authored in `[since_ms, until_ms]` (epoch MILLISECONDS) in the git
+/// work tree at `cwd`. Empty for an empty/remote (`://`) `cwd`, a non-git dir,
+/// or any git failure — a missing/odd repo simply shows no commits, never an
+/// error. Session↔code correlation for the transcript viewer.
+fn git_commits_in_range_impl(cwd: &str, since_ms: i64, until_ms: i64) -> Vec<CommitInfo> {
+    if cwd.is_empty() || cwd.contains("://") || ensure_not_flag(cwd).is_err() {
+        return Vec::new();
+    }
+    // Must be a git work tree.
+    match run_git(cwd, &["rev-parse", "--is-inside-work-tree"]) {
+        Ok(out) if out.trim() == "true" => {}
+        _ => return Vec::new(),
+    }
+    // git wants seconds; sessions carry milliseconds. `@<seconds> +0000` is
+    // the same absolute-epoch form git itself writes for GIT_AUTHOR_DATE — a
+    // bare number is parsed by approxidate as a relative offset, not an
+    // epoch timestamp, so the "@" + explicit offset is required here.
+    let since = since_ms / 1000;
+    let until = until_ms / 1000;
+    let args = [
+        "log",
+        "--date-order",
+        &format!("--since=@{since} +0000"),
+        &format!("--until=@{until} +0000"),
+        "--pretty=format:%h%x1f%p%x1f%an%x1f%ct%x1f%s",
+        "--max-count=100",
+    ];
+    match run_git(cwd, &args) {
+        Ok(out) => out.lines().filter_map(parse_commit_info).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Commits authored in `[since_ms, until_ms]` (epoch milliseconds) in the git
+/// work tree at `cwd`, for correlating a viewed session with the commits made
+/// during it. Always `Ok`; a non-git/remote cwd or any git failure yields an
+/// empty list rather than an error.
+#[tauri::command]
+pub fn git_commits_in_range(
+    cwd: String,
+    since_ms: i64,
+    until_ms: i64,
+) -> Result<Vec<CommitInfo>, String> {
+    Ok(git_commits_in_range_impl(&cwd, since_ms, until_ms))
+}
+
 #[tauri::command]
 pub fn git_resolve_repo(path: String) -> Option<String> {
     resolve_repo(&path)
@@ -1953,5 +1999,59 @@ mod tests {
     fn parse_name_status_blank_is_none() {
         assert_eq!(parse_name_status_line(""), None);
         assert_eq!(parse_name_status_line("   "), None);
+    }
+
+    #[test]
+    fn commits_in_range_returns_empty_for_a_non_git_dir() {
+        let dir = temp_repo_dir("commits-range-nonrepo");
+        let out = git_commits_in_range_impl(&dir.to_string_lossy(), 0, i64::MAX);
+        assert!(out.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn commits_in_range_rejects_a_remote_looking_cwd() {
+        let out = git_commits_in_range_impl("ssh://host/repo", 0, i64::MAX);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn commits_in_range_filters_by_the_time_window() {
+        let dir = temp_repo_dir("commits-range-window");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+
+        // Two commits with controlled author/committer dates (epoch seconds):
+        // one at t=1000s, one at t=5000s.
+        std::fs::write(dir.join("a.txt"), "one").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .args(["commit", "-m", "first"])
+            .env("GIT_AUTHOR_DATE", "@1000 +0000")
+            .env("GIT_COMMITTER_DATE", "@1000 +0000")
+            .output()
+            .unwrap();
+
+        std::fs::write(dir.join("a.txt"), "two").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .args(["commit", "-m", "second"])
+            .env("GIT_AUTHOR_DATE", "@5000 +0000")
+            .env("GIT_COMMITTER_DATE", "@5000 +0000")
+            .output()
+            .unwrap();
+
+        // A window of [900s, 2000s] expressed in milliseconds.
+        let out = git_commits_in_range_impl(&path, 900_000, 2_000_000);
+        assert_eq!(out.len(), 1, "only the t=1000s commit is inside the window");
+        assert_eq!(out[0].summary, "first");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

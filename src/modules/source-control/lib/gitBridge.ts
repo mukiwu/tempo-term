@@ -45,6 +45,12 @@ export function gitLog(repoPath: string, limit?: number): Promise<CommitInfo[]> 
   return invoke<CommitInfo[]>("git_log", { repoPath, limit });
 }
 
+/** Commits authored in [sinceMs, untilMs] in the git work tree at `cwd`.
+ *  Empty for a non-git / remote / failed cwd. Timestamps are epoch ms. */
+export function gitCommitsInRange(cwd: string, sinceMs: number, untilMs: number): Promise<CommitInfo[]> {
+  return invoke<CommitInfo[]>("git_commits_in_range", { cwd, sinceMs, untilMs });
+}
+
 export function gitDiff(repoPath: string, staged: boolean): Promise<string> {
   return invoke<string>("git_diff", { repoPath, staged });
 }

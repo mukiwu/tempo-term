@@ -5,6 +5,7 @@ import { useSessionsStore } from "./lib/sessionsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import type { SessionSummary, TranscriptMessage } from "./lib/sessionsBridge";
 import type { SessionsStats } from "./lib/statsBridge";
+import type { CommitInfo } from "@/modules/source-control/lib/gitBridge";
 
 // vi.mock is hoisted to the top of the file, so mocks must be created with
 // vi.hoisted() to be accessible inside the factory callbacks.
@@ -19,6 +20,7 @@ const {
   deleteFailure,
   exportFailure,
   exportMarkdown,
+  commitsFixture,
 } = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
   mockListen: vi.fn(),
@@ -38,10 +40,12 @@ const {
   // When set, "sessions_export" rejects — for the failure-surfacing tests.
   exportFailure: { current: false },
   exportMarkdown: { current: "# Fix flaky test\n\nsome content\n" },
+  // Backs the "git_commits_in_range" invoke response for the commits section.
+  commitsFixture: { current: [] as CommitInfo[] },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: { id?: string }) => {
+  invoke: (cmd: string, args?: { id?: string; cwd?: string; sinceMs?: number; untilMs?: number }) => {
     mockInvoke(cmd, args);
     if (cmd === "sessions_get" && args?.id) {
       return transcripts.get(args.id) ?? Promise.resolve([]);
@@ -56,6 +60,9 @@ vi.mock("@tauri-apps/api/core", () => ({
       return exportFailure.current
         ? Promise.reject(new Error("export failed"))
         : Promise.resolve(exportMarkdown.current);
+    }
+    if (cmd === "git_commits_in_range") {
+      return Promise.resolve(commitsFixture.current);
     }
     return Promise.resolve(undefined);
   },
@@ -142,6 +149,7 @@ describe("SessionsTabContent", () => {
     deleteFailure.current = false;
     exportFailure.current = false;
     exportMarkdown.current = "# Fix flaky test\n\nsome content\n";
+    commitsFixture.current = [];
     useSessionsStore.setState({
       sessions: [],
       loaded: false,
@@ -503,5 +511,38 @@ describe("SessionsTabContent", () => {
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
 
     expect(screen.getByRole("button", { name: "sessions.resume" })).toBeDisabled();
+  });
+
+  it("shows a commits section listing commits made during the session", async () => {
+    const target = session({ id: "a", project_cwd: "/repo/app", started_at: 1000, ended_at: 2000 });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+    commitsFixture.current = [
+      { id: "abc1234", summary: "Fix flaky test", author: "Tester", timestamp: 1500, parents: [] },
+    ];
+
+    render(<SessionsTabContent />);
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("git_commits_in_range", {
+        cwd: "/repo/app",
+        sinceMs: 1000,
+        untilMs: 2000,
+      }),
+    );
+    await waitFor(() => expect(screen.getByText("sessions.commits.title")).toBeInTheDocument());
+    expect(screen.getByText("Fix flaky test")).toBeInTheDocument();
+  });
+
+  it("hides the commits section entirely when there are no commits", async () => {
+    const target = session({ id: "a" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+    commitsFixture.current = [];
+
+    render(<SessionsTabContent />);
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+    expect(screen.queryByText("sessions.commits.title")).not.toBeInTheDocument();
   });
 });

@@ -276,6 +276,9 @@
     "deleteError": "Could not move the files to the Trash",
     "export": "Export",
     "exportError": "Could not export the transcript",
+    "commits": {
+      "title": "Commits during this session"
+    },
     "agents": {
       "claude": "Claude",
       "codex": "Codex",
