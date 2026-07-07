@@ -185,8 +185,10 @@ export function SessionsTabContent() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id]);
+    // Re-fetch when any input to the query changes, not just the session id:
+    // an active session's `ended_at` grows as new messages arrive, so the
+    // commit window must widen with it to pick up commits made mid-session.
+  }, [session?.id, session?.project_cwd, session?.started_at, session?.ended_at]);
 
   if (selectedProject) {
     return <ProjectView />;
