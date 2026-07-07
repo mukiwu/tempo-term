@@ -8,6 +8,7 @@ use chrono::{Duration, Local};
 use rusqlite::{params, Connection, Row};
 
 use super::index::Index;
+use super::types::SessionSummary;
 
 /// Everything the dashboard renders in one round trip.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -77,6 +78,24 @@ pub struct WeeklyAgentRow {
 pub struct ModelTokens {
     pub model: String,
     pub output_tokens: i64,
+}
+
+/// Per-project aggregates + this project's recent sessions, for the project
+/// view. Filtered to `project_cwd = ?1`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProjectStats {
+    pub project_cwd: String,
+    pub sessions: i64,
+    pub messages: i64,
+    pub output_tokens: i64,
+    pub active_days: i64,
+    /// Model used in the most sessions in this project (ties by model name),
+    /// or None when no session here recorded a model.
+    pub top_model: Option<String>,
+    pub first_at: i64,
+    pub last_at: i64,
+    /// This project's sessions, newest first (capped at 50).
+    pub recent: Vec<SessionSummary>,
 }
 
 /// Zeroed stats for an empty (or not-yet-started) index. Never `Err`.
@@ -348,6 +367,56 @@ impl Index {
 
         rows
     }
+
+    /// Per-project aggregates + this project's recent sessions. Filtered to
+    /// `project_cwd = ?1`. An unknown project yields zeroed counts and an empty
+    /// `recent` — never an error.
+    pub fn project_stats(&self, project_cwd: &str) -> ProjectStats {
+        let (sessions, messages, output_tokens, first_at, last_at) = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*), COALESCE(SUM(message_count),0), COALESCE(SUM(output_tokens),0),
+                        COALESCE(MIN(started_at),0), COALESCE(MAX(ended_at),0)
+                 FROM sessions WHERE project_cwd = ?1",
+                params![project_cwd],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .unwrap_or((0, 0, 0, 0, 0));
+
+        let active_days = self
+            .conn
+            .query_row(
+                "SELECT COUNT(DISTINCT a.date) FROM activity a
+                 JOIN sessions s ON s.id = a.session_id WHERE s.project_cwd = ?1",
+                params![project_cwd],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        let top_model = self
+            .conn
+            .query_row(
+                "SELECT model FROM sessions WHERE project_cwd = ?1 AND model IS NOT NULL
+                 GROUP BY model ORDER BY COUNT(*) DESC, model ASC LIMIT 1",
+                params![project_cwd],
+                |r| r.get(0),
+            )
+            .ok();
+
+        let recent = self.list_for_project(project_cwd);
+
+        ProjectStats {
+            project_cwd: project_cwd.to_string(),
+            sessions,
+            messages,
+            output_tokens,
+            active_days,
+            top_model,
+            first_at,
+            last_at,
+            recent,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -565,5 +634,36 @@ mod tests {
         assert_eq!(codex.messages, 6);
         assert_eq!(codex.output_tokens, 0);
         assert!(codex.models.is_empty()); // model was None
+    }
+
+    #[test]
+    fn project_stats_aggregates_only_that_project() {
+        let index = seeded_index("proj-stats");
+        let ps = index.project_stats("/tmp/proj-a");
+        // proj-a = s1 (10 msg, 100 tok, sonnet-5, today) + s3 (4 msg, 0 tok, 40d ago).
+        assert_eq!(ps.project_cwd, "/tmp/proj-a");
+        assert_eq!(ps.sessions, 2);
+        assert_eq!(ps.messages, 14);
+        assert_eq!(ps.output_tokens, 100);
+        assert_eq!(ps.active_days, 2);
+        assert_eq!(ps.top_model.as_deref(), Some("claude-sonnet-5"));
+        // recent is newest-first by ended_at; both fixture sessions share ended_at,
+        // so just assert membership and count.
+        assert_eq!(ps.recent.len(), 2);
+        assert!(ps.recent.iter().all(|s| s.project_cwd == "/tmp/proj-a"));
+    }
+
+    #[test]
+    fn project_stats_is_zeroed_for_an_unknown_project() {
+        let index = seeded_index("proj-stats-none");
+        let ps = index.project_stats("/tmp/does-not-exist");
+        assert_eq!(ps.sessions, 0);
+        assert_eq!(ps.messages, 0);
+        assert_eq!(ps.output_tokens, 0);
+        assert_eq!(ps.active_days, 0);
+        assert_eq!(ps.top_model, None);
+        assert_eq!(ps.first_at, 0);
+        assert_eq!(ps.last_at, 0);
+        assert!(ps.recent.is_empty());
     }
 }

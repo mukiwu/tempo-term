@@ -343,3 +343,33 @@ pub async fn sessions_stats(state: State<'_, SessionsIndexState>, days: Option<i
         .await
         .map_err(|e| e.to_string())
 }
+
+/// Per-project aggregates + recent sessions for the project view. Offloaded to
+/// a blocking pool thread like `sessions_stats`. Zeroed stats (never an error)
+/// before the index has started or for an unknown project.
+#[tauri::command]
+pub async fn sessions_project_stats(
+    state: State<'_, SessionsIndexState>,
+    project_cwd: String,
+) -> Result<stats::ProjectStats, String> {
+    let index = {
+        let guard = state.inner.lock().unwrap();
+        guard.as_ref().map(|inner| Arc::clone(&inner.index))
+    };
+    let Some(index) = index else {
+        return Ok(stats::ProjectStats {
+            project_cwd,
+            sessions: 0,
+            messages: 0,
+            output_tokens: 0,
+            active_days: 0,
+            top_model: None,
+            first_at: 0,
+            last_at: 0,
+            recent: Vec::new(),
+        });
+    };
+    tauri::async_runtime::spawn_blocking(move || index.lock().unwrap().project_stats(&project_cwd))
+        .await
+        .map_err(|e| e.to_string())
+}

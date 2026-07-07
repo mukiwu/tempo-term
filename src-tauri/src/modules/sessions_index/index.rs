@@ -170,6 +170,41 @@ impl Index {
         }
     }
 
+    /// This project's sessions, newest first, capped at 50. Same row shape as
+    /// `list()`, filtered to one `project_cwd`.
+    pub fn list_for_project(&self, project_cwd: &str) -> Vec<SessionSummary> {
+        let mut stmt = match self.conn.prepare(
+            "SELECT s.id,s.agent,s.project_cwd,s.title,s.started_at,s.ended_at,
+                    s.message_count,s.user_message_count,s.output_tokens,s.model,s.file_path,
+                    (p.session_id IS NOT NULL) AS pinned
+             FROM sessions s LEFT JOIN pins p ON p.session_id = s.id
+             WHERE s.project_cwd = ?1 ORDER BY s.ended_at DESC LIMIT 50",
+        ) {
+            Ok(stmt) => stmt,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(params![project_cwd], |r| {
+            Ok(SessionSummary {
+                id: r.get(0)?,
+                agent: r.get(1)?,
+                project_cwd: r.get(2)?,
+                title: r.get(3)?,
+                started_at: r.get(4)?,
+                ended_at: r.get(5)?,
+                message_count: r.get(6)?,
+                user_message_count: r.get(7)?,
+                output_tokens: r.get(8)?,
+                model: r.get(9)?,
+                file_path: r.get(10)?,
+                pinned: r.get(11)?,
+            })
+        });
+        match rows {
+            Ok(iter) => iter.flatten().collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     pub fn set_pinned(&self, id: &str, pinned: bool) -> Result<(), String> {
         let sql = if pinned {
             "INSERT OR IGNORE INTO pins(session_id) VALUES(?1)"
