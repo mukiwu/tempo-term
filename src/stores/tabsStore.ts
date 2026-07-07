@@ -443,7 +443,11 @@ export const useTabsStore = create<TabsState>()(
       spaceId,
       kind: "terminal",
       title: cwd ? basename(cwd) : `Terminal ${count}`,
-      paneTree: leaf(paneId, { kind: "terminal" }),
+      // Seed the requested cwd onto the pane content, not just the tab. The
+      // pane's own cwd is the highest-precedence spawn location
+      // (resolveTerminalCwd ranks paneCwd above the explorer root), so
+      // "open terminal here" lands in the project even when a folder is open.
+      paneTree: leaf(paneId, cwd ? { kind: "terminal", cwd } : { kind: "terminal" }),
       activeLeafId: paneId,
       paneOrder: [paneId],
       cwd,

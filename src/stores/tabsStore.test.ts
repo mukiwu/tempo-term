@@ -491,6 +491,21 @@ describe("tabsStore", () => {
     expect(firstLeafContent(activeTab())).toEqual({ kind: "terminal", cwd: "/work/dir" });
   });
 
+  it("seeds the requested cwd onto the pane content so it wins over the explorer root", () => {
+    // "Open terminal here" (project view) needs the requested cwd as the pane's
+    // OWN cwd: resolveTerminalCwd ranks paneCwd above the explorer root, so a
+    // bare tab-level cwd would be overridden whenever a folder is open.
+    useTabsStore.getState().newTerminalTab("/a/proj");
+    const leafId = activeTab().activeLeafId;
+    expect(findPaneContent(activeTab().paneTree, leafId)).toEqual({ kind: "terminal", cwd: "/a/proj" });
+  });
+
+  it("leaves the pane cwd unset for a plain new terminal", () => {
+    useTabsStore.getState().newTerminalTab();
+    const leafId = activeTab().activeLeafId;
+    expect(findPaneContent(activeTab().paneTree, leafId)).toEqual({ kind: "terminal" });
+  });
+
   it("leaves a non-terminal pane untouched", () => {
     const id = useTabsStore.getState().openEditorTab("/a/b.ts");
     const leafId = activeTab().activeLeafId;
