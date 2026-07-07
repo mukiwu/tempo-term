@@ -58,20 +58,35 @@ export function heatmapWeeks(days: HeatmapDay[], end: Date): (HeatmapDay | null)
 
   const endWeekStart = weekStart(endDay);
   const realStartWeekStart = weekStart(realStart);
+  // Ms division is safe *here*: both operands are local midnights, so a DST
+  // transition inside the span skews the diff by at most an hour, and
+  // rounding to whole weeks absorbs it exactly.
   const weeksBetween =
     Math.round((endWeekStart.getTime() - realStartWeekStart.getTime()) / (DAYS_PER_WEEK * MS_PER_DAY)) + 1;
   const totalWeeks = Math.min(Math.max(weeksBetween, 1), MAX_WEEKS);
 
   // Anchored to `endWeekStart` (not `realStartWeekStart`) so capping drops
-  // the oldest weeks instead of shifting `end` out of the grid.
-  const gridStart = new Date(endWeekStart.getTime() - (totalWeeks - 1) * DAYS_PER_WEEK * MS_PER_DAY);
+  // the oldest weeks instead of shifting `end` out of the grid. Date
+  // *construction* must use calendar arithmetic (day-field offsets), never
+  // raw ms addition: stepping across a DST transition by ms lands an hour
+  // off local midnight, mislabeling every cell on the far side of the
+  // change (and skipping/duplicating the transition day itself).
+  const gridStart = new Date(
+    endWeekStart.getFullYear(),
+    endWeekStart.getMonth(),
+    endWeekStart.getDate() - (totalWeeks - 1) * DAYS_PER_WEEK,
+  );
   const lowerBound = realStart.getTime() > gridStart.getTime() ? realStart : gridStart;
 
   const weeks: (HeatmapDay | null)[][] = [];
   for (let w = 0; w < totalWeeks; w++) {
     const week: (HeatmapDay | null)[] = [];
     for (let row = 0; row < DAYS_PER_WEEK; row++) {
-      const cellDate = new Date(gridStart.getTime() + (w * DAYS_PER_WEEK + row) * MS_PER_DAY);
+      const cellDate = new Date(
+        gridStart.getFullYear(),
+        gridStart.getMonth(),
+        gridStart.getDate() + w * DAYS_PER_WEEK + row,
+      );
       if (cellDate.getTime() < lowerBound.getTime() || cellDate.getTime() > endDay.getTime()) {
         week.push(null);
       } else {

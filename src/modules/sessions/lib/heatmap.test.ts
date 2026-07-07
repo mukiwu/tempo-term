@@ -91,4 +91,45 @@ describe("heatmapWeeks", () => {
       expect(week).toHaveLength(7);
     }
   });
+
+  it("keeps date labels continuous across a DST transition", () => {
+    // Node honors runtime TZ changes on POSIX (assigning process.env.TZ
+    // invalidates V8's date cache), so pin a DST timezone for this test.
+    // With `end` in EDT (summer) and the grid reaching back across the US
+    // spring-forward (2026-03-08) into EST, raw ms stepping would put the
+    // grid start at 23:00 the previous day — labeling the whole
+    // pre-transition tail one day early and skipping 2026-03-08 entirely.
+    // Calendar-safe stepping must keep every label on its real date. The
+    // autumn fall-back direction is the same class of bug with the offsets
+    // reversed, covered by the same calendar-safe construction.
+    const originalTz = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      const days: HeatmapDay[] = [
+        { date: "2026-02-05", messages: 1 },
+        { date: "2026-06-10", messages: 2 },
+      ];
+      const weeks = heatmapWeeks(days, new Date(2026, 5, 15));
+
+      const labels = weeks.flat().flatMap((d) => (d ? [d.date] : []));
+      expect(labels[0]).toBe("2026-02-05");
+      // Every consecutive cell must differ by exactly one calendar day. The
+      // expected key is computed calendar-safe here too, so the expectation
+      // itself can't inherit the bug it's guarding against.
+      for (let i = 1; i < labels.length; i++) {
+        const [y, m, d] = labels[i - 1].split("-").map(Number);
+        const next = new Date(y, m - 1, d + 1);
+        const nextKey = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(
+          next.getDate(),
+        ).padStart(2, "0")}`;
+        expect(labels[i]).toBe(nextKey);
+      }
+      // The transition day and its neighbors are each present exactly once.
+      expect(labels.filter((l) => l === "2026-03-07")).toHaveLength(1);
+      expect(labels.filter((l) => l === "2026-03-08")).toHaveLength(1);
+      expect(labels.filter((l) => l === "2026-03-09")).toHaveLength(1);
+    } finally {
+      process.env.TZ = originalTz;
+    }
+  });
 });

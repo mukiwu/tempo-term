@@ -149,7 +149,37 @@ describe("DashboardView", () => {
     );
   });
 
-  it("resubscribes to sessions-index:updated and releases the listener on unmount", async () => {
+  it("keeps a single sessions-index:updated subscription across range changes", async () => {
+    render(<DashboardView />);
+    await waitFor(() => expect(mockListen).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.range30" }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 }));
+
+    // Changing the range refetches but must not tear down and re-create the
+    // event listener.
+    expect(mockListen).toHaveBeenCalledTimes(1);
+    expect(mockUnlisten).not.toHaveBeenCalled();
+  });
+
+  it("refetches with the current range when a sessions-index:updated event fires", async () => {
+    render(<DashboardView />);
+    await waitFor(() => expect(mockListen).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.range30" }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 }));
+    mockInvoke.mockClear();
+
+    // Fire the event callback the component registered on mount — the
+    // refetch must use the range selected *after* subscribing, not a stale
+    // closure over the initial one.
+    const callback = mockListen.mock.calls[0][1] as () => void;
+    callback();
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 }));
+  });
+
+  it("subscribes to sessions-index:updated and releases the listener on unmount", async () => {
     const { unmount } = render(<DashboardView />);
     await waitFor(() => expect(mockListen).toHaveBeenCalledWith("sessions-index:updated", expect.any(Function)));
 

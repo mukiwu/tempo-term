@@ -75,7 +75,8 @@ function TopSessionRow({ session, onSelect }: TopSessionRowProps) {
           </div>
           <p className="truncate text-xs text-fg-subtle">{session.project_cwd}</p>
         </div>
-        <span className="shrink-0 text-xs text-fg-subtle">{session.value}</span>
+        {/* Token counts easily reach 6-7 digits; group them for readability. */}
+        <span className="shrink-0 text-xs text-fg-subtle">{session.value.toLocaleString()}</span>
       </button>
     </li>
   );
@@ -95,27 +96,36 @@ export function DashboardView() {
   const [range, setRange] = useState<RangeDays>(365);
   const [stats, setStats] = useState<SessionsStats>(EMPTY_STATS);
   const [topTab, setTopTab] = useState<"messages" | "tokens">("messages");
+  // Bumped by every sessions-index:updated event. The fetch effect depends
+  // on it, so index updates refetch with the *current* range without the
+  // subscription effect having to close over `range` (which would force a
+  // listener teardown/re-subscribe on every range change).
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
-    // Mirrors the disposed-flag pattern in SessionsPanel.tsx: the listen
-    // subscription resolves asynchronously, so an unmount before it lands
-    // (fast tab switching) releases the listener immediately instead of
-    // leaking it, and any in-flight fetch is prevented from updating state
-    // for a component that's no longer mounted.
+    // `cancelled` scopes the fetch to the (range, tick) that triggered it:
+    // a later change or unmount flips it before a stale response can land.
+    let cancelled = false;
+    void sessionsStats(range).then((next) => {
+      if (!cancelled) {
+        setStats(next);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [range, refreshTick]);
+
+  useEffect(() => {
+    // Subscribed once for the component's lifetime. Mirrors the
+    // disposed-flag pattern in SessionsPanel.tsx: the listen subscription
+    // resolves asynchronously, so an unmount before it lands (fast tab
+    // switching) releases the listener the moment it arrives instead of
+    // leaking it.
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
-    const load = () => {
-      void sessionsStats(range).then((next) => {
-        if (!disposed) {
-          setStats(next);
-        }
-      });
-    };
-
-    load();
-
-    void onSessionsUpdated(load).then((fn) => {
+    void onSessionsUpdated(() => setRefreshTick((tick) => tick + 1)).then((fn) => {
       if (disposed) {
         fn();
       } else {
@@ -127,7 +137,7 @@ export function DashboardView() {
       disposed = true;
       unlisten?.();
     };
-  }, [range]);
+  }, []);
 
   const weeks = useMemo(() => heatmapWeeks(stats.heatmap, new Date()), [stats.heatmap]);
   const topSessions = topTab === "messages" ? stats.top_by_messages : stats.top_by_tokens;
