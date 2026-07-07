@@ -320,7 +320,8 @@
       "topByTokens": "By tokens",
       "weeklyTitle": "This week",
       "back": "Back",
-      "costNote": "≈ output tokens only, rough estimate"
+      "costNote": "≈ output tokens only, rough estimate",
+      "open": "Open dashboard"
     }
   }
 }

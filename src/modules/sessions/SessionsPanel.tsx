@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { History, Pin, PinOff, Play, Search, Trash2 } from "lucide-react";
+import { History, LayoutDashboard, Pin, PinOff, Play, Search, Trash2 } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -241,6 +241,8 @@ export function SessionsPanel() {
   const selectedId = useSessionsStore((s) => s.selectedId);
   const setQuery = useSessionsStore((s) => s.setQuery);
   const setAgentFilter = useSessionsStore((s) => s.setAgentFilter);
+  const select = useSessionsStore((s) => s.select);
+  const openSessionsTab = useTabsStore((s) => s.openSessionsTab);
 
   useEffect(() => {
     void useSessionsStore.getState().start();
@@ -272,10 +274,26 @@ export function SessionsPanel() {
 
   return (
     <div className="flex h-full flex-col bg-bg-inset">
-      <div className="flex h-9 shrink-0 items-center border-b border-border px-3">
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
         <span className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
           {t("nav.sessions")}
         </span>
+        {/* Opens the sessions tab with nothing selected, i.e. the dashboard.
+            Selecting a row also opens that tab but on the transcript viewer;
+            this is the only way to reach the dashboard as the home screen. */}
+        <Tooltip label={t("sessions.dashboard.open")}>
+          <button
+            type="button"
+            aria-label={t("sessions.dashboard.open")}
+            onClick={() => {
+              select(null);
+              openSessionsTab();
+            }}
+            className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+          >
+            <LayoutDashboard size={14} />
+          </button>
+        </Tooltip>
       </div>
 
       <div className="shrink-0 border-b border-border px-3 py-2">

@@ -320,7 +320,8 @@
       "topByTokens": "依 token",
       "weeklyTitle": "本週",
       "back": "返回",
-      "costNote": "≈ 僅計輸出 token，粗估"
+      "costNote": "≈ 僅計輸出 token，粗估",
+      "open": "開啟儀表板"
     }
   }
 }

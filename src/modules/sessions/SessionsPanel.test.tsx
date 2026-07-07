@@ -216,6 +216,18 @@ describe("SessionsPanel", () => {
     expect(useTabsStore.getState().activeId).toBe(tabId);
   });
 
+  it("opens the dashboard tab (no session selected) via the header button", async () => {
+    seedSessions([session({ id: "a", title: "Deploy script" })]);
+    await renderSettled();
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.open" }));
+
+    // A sessions tab opens with nothing selected, so it shows the dashboard.
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(useTabsStore.getState().tabs[0].kind).toBe("sessions");
+    expect(useSessionsStore.getState().selectedId).toBe(null);
+  });
+
   it("toggles pin via the row's pin button without selecting the row", async () => {
     seedSessions([session({ id: "a", title: "Deploy script", pinned: false })]);
     await renderSettled();
