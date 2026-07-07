@@ -310,6 +310,7 @@
       "range90": "90d",
       "range365": "1y",
       "rangeAll": "All",
+      "exportCsv": "Export CSV",
       "cards": {
         "sessions": "Sessions",
         "messages": "Messages",

@@ -2,14 +2,18 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardView } from "./DashboardView";
 import { useSessionsStore } from "./lib/sessionsStore";
+import type { SessionSummary } from "./lib/sessionsBridge";
 import type { SessionsStats } from "./lib/statsBridge";
 
 // vi.mock is hoisted to the top of the file, so mocks must be created with
 // vi.hoisted() to be accessible inside the factory callbacks.
-const { mockInvoke, mockListen, mockUnlisten, statsFixture } = vi.hoisted(() => ({
+const { mockInvoke, mockListen, mockUnlisten, mockSaveFile, mockFsWriteFile, statsFixture } = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
   mockListen: vi.fn(),
   mockUnlisten: vi.fn(),
+  // Backs the CSV export button's save dialog + file write.
+  mockSaveFile: vi.fn(),
+  mockFsWriteFile: vi.fn(),
   // Backs the "sessions_stats" invoke response, seeded per test.
   statsFixture: { current: null as unknown },
 }));
@@ -26,6 +30,14 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: mockListen,
+}));
+
+vi.mock("@/lib/dialog", () => ({
+  saveFile: mockSaveFile,
+}));
+
+vi.mock("@/modules/explorer/lib/fsBridge", () => ({
+  fsWriteFile: mockFsWriteFile,
 }));
 
 vi.mock("react-i18next", () => ({
@@ -72,17 +84,38 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
   };
 }
 
+function session(overrides: Partial<SessionSummary>): SessionSummary {
+  return {
+    id: "id",
+    agent: "claude",
+    project_cwd: "/p",
+    title: "t",
+    started_at: 0,
+    ended_at: 0,
+    message_count: 0,
+    user_message_count: 0,
+    output_tokens: null,
+    model: null,
+    file_path: "/f",
+    pinned: false,
+    ...overrides,
+  };
+}
+
 describe("DashboardView", () => {
   beforeEach(() => {
     mockInvoke.mockReset();
     mockListen.mockReset().mockResolvedValue(mockUnlisten);
     mockUnlisten.mockReset();
+    mockSaveFile.mockReset();
+    mockFsWriteFile.mockReset().mockResolvedValue(undefined);
     statsFixture.current = stats();
     useSessionsStore.setState({
       sessions: [],
       loaded: false,
       query: "",
       agentFilter: "all",
+      modelFilter: "all",
       selectedId: null,
     });
   });
@@ -272,5 +305,27 @@ describe("DashboardView", () => {
     resolveListen(mockUnlisten);
 
     await waitFor(() => expect(mockUnlisten).toHaveBeenCalled());
+  });
+
+  it("exports the filtered session list as CSV via saveFile + fsWriteFile", async () => {
+    useSessionsStore.setState({
+      sessions: [session({ id: "a", title: "Fix bug", agent: "codex", model: "gpt-5.5" })],
+      query: "",
+      agentFilter: "all",
+      modelFilter: "all",
+    });
+    mockSaveFile.mockResolvedValue("/path.csv");
+
+    render(<DashboardView />);
+    await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.exportCsv" }));
+
+    await waitFor(() =>
+      expect(mockSaveFile).toHaveBeenCalledWith("ai-sessions.csv", [{ name: "CSV", extensions: ["csv"] }]),
+    );
+    await waitFor(() =>
+      expect(mockFsWriteFile).toHaveBeenCalledWith("/path.csv", expect.stringContaining("title,agent,model")),
+    );
   });
 });

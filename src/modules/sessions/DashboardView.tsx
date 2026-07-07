@@ -8,7 +8,10 @@ import {
   type TopSession,
 } from "./lib/statsBridge";
 import { Tooltip } from "@/components/Tooltip";
-import { useSessionsStore } from "./lib/sessionsStore";
+import { useSessionsStore, visibleSessions } from "./lib/sessionsStore";
+import { toSessionsCsv } from "./lib/sessionsCsv";
+import { saveFile } from "@/lib/dialog";
+import { fsWriteFile } from "@/modules/explorer/lib/fsBridge";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
 import { heatmapLevel, heatmapMax, heatmapMonthLabels, heatmapWeeks } from "./lib/heatmap";
 import { estimateOutputCost } from "./lib/cost";
@@ -208,6 +211,10 @@ export function DashboardView() {
   const { t, i18n } = useTranslation();
   const select = useSessionsStore((s) => s.select);
   const selectProject = useSessionsStore((s) => s.selectProject);
+  const sessions = useSessionsStore((s) => s.sessions);
+  const query = useSessionsStore((s) => s.query);
+  const agentFilter = useSessionsStore((s) => s.agentFilter);
+  const modelFilter = useSessionsStore((s) => s.modelFilter);
   const [range, setRange] = useState<RangeDays>(365);
   const [stats, setStats] = useState<SessionsStats>(EMPTY_STATS);
   const [topTab, setTopTab] = useState<"messages" | "tokens">("messages");
@@ -290,24 +297,46 @@ export function DashboardView() {
     return Array.from({ length: 7 }, (_, row) => fmt.format(new Date(2026, 2, 1 + row)));
   }, [locale]);
 
+  // Exports exactly the sessions currently visible under the active
+  // search/agent/model filters (not the full unfiltered index), mirroring
+  // what the sessions panel itself shows.
+  async function handleExportCsv() {
+    const { pinned, history } = visibleSessions(sessions, query, agentFilter, modelFilter);
+    const csv = toSessionsCsv([...pinned, ...history]);
+    const path = await saveFile("ai-sessions.csv", [{ name: "CSV", extensions: ["csv"] }]);
+    if (path === null) {
+      return;
+    }
+    await fsWriteFile(path, csv);
+  }
+
   return (
     <div className="h-full overflow-y-auto bg-bg-inset p-4">
       <div className="flex items-center justify-between">
         <h1 className="text-sm font-semibold text-fg">{t("sessions.dashboard.title")}</h1>
-        <div className="flex items-center gap-1">
-          {RANGE_OPTIONS.map((opt) => (
-            <button
-              key={String(opt.key)}
-              type="button"
-              aria-pressed={range === opt.key}
-              onClick={() => setRange(opt.key)}
-              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                range === opt.key ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
-              }`}
-            >
-              {t(opt.labelKey)}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            {RANGE_OPTIONS.map((opt) => (
+              <button
+                key={String(opt.key)}
+                type="button"
+                aria-pressed={range === opt.key}
+                onClick={() => setRange(opt.key)}
+                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                  range === opt.key ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
+                }`}
+              >
+                {t(opt.labelKey)}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleExportCsv()}
+            className="rounded border border-border px-2 py-0.5 text-[11px] text-fg-subtle transition-colors hover:text-fg"
+          >
+            {t("sessions.dashboard.exportCsv")}
+          </button>
         </div>
       </div>
 
