@@ -67,7 +67,6 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
       },
     ],
     range_models: [{ model: "claude-sonnet-5", output_tokens: 12500 }],
-    favorite_model: "claude-sonnet-5",
     hourly: new Array(24).fill(0),
     ...overrides,
   };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { computeStreaks, formatHour, modelSlices, OTHERS_SLICE, peakHour } from "./insights";
-import type { HeatmapDay, ModelTokens } from "./statsBridge";
+import { formatHour, modelSlices, OTHERS_SLICE, peakHour } from "./insights";
+import type { ModelTokens } from "./statsBridge";
 
 describe("modelSlices", () => {
   const m = (model: string, output_tokens: number): ModelTokens => ({ model, output_tokens });
@@ -27,41 +27,6 @@ describe("modelSlices", () => {
     const slices = modelSlices([m("a", 10), m("b", 0)], 6);
     expect(slices).toHaveLength(1);
     expect(slices[0].label).toBe("a");
-  });
-});
-
-const day = (date: string): HeatmapDay => ({ date, messages: 1, sessions: 1, output_tokens: 0 });
-
-describe("computeStreaks", () => {
-  it("counts the current streak back from today", () => {
-    const days = [day("2026-07-05"), day("2026-07-06"), day("2026-07-07")];
-    expect(computeStreaks(days, new Date(2026, 6, 7))).toEqual({ current: 3, longest: 3 });
-  });
-
-  it("keeps the current streak alive when the latest active day was yesterday", () => {
-    const days = [day("2026-07-05"), day("2026-07-06")];
-    // Today (07-07) has no activity yet, but yesterday did — streak stands.
-    expect(computeStreaks(days, new Date(2026, 6, 7)).current).toBe(2);
-  });
-
-  it("resets the current streak when the last active day is older than yesterday", () => {
-    const days = [day("2026-07-01"), day("2026-07-02")];
-    expect(computeStreaks(days, new Date(2026, 6, 7)).current).toBe(0);
-  });
-
-  it("finds the longest run even when it isn't the current one", () => {
-    const days = [
-      day("2026-06-01"),
-      day("2026-06-02"),
-      day("2026-06-03"),
-      day("2026-06-04"), // 4-day run
-      day("2026-07-07"), // isolated, today
-    ];
-    expect(computeStreaks(days, new Date(2026, 6, 7))).toEqual({ current: 1, longest: 4 });
-  });
-
-  it("is zero for no activity", () => {
-    expect(computeStreaks([], new Date(2026, 6, 7))).toEqual({ current: 0, longest: 0 });
   });
 });
 

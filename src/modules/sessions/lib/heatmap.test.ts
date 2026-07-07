@@ -63,6 +63,35 @@ describe("heatmapWeeks", () => {
     expect(heatmapWeeks([], new Date(2026, 0, 7))).toEqual([]);
   });
 
+  it("spans the whole window from an explicit start, with empty leading days", () => {
+    // The window opens 30 days before `end`, but the only active day is near
+    // the end: the grid must reach back to the start (empty tiles), not begin
+    // at the first active day — the "fixed range = full calendar" behavior.
+    const end = new Date(2026, 6, 15); // 2026-07-15
+    const rangeStart = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 30);
+    const days: HeatmapDay[] = [day("2026-07-10", { messages: 4 })];
+
+    const weeks = heatmapWeeks(days, end, rangeStart);
+    const flat = weeks.flat().filter((c): c is HeatmapDay => c !== null);
+    // A cell earlier than the only data day is present (the empty lead-in).
+    expect(flat.some((c) => c.date < "2026-07-10")).toBe(true);
+    expect(flat.find((c) => c.date === "2026-07-10")?.messages).toBe(4);
+    // Those pre-data days are zero-filled, not absent.
+    const earlier = flat.filter((c) => c.date < "2026-07-10");
+    expect(earlier.every((c) => c.messages === 0)).toBe(true);
+  });
+
+  it("renders a full empty grid when there are no days but a start is given", () => {
+    const end = new Date(2026, 6, 15);
+    const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 13); // 2 weeks
+    const weeks = heatmapWeeks([], end, start);
+    // Not the early-return-[] path: a real grid with zero-filled in-window cells.
+    expect(weeks.length).toBeGreaterThan(0);
+    const inWindow = weeks.flat().filter((c): c is HeatmapDay => c !== null);
+    expect(inWindow.length).toBeGreaterThan(0);
+    expect(inWindow.every((c) => c.messages === 0)).toBe(true);
+  });
+
   it("pads with null before the first date and after `end`, in a single-week grid of 7 rows", () => {
     // 2026-01-07 is a Wednesday (day 3); its week starts Sunday 2026-01-04.
     const days: HeatmapDay[] = [day("2026-01-07", { messages: 5 })];

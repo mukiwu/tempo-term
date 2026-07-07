@@ -25,11 +25,8 @@ pub struct SessionsStats {
     /// cost estimate on the cards. NULL-model tokens are excluded here but
     /// still counted in `cards.output_tokens`.
     pub range_models: Vec<ModelTokens>,
-    /// The model used in the most sessions over the range, or `None` when no
-    /// session in range recorded a model.
-    pub favorite_model: Option<String>,
-    /// Messages per hour-of-day (local), always length 24 (index 0 = 00:00),
-    /// for the activity-by-hour chart and the peak-hour readout.
+    /// Messages per hour-of-day (local) for TODAY, always length 24
+    /// (index 0 = 00:00), for the "today by hour" chart and peak-hour readout.
     pub hourly: Vec<i64>,
 }
 
@@ -99,7 +96,6 @@ pub(crate) fn empty_stats() -> SessionsStats {
         top_by_tokens: Vec::new(),
         weekly: Vec::new(),
         range_models: Vec::new(),
-        favorite_model: None,
         hourly: vec![0; 24],
     }
 }
@@ -154,24 +150,8 @@ impl Index {
             top_by_tokens: self.stats_top_by_tokens(days, &cutoff),
             weekly: self.stats_weekly(),
             range_models: self.stats_range_models(&cutoff),
-            favorite_model: self.stats_favorite_model(&cutoff),
             hourly: self.stats_hourly_today(),
         }
-    }
-
-    /// The model used in the most distinct sessions over the range (ties broken
-    /// by model name for determinism). `None` when no in-range session has a
-    /// model recorded.
-    fn stats_favorite_model(&self, cutoff: &str) -> Option<String> {
-        self.conn
-            .query_row(
-                "SELECT s.model FROM activity a JOIN sessions s ON s.id = a.session_id
-                 WHERE a.date >= ?1 AND s.model IS NOT NULL
-                 GROUP BY s.model ORDER BY COUNT(DISTINCT a.session_id) DESC, s.model ASC LIMIT 1",
-                params![cutoff],
-                |r| r.get(0),
-            )
-            .ok()
     }
 
     /// Messages per hour-of-day (0..23) for TODAY (local), always length 24 —
@@ -522,28 +502,6 @@ mod tests {
         let mut sorted = dates.clone();
         sorted.sort();
         assert_eq!(dates, sorted);
-    }
-
-    #[test]
-    fn favorite_model_is_the_most_used_model_in_range() {
-        let index = seeded_index("favorite");
-        let stats = index.stats(None);
-        // Only s1 records a model (claude-sonnet-5); s2/s3 have none.
-        assert_eq!(stats.favorite_model.as_deref(), Some("claude-sonnet-5"));
-    }
-
-    #[test]
-    fn favorite_model_is_none_without_any_model() {
-        let index = Index::open(&temp_db("favorite-none")).unwrap();
-        index
-            .upsert_session(
-                &session("s", "codex", "/p", 4, 2, None, None, &day_string(0)),
-                "/f/s.jsonl",
-                1,
-                1,
-            )
-            .unwrap();
-        assert_eq!(index.stats(None).favorite_model, None);
     }
 
     #[test]

@@ -38,7 +38,6 @@ const EMPTY_STATS: SessionsStats = {
   top_by_tokens: [],
   weekly: [],
   range_models: [],
-  favorite_model: null,
   hourly: new Array(24).fill(0),
 };
 
@@ -360,31 +359,32 @@ export function DashboardView() {
                 style={{ gridTemplateRows: "repeat(7, 14px)" }}
               >
                 {weeks.map((week, weekIndex) =>
-                  week.map((day, dayIndex) =>
-                    day ? (
+                  week.map((day, dayIndex) => {
+                    if (!day) {
+                      return <div key={`${weekIndex}-${dayIndex}`} className="h-[14px] w-[14px]" />;
+                    }
+                    // Compute the label once for both the visual tooltip and
+                    // the accessible name, rather than calling t() twice per cell.
+                    const label = t("sessions.dashboard.heatmapTooltip", {
+                      date: day.date,
+                      count: day[metric],
+                    });
+                    return (
                       <Tooltip
                         key={`${weekIndex}-${dayIndex}`}
                         delayMs={60}
-                        label={t("sessions.dashboard.heatmapTooltip", {
-                          date: day.date,
-                          count: day[metric],
-                        })}
+                        label={label}
                         className="h-[14px] w-[14px]"
                       >
                         <div
-                          aria-label={t("sessions.dashboard.heatmapTooltip", {
-                            date: day.date,
-                            count: day[metric],
-                          })}
+                          aria-label={label}
                           className={`h-[14px] w-[14px] rounded-[3px] ${
                             HEATMAP_LEVEL_CLASS[heatmapLevel(day[metric], heatmapPeak)]
                           }`}
                         />
                       </Tooltip>
-                    ) : (
-                      <div key={`${weekIndex}-${dayIndex}`} className="h-[14px] w-[14px]" />
-                    ),
-                  ),
+                    );
+                  }),
                 )}
               </div>
             </div>
