@@ -8,10 +8,24 @@ import type { SessionsStats } from "./lib/statsBridge";
 
 // vi.mock is hoisted to the top of the file, so mocks must be created with
 // vi.hoisted() to be accessible inside the factory callbacks.
-const { mockInvoke, mockListen, mockUnlisten, transcripts, statsFixture, deleteFailure } = vi.hoisted(() => ({
+const {
+  mockInvoke,
+  mockListen,
+  mockUnlisten,
+  mockSave,
+  mockFsWriteFile,
+  transcripts,
+  statsFixture,
+  deleteFailure,
+  exportFailure,
+  exportMarkdown,
+} = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
   mockListen: vi.fn(),
   mockUnlisten: vi.fn(),
+  // Backs the save dialog the export button opens.
+  mockSave: vi.fn(),
+  mockFsWriteFile: vi.fn(),
   // Backs "sessions_get" invoke responses per session id. Each entry is a
   // resolver the test controls directly, so responses can be made to land in
   // any order (needed for the stale-response race test below).
@@ -21,6 +35,9 @@ const { mockInvoke, mockListen, mockUnlisten, transcripts, statsFixture, deleteF
   statsFixture: { current: null as unknown },
   // When set, "sessions_delete" rejects — for the failure-surfacing tests.
   deleteFailure: { current: false },
+  // When set, "sessions_export" rejects — for the failure-surfacing tests.
+  exportFailure: { current: false },
+  exportMarkdown: { current: "# Fix flaky test\n\nsome content\n" },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -35,12 +52,26 @@ vi.mock("@tauri-apps/api/core", () => ({
     if (cmd === "sessions_delete" && deleteFailure.current) {
       return Promise.reject(new Error("trash failed"));
     }
+    if (cmd === "sessions_export") {
+      return exportFailure.current
+        ? Promise.reject(new Error("export failed"))
+        : Promise.resolve(exportMarkdown.current);
+    }
     return Promise.resolve(undefined);
   },
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: mockListen,
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
+  save: mockSave,
+}));
+
+vi.mock("@/modules/explorer/lib/fsBridge", () => ({
+  fsWriteFile: mockFsWriteFile,
 }));
 
 vi.mock("react-i18next", () => ({
@@ -101,9 +132,13 @@ describe("SessionsTabContent", () => {
     mockInvoke.mockReset();
     mockListen.mockReset().mockResolvedValue(mockUnlisten);
     mockUnlisten.mockReset();
+    mockSave.mockReset();
+    mockFsWriteFile.mockReset().mockResolvedValue(undefined);
     transcripts.clear();
     statsFixture.current = stats();
     deleteFailure.current = false;
+    exportFailure.current = false;
+    exportMarkdown.current = "# Fix flaky test\n\nsome content\n";
     useSessionsStore.setState({
       sessions: [],
       loaded: false,
@@ -384,6 +419,76 @@ describe("SessionsTabContent", () => {
     await waitFor(() => expect(screen.getByText("sessions.deleteError")).toBeInTheDocument());
     expect(useSessionsStore.getState().selectedId).toBe("a");
     expect(screen.getByText("Fix flaky test")).toBeInTheDocument();
+  });
+
+  it("exports the current session via the header export button, writing the rendered markdown to the chosen path", async () => {
+    const target = session({ id: "a", title: "Fix flaky test" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+    exportMarkdown.current = "# Fix flaky test\n\nsome content\n";
+    mockSave.mockResolvedValue("/Users/muki/Desktop/fix-flaky-test.md");
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.export" }));
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_export", { id: "a" }));
+    await waitFor(() =>
+      expect(mockFsWriteFile).toHaveBeenCalledWith(
+        "/Users/muki/Desktop/fix-flaky-test.md",
+        "# Fix flaky test\n\nsome content\n",
+      ),
+    );
+    expect(mockSave).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultPath: "fix-flaky-test.md" }),
+    );
+  });
+
+  it("does nothing when the export save dialog is cancelled", async () => {
+    const target = session({ id: "a", title: "Fix flaky test" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+    mockSave.mockResolvedValue(null);
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.export" }));
+
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_export", { id: "a" }));
+    expect(mockFsWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("shows an error line when exporting the transcript fails", async () => {
+    const target = session({ id: "a", title: "Fix flaky test" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+    exportFailure.current = true;
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.export" }));
+
+    await waitFor(() => expect(screen.getByText("sessions.exportError")).toBeInTheDocument());
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(mockFsWriteFile).not.toHaveBeenCalled();
+  });
+
+  it("shows an error line when writing the exported file fails", async () => {
+    const target = session({ id: "a", title: "Fix flaky test" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+    mockSave.mockResolvedValue("/Users/muki/Desktop/fix-flaky-test.md");
+    mockFsWriteFile.mockRejectedValue(new Error("disk full"));
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.export" }));
+
+    await waitFor(() => expect(screen.getByText("sessions.exportError")).toBeInTheDocument());
   });
 
   it("disables the header resume button for antigravity sessions instead of hiding it", async () => {

@@ -6,6 +6,7 @@
 pub mod antigravity;
 pub mod claude;
 pub mod codex;
+pub mod export;
 pub mod index;
 pub mod proto;
 pub mod scanner;
@@ -156,6 +157,41 @@ pub async fn sessions_get(state: State<'_, SessionsIndexState>, id: String) -> R
         Err(err) => eprintln!("[sessions] get: error after {:?}: {err}", started.elapsed()),
     }
     result
+}
+
+/// Re-parses a session's transcript (same lookup + parse as `sessions_get`)
+/// and renders it as a standalone Markdown string for the export button.
+/// The frontend then hands this to a save dialog and writes it to disk —
+/// this command only produces the content.
+#[tauri::command]
+pub async fn sessions_export(state: State<'_, SessionsIndexState>, id: String) -> Result<String, String> {
+    let index = {
+        let guard = state.inner.lock().unwrap();
+        let inner = guard.as_ref().ok_or_else(|| "sessions index not started".to_string())?;
+        Arc::clone(&inner.index)
+    };
+
+    // Lookup, parse, and render all run on a blocking-pool thread: the
+    // lookup so this async worker never parks on the index mutex during a
+    // background sync batch, and the parse for the same reason as
+    // `sessions_get` (a transcript can be multiple MBs).
+    tauri::async_runtime::spawn_blocking(move || {
+        let summary = index
+            .lock()
+            .unwrap()
+            .lookup_summary(&id)
+            .ok_or_else(|| format!("session {id} not found"))?;
+        let path = Path::new(&summary.file_path);
+        let messages = match summary.agent.as_str() {
+            "claude" => claude::parse_claude_transcript(path),
+            "codex" => codex::parse_codex_transcript(path),
+            "antigravity" => antigravity::parse_antigravity_transcript(path),
+            _ => Vec::new(),
+        };
+        Ok(export::transcript_to_markdown(&summary, &messages))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Pin or unpin a session. Errors if the index hasn't been started yet.

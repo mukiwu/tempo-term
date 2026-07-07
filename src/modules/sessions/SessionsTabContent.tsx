@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Loader2, Pin, PinOff, Play, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Loader2, Pin, PinOff, Play, Trash2 } from "lucide-react";
 import { MarkdownView } from "@/components/MarkdownView";
 import { Tooltip } from "@/components/Tooltip";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { saveFile } from "@/lib/dialog";
+import { fsWriteFile } from "@/modules/explorer/lib/fsBridge";
 import { sessionsGet, type TranscriptMessage } from "./lib/sessionsBridge";
 import { useSessionsStore } from "./lib/sessionsStore";
-import { sessionsDelete } from "./lib/statsBridge";
+import { sessionsDelete, sessionsExport } from "./lib/statsBridge";
 import { formatRelativeTime } from "./lib/relativeTime";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
 import { resumeCommand, resumeSession } from "./lib/resume";
+import { slugifyTitle } from "./lib/slug";
 import { DashboardView } from "./DashboardView";
 
 function getErrorMessage(error: unknown): string {
@@ -105,6 +108,9 @@ export function SessionsTabContent() {
   // area, same style as `error` above, until the selection changes or a new
   // delete attempt replaces it.
   const [deleteError, setDeleteError] = useState(false);
+  // Same treatment for export: a failed render or a failed disk write both
+  // surface here rather than silently doing nothing.
+  const [exportError, setExportError] = useState(false);
 
   useEffect(() => {
     if (!selectedId) {
@@ -112,6 +118,7 @@ export function SessionsTabContent() {
       setError(null);
       setLoading(false);
       setDeleteError(false);
+      setExportError(false);
       return;
     }
     // `cancelled` scopes this fetch to the selectedId that triggered it: a
@@ -122,6 +129,7 @@ export function SessionsTabContent() {
     setLoading(true);
     setError(null);
     setDeleteError(false);
+    setExportError(false);
     sessionsGet(selectedId)
       .then((messages) => {
         if (cancelled) {
@@ -168,6 +176,26 @@ export function SessionsTabContent() {
       return;
     }
     select(null);
+  }
+
+  // Renders the transcript to Markdown first, then asks where to save it —
+  // a cancelled save dialog is a no-op, not an error, so nothing is written
+  // and `exportError` stays clear.
+  async function handleExport() {
+    if (!session) {
+      return;
+    }
+    setExportError(false);
+    try {
+      const markdown = await sessionsExport(session.id);
+      const path = await saveFile(`${slugifyTitle(session.title)}.md`);
+      if (path === null) {
+        return;
+      }
+      await fsWriteFile(path, markdown);
+    } catch {
+      setExportError(true);
+    }
   }
 
   return (
@@ -226,6 +254,16 @@ export function SessionsTabContent() {
                 {session.pinned ? <PinOff size={14} /> : <Pin size={14} />}
               </button>
             </Tooltip>
+            <Tooltip label={t("sessions.export")}>
+              <button
+                type="button"
+                aria-label={t("sessions.export")}
+                onClick={() => void handleExport()}
+                className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+              >
+                <Download size={14} />
+              </button>
+            </Tooltip>
             <Tooltip label={t("sessions.delete")}>
               <button
                 type="button"
@@ -269,6 +307,9 @@ export function SessionsTabContent() {
         )}
         {deleteError && (
           <p className="mb-3 text-xs text-danger/80">{t("sessions.deleteError")}</p>
+        )}
+        {exportError && (
+          <p className="mb-3 text-xs text-danger/80">{t("sessions.exportError")}</p>
         )}
         <div className="flex flex-col gap-3">
           {transcript.map((message, index) => (

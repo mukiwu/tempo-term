@@ -56,8 +56,8 @@ use modules::sysmon::{system_stats, SysinfoState};
 use modules::ports::{kill_port_process, list_ports, PortsState};
 use modules::editor_watch::{editor_watch_set, EditorWatchState};
 use modules::sessions_index::{
-    sessions_delete, sessions_get, sessions_index_start, sessions_list, sessions_pin, sessions_stats,
-    SessionsIndexState,
+    sessions_delete, sessions_export, sessions_get, sessions_index_start, sessions_list, sessions_pin,
+    sessions_stats, SessionsIndexState,
 };
 
 #[derive(serde::Serialize)]
@@ -260,7 +260,8 @@ pub fn run() {
             sessions_get,
             sessions_pin,
             sessions_stats,
-            sessions_delete
+            sessions_delete,
+            sessions_export
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

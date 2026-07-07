@@ -180,6 +180,39 @@ impl Index {
         Ok(())
     }
 
+    /// A single session's full summary by id, or `None` if unknown. Used by
+    /// `sessions_export`, which needs the header metadata (title, agent,
+    /// project, date range) alongside the transcript — a targeted SELECT
+    /// instead of filtering the full `list()` result set.
+    pub fn lookup_summary(&self, id: &str) -> Option<SessionSummary> {
+        self.conn
+            .query_row(
+                "SELECT s.id,s.agent,s.project_cwd,s.title,s.started_at,s.ended_at,
+                        s.message_count,s.user_message_count,s.output_tokens,s.model,s.file_path,
+                        (p.session_id IS NOT NULL) AS pinned
+                 FROM sessions s LEFT JOIN pins p ON p.session_id = s.id
+                 WHERE s.id=?1",
+                params![id],
+                |r| {
+                    Ok(SessionSummary {
+                        id: r.get(0)?,
+                        agent: r.get(1)?,
+                        project_cwd: r.get(2)?,
+                        title: r.get(3)?,
+                        started_at: r.get(4)?,
+                        ended_at: r.get(5)?,
+                        message_count: r.get(6)?,
+                        user_message_count: r.get(7)?,
+                        output_tokens: r.get(8)?,
+                        model: r.get(9)?,
+                        file_path: r.get(10)?,
+                        pinned: r.get(11)?,
+                    })
+                },
+            )
+            .ok()
+    }
+
     pub fn lookup_file(&self, id: &str) -> Option<(String, String)> {
         self.conn
             .query_row(
@@ -319,6 +352,34 @@ mod tests {
         let rows = index.list();
         assert_eq!(rows[0].id, "new");
         assert!(rows.iter().find(|r| r.id == "old").unwrap().pinned);
+    }
+
+    #[test]
+    fn lookup_summary_returns_the_full_summary_for_a_known_id() {
+        let index = Index::open(&temp_db("lookup-summary")).unwrap();
+        index.upsert_session(&sample("s1"), "/f/s1.jsonl", 1, 1).unwrap();
+        index.set_pinned("s1", true).unwrap();
+
+        let summary = index.lookup_summary("s1").unwrap();
+
+        assert_eq!(summary.id, "s1");
+        assert_eq!(summary.agent, "claude");
+        assert_eq!(summary.project_cwd, "/tmp/proj");
+        assert_eq!(summary.title, "hello");
+        assert_eq!(summary.started_at, 1000);
+        assert_eq!(summary.ended_at, 2000);
+        assert_eq!(summary.message_count, 4);
+        assert_eq!(summary.user_message_count, 2);
+        assert_eq!(summary.output_tokens, Some(50));
+        assert_eq!(summary.model, Some("claude-sonnet-5".to_string()));
+        assert_eq!(summary.file_path, "/f/s1.jsonl");
+        assert!(summary.pinned);
+    }
+
+    #[test]
+    fn lookup_summary_returns_none_for_an_unknown_id() {
+        let index = Index::open(&temp_db("lookup-summary-unknown")).unwrap();
+        assert!(index.lookup_summary("nope").is_none());
     }
 
     #[test]

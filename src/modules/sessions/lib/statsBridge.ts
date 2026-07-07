@@ -79,3 +79,10 @@ export function sessionsStats(days: number | null): Promise<SessionsStats> {
 export function sessionsDelete(id: string): Promise<void> {
   return invoke("sessions_delete", { id });
 }
+
+/** Re-parses a session's transcript and renders it as a Markdown string,
+ *  for the export button. Writing the result to disk is the caller's job
+ *  (via a save dialog + `fsWriteFile`) — this only produces the content. */
+export function sessionsExport(id: string): Promise<string> {
+  return invoke<string>("sessions_export", { id });
+}
