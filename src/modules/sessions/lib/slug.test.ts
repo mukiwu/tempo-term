@@ -14,8 +14,14 @@ describe("slugifyTitle", () => {
     expect(slugifyTitle("")).toBe("session");
   });
 
-  it("falls back to 'session' when nothing survives (all-CJK/emoji title)", () => {
-    expect(slugifyTitle("偵錯報告🎉")).toBe("session");
+  it("keeps CJK characters (zh-Hant is a first-class locale)", () => {
+    // The emoji is dropped (not a letter/digit); the Chinese characters stay.
+    expect(slugifyTitle("偵錯報告🎉")).toBe("偵錯報告");
+    expect(slugifyTitle("修復 SSH 連線")).toBe("修復-ssh-連線");
+  });
+
+  it("falls back to 'session' when nothing survives (all-punctuation/emoji)", () => {
+    expect(slugifyTitle("🎉🎉 !!! ")).toBe("session");
   });
 
   it("caps the result at 60 characters", () => {

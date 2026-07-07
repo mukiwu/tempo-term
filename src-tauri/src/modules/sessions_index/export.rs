@@ -100,8 +100,11 @@ pub fn transcript_to_markdown(summary: &SessionSummary, messages: &[TranscriptMe
     // A session that starts and ends on the same local day reads better as
     // a single date than as "X – X".
     let dates = if start == end { start } else { format!("{start} – {end}") };
+    // The project path goes in an inline code span so its `_`/`*`/etc. render
+    // literally instead of as markdown emphasis. Paths never contain backticks,
+    // so the span can't be broken from the inside.
     let mut out = format!(
-        "# {title}\n\n{agent} · {project} · {dates}\n",
+        "# {title}\n\n{agent} · `{project}` · {dates}\n",
         title = summary.title,
         agent = agent_label(&summary.agent),
         project = summary.project_cwd,
@@ -170,7 +173,7 @@ mod tests {
     fn header_includes_title_agent_label_and_project() {
         let md = transcript_to_markdown(&summary(), &[]);
         assert!(md.starts_with("# Fix flaky test\n\n"));
-        assert!(md.contains("Claude · /repo/app ·"));
+        assert!(md.contains("Claude · `/repo/app` ·"));
     }
 
     #[test]
@@ -275,7 +278,7 @@ mod tests {
         s.ended_at = s.started_at + 3 * 60 * 60 * 1000;
         let md = transcript_to_markdown(&s, &[]);
         let date = super::local_date(s.started_at);
-        assert!(md.contains(&format!("Claude · /repo/app · {date}\n")), "single date not found in:\n{md}");
+        assert!(md.contains(&format!("Claude · `/repo/app` · {date}\n")), "single date not found in:\n{md}");
         assert!(!md.contains(" – "));
     }
 }
