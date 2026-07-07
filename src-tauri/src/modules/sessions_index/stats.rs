@@ -155,7 +155,7 @@ impl Index {
             weekly: self.stats_weekly(),
             range_models: self.stats_range_models(&cutoff),
             favorite_model: self.stats_favorite_model(&cutoff),
-            hourly: self.stats_hourly(&cutoff),
+            hourly: self.stats_hourly_today(),
         }
     }
 
@@ -174,16 +174,18 @@ impl Index {
             .ok()
     }
 
-    /// Messages per hour-of-day (0..23) over the range, always length 24.
-    fn stats_hourly(&self, cutoff: &str) -> Vec<i64> {
+    /// Messages per hour-of-day (0..23) for TODAY (local), always length 24 —
+    /// a "what have I done today" view, independent of the range filter.
+    fn stats_hourly_today(&self) -> Vec<i64> {
         let mut hourly = vec![0i64; 24];
+        let today = Local::now().date_naive().format("%Y-%m-%d").to_string();
         let Ok(mut stmt) = self.conn.prepare(
             "SELECT hour, COALESCE(SUM(messages),0) FROM activity
-             WHERE date >= ?1 GROUP BY hour",
+             WHERE date = ?1 GROUP BY hour",
         ) else {
             return hourly;
         };
-        let Ok(rows) = stmt.query_map(params![cutoff], |r| {
+        let Ok(rows) = stmt.query_map(params![today], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
         }) else {
             return hourly;
@@ -545,14 +547,14 @@ mod tests {
     }
 
     #[test]
-    fn hourly_is_length_24_and_buckets_messages_by_hour() {
+    fn hourly_is_length_24_and_buckets_todays_messages_by_hour() {
         let index = seeded_index("hourly");
         let stats = index.stats(None);
         assert_eq!(stats.hourly.len(), 24);
-        // The fixture puts every session's activity on hour 9; all 20 messages
-        // land in that bucket, the rest are zero.
-        assert_eq!(stats.hourly[9], 20);
-        assert_eq!(stats.hourly.iter().sum::<i64>(), 20);
+        // Only today's session (s1: 10 messages on hour 9) counts — s2 (3 days
+        // ago) and s3 (40 days ago) are excluded from the today-only view.
+        assert_eq!(stats.hourly[9], 10);
+        assert_eq!(stats.hourly.iter().sum::<i64>(), 10);
     }
 
     #[test]

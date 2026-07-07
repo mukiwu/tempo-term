@@ -343,7 +343,7 @@
       "metricMessages": "訊息數",
       "metricSessions": "對話數",
       "metricTokens": "輸出 Token",
-      "hourlyTitle": "時段活動",
+      "hourlyTitle": "今日時段活動",
       "hourlyTooltip": "{{hour}} · {{count}} 則訊息",
       "modelsTitle": "Model 使用量",
       "modelsEmpty": "此範圍沒有 model 資料",

@@ -469,7 +469,6 @@ export function DashboardView() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {/* Model usage as a share donut (readable even with many models). */}
           <div className="rounded-lg border border-border bg-bg p-4">
             <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
@@ -531,7 +530,6 @@ export function DashboardView() {
               </table>
             )}
             <p className="mt-2 text-[11px] text-fg-subtle">{t("sessions.dashboard.costNote")}</p>
-          </div>
           </div>
         </div>
       </div>
