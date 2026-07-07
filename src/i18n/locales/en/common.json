@@ -316,7 +316,12 @@
         "outputTokens": "Output tokens",
         "outputTokensHint": "assistant, this range",
         "cost": "Est. cost",
-        "costHint": "≈ output tokens only"
+        "costHint": "≈ output tokens only",
+        "favoriteModel": "Favorite model",
+        "currentStreak": "Current streak",
+        "longestStreak": "Longest streak",
+        "days": "{{count}}d",
+        "peakHour": "peak {{hour}}"
       },
       "heatmapTitle": "Activity",
       "topTitle": "Top sessions",
@@ -337,7 +342,11 @@
       "weeklyCost": "Cost",
       "metricMessages": "Messages",
       "metricSessions": "Sessions",
-      "metricTokens": "Output tokens"
+      "metricTokens": "Output tokens",
+      "hourlyTitle": "Activity by hour",
+      "hourlyTooltip": "{{hour}} · {{count}} messages",
+      "modelsTitle": "Model usage",
+      "modelsEmpty": "No model data in this range"
     }
   }
 }

@@ -45,16 +45,26 @@ function weekStart(d: Date): Date {
  * other in-range day is a `HeatmapDay`, defaulting `messages` to 0 when
  * `days` has no entry for that date.
  */
-export function heatmapWeeks(days: HeatmapDay[], end: Date): (HeatmapDay | null)[][] {
-  if (days.length === 0) {
+export function heatmapWeeks(
+  days: HeatmapDay[],
+  end: Date,
+  start?: Date,
+): (HeatmapDay | null)[][] {
+  // With an explicit `start` the grid spans the whole selected window (empty
+  // leading months included, so a fixed 30/90/365-day range always renders a
+  // full, GitHub-style calendar). Without one it falls back to spanning from
+  // the earliest day that actually has activity — the right behavior for the
+  // open-ended "all time" range.
+  if (days.length === 0 && !start) {
     return [];
   }
 
   const endDay = startOfDay(end);
   const byDate = new Map(days.map((d) => [d.date, d]));
-  const realStart = days
+  const dataStart = days
     .map((d) => parseLocalDate(d.date))
-    .reduce((earliest, d) => (d.getTime() < earliest.getTime() ? d : earliest));
+    .reduce((earliest, d) => (d.getTime() < earliest.getTime() ? d : earliest), endDay);
+  const realStart = start ? startOfDay(start) : dataStart;
 
   const endWeekStart = weekStart(endDay);
   const realStartWeekStart = weekStart(realStart);

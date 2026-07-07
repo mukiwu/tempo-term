@@ -316,7 +316,12 @@
         "outputTokens": "輸出 Token",
         "outputTokensHint": "此範圍 AI 回覆",
         "cost": "估算成本",
-        "costHint": "≈ 僅計輸出 token"
+        "costHint": "≈ 僅計輸出 token",
+        "favoriteModel": "最愛 model",
+        "currentStreak": "目前連續",
+        "longestStreak": "最長連續",
+        "days": "{{count}} 天",
+        "peakHour": "尖峰 {{hour}}"
       },
       "heatmapTitle": "活動",
       "topTitle": "熱門對話",
@@ -337,7 +342,11 @@
       "weeklyCost": "成本",
       "metricMessages": "訊息數",
       "metricSessions": "對話數",
-      "metricTokens": "輸出 Token"
+      "metricTokens": "輸出 Token",
+      "hourlyTitle": "時段活動",
+      "hourlyTooltip": "{{hour}} · {{count}} 則訊息",
+      "modelsTitle": "Model 使用量",
+      "modelsEmpty": "此範圍沒有 model 資料"
     }
   }
 }

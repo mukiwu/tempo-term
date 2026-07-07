@@ -67,6 +67,8 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
       },
     ],
     range_models: [{ model: "claude-sonnet-5", output_tokens: 12500 }],
+    favorite_model: "claude-sonnet-5",
+    hourly: new Array(24).fill(0),
     ...overrides,
   };
 }
@@ -95,10 +97,13 @@ describe("DashboardView", () => {
     expect(screen.getByText("4")).toBeInTheDocument();
     expect(screen.getByText("9")).toBeInTheDocument();
     expect(screen.getByText("28.3")).toBeInTheDocument();
-    // Output-token card compacts 12,500 → "12.5K"; the cost card prices the
-    // fixture's 12,500 sonnet tokens (15 $/Mtok) at ≈ US$ 0.19.
-    expect(screen.getByText("12.5K")).toBeInTheDocument();
+    // Output-token card compacts 12,500 → "12.5K" (also shown in the model
+    // usage bar for the same fixture model, hence getAllByText); the cost card
+    // prices the 12,500 sonnet tokens (15 $/Mtok) at ≈ US$ 0.19.
+    expect(screen.getAllByText("12.5K").length).toBeGreaterThan(0);
     expect(screen.getByText("≈ US$ 0.19")).toBeInTheDocument();
+    // Favorite-model card shows the fixture's model.
+    expect(screen.getByText("sessions.dashboard.cards.favoriteModel")).toBeInTheDocument();
   });
 
   it("refetches with the chosen range when a chip is clicked", async () => {

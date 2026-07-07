@@ -11,6 +11,7 @@ import { useSessionsStore } from "./lib/sessionsStore";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
 import { heatmapLevel, heatmapMax, heatmapMonthLabels, heatmapWeeks } from "./lib/heatmap";
 import { estimateOutputCost } from "./lib/cost";
+import { computeStreaks, formatHour, peakHour } from "./lib/insights";
 
 type RangeDays = 30 | 90 | 365 | null;
 
@@ -36,6 +37,8 @@ const EMPTY_STATS: SessionsStats = {
   top_by_tokens: [],
   weekly: [],
   range_models: [],
+  favorite_model: null,
+  hourly: new Array(24).fill(0),
 };
 
 /** Tailwind class per intensity level (0..4). Level 0 is a faint visible tile
@@ -181,7 +184,17 @@ export function DashboardView() {
     };
   }, []);
 
-  const weeks = useMemo(() => heatmapWeeks(stats.heatmap, new Date()), [stats.heatmap]);
+  // A fixed range (30/90/365 days) spans the whole window so the heatmap
+  // renders a full calendar with empty leading months, GitHub-style; "all
+  // time" (range null) lets the grid start at the earliest active day.
+  const weeks = useMemo(() => {
+    const end = new Date();
+    const start = range === null ? undefined : new Date(end.getFullYear(), end.getMonth(), end.getDate() - range);
+    return heatmapWeeks(stats.heatmap, end, start);
+  }, [stats.heatmap, range]);
+  const streaks = useMemo(() => computeStreaks(stats.heatmap, new Date()), [stats.heatmap]);
+  const busiestHour = useMemo(() => peakHour(stats.hourly), [stats.hourly]);
+  const hourlyPeak = useMemo(() => Math.max(1, ...stats.hourly), [stats.hourly]);
   const monthLabels = useMemo(() => heatmapMonthLabels(weeks), [weeks]);
   const rangeCost = useMemo(() => estimateOutputCost(stats.range_models), [stats.range_models]);
   const heatmapPeak = useMemo(() => heatmapMax(stats.heatmap, metric), [stats.heatmap, metric]);
@@ -222,7 +235,7 @@ export function DashboardView() {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-4 gap-2 sm:grid-cols-7">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
         <StatCard
           label={t("sessions.dashboard.cards.sessions")}
           value={stats.cards.sessions.toLocaleString()}
@@ -231,7 +244,7 @@ export function DashboardView() {
           label={t("sessions.dashboard.cards.messages")}
           value={stats.cards.messages.toLocaleString()}
           hint={t("sessions.dashboard.cards.messagesHint", {
-            count: stats.cards.user_messages,
+            count: stats.cards.user_messages.toLocaleString(),
           })}
         />
         <StatCard
@@ -257,6 +270,21 @@ export function DashboardView() {
           label={t("sessions.dashboard.cards.cost")}
           value={`≈ US$ ${rangeCost.usd.toFixed(2)}${rangeCost.unpricedTokens > 0 ? "+" : ""}`}
           hint={t("sessions.dashboard.cards.costHint")}
+        />
+        <StatCard
+          label={t("sessions.dashboard.cards.favoriteModel")}
+          value={stats.favorite_model ?? "—"}
+        />
+        <StatCard
+          label={t("sessions.dashboard.cards.currentStreak")}
+          value={t("sessions.dashboard.cards.days", { count: streaks.current })}
+          hint={t("sessions.dashboard.cards.peakHour", {
+            hour: busiestHour !== null ? formatHour(busiestHour) : "—",
+          })}
+        />
+        <StatCard
+          label={t("sessions.dashboard.cards.longestStreak")}
+          value={t("sessions.dashboard.cards.days", { count: streaks.longest })}
         />
       </div>
 
@@ -344,10 +372,73 @@ export function DashboardView() {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <div className="rounded-md border border-border bg-bg p-3">
+      <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {/* Activity by hour of day (local). The peak hour bar is emphasized. */}
+        <div className="rounded-lg border border-border bg-bg p-4">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+            {t("sessions.dashboard.hourlyTitle")}
+          </h2>
+          <div className="mt-3 flex h-24 items-end gap-[3px]">
+            {stats.hourly.map((count, hour) => (
+              <div
+                key={hour}
+                title={t("sessions.dashboard.hourlyTooltip", { hour: formatHour(hour), count })}
+                className="flex-1"
+              >
+                <div
+                  className={`w-full rounded-sm ${hour === busiestHour ? "bg-accent" : "bg-accent/35"}`}
+                  style={{ height: `${Math.max(2, (count / hourlyPeak) * 96)}px` }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-1.5 flex justify-between text-[10px] text-fg-subtle">
+            <span>0h</span>
+            <span>6h</span>
+            <span>12h</span>
+            <span>18h</span>
+            <span>23h</span>
+          </div>
+        </div>
+
+        {/* Output-token share per model, biggest first. */}
+        <div className="rounded-lg border border-border bg-bg p-4">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+            {t("sessions.dashboard.modelsTitle")}
+          </h2>
+          {stats.range_models.length === 0 ? (
+            <p className="mt-3 text-xs text-fg-subtle">{t("sessions.dashboard.modelsEmpty")}</p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-2">
+              {[...stats.range_models]
+                .sort((a, b) => b.output_tokens - a.output_tokens)
+                .slice(0, 6)
+                .map((m) => {
+                  const max = Math.max(1, ...stats.range_models.map((x) => x.output_tokens));
+                  const pct = (m.output_tokens / max) * 100;
+                  return (
+                    <li key={m.model} className="flex flex-col gap-1">
+                      <div className="flex items-baseline justify-between gap-2 text-xs">
+                        <span className="min-w-0 truncate text-fg-muted">{m.model}</span>
+                        <span className="shrink-0 tabular-nums text-fg-subtle">
+                          {formatTokens(m.output_tokens)}
+                        </span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-bg-elevated">
+                        <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                      </div>
+                    </li>
+                  );
+                })}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-border bg-bg p-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase text-fg-subtle">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
               {t("sessions.dashboard.topTitle")}
             </h2>
             <div className="flex items-center gap-1">

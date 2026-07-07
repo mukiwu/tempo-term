@@ -125,6 +125,8 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
     top_by_tokens: [],
     weekly: [],
     range_models: [],
+    favorite_model: null,
+    hourly: new Array(24).fill(0),
     ...overrides,
   };
 }

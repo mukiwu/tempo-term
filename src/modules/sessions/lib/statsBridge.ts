@@ -75,6 +75,11 @@ export interface SessionsStats {
    *  cost estimate. Excludes NULL-model tokens (which are still in
    *  `cards.output_tokens`). */
   range_models: ModelTokens[];
+  /** Model used in the most sessions over the range, or null when none had a
+   *  model. */
+  favorite_model: string | null;
+  /** Messages per hour-of-day, always length 24 (index 0 = midnight). */
+  hourly: number[];
 }
 
 /** Fetches aggregated dashboard stats. `days` narrows cards/heatmap/top
