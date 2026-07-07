@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { History, LayoutDashboard, Pin, PinOff, Play, Search, Trash2 } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Combobox } from "@/components/Combobox";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { onSessionsUpdated, type SessionAgent, type SessionSummary } from "./lib/sessionsBridge";
@@ -276,9 +277,11 @@ export function SessionsPanel() {
   const loaded = useSessionsStore((s) => s.loaded);
   const query = useSessionsStore((s) => s.query);
   const agentFilter = useSessionsStore((s) => s.agentFilter);
+  const modelFilter = useSessionsStore((s) => s.modelFilter);
   const selectedId = useSessionsStore((s) => s.selectedId);
   const setQuery = useSessionsStore((s) => s.setQuery);
   const setAgentFilter = useSessionsStore((s) => s.setAgentFilter);
+  const setModelFilter = useSessionsStore((s) => s.setModelFilter);
   const select = useSessionsStore((s) => s.select);
   const openSessionsTab = useTabsStore((s) => s.openSessionsTab);
 
@@ -307,7 +310,22 @@ export function SessionsPanel() {
     };
   }, []);
 
-  const { pinned, history } = visibleSessions(sessions, query, agentFilter);
+  // Distinct non-null models seen across the loaded sessions, "all" first.
+  // The dropdown is only worth showing once there's actually a choice to make.
+  const modelOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of sessions) if (s.model) set.add(s.model);
+    return ["all", ...[...set].sort()];
+  }, [sessions]);
+
+  // Combobox takes a flat string list where the option string doubles as its
+  // own label (see GitGraphToolbar's branch picker for the same pattern), so
+  // "all" is displayed as its translated label and mapped back on change.
+  const modelFilterAllLabel = t("sessions.modelFilterAll");
+  const modelComboboxOptions = modelOptions.map((m) => (m === "all" ? modelFilterAllLabel : m));
+  const modelComboboxValue = modelFilter === "all" ? modelFilterAllLabel : modelFilter;
+
+  const { pinned, history } = visibleSessions(sessions, query, agentFilter, modelFilter);
   const isEmpty = pinned.length === 0 && history.length === 0;
 
   return (
@@ -360,6 +378,16 @@ export function SessionsPanel() {
               {key === "all" ? t("sessions.all") : t(`sessions.agents.${key}`)}
             </button>
           ))}
+          {modelOptions.length > 1 && (
+            <Combobox
+              value={modelComboboxValue}
+              options={modelComboboxOptions}
+              onChange={(v) => setModelFilter(v === modelFilterAllLabel ? "all" : v)}
+              ariaLabel={modelFilterAllLabel}
+              size="sm"
+              className="ml-auto w-32"
+            />
+          )}
         </div>
       </div>
 

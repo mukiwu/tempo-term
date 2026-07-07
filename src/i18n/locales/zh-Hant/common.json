@@ -262,6 +262,7 @@
     "pinned": "已釘選",
     "searchPlaceholder": "搜尋對話…",
     "all": "全部",
+    "modelFilterAll": "所有 model",
     "empty": "沒有符合的對話",
     "messages": "{{count}} 則訊息",
     "resume": "接續對話",

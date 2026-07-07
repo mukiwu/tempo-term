@@ -262,6 +262,7 @@
     "pinned": "Pinned",
     "searchPlaceholder": "Search sessions…",
     "all": "All",
+    "modelFilterAll": "All models",
     "empty": "No sessions found",
     "messages": "{{count}} msgs",
     "resume": "Resume",

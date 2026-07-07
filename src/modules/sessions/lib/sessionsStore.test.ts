@@ -25,7 +25,7 @@ describe("visibleSessions", () => {
     const a = session({ id: "a", pinned: true, ended_at: 1 });
     const b = session({ id: "b", pinned: false, ended_at: 2 });
 
-    const { pinned, history } = visibleSessions([a, b], "", "all");
+    const { pinned, history } = visibleSessions([a, b], "", "all", "all");
 
     expect(pinned).toEqual([a]);
     expect(history).toEqual([b]);
@@ -35,7 +35,7 @@ describe("visibleSessions", () => {
     const older = session({ id: "older", pinned: true, ended_at: 100 });
     const newer = session({ id: "newer", pinned: true, ended_at: 200 });
 
-    const { pinned } = visibleSessions([older, newer], "", "all");
+    const { pinned } = visibleSessions([older, newer], "", "all", "all");
 
     expect(pinned.map((s) => s.id)).toEqual(["newer", "older"]);
   });
@@ -44,7 +44,7 @@ describe("visibleSessions", () => {
     const pinnedSession = session({ id: "p", pinned: true, ended_at: 50 });
     const historySession = session({ id: "h", pinned: false, ended_at: 10 });
 
-    const { history } = visibleSessions([pinnedSession, historySession], "", "all");
+    const { history } = visibleSessions([pinnedSession, historySession], "", "all", "all");
 
     expect(history).toEqual([historySession]);
   });
@@ -53,7 +53,7 @@ describe("visibleSessions", () => {
     const claude = session({ id: "c", agent: "claude" });
     const codex = session({ id: "x", agent: "codex" });
 
-    const { history } = visibleSessions([claude, codex], "", "codex");
+    const { history } = visibleSessions([claude, codex], "", "codex", "all");
 
     expect(history).toEqual([codex]);
   });
@@ -62,7 +62,7 @@ describe("visibleSessions", () => {
     const claude = session({ id: "c", agent: "claude" });
     const codex = session({ id: "x", agent: "codex" });
 
-    const { history } = visibleSessions([claude, codex], "", "all");
+    const { history } = visibleSessions([claude, codex], "", "all", "all");
 
     expect(history.map((s) => s.id)).toEqual(["c", "x"]);
   });
@@ -71,7 +71,7 @@ describe("visibleSessions", () => {
     const match = session({ id: "m", title: "Refactor Auth Flow" });
     const noMatch = session({ id: "n", title: "Unrelated" });
 
-    const { history } = visibleSessions([match, noMatch], "refactor", "all");
+    const { history } = visibleSessions([match, noMatch], "refactor", "all", "all");
 
     expect(history).toEqual([match]);
   });
@@ -80,7 +80,7 @@ describe("visibleSessions", () => {
     const match = session({ id: "m", title: "x", project_cwd: "/Users/muki/Tempo-Term" });
     const noMatch = session({ id: "n", title: "y", project_cwd: "/Users/muki/other" });
 
-    const { history } = visibleSessions([match, noMatch], "tempo-term", "all");
+    const { history } = visibleSessions([match, noMatch], "tempo-term", "all", "all");
 
     expect(history).toEqual([match]);
   });
@@ -94,6 +94,7 @@ describe("visibleSessions", () => {
       [claudeMatch, codexMatch, claudeNoMatch],
       "deploy",
       "claude",
+      "all",
     );
 
     expect(history).toEqual([claudeMatch]);
@@ -102,7 +103,7 @@ describe("visibleSessions", () => {
   it("returns empty arrays when nothing matches", () => {
     const s = session({ id: "s", title: "foo" });
 
-    const { pinned, history } = visibleSessions([s], "nomatch", "all");
+    const { pinned, history } = visibleSessions([s], "nomatch", "all", "all");
 
     expect(pinned).toEqual([]);
     expect(history).toEqual([]);
@@ -112,9 +113,22 @@ describe("visibleSessions", () => {
     const pinnedMatch = session({ id: "pm", pinned: true, title: "release notes" });
     const pinnedNoMatch = session({ id: "pn", pinned: true, title: "unrelated" });
 
-    const { pinned } = visibleSessions([pinnedMatch, pinnedNoMatch], "release", "all");
+    const { pinned } = visibleSessions([pinnedMatch, pinnedNoMatch], "release", "all", "all");
 
     expect(pinned).toEqual([pinnedMatch]);
+  });
+
+  it("visibleSessions filters by exact model, with 'all' passing everything", () => {
+    const mk = (id: string, model: string | null) =>
+      ({ id, agent: "claude", project_cwd: "/p", title: id, started_at: 0, ended_at: 0,
+         message_count: 0, user_message_count: 0, output_tokens: null, model, file_path: "/f",
+         pinned: false }) as SessionSummary;
+    const sessions = [mk("a", "claude-opus-4-8"), mk("b", "gpt-5.5"), mk("c", null)];
+
+    expect(visibleSessions(sessions, "", "all", "all").history.map((s) => s.id)).toEqual(["a", "b", "c"]);
+    expect(visibleSessions(sessions, "", "all", "gpt-5.5").history.map((s) => s.id)).toEqual(["b"]);
+    // null-model sessions never match a specific model.
+    expect(visibleSessions(sessions, "", "all", "claude-opus-4-8").history.map((s) => s.id)).toEqual(["a"]);
   });
 });
 
