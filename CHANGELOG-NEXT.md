@@ -20,4 +20,4 @@
 - Manage and export: filter the list by agent or model, pin, delete to trash, export a transcript to Markdown, or export the filtered list to CSV
 
 ### fix
-- Opening a new terminal now cd's into the requested directory instead of being overridden by the file explorer's root
+- Opening a new terminal now changes directory to the requested path instead of being overridden by the file explorer's root
