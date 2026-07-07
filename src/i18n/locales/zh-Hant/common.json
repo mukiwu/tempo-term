@@ -346,7 +346,8 @@
       "hourlyTitle": "時段活動",
       "hourlyTooltip": "{{hour}} · {{count}} 則訊息",
       "modelsTitle": "Model 使用量",
-      "modelsEmpty": "此範圍沒有 model 資料"
+      "modelsEmpty": "此範圍沒有 model 資料",
+      "modelsOthers": "其他"
     }
   }
 }

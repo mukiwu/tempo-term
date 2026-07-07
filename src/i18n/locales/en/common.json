@@ -346,7 +346,8 @@
       "hourlyTitle": "Activity by hour",
       "hourlyTooltip": "{{hour}} · {{count}} messages",
       "modelsTitle": "Model usage",
-      "modelsEmpty": "No model data in this range"
+      "modelsEmpty": "No model data in this range",
+      "modelsOthers": "Others"
     }
   }
 }

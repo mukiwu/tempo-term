@@ -12,7 +12,7 @@ import { useSessionsStore } from "./lib/sessionsStore";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
 import { heatmapLevel, heatmapMax, heatmapMonthLabels, heatmapWeeks } from "./lib/heatmap";
 import { estimateOutputCost } from "./lib/cost";
-import { formatHour, peakHour } from "./lib/insights";
+import { formatHour, modelSlices, OTHERS_SLICE, peakHour } from "./lib/insights";
 
 type RangeDays = 30 | 90 | 365 | null;
 
@@ -61,6 +61,50 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString();
+}
+
+/** Distinct slice colors for the model donut, drawn from the app's theme
+ *  hues (teal accent, purple, amber, rose, emerald, muted slate) so the chart
+ *  stays on-brand; the last is reserved for the aggregated "others" slice. */
+const SLICE_COLORS = ["#5eaab5", "#d9739f", "#e6cc77", "#cb7676", "#4d9375", "#9d9a8e", "#6b6b6b"];
+
+/** A donut of each model's share of output tokens, with a legend. Uses a CSS
+ *  conic-gradient ring (no chart library) punched out to a donut by an inner
+ *  disc the color of the card. Handles many models via the "others" slice. */
+function ModelDonut({ slices, othersLabel }: { slices: ReturnType<typeof modelSlices>; othersLabel: string }) {
+  let acc = 0;
+  const stops = slices
+    .map((s, i) => {
+      const start = acc;
+      acc += s.pct;
+      return `${SLICE_COLORS[i % SLICE_COLORS.length]} ${start}% ${acc}%`;
+    })
+    .join(", ");
+
+  return (
+    <div className="mt-3 flex items-center gap-4">
+      <div
+        className="relative h-28 w-28 shrink-0 rounded-full"
+        style={{ background: `conic-gradient(${stops})` }}
+      >
+        <div className="absolute inset-[26%] rounded-full bg-bg" />
+      </div>
+      <ul className="flex min-w-0 flex-1 flex-col gap-1.5">
+        {slices.map((s, i) => (
+          <li key={s.label} className="flex items-center gap-2 text-xs">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+              style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }}
+            />
+            <span className="min-w-0 flex-1 truncate text-fg-muted">
+              {s.label === OTHERS_SLICE ? othersLabel : s.label}
+            </span>
+            <span className="shrink-0 tabular-nums text-fg-subtle">{s.pct.toFixed(0)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /** A summary tile: a big value, a label, and an optional muted hint that
@@ -195,6 +239,7 @@ export function DashboardView() {
   }, [stats.heatmap, range]);
   const busiestHour = useMemo(() => peakHour(stats.hourly), [stats.hourly]);
   const hourlyPeak = useMemo(() => Math.max(1, ...stats.hourly), [stats.hourly]);
+  const donutSlices = useMemo(() => modelSlices(stats.range_models, 6), [stats.range_models]);
   const monthLabels = useMemo(() => heatmapMonthLabels(weeks), [weeks]);
   const rangeCost = useMemo(() => estimateOutputCost(stats.range_models), [stats.range_models]);
   const heatmapPeak = useMemo(() => heatmapMax(stats.heatmap, metric), [stats.heatmap, metric]);
@@ -356,171 +401,134 @@ export function DashboardView() {
         </div>
       </div>
 
+      {/* Activity by hour of day (local), full width. Peak hour emphasized. */}
+      <div className="mt-3 rounded-lg border border-border bg-bg p-4">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+          {t("sessions.dashboard.hourlyTitle")}
+        </h2>
+        <div className="mt-3 flex h-24 items-end gap-[3px]">
+          {stats.hourly.map((count, hour) => (
+            <Tooltip
+              key={hour}
+              delayMs={60}
+              label={t("sessions.dashboard.hourlyTooltip", { hour: formatHour(hour), count })}
+              className="flex-1 items-end"
+            >
+              <div
+                className={`w-full rounded-sm ${hour === busiestHour ? "bg-accent" : "bg-accent/35"}`}
+                style={{ height: `${Math.max(2, (count / hourlyPeak) * 96)}px` }}
+              />
+            </Tooltip>
+          ))}
+        </div>
+        <div className="mt-1.5 flex justify-between text-[10px] text-fg-subtle">
+          <span>0h</span>
+          <span>6h</span>
+          <span>12h</span>
+          <span>18h</span>
+          <span>23h</span>
+        </div>
+      </div>
+
       <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {/* Left: top sessions */}
+        {/* Model usage as a share donut (readable even with many models). */}
         <div className="rounded-lg border border-border bg-bg p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-              {t("sessions.dashboard.topTitle")}
-            </h2>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                aria-pressed={topTab === "messages"}
-                onClick={() => setTopTab("messages")}
-                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                  topTab === "messages" ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
-                }`}
-              >
-                {t("sessions.dashboard.topByMessages")}
-              </button>
-              <button
-                type="button"
-                aria-pressed={topTab === "tokens"}
-                onClick={() => setTopTab("tokens")}
-                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                  topTab === "tokens" ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
-                }`}
-              >
-                {t("sessions.dashboard.topByTokens")}
-              </button>
-            </div>
-          </div>
-          <ul className="mt-2">
-            {topSessions.map((session) => (
-              <TopSessionRow key={session.id} session={session} onSelect={select} />
-            ))}
-          </ul>
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+            {t("sessions.dashboard.modelsTitle")}
+          </h2>
+          {donutSlices.length === 0 ? (
+            <p className="mt-3 text-xs text-fg-subtle">{t("sessions.dashboard.modelsEmpty")}</p>
+          ) : (
+            <ModelDonut slices={donutSlices} othersLabel={t("sessions.dashboard.modelsOthers")} />
+          )}
         </div>
 
-        {/* Right: one card stacking hour-of-day activity, model usage, and the
-            weekly breakdown — a single "what's happening lately" panel. */}
-        <div className="flex flex-col gap-5 rounded-lg border border-border bg-bg p-4">
-          {/* Activity by hour of day (local). The peak hour bar is emphasized. */}
-          <div>
+        {/* This week's per-agent breakdown. */}
+        <div className="rounded-lg border border-border bg-bg p-4">
+          <div className="flex items-center gap-1.5">
             <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-              {t("sessions.dashboard.hourlyTitle")}
+              {t("sessions.dashboard.weeklyTitle")}
             </h2>
-            <div className="mt-3 flex h-20 items-end gap-[2px]">
-              {stats.hourly.map((count, hour) => (
-                <Tooltip
-                  key={hour}
-                  delayMs={60}
-                  label={t("sessions.dashboard.hourlyTooltip", { hour: formatHour(hour), count })}
-                  className="flex-1 items-end"
-                >
-                  <div
-                    className={`w-full rounded-sm ${hour === busiestHour ? "bg-accent" : "bg-accent/35"}`}
-                    style={{ height: `${Math.max(2, (count / hourlyPeak) * 80)}px` }}
-                  />
-                </Tooltip>
-              ))}
-            </div>
-            <div className="mt-1.5 flex justify-between text-[10px] text-fg-subtle">
-              <span>0h</span>
-              <span>6h</span>
-              <span>12h</span>
-              <span>18h</span>
-              <span>23h</span>
-            </div>
+            <span className="rounded border border-border-strong px-1 text-[9px] text-fg-subtle">USD</span>
           </div>
+          {stats.weekly.length === 0 ? (
+            <p className="mt-3 text-xs text-fg-subtle">{t("sessions.dashboard.weeklyEmpty")}</p>
+          ) : (
+            <table className="mt-2 w-full text-sm">
+              <thead>
+                <tr className="text-[10px] uppercase text-fg-subtle/70">
+                  <th className="pb-1 text-left font-medium">{t("sessions.dashboard.weeklyAgent")}</th>
+                  <th className="pb-1 text-right font-medium">{t("sessions.dashboard.weeklySessions")}</th>
+                  <th className="pb-1 text-right font-medium">{t("sessions.dashboard.weeklyMessages")}</th>
+                  <th className="pb-1 text-right font-medium">{t("sessions.dashboard.weeklyTokens")}</th>
+                  <th className="pb-1 text-right font-medium">{t("sessions.dashboard.weeklyCost")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.weekly.map((row) => {
+                  const costInfo = estimateOutputCost(row.models);
+                  // Any tokens this week → show the estimate; a fully unpriced
+                  // week still reads as the "≈ $0.00+" floor.
+                  const hasCost = costInfo.usd > 0 || costInfo.unpricedTokens > 0;
+                  const costStr = `≈ $${costInfo.usd.toFixed(2)}${costInfo.unpricedTokens > 0 ? "+" : ""}`;
 
-          {/* Output-token share per model, biggest first. */}
-          <div>
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-              {t("sessions.dashboard.modelsTitle")}
-            </h2>
-            {stats.range_models.length === 0 ? (
-              <p className="mt-3 text-xs text-fg-subtle">{t("sessions.dashboard.modelsEmpty")}</p>
-            ) : (
-              <ul className="mt-3 flex flex-col gap-2">
-                {[...stats.range_models]
-                  .sort((a, b) => b.output_tokens - a.output_tokens)
-                  .slice(0, 5)
-                  .map((m) => {
-                    const max = Math.max(1, ...stats.range_models.map((x) => x.output_tokens));
-                    const pct = (m.output_tokens / max) * 100;
-                    return (
-                      <li key={m.model} className="flex flex-col gap-1">
-                        <div className="flex items-baseline justify-between gap-2 text-xs">
-                          <span className="min-w-0 truncate text-fg-muted">{m.model}</span>
-                          <span className="shrink-0 tabular-nums text-fg-subtle">
-                            {formatTokens(m.output_tokens)}
-                          </span>
-                        </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-bg-elevated">
-                          <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
-                        </div>
-                      </li>
-                    );
-                  })}
-              </ul>
-            )}
-          </div>
+                  return (
+                    <tr key={row.agent} className="text-fg">
+                      <td className={`py-0.5 text-xs font-medium uppercase ${AGENT_BADGE_CLASS[row.agent]}`}>
+                        {t(`sessions.agents.${row.agent}`)}
+                      </td>
+                      <td className="py-0.5 text-right tabular-nums">{row.sessions.toLocaleString()}</td>
+                      <td className="py-0.5 text-right tabular-nums">{row.messages.toLocaleString()}</td>
+                      <td className="py-0.5 text-right tabular-nums text-fg-subtle">
+                        {formatTokens(row.output_tokens)}
+                      </td>
+                      <td className="py-0.5 text-right tabular-nums text-fg-subtle">
+                        {hasCost ? costStr : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          <p className="mt-2 text-[11px] text-fg-subtle">{t("sessions.dashboard.costNote")}</p>
+        </div>
+      </div>
 
-          {/* This week's per-agent breakdown. */}
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-                {t("sessions.dashboard.weeklyTitle")}
-              </h2>
-              <span className="rounded border border-border-strong px-1 text-[9px] text-fg-subtle">USD</span>
-            </div>
-            {stats.weekly.length === 0 ? (
-              <p className="mt-3 text-xs text-fg-subtle">{t("sessions.dashboard.weeklyEmpty")}</p>
-            ) : (
-              <table className="mt-2 w-full text-sm">
-                <thead>
-                  <tr className="text-[10px] uppercase text-fg-subtle/70">
-                    <th className="pb-1 text-left font-medium">
-                      {t("sessions.dashboard.weeklyAgent")}
-                    </th>
-                    <th className="pb-1 text-right font-medium">
-                      {t("sessions.dashboard.weeklySessions")}
-                    </th>
-                    <th className="pb-1 text-right font-medium">
-                      {t("sessions.dashboard.weeklyMessages")}
-                    </th>
-                    <th className="pb-1 text-right font-medium">
-                      {t("sessions.dashboard.weeklyTokens")}
-                    </th>
-                    <th className="pb-1 text-right font-medium">
-                      {t("sessions.dashboard.weeklyCost")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.weekly.map((row) => {
-                    const costInfo = estimateOutputCost(row.models);
-                    // Any tokens this week → show the estimate; a fully unpriced
-                    // week still reads as the "≈ $0.00+" floor.
-                    const hasCost = costInfo.usd > 0 || costInfo.unpricedTokens > 0;
-                    const costStr = `≈ $${costInfo.usd.toFixed(2)}${
-                      costInfo.unpricedTokens > 0 ? "+" : ""
-                    }`;
-
-                    return (
-                      <tr key={row.agent} className="text-fg">
-                        <td className={`py-0.5 text-xs font-medium uppercase ${AGENT_BADGE_CLASS[row.agent]}`}>
-                          {t(`sessions.agents.${row.agent}`)}
-                        </td>
-                        <td className="py-0.5 text-right tabular-nums">{row.sessions.toLocaleString()}</td>
-                        <td className="py-0.5 text-right tabular-nums">{row.messages.toLocaleString()}</td>
-                        <td className="py-0.5 text-right tabular-nums text-fg-subtle">
-                          {formatTokens(row.output_tokens)}
-                        </td>
-                        <td className="py-0.5 text-right tabular-nums text-fg-subtle">
-                          {hasCost ? costStr : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-            <p className="mt-2 text-[11px] text-fg-subtle">{t("sessions.dashboard.costNote")}</p>
+      {/* Top sessions, full width. */}
+      <div className="mt-3 rounded-lg border border-border bg-bg p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+            {t("sessions.dashboard.topTitle")}
+          </h2>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-pressed={topTab === "messages"}
+              onClick={() => setTopTab("messages")}
+              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                topTab === "messages" ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
+              }`}
+            >
+              {t("sessions.dashboard.topByMessages")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={topTab === "tokens"}
+              onClick={() => setTopTab("tokens")}
+              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                topTab === "tokens" ? "bg-bg-elevated text-fg" : "text-fg-subtle hover:text-fg"
+              }`}
+            >
+              {t("sessions.dashboard.topByTokens")}
+            </button>
           </div>
         </div>
+        <ul className="mt-2">
+          {topSessions.map((session) => (
+            <TopSessionRow key={session.id} session={session} onSelect={select} />
+          ))}
+        </ul>
       </div>
     </div>
   );
