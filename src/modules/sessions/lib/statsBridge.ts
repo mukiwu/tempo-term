@@ -71,3 +71,11 @@ export interface SessionsStats {
 export function sessionsStats(days: number | null): Promise<SessionsStats> {
   return invoke<SessionsStats>("sessions_stats", { days });
 }
+
+/** Moves a session's source file (and its companions) to the OS trash, then
+ *  drops it from the index. The sessions list itself refreshes via the
+ *  `sessions-index:updated` event the backend emits after — this call
+ *  doesn't return the updated list. */
+export function sessionsDelete(id: string): Promise<void> {
+  return invoke("sessions_delete", { id });
+}

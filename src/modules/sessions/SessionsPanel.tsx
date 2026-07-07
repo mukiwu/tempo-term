@@ -1,11 +1,13 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { History, Pin, PinOff, Play, Search } from "lucide-react";
+import { History, Pin, PinOff, Play, Search, Trash2 } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { onSessionsUpdated, type SessionAgent, type SessionSummary } from "./lib/sessionsBridge";
 import { useSessionsStore, visibleSessions } from "./lib/sessionsStore";
+import { sessionsDelete } from "./lib/statsBridge";
 import { formatRelativeTime } from "./lib/relativeTime";
 import { deriveLiveSessions, type LiveSession } from "./lib/liveSessions";
 import { AGENT_BADGE_CLASS, agentBadgeClass } from "./lib/agentBadge";
@@ -105,12 +107,29 @@ function SessionRow({ session, selected }: SessionRowProps) {
   const select = useSessionsStore((s) => s.select);
   const togglePin = useSessionsStore((s) => s.togglePin);
   const openSessionsTab = useTabsStore((s) => s.openSessionsTab);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const pinLabel = t(session.pinned ? "sessions.unpin" : "sessions.pin");
   const resumeLabel = t("sessions.resume");
+  const deleteLabel = t("sessions.delete");
   // Rows have no room to explain an unsupported agent, so the button is
   // hidden outright here — the viewer header shows it disabled-with-tooltip
   // instead, since there's space there for the explanation.
   const canResume = resumeCommand(session.agent, session.id) !== null;
+
+  // Trashing is recoverable (never a permanent delete), but it still touches
+  // real files on disk, so it goes through the shared ConfirmDialog rather
+  // than firing on click like pin/resume do.
+  async function handleDelete() {
+    setConfirmingDelete(false);
+    try {
+      await sessionsDelete(session.id);
+    } catch {
+      return;
+    }
+    if (selected) {
+      select(null);
+    }
+  }
 
   return (
     <li className="group flex items-center">
@@ -171,7 +190,31 @@ function SessionRow({ session, selected }: SessionRowProps) {
             {session.pinned ? <PinOff size={13} /> : <Pin size={13} />}
           </button>
         </Tooltip>
+        <Tooltip label={deleteLabel}>
+          <button
+            type="button"
+            aria-label={deleteLabel}
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmingDelete(true);
+            }}
+            className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-danger"
+          >
+            <Trash2 size={13} />
+          </button>
+        </Tooltip>
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={deleteLabel}
+          message={t("sessions.deleteConfirm")}
+          confirmLabel={deleteLabel}
+          cancelLabel={t("actions.cancel")}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setConfirmingDelete(false)}
+        />
+      )}
     </li>
   );
 }

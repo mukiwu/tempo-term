@@ -190,6 +190,24 @@ impl Index {
             .ok()
     }
 
+    /// Remove one session's rows (sessions, activity, and any pin) from the
+    /// index. Idempotent — deleting an unknown id is not an error, since a
+    /// concurrent full sync could have already pruned it. Does not touch the
+    /// source file on disk; that's the caller's job (trashing it) before or
+    /// after this call.
+    pub fn delete_session(&self, id: &str) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM activity WHERE session_id=?1", params![id])
+            .map_err(|e| e.to_string())?;
+        self.conn
+            .execute("DELETE FROM pins WHERE session_id=?1", params![id])
+            .map_err(|e| e.to_string())?;
+        self.conn
+            .execute("DELETE FROM sessions WHERE id=?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Drop sessions whose source file no longer exists on disk.
     pub fn prune_missing(&self, existing: &HashSet<String>) -> Result<(), String> {
         let paths: Vec<String> = {
@@ -319,6 +337,46 @@ mod tests {
         let rows = index.list();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "s1");
+    }
+
+    #[test]
+    fn delete_session_removes_sessions_activity_and_pin_rows() {
+        let index = Index::open(&temp_db("delete")).unwrap();
+        index.upsert_session(&sample("s1"), "/f/s1.jsonl", 1, 1).unwrap();
+        index.set_pinned("s1", true).unwrap();
+
+        index.delete_session("s1").unwrap();
+
+        assert!(index.list().is_empty());
+        assert_eq!(index.lookup_file("s1"), None);
+        // The pins row is gone too, not just orphaned — re-inserting the same
+        // id later must not resurrect a stale pin.
+        let count: i64 = index
+            .conn
+            .query_row("SELECT COUNT(*) FROM pins WHERE session_id='s1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn delete_session_leaves_other_sessions_untouched() {
+        let index = Index::open(&temp_db("delete-other")).unwrap();
+        index.upsert_session(&sample("s1"), "/f/a.jsonl", 1, 1).unwrap();
+        index.upsert_session(&sample("s2"), "/f/b.jsonl", 1, 1).unwrap();
+        index.set_pinned("s2", true).unwrap();
+
+        index.delete_session("s1").unwrap();
+
+        let rows = index.list();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "s2");
+        assert!(rows[0].pinned);
+    }
+
+    #[test]
+    fn delete_session_is_idempotent_for_an_unknown_id() {
+        let index = Index::open(&temp_db("delete-unknown")).unwrap();
+        assert!(index.delete_session("nope").is_ok());
     }
 
     #[test]

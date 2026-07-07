@@ -43,6 +43,27 @@ fn companion_path(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// Every companion path that should travel to the trash alongside a
+/// session's source file: Claude keeps subagent/tool-result output in a
+/// sibling directory named after the file's stem (see `watch.rs`'s
+/// `is_session_file` for the same `<session>.jsonl` + `<session>/` shape);
+/// Antigravity's SQLite file has `-wal`/`-shm` companions, the same suffixes
+/// `fingerprint` above already tracks; Codex sessions are single
+/// self-contained files with nothing to add.
+///
+/// Returns candidates only — most sessions have none of these on disk, so
+/// callers must check existence themselves before trashing anything.
+pub fn companion_paths(agent: &str, path: &Path) -> Vec<PathBuf> {
+    match agent {
+        "claude" => match (path.file_stem(), path.parent()) {
+            (Some(stem), Some(parent)) => vec![parent.join(stem)],
+            _ => Vec::new(),
+        },
+        "antigravity" => vec![companion_path(path, "-wal"), companion_path(path, "-shm")],
+        _ => Vec::new(),
+    }
+}
+
 /// Change-detection fingerprint for a session source file: mtime + size. For
 /// an Antigravity `.db` file, the fingerprint also folds in its `-wal`
 /// companion's mtime/size (summed into the same two numbers), so a commit
@@ -486,5 +507,40 @@ mod tests {
         assert_eq!(index.lock().unwrap().list().len(), 2);
 
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    // --- companion_paths: candidates for the delete-to-trash command -------
+
+    #[test]
+    fn claude_companion_is_the_sibling_dir_named_after_the_stem() {
+        let path = Path::new("/home/u/.claude/projects/projA/sess-1.jsonl");
+        assert_eq!(
+            companion_paths("claude", path),
+            vec![PathBuf::from("/home/u/.claude/projects/projA/sess-1")]
+        );
+    }
+
+    #[test]
+    fn antigravity_companions_are_wal_and_shm() {
+        let path = Path::new("/home/u/.antigravity/conversations/abc.db");
+        assert_eq!(
+            companion_paths("antigravity", path),
+            vec![
+                PathBuf::from("/home/u/.antigravity/conversations/abc.db-wal"),
+                PathBuf::from("/home/u/.antigravity/conversations/abc.db-shm"),
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_has_no_companions() {
+        let path = Path::new("/home/u/.codex/sessions/2026/07/06/rollout-abc.jsonl");
+        assert_eq!(companion_paths("codex", path), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn unknown_agent_has_no_companions() {
+        let path = Path::new("/home/u/somewhere/file.jsonl");
+        assert_eq!(companion_paths("mystery", path), Vec::<PathBuf>::new());
     }
 }

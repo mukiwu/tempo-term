@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Loader2, Pin, PinOff, Play } from "lucide-react";
+import { ArrowLeft, Loader2, Pin, PinOff, Play, Trash2 } from "lucide-react";
 import { MarkdownView } from "@/components/MarkdownView";
 import { Tooltip } from "@/components/Tooltip";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { sessionsGet, type TranscriptMessage } from "./lib/sessionsBridge";
 import { useSessionsStore } from "./lib/sessionsStore";
+import { sessionsDelete } from "./lib/statsBridge";
 import { formatRelativeTime } from "./lib/relativeTime";
 import { AGENT_BADGE_CLASS } from "./lib/agentBadge";
 import { resumeCommand, resumeSession } from "./lib/resume";
@@ -97,6 +99,7 @@ export function SessionsTabContent() {
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     if (!selectedId) {
@@ -142,6 +145,22 @@ export function SessionsTabContent() {
   }
 
   const session = sessions.find((s) => s.id === selectedId) ?? null;
+
+  // The header only ever shows the currently selected session, so a
+  // successful delete always clears the selection and falls back to the
+  // dashboard — unlike the sidebar row, which only clears it conditionally.
+  async function handleDelete() {
+    if (!session) {
+      return;
+    }
+    setConfirmingDelete(false);
+    try {
+      await sessionsDelete(session.id);
+    } catch {
+      return;
+    }
+    select(null);
+  }
 
   return (
     <div className="flex h-full flex-col bg-bg">
@@ -199,8 +218,29 @@ export function SessionsTabContent() {
                 {session.pinned ? <PinOff size={14} /> : <Pin size={14} />}
               </button>
             </Tooltip>
+            <Tooltip label={t("sessions.delete")}>
+              <button
+                type="button"
+                aria-label={t("sessions.delete")}
+                onClick={() => setConfirmingDelete(true)}
+                className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-danger"
+              >
+                <Trash2 size={14} />
+              </button>
+            </Tooltip>
           </div>
         </div>
+      )}
+
+      {confirmingDelete && session && (
+        <ConfirmDialog
+          title={t("sessions.delete")}
+          message={t("sessions.deleteConfirm")}
+          confirmLabel={t("sessions.delete")}
+          cancelLabel={t("actions.cancel")}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setConfirmingDelete(false)}
+        />
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">

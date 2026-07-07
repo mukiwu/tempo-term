@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionsTabContent } from "./SessionsTabContent";
 import { useSessionsStore } from "./lib/sessionsStore";
@@ -309,6 +309,55 @@ describe("SessionsTabContent", () => {
     expect(tabs).toHaveLength(1);
     expect(tabs[0].kind).toBe("terminal");
     expect(tabs[0].cwd).toBe("/repo/app");
+  });
+
+  it("opens a confirm dialog from the header delete button instead of deleting immediately", async () => {
+    const target = session({ id: "a" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.delete" }));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("sessions.deleteConfirm")).toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith("sessions_delete", expect.anything());
+  });
+
+  it("cancels the header delete confirmation without invoking sessions_delete", async () => {
+    const target = session({ id: "a" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "actions.cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith("sessions_delete", expect.anything());
+  });
+
+  it("deletes the current session via the header delete button on confirm, returning to the dashboard", async () => {
+    const target = session({ id: "a", agent: "claude", project_cwd: "/repo/app" });
+    useSessionsStore.setState({ sessions: [target], selectedId: "a" });
+    transcripts.set("a", Promise.resolve([]));
+
+    render(<SessionsTabContent />);
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_get", { id: "a" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.delete" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "sessions.delete" }));
+
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("sessions_delete", { id: "a" }),
+    );
+    expect(useSessionsStore.getState().selectedId).toBe(null);
+    await waitFor(() => expect(screen.getByText("sessions.dashboard.title")).toBeInTheDocument());
   });
 
   it("disables the header resume button for antigravity sessions instead of hiding it", async () => {

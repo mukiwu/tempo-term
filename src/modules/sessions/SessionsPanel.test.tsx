@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionsPanel } from "./SessionsPanel";
 import { useSessionsStore } from "./lib/sessionsStore";
@@ -20,8 +20,15 @@ const { mockInvoke, mockListen, mockUnlisten, sessionsFixture } = vi.hoisted(() 
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string) => {
-    mockInvoke(cmd);
+  invoke: (cmd: string, args?: unknown) => {
+    // Only forward a second argument when the call actually passed one, so
+    // existing `toHaveBeenCalledWith(cmd)` assertions (no args) still match
+    // an exact single-argument call.
+    if (args === undefined) {
+      mockInvoke(cmd);
+    } else {
+      mockInvoke(cmd, args);
+    }
     if (cmd === "sessions_list") {
       return Promise.resolve(sessionsFixture.current);
     }
@@ -278,6 +285,71 @@ describe("SessionsPanel", () => {
 
     expect(useTabsStore.getState().activeId).toBe("tab-1");
     expect(useTabsStore.getState().tabs[0].activeLeafId).toBe("leaf-1");
+  });
+
+  it("opens a confirm dialog from the row's delete button instead of deleting immediately", async () => {
+    seedSessions([session({ id: "a", title: "Deploy script" })]);
+    await renderSettled();
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.delete" }));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("sessions.deleteConfirm")).toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith("sessions_delete", expect.anything());
+  });
+
+  it("does nothing when the row's delete confirmation is cancelled", async () => {
+    seedSessions([session({ id: "a", title: "Deploy script" })]);
+    await renderSettled();
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "actions.cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith("sessions_delete", expect.anything());
+  });
+
+  it("deletes the session and clears the selection when it was selected, on confirm", async () => {
+    seedSessions([session({ id: "a", title: "Deploy script" })]);
+    await renderSettled();
+    act(() => {
+      useSessionsStore.setState({ selectedId: "a" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.delete" }));
+    const dialog = screen.getByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "sessions.delete" }));
+      // Flush the microtask queue past `sessionsDelete`'s own `await` inside
+      // `handleDelete`, so the resulting `select(null)` state update lands
+      // inside this `act` scope instead of after it.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith("sessions_delete", { id: "a" });
+    expect(useSessionsStore.getState().selectedId).toBe(null);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("leaves the selection untouched when the deleted session was not selected", async () => {
+    seedSessions([
+      session({ id: "a", title: "Deploy script" }),
+      session({ id: "b", title: "Other session" }),
+    ]);
+    await renderSettled();
+    act(() => {
+      useSessionsStore.setState({ selectedId: "b" });
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "sessions.delete" })[0]);
+    const dialog = screen.getByRole("dialog");
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "sessions.delete" }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith("sessions_delete", { id: "a" });
+    expect(useSessionsStore.getState().selectedId).toBe("b");
   });
 
   it("releases the listener when unmounted before the subscription resolves", async () => {

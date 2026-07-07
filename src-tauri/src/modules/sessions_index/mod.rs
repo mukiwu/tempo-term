@@ -167,6 +167,65 @@ pub fn sessions_pin(state: State<SessionsIndexState>, id: String, pinned: bool) 
     result
 }
 
+/// Move a path to the OS trash. Thin, deliberately-untested wrapper around
+/// the `trash` crate, kept as its own function for the same reason as
+/// `fs::ops::delete`: the real OS Trash API is not something a unit test
+/// should exercise, so the pure logic around it (`sync::companion_paths`,
+/// `Index::delete_session`) is tested instead and this stays a one-liner.
+fn move_to_trash(path: &Path) -> Result<(), String> {
+    trash::delete(path).map_err(|e| e.to_string())
+}
+
+/// Move a session's source file and its companions (a sibling
+/// subagents/tool-results directory for Claude, `-wal`/`-shm` for
+/// Antigravity) to the OS trash, then drop the session from the index and
+/// emit `sessions-index:updated`. Never permanently deletes anything — trash
+/// moves are always recoverable — and a missing companion is skipped
+/// silently rather than treated as an error.
+#[tauri::command]
+pub async fn sessions_delete(app: AppHandle, state: State<'_, SessionsIndexState>, id: String) -> Result<(), String> {
+    let index = {
+        let guard = state.inner.lock().unwrap();
+        let inner = guard.as_ref().ok_or_else(|| "sessions index not started".to_string())?;
+        Arc::clone(&inner.index)
+    };
+
+    // A single indexed SELECT, unlike sessions_get's full transcript parse,
+    // so it's cheap enough to take the lock synchronously here rather than
+    // on the blocking pool.
+    let lookup = index.lock().unwrap().lookup_file(&id);
+    let Some((agent, file_path)) = lookup else {
+        return Err(format!("session {id} not found"));
+    };
+
+    // The trash calls can block on IPC to Finder (macOS) or the desktop
+    // shell, so they run on a blocking-pool thread rather than the async
+    // runtime's own worker threads. The main file trashing is a hard error;
+    // a companion failing to trash is logged and skipped, since it's
+    // secondary data (subagent transcripts, WAL/SHM) and losing it should
+    // never block removing the session itself.
+    let trashed = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let path = Path::new(&file_path);
+        move_to_trash(path)?;
+        for companion in sync::companion_paths(&agent, path) {
+            if companion.exists() {
+                if let Err(err) = move_to_trash(&companion) {
+                    #[cfg(debug_assertions)]
+                    eprintln!("sessions_index: failed to trash companion {}: {err}", companion.display());
+                }
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    trashed?;
+
+    index.lock().unwrap().delete_session(&id)?;
+    watch::emit_updated(&app, 1);
+    Ok(())
+}
+
 /// Dashboard aggregates (cards, heatmap, top sessions, weekly breakdown) for
 /// sessions active in the last `days` local days (`None` = all time).
 ///
