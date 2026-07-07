@@ -330,7 +330,7 @@
       "weeklyTitle": "本週",
       "back": "返回",
       "costNote": "≈ 僅計輸出 token，粗估",
-      "open": "開啟儀表板",
+      "open": "儀表板",
       "heatmapTooltip": "{{date}} · {{count}} 則訊息",
       "legendLess": "少",
       "legendMore": "多",

@@ -330,7 +330,7 @@
       "weeklyTitle": "This week",
       "back": "Back",
       "costNote": "≈ output tokens only, rough estimate",
-      "open": "Open dashboard",
+      "open": "Dashboard",
       "heatmapTooltip": "{{date}} · {{count}} messages",
       "legendLess": "less",
       "legendMore": "more",

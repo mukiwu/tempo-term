@@ -280,20 +280,21 @@ export function SessionsPanel() {
         </span>
         {/* Opens the sessions tab with nothing selected, i.e. the dashboard.
             Selecting a row also opens that tab but on the transcript viewer;
-            this is the only way to reach the dashboard as the home screen. */}
-        <Tooltip label={t("sessions.dashboard.open")}>
-          <button
-            type="button"
-            aria-label={t("sessions.dashboard.open")}
-            onClick={() => {
-              select(null);
-              openSessionsTab();
-            }}
-            className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
-          >
-            <LayoutDashboard size={14} />
-          </button>
-        </Tooltip>
+            this is the only way to reach the dashboard as the home screen.
+            Shown as a labelled icon (not a hover-only tooltip) so it's a
+            discoverable button. */}
+        <button
+          type="button"
+          aria-label={t("sessions.dashboard.open")}
+          onClick={() => {
+            select(null);
+            openSessionsTab();
+          }}
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+        >
+          <LayoutDashboard size={13} />
+          {t("sessions.dashboard.open")}
+        </button>
       </div>
 
       <div className="shrink-0 border-b border-border px-3 py-2">

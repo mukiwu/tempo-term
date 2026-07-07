@@ -483,12 +483,9 @@ export function DashboardView() {
 
           {/* This week's per-agent breakdown. */}
           <div className="rounded-lg border border-border bg-bg p-4">
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-                {t("sessions.dashboard.weeklyTitle")}
-              </h2>
-              <span className="rounded border border-border-strong px-1 text-[9px] text-fg-subtle">USD</span>
-            </div>
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+              {t("sessions.dashboard.weeklyTitle")}
+            </h2>
             {stats.weekly.length === 0 ? (
               <p className="mt-3 text-xs text-fg-subtle">{t("sessions.dashboard.weeklyEmpty")}</p>
             ) : (
@@ -499,7 +496,14 @@ export function DashboardView() {
                     <th className="pb-1 text-right font-medium">{t("sessions.dashboard.weeklySessions")}</th>
                     <th className="pb-1 text-right font-medium">{t("sessions.dashboard.weeklyMessages")}</th>
                     <th className="pb-1 text-right font-medium">{t("sessions.dashboard.weeklyTokens")}</th>
-                    <th className="pb-1 text-right font-medium">{t("sessions.dashboard.weeklyCost")}</th>
+                    <th className="pb-1 text-right font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        {t("sessions.dashboard.weeklyCost")}
+                        <span className="rounded border border-border-strong px-1 text-[8px] normal-case text-fg-subtle">
+                          USD
+                        </span>
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
