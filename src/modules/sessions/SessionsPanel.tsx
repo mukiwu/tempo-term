@@ -318,6 +318,18 @@ export function SessionsPanel() {
     return ["all", ...[...set].sort()];
   }, [sessions]);
 
+  // A selected model can drop out of the option list (its only session got
+  // deleted or a refresh reshuffled the data). Once that happens the dropdown
+  // that would let the user pick "all" again is hidden too (see the
+  // `modelOptions.length > 1` gate below), so the list would otherwise be
+  // stranded empty with no on-screen way back. Reset instead of leaving it
+  // dangling.
+  useEffect(() => {
+    if (modelFilter !== "all" && !modelOptions.includes(modelFilter)) {
+      setModelFilter("all");
+    }
+  }, [modelOptions, modelFilter, setModelFilter]);
+
   // Combobox takes a flat string list where the option string doubles as its
   // own label (see GitGraphToolbar's branch picker for the same pattern), so
   // "all" is displayed as its translated label and mapped back on change.
@@ -383,7 +395,7 @@ export function SessionsPanel() {
               value={modelComboboxValue}
               options={modelComboboxOptions}
               onChange={(v) => setModelFilter(v === modelFilterAllLabel ? "all" : v)}
-              ariaLabel={modelFilterAllLabel}
+              ariaLabel={t("sessions.modelFilterLabel")}
               size="sm"
               className="ml-auto w-32"
             />

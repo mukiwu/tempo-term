@@ -263,6 +263,7 @@
     "searchPlaceholder": "Search sessions…",
     "all": "All",
     "modelFilterAll": "All models",
+    "modelFilterLabel": "Filter by model",
     "empty": "No sessions found",
     "messages": "{{count}} msgs",
     "resume": "Resume",

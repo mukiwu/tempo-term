@@ -263,6 +263,7 @@
     "searchPlaceholder": "搜尋對話…",
     "all": "全部",
     "modelFilterAll": "所有 model",
+    "modelFilterLabel": "以 model 篩選",
     "empty": "沒有符合的對話",
     "messages": "{{count}} 則訊息",
     "resume": "接續對話",

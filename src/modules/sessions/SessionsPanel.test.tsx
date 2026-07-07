@@ -98,6 +98,7 @@ describe("SessionsPanel", () => {
       loaded: false,
       query: "",
       agentFilter: "all",
+      modelFilter: "all",
       selectedId: null,
     });
     useTabsStore.setState({ spaces: [], activeSpaceId: null, tabs: [], activeId: null });
@@ -180,6 +181,28 @@ describe("SessionsPanel", () => {
 
     expect(screen.getByText("Codex session")).toBeInTheDocument();
     expect(screen.queryByText("Claude session")).not.toBeInTheDocument();
+  });
+
+  it("resets a stale model filter to \"all\" once its model drops out of the option list", async () => {
+    seedSessions([
+      session({ id: "a", title: "GPT session", model: "gpt-5.5" }),
+      session({ id: "b", title: "No-model session", model: null }),
+    ]);
+    await renderSettled();
+    act(() => {
+      useSessionsStore.setState({ modelFilter: "gpt-5.5" });
+    });
+
+    // Simulate a refresh (e.g. the session was deleted or re-indexed) that
+    // drops the only session carrying "gpt-5.5" out of the list, so the
+    // filter no longer matches any option.
+    act(() => {
+      useSessionsStore.setState({
+        sessions: [session({ id: "b", title: "No-model session", model: null })],
+      });
+    });
+
+    expect(useSessionsStore.getState().modelFilter).toBe("all");
   });
 
   it("selects a session on row click", async () => {
