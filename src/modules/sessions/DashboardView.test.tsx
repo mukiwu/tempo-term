@@ -92,18 +92,13 @@ describe("DashboardView", () => {
     render(<DashboardView />);
 
     expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 365 });
+    // The single card row: sessions / messages / projects / active days / cost.
     await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
     expect(screen.getByText("340")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
     expect(screen.getByText("9")).toBeInTheDocument();
-    expect(screen.getByText("28.3")).toBeInTheDocument();
-    // Output-token card compacts 12,500 → "12.5K" (also shown in the model
-    // usage bar for the same fixture model, hence getAllByText); the cost card
-    // prices the 12,500 sonnet tokens (15 $/Mtok) at ≈ US$ 0.19.
-    expect(screen.getAllByText("12.5K").length).toBeGreaterThan(0);
+    // Cost card prices the fixture's 12,500 sonnet tokens (15 $/Mtok), labelled US$.
     expect(screen.getByText("≈ US$ 0.19")).toBeInTheDocument();
-    // Favorite-model card shows the fixture's model.
-    expect(screen.getByText("sessions.dashboard.cards.favoriteModel")).toBeInTheDocument();
   });
 
   it("refetches with the chosen range when a chip is clicked", async () => {
@@ -144,10 +139,7 @@ describe("DashboardView", () => {
     // The agent badge also appears on the top-sessions row, so scope to the
     // weekly digest table's data row specifically.
     await waitFor(() => expect(screen.getByText("sessions.dashboard.weeklyTitle")).toBeInTheDocument());
-    const weeklyRow = screen
-      .getByText("sessions.dashboard.weeklyTitle")
-      .closest("div")
-      ?.querySelector("tbody tr");
+    const weeklyRow = screen.getByRole("table").querySelector("tbody tr");
     // Agent, sessions, messages, tokens, cost as labelled table cells. The
     // fixture's known model (sonnet-5) with 500 tokens costs ≈ $0.01.
     expect(weeklyRow?.textContent).toBe("sessions.agents.claude380500≈ $0.01");
@@ -170,24 +162,21 @@ describe("DashboardView", () => {
     await waitFor(() =>
       expect(screen.getByText("sessions.dashboard.weeklyTitle")).toBeInTheDocument(),
     );
-    const weeklyRow = screen
-      .getByText("sessions.dashboard.weeklyTitle")
-      .closest("div")
-      ?.querySelector("tbody tr");
+    const weeklyRow = screen.getByRole("table").querySelector("tbody tr");
     // All tokens are unpriced: the cost cell must still render, as a $0.00
     // floor with the "+" marker — not a dash. Tokens compact to "1.2K".
     expect(weeklyRow?.textContent).toBe("sessions.agents.claude2401.2K≈ $0.00+");
   });
 
-  it("renders heatmap cells with a date · message-count tooltip", async () => {
+  it("labels heatmap cells with the date · metric count (via our Tooltip)", async () => {
     render(<DashboardView />);
 
-    // The mocked `t` echoes `key:count`; the tooltip is now i18n-keyed
-    // (real interpolation of date + count happens with the live catalog).
-    // Default metric is messages, so the busiest day's count (12) shows.
+    // Cells carry an aria-label (queryable + accessible); the visual tooltip
+    // is our portal Tooltip component, not the native `title`. The mocked `t`
+    // echoes `key:count`; default metric is messages, so the busiest day (12).
     await waitFor(() =>
       expect(
-        screen.getByTitle("sessions.dashboard.heatmapTooltip:12"),
+        screen.getByLabelText("sessions.dashboard.heatmapTooltip:12"),
       ).toBeInTheDocument(),
     );
   });
@@ -195,14 +184,14 @@ describe("DashboardView", () => {
   it("switches the heatmap metric to output tokens on toggle", async () => {
     render(<DashboardView />);
     await waitFor(() =>
-      expect(screen.getByTitle("sessions.dashboard.heatmapTooltip:12")).toBeInTheDocument(),
+      expect(screen.getByLabelText("sessions.dashboard.heatmapTooltip:12")).toBeInTheDocument(),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.metricTokens" }));
 
-    // The tooltip now reflects that day's output tokens (2100), not messages.
+    // The label now reflects that day's output tokens (2100), not messages.
     await waitFor(() =>
-      expect(screen.getByTitle("sessions.dashboard.heatmapTooltip:2100")).toBeInTheDocument(),
+      expect(screen.getByLabelText("sessions.dashboard.heatmapTooltip:2100")).toBeInTheDocument(),
     );
   });
 
