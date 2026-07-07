@@ -34,6 +34,23 @@ describe("toSessionsCsv", () => {
     expect(fields[3]).toBe("/proj");
   });
 
+  it("neutralizes spreadsheet formula-injection by prefixing a leading =,+,-,@", () => {
+    // A title starting with a formula trigger would execute on open in
+    // Excel/Sheets; it must be prefixed with a single quote so it's inert text.
+    const csv = toSessionsCsv([s({ title: "=SUM(A1:A9)" })]);
+    const row = csv.split("\n")[1];
+    // Leading "=" makes the guarded value start with "'=", and the "'" alone
+    // does not force quoting, so the field is the bare prefixed string.
+    expect(row.startsWith("'=SUM(A1:A9),")).toBe(true);
+  });
+
+  it("keeps the formula guard inside RFC-4180 quoting when the field also needs quoting", () => {
+    // Leading "@" AND a comma → prefixed with "'" and wrapped in quotes.
+    const csv = toSessionsCsv([s({ title: "@cmd,tail" })]);
+    const row = csv.split("\n")[1];
+    expect(row.startsWith('"\'@cmd,tail",')).toBe(true);
+  });
+
   it("returns just the header for an empty list", () => {
     expect(toSessionsCsv([])).toBe(
       "title,agent,model,project,started_at,ended_at,messages,user_messages,output_tokens,pinned",
