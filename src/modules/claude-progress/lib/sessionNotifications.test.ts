@@ -1,5 +1,39 @@
 import { describe, it, expect } from "vitest";
-import { notificationForTransition } from "./sessionNotifications";
+import { notificationForTransition, resolvePaneLabel } from "./sessionNotifications";
+
+describe("resolvePaneLabel", () => {
+  it("uses the tab's own title when the user renamed it, even with a cwd", () => {
+    const label = resolvePaneLabel(
+      { renamed: true, title: "My Group" },
+      "/Users/me/projects/api",
+      undefined,
+    );
+    expect(label).toBe("My Group");
+  });
+
+  it("prefers the transcript title over the cwd when the tab is not renamed", () => {
+    const label = resolvePaneLabel(
+      { renamed: false, title: "api" },
+      "/Users/me/projects/api",
+      "Fix auth bug",
+    );
+    expect(label).toBe("Fix auth bug");
+  });
+
+  it("falls back to the cwd basename when no transcript title is known", () => {
+    const label = resolvePaneLabel(
+      { renamed: false, title: "api" },
+      "/Users/me/projects/api",
+      undefined,
+    );
+    expect(label).toBe("api");
+  });
+
+  it("uses the tab title when there is no cwd and no transcript title", () => {
+    const label = resolvePaneLabel({ renamed: false, title: "Scratch" }, null, undefined);
+    expect(label).toBe("Scratch");
+  });
+});
 
 describe("notificationForTransition", () => {
   it("notifies on entering waiting-approval from any prior state", () => {

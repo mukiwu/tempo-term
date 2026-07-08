@@ -1,10 +1,12 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import i18n from "@/i18n";
 import { useSettingsStore } from "@/stores/settingsStore";
+import type { Tab } from "@/stores/tabsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { findPaneContent } from "@/modules/terminal/lib/terminalLayout";
 import { basename } from "@/modules/explorer/lib/paths";
 import { agentLabel } from "@/modules/workspace/lib/agentLabel";
+import { selectCardTitle } from "@/modules/workspace/lib/cardTitle";
 import { progressKey } from "./progressStore";
 import { useTitlesStore } from "@/modules/workspace/lib/titlesStore";
 import type { AgentKind } from "./codexNormalize";
@@ -41,9 +43,23 @@ export function notificationForTransition(
 }
 
 /**
- * A short label for the pane a notification is about: the session's transcript
- * title if known, else its directory name, else the tab title. Searches the
- * active space's tabs for the leaf; returns "" when it can't be located.
+ * Resolve the label shown for a pane. A user rename of the tab always wins, so
+ * the notification matches what the workspace card shows; otherwise the
+ * auto-derived name is used: the session's transcript title if known, else the
+ * cwd's directory name, else the tab's own title.
+ */
+export function resolvePaneLabel(
+  tab: Pick<Tab, "renamed" | "title">,
+  cwd: string | null,
+  transcriptTitle: string | undefined,
+): string {
+  const autoTitle = transcriptTitle ?? (cwd ? basename(cwd) : undefined);
+  return selectCardTitle(tab, autoTitle);
+}
+
+/**
+ * A short label for the pane a notification is about. Searches the active
+ * space's tabs for the leaf; returns "" when it can't be located.
  */
 function leafContextName(leafId: string, agent: AgentKind | undefined): string {
   for (const tab of useTabsStore.getState().tabs) {
@@ -52,13 +68,9 @@ function leafContextName(leafId: string, agent: AgentKind | undefined): string {
       continue;
     }
     const cwd = content.cwd ?? tab.cwd ?? null;
-    if (cwd && agent) {
-      const title = useTitlesStore.getState().titles[progressKey(cwd, agent)];
-      if (title) {
-        return title;
-      }
-    }
-    return cwd ? basename(cwd) : tab.title;
+    const transcriptTitle =
+      cwd && agent ? useTitlesStore.getState().titles[progressKey(cwd, agent)] : undefined;
+    return resolvePaneLabel(tab, cwd, transcriptTitle);
   }
   return "";
 }
