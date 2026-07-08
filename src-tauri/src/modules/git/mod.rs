@@ -489,22 +489,33 @@ fn git_commits_in_range_impl(cwd: &str, since_ms: i64, until_ms: i64) -> Vec<Com
 /// during it. Always `Ok`; a non-git/remote cwd or any git failure yields an
 /// empty list rather than an error.
 #[tauri::command]
-pub fn git_commits_in_range(
+pub async fn git_commits_in_range(
     cwd: String,
     since_ms: i64,
     until_ms: i64,
 ) -> Result<Vec<CommitInfo>, String> {
-    Ok(git_commits_in_range_impl(&cwd, since_ms, until_ms))
+    tauri::async_runtime::spawn_blocking(move || git_commits_in_range_impl(&cwd, since_ms, until_ms))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn git_resolve_repo(path: String) -> Option<String> {
-    resolve_repo(&path)
+pub async fn git_resolve_repo(path: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || resolve_repo(&path))
+        .await
+        .ok()
+        .flatten()
 }
 
+// Async so the git2 status walk runs off the main GUI thread. This is what the
+// source-control panel calls on open/refresh; a slow repo would otherwise freeze
+// the whole app (same rationale as git_worktree_info). All the git commands below
+// follow this pattern for the same reason.
 #[tauri::command]
-pub fn git_status(repo_path: String) -> Result<GitStatus, String> {
-    status(&repo_path)
+pub async fn git_status(repo_path: String) -> Result<GitStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || status(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -526,18 +537,24 @@ pub async fn git_worktree_list(path: String) -> Result<Vec<WorktreeListItem>, St
 }
 
 #[tauri::command]
-pub fn git_stage(repo_path: String, path: String) -> Result<(), String> {
-    stage(&repo_path, &path)
+pub async fn git_stage(repo_path: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || stage(&repo_path, &path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_unstage(repo_path: String, path: String) -> Result<(), String> {
-    unstage(&repo_path, &path)
+pub async fn git_unstage(repo_path: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || unstage(&repo_path, &path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_commit(repo_path: String, message: String) -> Result<String, String> {
-    commit(&repo_path, &message)
+pub async fn git_commit(repo_path: String, message: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || commit(&repo_path, &message))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Run a git subcommand against `repo_path` using the system git binary. This
@@ -1109,160 +1126,239 @@ pub fn commit_range_file_diff(
 }
 
 #[tauri::command]
-pub fn git_log(repo_path: String, limit: Option<usize>) -> Result<Vec<CommitInfo>, String> {
-    log(&repo_path, limit.unwrap_or(50))
+pub async fn git_log(repo_path: String, limit: Option<usize>) -> Result<Vec<CommitInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || log(&repo_path, limit.unwrap_or(50)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_diff(repo_path: String, staged: bool) -> Result<String, String> {
-    diff(&repo_path, staged)
+pub async fn git_diff(repo_path: String, staged: bool) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || diff(&repo_path, staged))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_file_at_rev(repo_path: String, rev: String, path: String) -> Result<String, String> {
-    file_at_rev(&repo_path, &rev, &path)
+pub async fn git_file_at_rev(
+    repo_path: String,
+    rev: String,
+    path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || file_at_rev(&repo_path, &rev, &path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_restore_file(repo_path: String, path: String) -> Result<(), String> {
-    restore_file(&repo_path, &path)
+pub async fn git_restore_file(repo_path: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || restore_file(&repo_path, &path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_push(repo_path: String) -> Result<String, String> {
-    push(&repo_path)
+pub async fn git_push(repo_path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || push(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_fetch(repo_path: String) -> Result<(), String> {
-    fetch(&repo_path)
+pub async fn git_fetch(repo_path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || fetch(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_graph_log(
+pub async fn git_graph_log(
     repo_path: String,
     limit: Option<usize>,
     skip: Option<usize>,
     options: Option<GraphOptions>,
 ) -> Result<GraphLog, String> {
-    graph_log(
-        &repo_path,
-        limit.unwrap_or(300),
-        skip.unwrap_or(0),
-        &options.unwrap_or_default(),
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        graph_log(
+            &repo_path,
+            limit.unwrap_or(300),
+            skip.unwrap_or(0),
+            &options.unwrap_or_default(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
-    branches(&repo_path)
+pub async fn git_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || branches(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_branch_checkout(repo_path: String, name: String) -> Result<(), String> {
-    branch_checkout(&repo_path, &name)
+pub async fn git_branch_checkout(repo_path: String, name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || branch_checkout(&repo_path, &name))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_branch_create_at(repo_path: String, name: String, commit: String) -> Result<(), String> {
-    branch_create_at(&repo_path, &name, &commit)
+pub async fn git_branch_create_at(
+    repo_path: String,
+    name: String,
+    commit: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || branch_create_at(&repo_path, &name, &commit))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_branch_delete(repo_path: String, name: String, force: Option<bool>) -> Result<(), String> {
-    branch_delete(&repo_path, &name, force.unwrap_or(false))
+pub async fn git_branch_delete(
+    repo_path: String,
+    name: String,
+    force: Option<bool>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || branch_delete(&repo_path, &name, force.unwrap_or(false)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_tag_create(
+pub async fn git_tag_create(
     repo_path: String,
     name: String,
     commit: String,
     message: Option<String>,
 ) -> Result<(), String> {
-    tag_create(&repo_path, &name, &commit, message.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        tag_create(&repo_path, &name, &commit, message.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_tag_delete(repo_path: String, name: String) -> Result<(), String> {
-    tag_delete(&repo_path, &name)
+pub async fn git_tag_delete(repo_path: String, name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || tag_delete(&repo_path, &name))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_merge(repo_path: String, name: String) -> Result<(), String> {
-    merge(&repo_path, &name)
+pub async fn git_merge(repo_path: String, name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || merge(&repo_path, &name))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_revert(repo_path: String, commit: String) -> Result<(), String> {
-    revert(&repo_path, &commit)
+pub async fn git_revert(repo_path: String, commit: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || revert(&repo_path, &commit))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_cherry_pick(repo_path: String, commit: String) -> Result<(), String> {
-    cherry_pick(&repo_path, &commit)
+pub async fn git_cherry_pick(repo_path: String, commit: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || cherry_pick(&repo_path, &commit))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_reset(repo_path: String, commit: String, mode: Option<String>) -> Result<(), String> {
-    reset(&repo_path, &commit, mode.as_deref())
+pub async fn git_reset(
+    repo_path: String,
+    commit: String,
+    mode: Option<String>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || reset(&repo_path, &commit, mode.as_deref()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_rebase(repo_path: String, commit: String) -> Result<(), String> {
-    rebase(&repo_path, &commit)
+pub async fn git_rebase(repo_path: String, commit: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || rebase(&repo_path, &commit))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_branch_checkout_track(
+pub async fn git_branch_checkout_track(
     repo_path: String,
     local: String,
     remote_ref: String,
 ) -> Result<(), String> {
-    branch_checkout_track(&repo_path, &local, &remote_ref)
+    tauri::async_runtime::spawn_blocking(move || {
+        branch_checkout_track(&repo_path, &local, &remote_ref)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_pull(repo_path: String, remote: String, branch: String) -> Result<(), String> {
-    pull(&repo_path, &remote, &branch)
+pub async fn git_pull(repo_path: String, remote: String, branch: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || pull(&repo_path, &remote, &branch))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_push_delete(repo_path: String, remote: String, branch: String) -> Result<(), String> {
-    push_delete(&repo_path, &remote, &branch)
+pub async fn git_push_delete(
+    repo_path: String,
+    remote: String,
+    branch: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || push_delete(&repo_path, &remote, &branch))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_commit_details(repo_path: String, commit: String) -> Result<CommitDetails, String> {
-    commit_details(&repo_path, &commit)
+pub async fn git_commit_details(
+    repo_path: String,
+    commit: String,
+) -> Result<CommitDetails, String> {
+    tauri::async_runtime::spawn_blocking(move || commit_details(&repo_path, &commit))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_commit_file_diff(
+pub async fn git_commit_file_diff(
     repo_path: String,
     commit: String,
     file: String,
 ) -> Result<String, String> {
-    commit_file_diff(&repo_path, &commit, &file)
+    tauri::async_runtime::spawn_blocking(move || commit_file_diff(&repo_path, &commit, &file))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_commit_range_files(
+pub async fn git_commit_range_files(
     repo_path: String,
     from: String,
     to: String,
 ) -> Result<Vec<CommitFileChange>, String> {
-    commit_range_files(&repo_path, &from, &to)
+    tauri::async_runtime::spawn_blocking(move || commit_range_files(&repo_path, &from, &to))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn git_commit_range_file_diff(
+pub async fn git_commit_range_file_diff(
     repo_path: String,
     from: String,
     to: String,
     file: String,
 ) -> Result<String, String> {
-    commit_range_file_diff(&repo_path, &from, &to, &file)
+    tauri::async_runtime::spawn_blocking(move || commit_range_file_diff(&repo_path, &from, &to, &file))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
