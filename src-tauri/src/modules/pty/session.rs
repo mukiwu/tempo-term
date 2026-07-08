@@ -150,19 +150,76 @@ pub fn spawn_with_sinks(
     let id = state.alloc_id();
     state.sessions.write().unwrap().insert(id, session);
 
+    // Coalesce PTY output before it crosses the IPC boundary. The old design sent
+    // one Tauri message per 8 KB read; under a heavy stream (e.g. several Claude
+    // sessions) that is hundreds of main-thread IPC round-trips per second on the
+    // webview side, which saturates the single UI thread. Here a reader thread does
+    // the blocking reads and hands chunks to a flusher thread, which batches
+    // everything arriving within a short window (or up to a size cap) into ONE
+    // `on_bytes` call — collapsing a burst of reads into a handful of sends — while
+    // still flushing within FLUSH_WINDOW so an idle prompt stays responsive.
     std::thread::spawn(move || {
-        let mut buf = [0u8; 8192];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if !on_bytes(buf[..n].to_vec()) {
-                        break;
+        use std::sync::mpsc::{sync_channel, RecvTimeoutError};
+        use std::time::{Duration, Instant};
+
+        // ~12 ms is under one frame, so output latency stays imperceptible; 64 KB
+        // caps a single batch so a very fast stream still flushes promptly.
+        const FLUSH_WINDOW: Duration = Duration::from_millis(12);
+        const FLUSH_BYTES: usize = 64 * 1024;
+
+        // Bounded so a wedged frontend backpressures the shell instead of growing
+        // memory without limit (512 * 8 KB ~= 4 MB worst case).
+        let (tx, rx) = sync_channel::<Vec<u8>>(512);
+        let reader_thread = std::thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if tx.send(buf[..n].to_vec()).is_err() {
+                            break; // Flusher stopped (frontend closed the channel).
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            // Dropping `tx` disconnects the channel so the flusher drains any
+            // remaining chunks and stops.
+        });
+
+        'flush: loop {
+            // Block until the first chunk of a new window (or the reader is done).
+            let mut acc = match rx.recv() {
+                Ok(chunk) => chunk,
+                Err(_) => break, // Disconnected with nothing pending.
+            };
+            let deadline = Instant::now() + FLUSH_WINDOW;
+            while acc.len() < FLUSH_BYTES {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                match rx.recv_timeout(remaining) {
+                    Ok(chunk) => acc.extend(chunk),
+                    Err(RecvTimeoutError::Timeout) => break,
+                    Err(RecvTimeoutError::Disconnected) => {
+                        // Reader finished mid-window: flush what we have, then stop.
+                        let _ = on_bytes(acc);
+                        break 'flush;
                     }
                 }
-                Err(_) => break,
+            }
+            if !on_bytes(acc) {
+                break; // Sink asked to stop.
             }
         }
+
+        // Drop the receiver BEFORE joining. If the reader is blocked on a full
+        // channel `tx.send`, closing `rx` makes that send return an error so the
+        // reader loop exits; otherwise `join()` — and thus `child.wait()` /
+        // `on_exit` — would deadlock and leak both threads.
+        drop(rx);
+        let _ = reader_thread.join();
         let code = child.wait().map(|s| s.exit_code() as i32).unwrap_or(-1);
         on_exit(code);
     });

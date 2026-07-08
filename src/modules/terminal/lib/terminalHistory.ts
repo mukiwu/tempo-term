@@ -54,6 +54,85 @@ export function serializeBufferText(term: Terminal, maxLines?: number): string {
   return lines.join("\n");
 }
 
+/** One terminal buffer row for the logical-line tail walk. */
+export interface BufferRow {
+  text: string;
+  /** True when this row is a soft-wrap continuation of the row above it. */
+  isWrapped: boolean;
+}
+
+/**
+ * Serialize the last `maxLines` LOGICAL lines from the tail of a terminal buffer,
+ * stopping at (and dropping) the {@link SESSION_SEPARATOR} if it is reached first
+ * so restored history above it is not re-saved. Rows are fetched lazily via
+ * `getRow` from `rowCount - 1` downward, so this only touches O(kept) rows — never
+ * the whole (up to 10k-row) buffer.
+ *
+ * Windowing by LOGICAL lines — not raw rows — is what makes this equivalent to
+ * serializing the whole buffer then trimming to `maxLines`: a fixed row window
+ * holds fewer than `maxLines` logical lines whenever recent output soft-wraps,
+ * which would silently shrink the retained scrollback. Stopping the backward walk
+ * at the separator (rather than string-matching it afterwards) also keeps the
+ * real boundary in view under wrapping, and avoids anchoring on a live line that
+ * merely echoes the separator once the real one has scrolled out of the window.
+ */
+export function serializeLogicalTail(
+  getRow: (y: number) => BufferRow | null,
+  rowCount: number,
+  maxLines: number,
+  separator: string,
+): string {
+  const kept: string[] = []; // newest-first while collecting
+  let current = "";
+  let seenNonBlank = false;
+  for (let y = rowCount - 1; y >= 0; y--) {
+    const row = getRow(y);
+    if (!row) {
+      continue;
+    }
+    // Rebuild the logical line by prepending rows until its non-wrapped start.
+    current = row.text + current;
+    if (row.isWrapped) {
+      continue;
+    }
+    const logical = current.replace(/\s+$/u, "");
+    current = "";
+    if (logical === separator) {
+      break;
+    }
+    // Drop only the trailing (newest) run of blank lines, matching the full
+    // serialize + trim; blank lines between real output are kept.
+    if (!seenNonBlank && logical === "") {
+      continue;
+    }
+    seenNonBlank = true;
+    kept.push(logical);
+    if (kept.length >= maxLines) {
+      break;
+    }
+  }
+  return kept.reverse().join("\n");
+}
+
+/**
+ * The live tail of a terminal for a periodic snapshot: the last `maxLines`
+ * logical lines the shell produced this session, with the restored-history
+ * prefix stripped. Thin adapter over {@link serializeLogicalTail} that reads rows
+ * straight from the live buffer.
+ */
+export function serializeLiveTail(term: Terminal, maxLines: number, separator: string): string {
+  const buffer = term.buffer.active;
+  return serializeLogicalTail(
+    (y) => {
+      const line = buffer.getLine(y);
+      return line ? { text: line.translateToString(false), isWrapped: line.isWrapped } : null;
+    },
+    buffer.length,
+    maxLines,
+    separator,
+  );
+}
+
 /**
  * Strip the restored read-only history from a freshly serialized buffer so a
  * snapshot only persists what the live shell produced this session.

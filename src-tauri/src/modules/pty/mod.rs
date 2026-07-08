@@ -54,16 +54,20 @@ pub fn pty_shell_name(state: State<'_, PtyState>, id: u32) -> Result<String, Str
     session::shell_name(&state, id)
 }
 
+// Async so Tauri runs the blocking `ps` lookup on its worker pool rather than the
+// main GUI thread (same reasoning as sysmon/ports). This runs every ~1.2s per pane,
+// so a slow `ps` on the GUI thread would directly stall the UI.
 #[tauri::command]
-pub fn pty_foreground_command(
+pub async fn pty_foreground_command(
     state: State<'_, PtyState>,
     id: u32,
 ) -> Result<Option<String>, String> {
     session::foreground_command(&state, id)
 }
 
+// Async so the blocking `lsof` cwd lookup runs off the main GUI thread (see above).
 #[tauri::command]
-pub fn pty_cwd(state: State<'_, PtyState>, id: u32) -> Result<Option<String>, String> {
+pub async fn pty_cwd(state: State<'_, PtyState>, id: u32) -> Result<Option<String>, String> {
     session::cwd(&state, id)
 }
 
