@@ -166,6 +166,25 @@ describe("serializeLogicalTail", () => {
     expect(result).toBe(fullScan(rows, 10));
   });
 
+  it("anchors on the first (top-most) separator, keeping a live line that echoes it as content", () => {
+    // Two separators: the real restore boundary (top) and a live line that
+    // happens to print the exact sentinel. A full-buffer scan anchors on the
+    // top-most one and keeps the echo as content; the tail walk must do the same,
+    // not stop at the bottom-most separator and truncate the live output above it.
+    const rows = [
+      ...rowsFor([wide("old")]),
+      { text: SESSION_SEPARATOR, isWrapped: false },
+      ...rowsFor([wide("live1"), wide("live2")]),
+      { text: SESSION_SEPARATOR, isWrapped: false },
+      ...rowsFor([wide("live3"), wide("live4")]),
+    ];
+    const result = serializeLogicalTail(getter(rows), rows.length, 10, SESSION_SEPARATOR);
+    expect(result).toBe(
+      [wide("live1"), wide("live2"), SESSION_SEPARATOR, wide("live3"), wide("live4")].join("\n"),
+    );
+    expect(result).toBe(fullScan(rows, 10));
+  });
+
   it("trims trailing blank lines without spending the line budget", () => {
     const rows = [
       ...rowsFor([wide("a"), wide("b"), wide("c")]),

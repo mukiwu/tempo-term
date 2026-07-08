@@ -917,10 +917,10 @@ export function TerminalView({
       // Serialize only the tail we actually keep, not the whole buffer. The old
       // code walked every row (up to scrollback: 10000) every 5s per busy pane —
       // an O(buffer) cost that grew with output and blocked the UI thread.
-      // serializeLiveTail walks back by LOGICAL lines (soft-wrapped rows joined),
-      // stopping at MAX_SCROLLBACK_LINES or the restore separator, so the retained
-      // history matches a full-buffer scan even when recent output wraps wide,
-      // while still touching only O(kept) rows.
+      // serializeLiveTail walks back by LOGICAL lines (soft-wrapped rows joined)
+      // until it has MAX_SCROLLBACK_LINES, then strips the restored prefix, so the
+      // retained history matches a full-buffer scan even when output wraps wide,
+      // while touching only O(kept) rows.
       const data = serializeLiveTail(term, MAX_SCROLLBACK_LINES, SESSION_SEPARATOR);
       void saveTerminalHistory(leafId, data).catch(() => {
         dirty = true;
