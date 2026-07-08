@@ -22,7 +22,7 @@ describe("resolvePaneLabel", () => {
 
   it("falls back to the cwd basename when no transcript title is known", () => {
     const label = resolvePaneLabel(
-      { renamed: false, title: "api" },
+      { renamed: false, title: "Terminal" },
       "/Users/me/projects/api",
       undefined,
     );
