@@ -49,7 +49,7 @@ Copy the established helper shape (`src-tauri/src/modules/git/mod.rs:545`, `src-
 ```rust
 use std::process::Command;
 
-fn spawn_thing() -> Command {
+fn spawn_thing(exe: &str) -> Command {
     let mut command = Command::new(exe);
     #[cfg(windows)]
     {
