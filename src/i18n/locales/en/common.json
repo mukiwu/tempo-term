@@ -90,6 +90,16 @@
     "restore": "Restore",
     "close": "Close"
   },
+  "menuBar": {
+    "file": "File",
+    "window": "Window",
+    "newWindow": "New Window",
+    "openLocation": "Open Location",
+    "setupWizard": "Setup Wizard",
+    "closeTab": "Close Tab",
+    "cyclePane": "Cycle Pane",
+    "closeWindow": "Close Window"
+  },
   "actions": {
     "newTab": "New Tab",
     "closeTab": "Close Tab",

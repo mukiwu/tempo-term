@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { UnlistenFn } from "@tauri-apps/api/event";
+import { emitTo, type UnlistenFn } from "@tauri-apps/api/event";
 import type { StateStorage } from "zustand/middleware";
 
 /**
@@ -35,6 +35,18 @@ export function closeWindow(): Promise<void> {
 /** Whether the window is currently maximized (drives the maximize/restore icon). */
 export function isWindowMaximized(): Promise<boolean> {
   return getCurrentWindow().isMaximized();
+}
+
+/**
+ * Fire a `menu:*` event to this window's own webview, mirroring exactly what the
+ * native menu does on macOS (Rust `win.emit_to(win.label(), event)` in menu.rs).
+ * Used by the Windows custom title-bar menu so a menu-bar click runs the same
+ * frontend handler as the macOS menu item and the Ctrl+key shortcut — one source
+ * of truth for each action's behaviour. Scoped to this window's label so a click
+ * never triggers the action in another open window.
+ */
+export function emitWindowMenuEvent(event: string): Promise<void> {
+  return emitTo(getCurrentWindow().label, event);
 }
 
 /** Subscribe to window resize events; returns an unlisten function. */

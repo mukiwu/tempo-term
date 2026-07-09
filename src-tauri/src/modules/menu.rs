@@ -185,6 +185,13 @@ pub fn create_new_window(app: &AppHandle) -> tauri::Result<()> {
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true);
+    // Windows hides the native frame in favour of the custom React title bar
+    // (mirrors the main window's set_decorations(false) in lib.rs). Without this
+    // a secondary window keeps the OS frame AND the native menu bar, while the
+    // custom title bar renders underneath — two title bars at once. Setting it on
+    // the builder means the native frame never flashes before being removed.
+    #[cfg(target_os = "windows")]
+    let builder = builder.decorations(false);
     let win = builder.build()?;
     // window-state plugin may restore a stale size from a previous run.
     // Clamp anything below the minimum back to the default so the window
