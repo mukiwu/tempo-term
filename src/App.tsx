@@ -11,6 +11,7 @@ import { UpdateToast } from "@/components/UpdateToast";
 import { NotifyToast } from "@/components/NotifyToast";
 import { TabsArea } from "@/components/TabsArea";
 import { useUiStore } from "@/stores/uiStore";
+import { useFontStore, shouldPrefetchFontReport } from "@/stores/fontStore";
 import { useUpdaterStore } from "@/stores/updaterStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore, tabHasDirtyEditor } from "@/stores/tabsStore";
@@ -198,6 +199,32 @@ function App() {
   // The font report (enumerating every installed family) is loaded lazily by
   // the Fonts settings section when it opens, not at startup — the terminal's
   // default font chain already covers CJK, so a cold launch does no font work.
+  // One exception (#164): icon-font auto-detect has no static fallback list
+  // (unlike CJK), so on the very first launch ever — auto mode with no cached
+  // suggestion — the report is loaded once off the critical path, at idle.
+  // Its suggestion then persists (fontStore.cachedIconFallback), so every
+  // later launch is back to zero font work and Nerd Font glyphs still render.
+  useEffect(() => {
+    if (!shouldPrefetchFontReport(useFontStore.getState())) {
+      return;
+    }
+    let cancelled = false;
+    const run = () => {
+      if (!cancelled) {
+        void useFontStore.getState().loadReport();
+      }
+    };
+    // requestIdleCallback is missing on older WKWebView; a delayed timeout is
+    // an acceptable "idle" stand-in for a one-time prefetch.
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(run);
+    } else {
+      window.setTimeout(run, 2000);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Drop saved terminal scrollback for panes that no longer exist (orphans
   // left by closed tabs/panes), keeping only the panes still in the layout.
