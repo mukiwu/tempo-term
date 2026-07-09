@@ -1,4 +1,4 @@
-import { act, render } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Every `menu:*` listener in App.tsx is registered via getCurrentWebview().listen.
@@ -121,11 +121,14 @@ describe("App menu event wiring", () => {
     unregisterEditorSaver("leaf-1");
   });
 
-  it("menu:open-settings stores the requested section", async () => {
+  it("menu:open-settings opens settings on the requested section", async () => {
     render(<App />);
     await fireMenuEvent("menu:open-settings", "about");
     expect(useUiStore.getState().settingsOpen).toBe(true);
-    expect(useUiStore.getState().settingsSection).toBe("about");
+    // SettingsView consumes settingsSection on mount (clearing it so a later
+    // plain open doesn't replay it), so assert on the section actually shown
+    // rather than the transient store field.
+    expect(screen.getByRole("heading", { name: "About" })).toBeInTheDocument();
   });
 
   it("menu:open-settings with no payload opens the default section", async () => {
@@ -316,7 +319,9 @@ describe("App menu event wiring", () => {
     render(<App />);
     await fireMenuEvent("menu:check-updates");
     expect(useUiStore.getState().settingsOpen).toBe(true);
-    expect(useUiStore.getState().settingsSection).toBe("about");
+    // Same rationale as the menu:open-settings test above: settingsSection is
+    // cleared once SettingsView consumes it, so check the rendered section.
+    expect(screen.getByRole("heading", { name: "About" })).toBeInTheDocument();
     expect(check).toHaveBeenCalled();
   });
 });

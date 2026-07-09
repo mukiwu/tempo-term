@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/i18n/config";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useUiStore } from "@/stores/uiStore";
 import { getTheme, THEMES, type AppTheme } from "@/themes/themes";
 import { FontsSettingsSection } from "./FontsSettingsSection";
 import { TerminalSettingsSection } from "./TerminalSettingsSection";
@@ -157,7 +158,22 @@ function AppearanceSection() {
 
 export function SettingsView() {
   const { t } = useTranslation("settings");
-  const [section, setSection] = useState<SectionId>("appearance");
+  // The modal unmounts SettingsView on close, so this lazy initializer re-runs
+  // on every open: land on whatever section the menu bar / File > Settings
+  // requested (e.g. Help > About), falling back to Appearance for a plain
+  // open or an id that no longer exists.
+  const [section, setSection] = useState<SectionId>(() => {
+    const requested = useUiStore.getState().settingsSection;
+    return requested && (SECTIONS as readonly string[]).includes(requested)
+      ? (requested as SectionId)
+      : "appearance";
+  });
+
+  // Clear the requested section once consumed, so a later plain openSettings()
+  // (no section argument) doesn't replay a stale deep-link.
+  useEffect(() => {
+    useUiStore.setState({ settingsSection: null });
+  }, []);
 
   return (
     <div className="flex h-full w-full">
