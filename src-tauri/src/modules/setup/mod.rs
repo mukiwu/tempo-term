@@ -74,8 +74,10 @@ const TOOLS: &[ToolSpec] = &[
     ToolSpec {
         // Official installer scripts from https://antigravity.google/cli.
         // macOS/Linux uses the bash installer; Windows uses the CMD installer.
+        // Both install the binary as `agy` (~/.local/bin/agy on Unix,
+        // %LOCALAPPDATA%\agy\bin\agy.exe on Windows), never `antigravity`.
         id: "antigravity",
-        bin: "antigravity",
+        bin: "agy",
         min_version: None,
         mac_install: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
         // Write the installer to an absolute TEMP path (the GUI process CWD is
@@ -153,9 +155,9 @@ pub fn meets_min(version: &str, min: &str) -> bool {
 }
 
 /// Candidate file names for an executable. Windows binaries carry an extension
-/// (`node.exe`) and npm/antigravity ship `.cmd`/`.bat` shims — a bare `claude`
-/// file never exists on disk there (#89) — so probe every common extension;
-/// elsewhere the stem itself is the only candidate. Pure for testing.
+/// (`node.exe`) and npm ships `.cmd`/`.bat` shims — a bare `claude` file never
+/// exists on disk there (#89) — so probe every common extension; elsewhere the
+/// stem itself is the only candidate. Pure for testing.
 fn exe_names(stem: &str, windows: bool) -> Vec<String> {
     if windows {
         [".exe", ".cmd", ".bat"]
@@ -175,6 +177,7 @@ fn search_dirs(
     path_env: Option<&str>,
     home: Option<&str>,
     appdata: Option<&str>,
+    localappdata: Option<&str>,
     windows: bool,
 ) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = match path_env {
@@ -195,6 +198,11 @@ fn search_dirs(
         if let Some(appdata) = appdata {
             dirs.push(PathBuf::from(appdata).join("npm"));
         }
+        if let Some(localappdata) = localappdata {
+            // The antigravity installer writes agy.exe here and never touches
+            // PATH, so detection must probe it directly.
+            dirs.push(PathBuf::from(localappdata).join("agy").join("bin"));
+        }
         if let Some(home) = home {
             dirs.push(PathBuf::from(home).join("scoop").join("shims"));
         }
@@ -203,9 +211,8 @@ fn search_dirs(
             dirs.push(PathBuf::from(extra));
         }
         if let Some(home) = home {
-            // npm --prefix bins, antigravity's installer dir, and pipx-style bins.
+            // npm --prefix bins, antigravity's agy, and pipx-style bins.
             dirs.push(PathBuf::from(home).join(".local").join("bin"));
-            dirs.push(PathBuf::from(home).join(".antigravity").join("bin"));
         }
     }
     dirs
@@ -221,9 +228,16 @@ fn find_tool(stem: &str) -> Option<PathBuf> {
         .ok()
         .or_else(|| std::env::var("USERPROFILE").ok());
     let appdata = std::env::var("APPDATA").ok();
+    let localappdata = std::env::var("LOCALAPPDATA").ok();
     let windows = cfg!(windows);
     let names = exe_names(stem, windows);
-    for dir in search_dirs(path_env.as_deref(), home.as_deref(), appdata.as_deref(), windows) {
+    for dir in search_dirs(
+        path_env.as_deref(),
+        home.as_deref(),
+        appdata.as_deref(),
+        localappdata.as_deref(),
+        windows,
+    ) {
         for name in &names {
             let candidate = dir.join(name);
             if candidate.is_file() {
@@ -443,27 +457,31 @@ mod tests {
         // the platform extras for the Windows arm, and PATH order on the Unix arm.
         let home = r"C:\Users\me";
         let appdata = r"C:\Users\me\AppData\Roaming";
-        let win = search_dirs(None, Some(home), Some(appdata), true);
+        let localappdata = r"C:\Users\me\AppData\Local";
+        let win = search_dirs(None, Some(home), Some(appdata), Some(localappdata), true);
         // Static install dirs are literals; joined dirs are built the same way so
         // the assertion is separator-agnostic (join uses `/` on the macOS runner).
         assert!(win.contains(&PathBuf::from(r"C:\Program Files\nodejs")));
         // npm global shims live under %APPDATA%\npm.
         assert!(win.contains(&PathBuf::from(appdata).join("npm")));
+        // The antigravity installer drops agy.exe under %LOCALAPPDATA%\agy\bin.
+        assert!(win.contains(&PathBuf::from(localappdata).join("agy").join("bin")));
         assert!(win.contains(&PathBuf::from(home).join("scoop").join("shims")));
 
-        let unix = search_dirs(Some("/usr/bin"), Some("/home/me"), None, false);
+        let unix = search_dirs(Some("/usr/bin"), Some("/home/me"), None, None, false);
         assert_eq!(unix.first(), Some(&PathBuf::from("/usr/bin")));
         assert!(unix.contains(&PathBuf::from("/opt/homebrew/bin")));
-        assert!(unix.contains(&PathBuf::from("/home/me/.antigravity/bin")));
+        // The antigravity installer targets ~/.local/bin (binary name: agy).
+        assert!(unix.contains(&PathBuf::from("/home/me/.local/bin")));
     }
 
     #[test]
     fn search_dirs_works_without_a_path_or_home() {
         // A GUI launch can hand us no PATH and no HOME; resolution must still
         // return the platform install dirs rather than panic on None.
-        let unix = search_dirs(None, None, None, false);
+        let unix = search_dirs(None, None, None, None, false);
         assert!(unix.contains(&PathBuf::from("/usr/local/bin")));
-        let win = search_dirs(None, None, None, true);
+        let win = search_dirs(None, None, None, None, true);
         assert!(win.contains(&PathBuf::from(r"C:\ProgramData\chocolatey\bin")));
     }
 }
