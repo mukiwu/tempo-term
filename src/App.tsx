@@ -90,9 +90,9 @@ function isEditableTarget(target: EventTarget | null): boolean {
  * tab's focused leaf when it is itself a preview, otherwise the tab's first
  * preview pane (a preview can exist in a split without holding focus — e.g.
  * the user is typing in a sibling terminal/editor pane). undefined when the
- * active tab has no preview pane at all. Lets the ⌘L menu accelerator, ⌘[ / ⌘]
- * shortcuts, and the View menu's Back/Forward items reach the right preview
- * without stealing those keys from editors/terminals.
+ * active tab has no preview pane at all. Lets the ⌘/Ctrl+L, ⌘[ / ⌘] shortcuts,
+ * and the View menu's Back/Forward items reach the right preview without
+ * stealing those keys from editors/terminals.
  */
 function activePreviewControls(): PreviewControls | undefined {
   const state = useTabsStore.getState();

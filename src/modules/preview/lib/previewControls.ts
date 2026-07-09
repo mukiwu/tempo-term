@@ -1,7 +1,7 @@
-// A tiny registry that lets app-level shortcuts and the native menu reach the
+// A tiny registry that lets app-level shortcuts and the menu bar reach the
 // preview pane the user is looking at. The preview toolbar lives in the DOM but
 // its actions (focus the address bar, go back/forward) must be callable from
-// outside the component — the ⌘L menu accelerator fires in Rust, and ⌘[ / ⌘]
+// outside the component — the ⌘/Ctrl+L keydown handler in App.tsx and ⌘[ / ⌘]
 // may arrive while another element holds focus. Each mounted preview registers
 // its controls under its pane's leaf id; callers look them up by leaf id.
 

@@ -64,7 +64,7 @@ export function PreviewTabContent({
     }
   }, []);
 
-  // Expose this preview's controls so the ⌘L menu accelerator and ⌘[ / ⌘]
+  // Expose this preview's controls so the ⌘/Ctrl+L keydown handler and ⌘[ / ⌘]
   // shortcuts can reach whichever preview pane is active.
   useEffect(
     () => registerPreviewControls(leafId, { focusAddressBar, back, forward, reload }),
