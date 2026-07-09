@@ -102,4 +102,14 @@ describe("isAppShortcut", () => {
   it("leaves Ctrl+L to the terminal (clear-screen) on Windows", () => {
     expect(win({ code: "KeyL", ctrlKey: true })).toBe(false);
   });
+
+  it("does NOT treat Windows-key combos as app shortcuts (metaKey is the Win key)", () => {
+    // Win+W / Win+T / Win+3 must fall through to the OS, not be claimed by the app.
+    expect(win({ code: "KeyW", metaKey: true })).toBe(false);
+    expect(win({ code: "KeyT", metaKey: true })).toBe(false);
+    expect(win({ code: "Digit3", metaKey: true })).toBe(false);
+    expect(win({ code: "Backquote", metaKey: true })).toBe(false);
+    // Even Ctrl+Win+W is rejected (Win held).
+    expect(win({ code: "KeyW", ctrlKey: true, metaKey: true })).toBe(false);
+  });
 });

@@ -350,6 +350,15 @@ function App() {
         return;
       }
 
+      // On Windows the app's shortcut modifier is Ctrl; `metaKey` is the Windows
+      // key, whose system combos (Win+D, Win+E, Win+W, …) must never trigger an
+      // app shortcut. Reject them here so neither the Windows block nor the
+      // shared Ctrl+letter handlers below can misfire on a Win+key press. (macOS
+      // uses Cmd = metaKey, so this is Windows-only.)
+      if (IS_WINDOWS && e.metaKey) {
+        return;
+      }
+
       // On Windows the native menu bar is hidden (the window runs with the frame
       // off and a custom React title bar — see lib.rs set_decorations(false)), so
       // the menu accelerators that drive these shortcuts on macOS never fire.
@@ -357,7 +366,7 @@ function App() {
       // its menu accelerators and never runs both (which would fire twice); on
       // Windows the Rust side drops these accelerators too (see menu.rs `accel`).
       // `code` is used so it matches regardless of keyboard layout.
-      if (IS_WINDOWS && !e.altKey) {
+      if (IS_WINDOWS && e.ctrlKey && !e.altKey) {
         // Ctrl+W closes the active tab/pane; Shift+Ctrl+W closes the window.
         if (e.code === "KeyW") {
           e.preventDefault();

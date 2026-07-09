@@ -79,6 +79,39 @@ describe("App shell — Windows keyboard shortcuts", () => {
     expect(tab?.paneTree).toEqual(leaf("right-leaf", { kind: "launcher" }));
   });
 
+  it("ignores Windows-key combos (Win+W must not close a tab)", () => {
+    const paneTree = splitLeaf(
+      leaf("left-leaf", { kind: "launcher" }),
+      "left-leaf",
+      "row",
+      "right-leaf",
+      { kind: "launcher" },
+    );
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs: [
+        {
+          id: "a",
+          spaceId: "s1",
+          title: "a",
+          kind: "launcher" as const,
+          paneTree,
+          activeLeafId: "left-leaf",
+          paneOrder: ["left-leaf", "right-leaf"],
+        },
+      ],
+      activeId: "a",
+    });
+    render(<App />);
+
+    // metaKey is the Windows key here — Win+W must be left to the OS, not close a pane.
+    fireEvent.keyDown(window, { code: "KeyW", key: "w", metaKey: true });
+
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === "a");
+    expect(tab?.paneTree).toEqual(paneTree);
+  });
+
   it("cycles panes with Ctrl+` and switches tabs with Ctrl+digit", () => {
     const tabs = ["a", "b"].map((id) => ({
       id,

@@ -51,7 +51,10 @@ export interface AppShortcutEvent {
  * clear-screen (Open Location applies only to a preview pane, never a terminal).
  */
 export function isAppShortcut(event: AppShortcutEvent, isWindows: boolean): boolean {
-  const cmd = event.metaKey || event.ctrlKey;
+  // The app's shortcut modifier is Cmd (metaKey) on macOS and Ctrl on Windows.
+  // On Windows metaKey is the Windows key, so a Win+<key> system combo must NOT
+  // be treated as an app shortcut — require Ctrl and exclude Win there.
+  const cmd = isWindows ? event.ctrlKey && !event.metaKey : event.metaKey || event.ctrlKey;
   if (/^(?:Digit|Numpad)[1-9]$/.test(event.code)) {
     const switchTab = cmd && !event.shiftKey && !event.altKey;
     const switchSidebar = event.altKey && !event.metaKey && !event.ctrlKey;
