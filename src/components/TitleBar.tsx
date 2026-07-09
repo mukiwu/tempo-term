@@ -180,7 +180,7 @@ function WindowMenuBar() {
           // Once a menu is open, hovering a sibling switches to it — standard
           // menu-bar behaviour.
           onMouseEnter={(e) => {
-            if (openId !== null) openFrom(e.currentTarget, menu.id);
+            if (openId !== null && openId !== menu.id) openFrom(e.currentTarget, menu.id);
           }}
           className={`flex h-full items-center px-3 text-[13px] transition-colors ${
             openId === menu.id
@@ -273,7 +273,7 @@ export function TitleBar() {
         data-tauri-drag-region
         className="flex h-full select-none items-center gap-1.5 pl-2.5 pr-1"
       >
-        <img src="/icon.png" alt="" className="h-4 w-4 rounded-sm" />
+        <img src="/icon.png" alt="" className="h-4 w-4 rounded-sm" draggable={false} />
         <span className="text-[13px] font-semibold text-fg">{t("appName")}</span>
       </div>
       <WindowMenuBar />
