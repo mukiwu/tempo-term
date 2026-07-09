@@ -16,6 +16,7 @@ vi.mock("@/lib/platform", () => ({
 const {
   minimizeWindow,
   toggleMaximizeWindow,
+  toggleFullscreenWindow,
   closeWindow,
   isWindowMaximized,
   onWindowResized,
@@ -23,6 +24,7 @@ const {
 } = vi.hoisted(() => ({
   minimizeWindow: vi.fn(),
   toggleMaximizeWindow: vi.fn(),
+  toggleFullscreenWindow: vi.fn(),
   closeWindow: vi.fn(),
   isWindowMaximized: vi.fn(),
   onWindowResized: vi.fn(),
@@ -31,6 +33,7 @@ const {
 vi.mock("@/lib/window", () => ({
   minimizeWindow,
   toggleMaximizeWindow,
+  toggleFullscreenWindow,
   closeWindow,
   isWindowMaximized,
   onWindowResized,
@@ -94,6 +97,7 @@ beforeEach(() => {
   platformMock.isWindows = true;
   minimizeWindow.mockReset();
   toggleMaximizeWindow.mockReset();
+  toggleFullscreenWindow.mockReset();
   closeWindow.mockReset();
   isWindowMaximized.mockReset().mockResolvedValue(false);
   onWindowResized.mockReset().mockResolvedValue(() => {});
@@ -152,6 +156,13 @@ describe("TitleBar", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Minimize/ }));
     expect(minimizeWindow).toHaveBeenCalledOnce();
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("opens the Window menu and toggles fullscreen", () => {
+    render(<TitleBar />);
+    fireEvent.click(screen.getByRole("button", { name: "Window" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Toggle Full Screen/ }));
+    expect(toggleFullscreenWindow).toHaveBeenCalledOnce();
   });
 
   it("clicking the open menu button toggles it shut", () => {
