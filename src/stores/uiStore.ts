@@ -67,6 +67,11 @@ interface UiState {
   sidebarOrder: SidebarView[];
   sidebarVisible: boolean;
   settingsOpen: boolean;
+  /** Which settings section to land on when the modal opens (e.g. "about",
+   *  "shortcuts"), or null to open on the default section. Set by
+   *  `openSettings` from the menu bar / File > Settings; consumed by the
+   *  settings modal to pre-select its tab. */
+  settingsSection: string | null;
   /** First-run setup wizard visibility. Opened automatically on first launch and
    *  re-openable from the File menu or the Settings About tab. */
   setupWizardOpen: boolean;
@@ -86,6 +91,8 @@ interface UiState {
   reorderSidebar: (from: number, to: number) => void;
   toggleSidebar: () => void;
   setSettingsOpen: (open: boolean) => void;
+  /** Open the settings modal, optionally jumping straight to a section. */
+  openSettings: (section?: string) => void;
   setSetupWizardOpen: (open: boolean) => void;
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
@@ -105,6 +112,7 @@ export const useUiStore = create<UiState>((set) => ({
   sidebarOrder: loadSidebarOrder(),
   sidebarVisible: true,
   settingsOpen: false,
+  settingsSection: null,
   setupWizardOpen: false,
   terminalOpen: true,
   fileFinderOpen: false,
@@ -127,6 +135,7 @@ export const useUiStore = create<UiState>((set) => ({
 
   toggleSidebar: () => set((state) => ({ sidebarVisible: !state.sidebarVisible })),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  openSettings: (section) => set({ settingsOpen: true, settingsSection: section ?? null }),
   setSetupWizardOpen: (setupWizardOpen) => set({ setupWizardOpen }),
   setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
   toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),

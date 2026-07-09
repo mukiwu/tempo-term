@@ -439,6 +439,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     return (
                       <EditorTabContent
                         path={editorPath}
+                        leafId={pane.id}
                         onOpenWebPreview={() =>
                           openHtmlPreview(tab.id, pane.id, editorPath)
                         }

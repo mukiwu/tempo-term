@@ -13,6 +13,7 @@ import { useChatStore } from "@/modules/ai/store/chatStore";
 import { buildCompletionMessages, cleanCompletion } from "@/modules/ai/lib/completion";
 import { externalChangeAction, manualReloadAction, shouldReloadFromDisk } from "./lib/reload";
 import { onEditorFileChanged } from "./lib/editorWatch";
+import { registerEditorSaver, unregisterEditorSaver } from "./lib/editorBus";
 import { fsReadFile, fsWriteFile } from "@/modules/explorer/lib/fsBridge";
 import { MarkdownView } from "@/components/MarkdownView";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -46,9 +47,11 @@ async function requestCompletion(
 export function EditorTabContent({
   path,
   onOpenWebPreview,
+  leafId,
 }: {
   path: string;
   onOpenWebPreview?: () => void;
+  leafId: string;
 }) {
   const { t } = useTranslation("editor");
   const setBaseline = useEditorStore((s) => s.setBaseline);
@@ -143,6 +146,14 @@ export function EditorTabContent({
       // a toast surface comes later
     }
   }
+
+  // Let the File menu's Save action (and its Cmd/Ctrl+S accelerator) reach
+  // this pane without threading a save callback through the pane tree.
+  useEffect(() => {
+    registerEditorSaver(leafId, () => void save());
+    return () => unregisterEditorSaver(leafId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leafId]);
 
   // Re-read the file from disk into the buffer (content + baseline → clean), so
   // external edits (e.g. an AI agent editing the file) show up without closing

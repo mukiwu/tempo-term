@@ -1,6 +1,7 @@
 import { useTabsStore } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { formatPathsForTerminal } from "./terminalClipboard";
+import { findPaneContent } from "./terminalLayout";
 
 type Writer = (text: string) => void;
 type Reader = () => string;
@@ -10,6 +11,47 @@ const writers = new Map<string, Writer>();
 const readers = new Map<string, Reader>();
 const pathDropHandlers = new Map<string, PathDropHandler>();
 const pending = new Map<string, string[]>();
+
+/** Editing operations a terminal pane exposes to the Edit menu / menu bar. */
+export interface TerminalOps {
+  getSelection: () => string;
+  selectAll: () => void;
+  clear: () => void;
+  openSearch: () => void;
+}
+
+const opsRegistry = new Map<string, TerminalOps>();
+
+/** A terminal pane registers its editing operations, keyed by its leaf id. */
+export function registerTerminalOps(leafId: string, ops: TerminalOps): void {
+  opsRegistry.set(leafId, ops);
+}
+
+export function unregisterTerminalOps(leafId: string): void {
+  opsRegistry.delete(leafId);
+}
+
+/**
+ * Ops for the terminal pane the user is actually focused on right now: the
+ * active tab's focused leaf, only when that leaf's own content is a terminal.
+ * Deliberately does NOT reuse resolveActiveTerminal's "fall back to some
+ * other terminal" behavior below — that fallback is right for command-running
+ * (there is always somewhere sensible to run a command), but wrong here: the
+ * Edit menu's copy/select-all/clear/find-in-terminal must only ever touch the
+ * terminal the user is looking at, never silently target a different tab's.
+ */
+export function focusedTerminalOps(): TerminalOps | null {
+  const state = useTabsStore.getState();
+  const tab = state.tabs.find((t) => t.id === state.activeId);
+  if (!tab) {
+    return null;
+  }
+  const content = findPaneContent(tab.paneTree, tab.activeLeafId);
+  if (!content || content.kind !== "terminal") {
+    return null;
+  }
+  return opsRegistry.get(tab.activeLeafId) ?? null;
+}
 
 /** A terminal pane registers how to write to its shell, keyed by its leaf id. */
 export function registerTerminal(leafId: string, write: Writer): void {

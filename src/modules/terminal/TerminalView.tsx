@@ -28,9 +28,11 @@ import {
 } from "./lib/terminalHistory";
 import {
   registerTerminal,
+  registerTerminalOps,
   registerTerminalPathDrop,
   registerTerminalReader,
   unregisterTerminal,
+  unregisterTerminalOps,
   unregisterTerminalPathDrop,
   unregisterTerminalReader,
 } from "./lib/terminalBus";
@@ -482,6 +484,19 @@ export function TerminalView({
     };
     document.addEventListener("paste", onPasteCapture, true);
 
+    // Open the in-terminal search bar, refocusing it when it is already open
+    // (just unfocused) so the trigger is never a no-op. Shared by the Cmd/Ctrl+F
+    // keydown below and the terminal ops registered for the Edit menu's
+    // "Find in Terminal" action.
+    function openSearchBox() {
+      setSearchOpen(true);
+      const input = containerEl.querySelector("input");
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }
+
     // Drop keydown events that belong to an active IME composition so the
     // composed text is only delivered once, through xterm's compositionend
     // path. Chromium reports keyCode 229 for keys pressed during composition,
@@ -509,14 +524,7 @@ export function TerminalView({
           : event.ctrlKey && event.shiftKey && !event.metaKey && !event.altKey;
         if (isF && findCombo) {
           event.preventDefault();
-          setSearchOpen(true);
-          // If the bar is already open (just unfocused), refocus and select it
-          // so the shortcut is never a no-op.
-          const input = containerEl.querySelector("input");
-          if (input) {
-            input.focus();
-            input.select();
-          }
+          openSearchBox();
           return false;
         }
       }
@@ -848,6 +856,12 @@ export function TerminalView({
           // Let the AI panel pull this pane's scrollback as context. Reads the
           // tail so a long session does not serialize thousands of rows.
           registerTerminalReader(leafIdRef.current, () => serializeBufferText(term, 300));
+          registerTerminalOps(leafIdRef.current, {
+            getSelection: () => term.getSelection(),
+            selectAll: () => term.selectAll(),
+            clear: () => term.clear(),
+            openSearch: () => openSearchBox(),
+          });
         }
         // A freshly opened tracking pane drives the explorer to its start dir
         // right away instead of waiting for the next cwd poll. (Lets "open in
@@ -965,6 +979,7 @@ export function TerminalView({
         unregisterTerminal(leafIdRef.current);
         unregisterTerminalPathDrop(leafIdRef.current);
         unregisterTerminalReader(leafIdRef.current);
+        unregisterTerminalOps(leafIdRef.current);
         useSessionStatusStore.getState().clear(leafIdRef.current);
       }
       // Unregister live SSH session on pane close so the connections panel

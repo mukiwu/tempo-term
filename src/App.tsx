@@ -10,7 +10,7 @@ import { UpdateModal } from "@/components/UpdateModal";
 import { UpdateToast } from "@/components/UpdateToast";
 import { NotifyToast } from "@/components/NotifyToast";
 import { TabsArea } from "@/components/TabsArea";
-import { useUiStore } from "@/stores/uiStore";
+import { useUiStore, type SidebarView } from "@/stores/uiStore";
 import { useFontStore, shouldPrefetchFontReport } from "@/stores/fontStore";
 import { useUpdaterStore } from "@/stores/updaterStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -18,16 +18,19 @@ import { useTabsStore, tabHasDirtyEditor } from "@/stores/tabsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
 import { installEditorBufferSync } from "@/modules/editor/lib/syncBuffers";
 import { installEditorWatchSync } from "@/modules/editor/lib/editorWatch";
+import { saveFocusedEditor } from "@/modules/editor/lib/editorBus";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { findPaneContent, leafIds } from "@/modules/terminal/lib/terminalLayout";
-import { getPreviewControls } from "@/modules/preview/lib/previewControls";
+import { focusedTerminalOps } from "@/modules/terminal/lib/terminalBus";
+import { getPreviewControls, type PreviewControls } from "@/modules/preview/lib/previewControls";
+import { menuCopy, menuPaste, menuSelectAll } from "@/lib/editActions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FileFinder } from "@/modules/explorer/FileFinder";
 import { canSearchRoot } from "@/modules/explorer/lib/fsBridge";
 import { applyTheme, getTheme } from "@/themes/themes";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type Event as TauriEvent } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useProgressStore } from "@/modules/claude-progress/lib/progressStore";
 import { useWatchSessions } from "@/modules/claude-progress/lib/useWatchSessions";
@@ -83,22 +86,26 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Controls for the preview pane the user is currently on (active tab's focused
- * leaf), or undefined when that pane isn't a live preview. Lets the ⌘L menu
- * accelerator and ⌘[ / ⌘] shortcuts target the right preview without stealing
- * those keys from editors/terminals.
+ * Controls for the preview pane the user should reach right now: the active
+ * tab's focused leaf when it is itself a preview, otherwise the tab's first
+ * preview pane (a preview can exist in a split without holding focus — e.g.
+ * the user is typing in a sibling terminal/editor pane). undefined when the
+ * active tab has no preview pane at all. Lets the ⌘L menu accelerator, ⌘[ / ⌘]
+ * shortcuts, and the View menu's Back/Forward items reach the right preview
+ * without stealing those keys from editors/terminals.
  */
-function activePreviewControls() {
+function activePreviewControls(): PreviewControls | undefined {
   const state = useTabsStore.getState();
   const tab = state.tabs.find((tt) => tt.id === state.activeId);
   if (!tab) {
     return undefined;
   }
-  const content = findPaneContent(tab.paneTree, tab.activeLeafId);
-  if (!content || content.kind !== "preview") {
-    return undefined;
+  const focused = findPaneContent(tab.paneTree, tab.activeLeafId);
+  if (focused?.kind === "preview") {
+    return getPreviewControls(tab.activeLeafId);
   }
-  return getPreviewControls(tab.activeLeafId);
+  const previewLeaf = computeLayout(tab.paneTree).find((p) => p.content.kind === "preview");
+  return previewLeaf ? getPreviewControls(previewLeaf.id) : undefined;
 }
 
 /**
@@ -108,11 +115,11 @@ function activePreviewControls() {
  * cycle can never leak a duplicate listener. A leaked duplicate is what made one
  * ⌘W close two tabs at once. No-op when there is no Tauri webview (unit tests).
  */
-function listenWebview(event: string, handler: () => void): () => void {
+function listenWebview<T = unknown>(event: string, handler: (event: TauriEvent<T>) => void): () => void {
   let promise: Promise<(() => void) | undefined> | null = null;
   try {
     promise = getCurrentWebview()
-      .listen(event, handler)
+      .listen<T>(event, handler)
       .catch(() => undefined);
   } catch {
     // No Tauri webview available (unit tests / web preview).
@@ -515,6 +522,82 @@ function App() {
     () => listenWebview("menu:rerun-setup", () => setSetupWizardOpen(true)),
     [setSetupWizardOpen],
   );
+
+  // The rest of menuBarMenus.ts's `menu:*` events, each delegating straight to
+  // an existing store action / bus so the menu bar, its keyboard accelerators,
+  // and the Windows custom title-bar menu all drive the exact same behavior.
+  useEffect(() => {
+    const unlistens = [
+      listenWebview("menu:new-tab", () => {
+        useTabsStore.getState().openLauncherTab();
+      }),
+      listenWebview("menu:new-terminal-tab", () => {
+        useTabsStore.getState().newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
+      }),
+      listenWebview("menu:save", () => {
+        saveFocusedEditor();
+      }),
+      listenWebview("menu:open-settings", (event) => {
+        useUiStore.getState().openSettings(typeof event.payload === "string" ? event.payload : undefined);
+      }),
+      listenWebview("menu:copy", () => {
+        void menuCopy();
+      }),
+      listenWebview("menu:paste", () => {
+        void menuPaste();
+      }),
+      listenWebview("menu:select-all", () => {
+        menuSelectAll();
+      }),
+      listenWebview("menu:find-in-terminal", () => {
+        focusedTerminalOps()?.openSearch();
+      }),
+      listenWebview("menu:find-files", () => {
+        useUiStore.getState().openFileFinder();
+      }),
+      listenWebview("menu:toggle-sidebar", () => {
+        useUiStore.getState().toggleSidebar();
+      }),
+      listenWebview("menu:sidebar-panel", (event) => {
+        const view = event.payload as SidebarView;
+        if (useUiStore.getState().sidebarOrder.includes(view)) {
+          useUiStore.getState().selectSidebar(view);
+        }
+      }),
+      listenWebview("menu:preview-back", () => {
+        activePreviewControls()?.back();
+      }),
+      listenWebview("menu:preview-forward", () => {
+        activePreviewControls()?.forward();
+      }),
+      listenWebview("menu:zoom-in", () => {
+        useSettingsStore.getState().zoomIn();
+      }),
+      listenWebview("menu:zoom-out", () => {
+        useSettingsStore.getState().zoomOut();
+      }),
+      listenWebview("menu:zoom-reset", () => {
+        useSettingsStore.getState().resetZoom();
+      }),
+      listenWebview("menu:split-right", () => {
+        useTabsStore.getState().splitActivePane("row");
+      }),
+      listenWebview("menu:split-down", () => {
+        useTabsStore.getState().splitActivePane("col");
+      }),
+      listenWebview("menu:clear-buffer", () => {
+        focusedTerminalOps()?.clear();
+      }),
+      // "Check for Updates" also opens Settings on the About section, where
+      // the update status/progress lives — the same destination as the Help
+      // menu's About item, just with a check kicked off immediately.
+      listenWebview("menu:check-updates", () => {
+        useUiStore.getState().openSettings("about");
+        void useUpdaterStore.getState().checkManually();
+      }),
+    ];
+    return () => unlistens.forEach((off) => off());
+  }, []);
 
   // Auto-open the setup wizard on the very first launch. Gated to the main
   // window: secondary windows use isolated in-memory storage, so their
