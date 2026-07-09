@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
+import { useTabsStore, type Tab } from "@/stores/tabsStore";
+import { leaf } from "@/modules/terminal/lib/terminalLayout";
 
 // IS_WINDOWS is a module-load const; expose it through a getter so each test can
 // flip the platform without re-importing the module.
@@ -40,6 +42,54 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import { TitleBar } from "./TitleBar";
 
+/** A single-pane tab: a lone terminal leaf, so leaf-count-dependent items
+ * (Cycle Pane) are disabled. */
+function makeSingleTerminalTabState() {
+  const paneId = "pane-solo";
+  const tab: Tab = {
+    id: "tab-solo",
+    spaceId: "space-1",
+    title: "Terminal",
+    kind: "terminal",
+    paneTree: leaf(paneId, { kind: "terminal" }),
+    activeLeafId: paneId,
+    paneOrder: [paneId],
+  };
+  return {
+    tabs: [tab],
+    activeId: tab.id,
+    spaces: [{ id: "space-1", name: "Workspace 1" }],
+    activeSpaceId: "space-1",
+  };
+}
+
+/** A two-pane terminal tab, so pane-count and pane-kind disabled predicates
+ * default to enabled for the tests that don't care about disabled state. */
+function makeTwoPaneTerminalTabState() {
+  const paneA = "pane-a";
+  const paneB = "pane-b";
+  const tab: Tab = {
+    id: "tab-two",
+    spaceId: "space-1",
+    title: "Terminal",
+    kind: "terminal",
+    paneTree: {
+      kind: "split",
+      direction: "row",
+      children: [leaf(paneA, { kind: "terminal" }), leaf(paneB, { kind: "terminal" })],
+      sizes: [0.5, 0.5],
+    },
+    activeLeafId: paneA,
+    paneOrder: [paneA, paneB],
+  };
+  return {
+    tabs: [tab],
+    activeId: tab.id,
+    spaces: [{ id: "space-1", name: "Workspace 1" }],
+    activeSpaceId: "space-1",
+  };
+}
+
 beforeEach(() => {
   platformMock.isWindows = true;
   minimizeWindow.mockReset();
@@ -49,6 +99,7 @@ beforeEach(() => {
   onWindowResized.mockReset().mockResolvedValue(() => {});
   emitWindowMenuEvent.mockReset().mockResolvedValue(undefined);
   invoke.mockReset().mockResolvedValue(undefined);
+  useTabsStore.setState(makeTwoPaneTerminalTabState());
 });
 
 describe("TitleBar", () => {
@@ -91,15 +142,15 @@ describe("TitleBar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "File" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Close Tab/ }));
-    expect(emitWindowMenuEvent).toHaveBeenCalledWith("menu:close-tab");
+    expect(emitWindowMenuEvent).toHaveBeenCalledWith("menu:close-tab", undefined);
   });
 
   it("selecting an item closes the menu", () => {
     render(<TitleBar />);
     fireEvent.click(screen.getByRole("button", { name: "Window" }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Close Window/ }));
-    expect(closeWindow).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Minimize/ }));
+    expect(minimizeWindow).toHaveBeenCalledOnce();
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
@@ -110,5 +161,31 @@ describe("TitleBar", () => {
     expect(screen.getByRole("menu")).toBeInTheDocument();
     fireEvent.click(fileButton);
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("renders all 7 top-level menus", () => {
+    render(<TitleBar />);
+    for (const label of ["File", "Edit", "View", "Terminal", "Window", "Help"]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it("greys out disabled items and does not emit on click", () => {
+    // Single pane, terminal focused: Cycle Pane must be disabled
+    useTabsStore.setState(makeSingleTerminalTabState());
+    render(<TitleBar />);
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    const item = screen.getByRole("menuitem", { name: /Cycle Pane/ });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(item);
+    expect(emitWindowMenuEvent).not.toHaveBeenCalled();
+  });
+
+  it("opens the sidebar submenu on hover and emits with the panel payload", () => {
+    render(<TitleBar />);
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Sidebar Panel/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Explorer/ }));
+    expect(emitWindowMenuEvent).toHaveBeenCalledWith("menu:sidebar-panel", "explorer");
   });
 });

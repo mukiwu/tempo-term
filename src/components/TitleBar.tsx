@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
-import { Minus, Square, X } from "lucide-react";
+import { ChevronRight, Minus, Square, X } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import { useOverlayGuard } from "@/lib/overlayGuard";
 import { IS_WINDOWS } from "@/lib/platform";
 import {
   closeWindow,
-  emitWindowMenuEvent,
   isWindowMaximized,
   minimizeWindow,
   onWindowResized,
   toggleMaximizeWindow,
 } from "@/lib/window";
+import {
+  buildMenus,
+  executeMenuAction,
+  getMenuContext,
+  type MenuItemDef,
+} from "@/components/menuBarMenus";
 
 /** Overlapping-squares "restore" glyph; lucide has no direct equivalent. */
 function RestoreIcon({ size = 11 }: { size?: number }) {
@@ -33,38 +37,84 @@ function RestoreIcon({ size = 11 }: { size?: number }) {
   );
 }
 
-interface MenuBarItem {
-  id: string;
-  label: string;
-  /** Shortcut hint shown right-aligned (Windows Ctrl-based). */
-  shortcut?: string;
+/**
+ * One item row inside a dropdown (either a top-level menu's item, or a child of
+ * a submenu). Shared so the submenu flyout renders identically to its parent.
+ */
+function MenuItemRow({
+  item,
+  disabled,
+  shortcutHint,
+  isSubmenuOpen,
+  onSelect,
+  onSubmenuEnter,
+  onSiblingEnter,
+}: {
+  item: MenuItemDef;
+  disabled: boolean;
+  shortcutHint: string | undefined;
+  isSubmenuOpen: boolean;
   onSelect: () => void;
-  /** Group index; a thin divider separates consecutive groups. */
-  group?: number;
-}
-
-interface MenuBarMenu {
-  id: string;
-  label: string;
-  items: MenuBarItem[];
+  onSubmenuEnter?: (rect: DOMRect) => void;
+  onSiblingEnter?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      aria-disabled={disabled || undefined}
+      aria-haspopup={item.submenu ? "menu" : undefined}
+      aria-expanded={item.submenu ? isSubmenuOpen : undefined}
+      onMouseEnter={(e) => {
+        // JS mouse events, not CSS :hover — the native preview webview floats
+        // above all DOM in this app, so a WKWebView pop-up flyout must be driven
+        // by JS state, or hover never registers over it (project WKWebView quirk).
+        if (item.submenu) {
+          onSubmenuEnter?.(e.currentTarget.getBoundingClientRect());
+        } else {
+          onSiblingEnter?.();
+        }
+      }}
+      onClick={onSelect}
+      className={`flex w-full items-center gap-6 px-3 py-1.5 text-left transition-colors ${
+        disabled
+          ? "text-fg-subtle cursor-default"
+          : "text-fg-muted hover:bg-bg hover:text-fg"
+      }`}
+    >
+      <span className="truncate">{t(item.labelKey)}</span>
+      {item.submenu ? (
+        <ChevronRight size={14} className="ml-auto shrink-0 text-fg-subtle" />
+      ) : (
+        shortcutHint && (
+          <span className="ml-auto text-[11px] text-fg-subtle">{shortcutHint}</span>
+        )
+      )}
+    </button>
+  );
 }
 
 /**
- * Text menu bar (File / Window) for the Windows title bar. The native Windows
- * menu bar is gone because the frame is hidden (`decorations(false)`) — and even
- * if shown it is OS-drawn and can't follow the app's theme. This self-drawn menu
- * uses the same CSS tokens as the rest of the UI, so it recolours with the theme.
+ * Text menu bar (File / Edit / View / Terminal / Window / Help) for the custom
+ * title bar. The native menu bar is gone because the frame is hidden
+ * (`decorations(false)`) — and even if shown it is OS-drawn and can't follow the
+ * app's theme. This self-drawn menu uses the same CSS tokens as the rest of the
+ * UI, so it recolours with the theme.
  *
- * Each item runs the exact same action as its macOS menu counterpart in menu.rs:
- * New Window / Close Window act directly (invoke / closeWindow, mirroring the
- * Rust handler's direct calls), while the frontend-driven items fire the same
- * scoped `menu:*` event the Rust side emits, so App.tsx's existing listeners stay
- * the single source of truth for what each action does.
+ * Menu structure and disabled/action logic live in `menuBarMenus.ts`
+ * (data-driven: `buildMenus` + `getMenuContext`). Each item either runs a direct
+ * window/new-window action or fires the same scoped `menu:*` event the macOS
+ * native menu emits, so App.tsx's existing listeners stay the single source of
+ * truth for what each action does.
  */
 function WindowMenuBar() {
   const { t } = useTranslation();
   const [openId, setOpenId] = useState<string | null>(null);
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [submenuId, setSubmenuId] = useState<string | null>(null);
+  const [submenuAnchor, setSubmenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [isMaximized, setIsMaximized] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -72,59 +122,34 @@ function WindowMenuBar() {
   // open or it would cover the dropdown (same guard ContextMenu uses).
   useOverlayGuard(openId !== null);
 
-  const menus: MenuBarMenu[] = [
-    {
-      id: "file",
-      label: t("menuBar.file"),
-      items: [
-        {
-          id: "new-window",
-          label: t("menuBar.newWindow"),
-          shortcut: "Ctrl+N",
-          group: 0,
-          onSelect: () => void invoke("open_new_window").catch(() => {}),
-        },
-        {
-          id: "open-location",
-          label: t("menuBar.openLocation"),
-          shortcut: "Ctrl+L",
-          group: 1,
-          onSelect: () => void emitWindowMenuEvent("menu:preview-open-location"),
-        },
-        {
-          id: "setup-wizard",
-          label: t("menuBar.setupWizard"),
-          group: 2,
-          onSelect: () => void emitWindowMenuEvent("menu:rerun-setup"),
-        },
-        {
-          id: "close-tab",
-          label: t("menuBar.closeTab"),
-          shortcut: "Ctrl+W",
-          group: 3,
-          onSelect: () => void emitWindowMenuEvent("menu:close-tab"),
-        },
-      ],
-    },
-    {
-      id: "window",
-      label: t("menuBar.window"),
-      items: [
-        {
-          id: "cycle-pane",
-          label: t("menuBar.cyclePane"),
-          shortcut: "Ctrl+`",
-          onSelect: () => void emitWindowMenuEvent("menu:focus-next-pane"),
-        },
-        {
-          id: "close-window",
-          label: t("menuBar.closeWindow"),
-          shortcut: "Ctrl+Shift+W",
-          onSelect: () => void closeWindow(),
-        },
-      ],
-    },
-  ];
+  // Tracked independently of the Windows control buttons' own isMaximized state
+  // (TitleBar's, below) so this component works standalone once it's also
+  // rendered on macOS, which has no equivalent control-button state to share.
+  useEffect(() => {
+    const sync = () => {
+      void isWindowMaximized()
+        .then(setIsMaximized)
+        .catch(() => {});
+    };
+    sync();
+    const unlisten = onWindowResized(sync);
+    return () => {
+      void unlisten.then((off) => off()).catch(() => {});
+    };
+  }, []);
+
+  const ctx = getMenuContext(isMaximized);
+  const menus = buildMenus(ctx);
+
+  const shortcutHint = (s?: { mac: string; win: string }) =>
+    s ? (IS_WINDOWS ? s.win : s.mac) : undefined;
+
+  const onItemSelect = (item: MenuItemDef) => {
+    if (item.disabled?.(ctx) || !item.action) return;
+    executeMenuAction(item.action);
+    setOpenId(null);
+    setSubmenuId(null);
+  };
 
   // Close on outside pointer / Escape / resize. The menu-bar buttons count as
   // "inside", so clicking the open button falls through to its own onClick
@@ -137,12 +162,17 @@ function WindowMenuBar() {
         return;
       }
       setOpenId(null);
+      setSubmenuId(null);
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpenId(null);
+      if (event.key === "Escape") {
+        setOpenId(null);
+        setSubmenuId(null);
+      }
     }
     function onResize() {
       setOpenId(null);
+      setSubmenuId(null);
     }
     document.addEventListener("mousedown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
@@ -158,6 +188,7 @@ function WindowMenuBar() {
     const rect = el.getBoundingClientRect();
     setAnchor({ x: rect.left, y: rect.bottom });
     setOpenId(id);
+    setSubmenuId(null);
   }
 
   const activeMenu = menus.find((m) => m.id === openId) ?? null;
@@ -173,6 +204,7 @@ function WindowMenuBar() {
           onClick={(e) => {
             if (openId === menu.id) {
               setOpenId(null);
+              setSubmenuId(null);
             } else {
               openFrom(e.currentTarget, menu.id);
             }
@@ -188,7 +220,7 @@ function WindowMenuBar() {
               : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
           }`}
         >
-          {menu.label}
+          {t(menu.labelKey)}
         </button>
       ))}
       {activeMenu &&
@@ -202,25 +234,42 @@ function WindowMenuBar() {
           >
             {activeMenu.items.map((item, index) => {
               const previous = activeMenu.items[index - 1];
-              const newGroup =
-                previous !== undefined && (previous.group ?? 0) !== (item.group ?? 0);
+              const newGroup = previous !== undefined && previous.group !== item.group;
+              const disabled = item.disabled?.(ctx) ?? false;
+              const isSubmenuOpen = submenuId === item.id;
               return (
-                <div key={item.id}>
+                <div key={item.id} className="relative">
                   {newGroup && <div className="my-1 h-px bg-border" />}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setOpenId(null);
-                      item.onSelect();
+                  <MenuItemRow
+                    item={item}
+                    disabled={disabled}
+                    shortcutHint={shortcutHint(item.shortcut)}
+                    isSubmenuOpen={isSubmenuOpen}
+                    onSelect={() => onItemSelect(item)}
+                    onSubmenuEnter={(rect) => {
+                      setSubmenuAnchor({ x: rect.right, y: rect.top });
+                      setSubmenuId(item.id);
                     }}
-                    className="flex w-full items-center gap-6 px-3 py-1.5 text-left text-fg-muted transition-colors hover:bg-bg hover:text-fg"
-                  >
-                    <span className="truncate">{item.label}</span>
-                    {item.shortcut && (
-                      <span className="ml-auto text-[11px] text-fg-subtle">{item.shortcut}</span>
-                    )}
-                  </button>
+                    onSiblingEnter={() => setSubmenuId(null)}
+                  />
+                  {item.submenu && isSubmenuOpen && submenuAnchor && (
+                    <div
+                      role="menu"
+                      style={{ position: "fixed", left: submenuAnchor.x, top: submenuAnchor.y }}
+                      className="z-[210] min-w-[180px] overflow-hidden rounded-md border border-border-strong bg-bg-elevated py-1 text-[13px] shadow-lg"
+                    >
+                      {item.submenu.map((child) => (
+                        <MenuItemRow
+                          key={child.id}
+                          item={child}
+                          disabled={child.disabled?.(ctx) ?? false}
+                          shortcutHint={shortcutHint(child.shortcut)}
+                          isSubmenuOpen={false}
+                          onSelect={() => onItemSelect(child)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}

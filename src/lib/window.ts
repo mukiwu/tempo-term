@@ -38,15 +38,26 @@ export function isWindowMaximized(): Promise<boolean> {
 }
 
 /**
+ * Toggle the window between fullscreen and its previous windowed state. Backs
+ * the menu bar's Window > Toggle Full Screen item on both platforms.
+ */
+export async function toggleFullscreenWindow(): Promise<void> {
+  const win = getCurrentWindow();
+  const active = await win.isFullscreen();
+  await win.setFullscreen(!active);
+}
+
+/**
  * Fire a `menu:*` event to this window's own webview, mirroring exactly what the
  * native menu does on macOS (Rust `win.emit_to(win.label(), event)` in menu.rs).
  * Used by the Windows custom title-bar menu so a menu-bar click runs the same
  * frontend handler as the macOS menu item and the Ctrl+key shortcut — one source
  * of truth for each action's behaviour. Scoped to this window's label so a click
- * never triggers the action in another open window.
+ * never triggers the action in another open window. `payload` carries extra data
+ * some actions need (e.g. which sidebar panel, which settings section).
  */
-export function emitWindowMenuEvent(event: string): Promise<void> {
-  return emitTo(getCurrentWindow().label, event);
+export function emitWindowMenuEvent(event: string, payload?: unknown): Promise<void> {
+  return emitTo(getCurrentWindow().label, event, payload);
 }
 
 /** Subscribe to window resize events; returns an unlisten function. */
