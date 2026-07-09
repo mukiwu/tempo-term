@@ -359,22 +359,24 @@ function App() {
 
       // On Windows the app's shortcut modifier is Ctrl; `metaKey` is the Windows
       // key, whose system combos (Win+D, Win+E, Win+W, …) must never trigger an
-      // app shortcut. Reject them here so neither the Windows block nor the
-      // shared Ctrl+letter handlers below can misfire on a Win+key press. (macOS
+      // app shortcut. Reject them here so neither the primary-modifier block nor
+      // the shared letter handlers below can misfire on a Win+key press. (macOS
       // uses Cmd = metaKey, so this is Windows-only.)
       if (IS_WINDOWS && e.metaKey) {
         return;
       }
 
-      // On Windows the native menu bar is hidden (the window runs with the frame
-      // off and a custom React title bar — see lib.rs set_decorations(false)), so
-      // the menu accelerators that drive these shortcuts on macOS never fire.
-      // Handle them here in the webview instead. Gated to Windows so macOS keeps
-      // its menu accelerators and never runs both (which would fire twice); on
-      // Windows the Rust side drops these accelerators too (see menu.rs `accel`).
-      // `code` is used so it matches regardless of keyboard layout.
-      if (IS_WINDOWS && e.ctrlKey && !e.altKey) {
-        // Ctrl+W closes the active tab/pane; Shift+Ctrl+W closes the window.
+      // Neither platform's native menu carries these shortcuts anymore: Windows
+      // never had a native menu bar (the frame is hidden in favor of the custom
+      // React title bar), and the macOS menu is now reduced to the system
+      // minimum (App + Edit only — see menu.rs). The webview keydown handler is
+      // the single source of truth for them on both platforms, gated on each
+      // platform's primary modifier (Ctrl on Windows, Cmd elsewhere) so the two
+      // gates never overlap. `code` is used so it matches regardless of keyboard
+      // layout.
+      const primaryMod = IS_WINDOWS ? e.ctrlKey : e.metaKey;
+      if (primaryMod && !e.altKey) {
+        // W closes the active tab/pane; Shift+W closes the window.
         if (e.code === "KeyW") {
           e.preventDefault();
           if (e.shiftKey) {
@@ -384,20 +386,21 @@ function App() {
           }
           return;
         }
-        // Ctrl+` cycles focus through the active tab's panes.
+        // ` cycles focus through the active tab's panes.
         if (e.code === "Backquote" && !e.shiftKey) {
           e.preventDefault();
           useTabsStore.getState().focusNextPane();
           return;
         }
-        // Ctrl+N opens a new window (mirrors File > New Window).
+        // N opens a new window (mirrors File > New Window).
         if (e.code === "KeyN" && !e.shiftKey) {
           e.preventDefault();
           void invoke("open_new_window").catch(() => {});
           return;
         }
-        // Ctrl+L focuses the active preview's address bar. Only acts on a preview
-        // pane, so a focused terminal keeps Ctrl+L (clear screen).
+        // L focuses the active preview's address bar. Only acts on a preview
+        // pane, so a focused terminal keeps the primary-modifier+L shortcut
+        // (clear screen).
         if (e.code === "KeyL" && !e.shiftKey) {
           const controls = activePreviewControls();
           if (controls) {
@@ -419,11 +422,6 @@ function App() {
         }
         return;
       }
-
-      // ⌘` (cycle panes) is intentionally NOT handled here — it is driven by the
-      // "Cycle Pane" menu accelerator (see the listener below), which fires even
-      // when a native preview webview holds focus and would swallow the keydown.
-      // Handling it here too would advance the pane twice per press.
 
       // Zoom the whole UI. `code` is used so it works regardless of layout/Shift:
       // the "=" key (⌘= or ⌘+) zooms in, "-" zooms out, "0" resets to 100%.
@@ -492,26 +490,19 @@ function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [closeActiveTabOrPane]);
 
-  // ⌘W closes the active tab/pane. It is driven solely by the "Close Tab" menu
-  // accelerator, NOT a keydown branch: the native menu fires even when a preview
-  // webview holds focus, and having both a keydown handler and the menu
-  // accelerator respond to one ⌘W press would close two tabs at once. The
-  // backend emits scoped to this window's label, so a ⌘W in one window never
-  // closes a tab in another.
+  // Closes the active tab/pane when "Close Tab" is clicked in the self-drawn
+  // WindowMenuBar (menuBarMenus.ts) — a click, not a keydown, so this never
+  // double-fires with the primary-modifier+W keydown handler above.
+  // `emitWindowMenuEvent` scopes the emit to this window's label, so clicking
+  // Close Tab in one window never closes a tab in another.
   useEffect(
     () => listenWebview("menu:close-tab", () => closeActiveTabOrPane()),
     [closeActiveTabOrPane],
   );
 
-  // ⌘L focuses the active preview pane's address bar. Driven by a menu
-  // accelerator so it works even while the native preview webview holds focus.
-  useEffect(
-    () => listenWebview("menu:preview-open-location", () => activePreviewControls()?.focusAddressBar()),
-    [],
-  );
-
-  // ⌘` cycles focus through the active tab's panes. Menu-accelerator driven for
-  // the same reason as ⌘W / ⌘L above.
+  // Cycles focus through the active tab's panes when "Cycle Pane" is clicked in
+  // the WindowMenuBar's Terminal menu — the keyboard path (primary-modifier+`)
+  // is handled directly in the keydown handler above.
   useEffect(
     () => listenWebview("menu:focus-next-pane", () => useTabsStore.getState().focusNextPane()),
     [],

@@ -107,12 +107,6 @@ beforeEach(() => {
 });
 
 describe("TitleBar", () => {
-  it("renders nothing on non-Windows platforms", () => {
-    platformMock.isWindows = false;
-    const { container } = render(<TitleBar />);
-    expect(container).toBeEmptyDOMElement();
-  });
-
   it("renders minimize, maximize and close controls on Windows", () => {
     render(<TitleBar />);
     expect(screen.getByLabelText("Minimize")).toBeInTheDocument();
@@ -198,5 +192,23 @@ describe("TitleBar", () => {
     fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Sidebar Panel/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Explorer/ }));
     expect(emitWindowMenuEvent).toHaveBeenCalledWith("menu:sidebar-panel", "explorer");
+  });
+});
+
+describe("on macOS", () => {
+  beforeEach(() => {
+    platformMock.isWindows = false;
+  });
+
+  it("renders the menu bar without window control buttons", () => {
+    render(<TitleBar />);
+    expect(screen.getByRole("button", { name: "File" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Minimize")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Close")).not.toBeInTheDocument();
+  });
+
+  it("reserves the traffic-light inset", () => {
+    render(<TitleBar />);
+    expect(screen.getByTestId("traffic-light-inset")).toBeInTheDocument();
   });
 });

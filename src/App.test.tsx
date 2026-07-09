@@ -8,9 +8,10 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { leaf, splitLeaf, type LayoutNode } from "@/modules/terminal/lib/terminalLayout";
 
-// ⌘W is driven by the "Close Tab" menu accelerator, which the backend delivers
-// as a `menu:close-tab` event to this webview's scoped listener. Capture that
-// handler so tests can fire ⌘W the way the real app does.
+// "Close Tab" clicked in the WindowMenuBar's File menu delivers a
+// `menu:close-tab` event to this webview's scoped listener. Capture that
+// handler so tests can fire the menu-driven path independently of the
+// keyboard-driven ⌘W handled directly in App.tsx's keydown handler.
 const menuBridge = vi.hoisted(() => ({ closeTab: null as null | (() => void) }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
@@ -23,6 +24,12 @@ vi.mock("@tauri-apps/api/webview", () => ({
     },
   }),
 }));
+
+// TitleBar now renders on every platform (not just Windows — see Task 3), and
+// its WindowMenuBar tracks maximize state via a real Tauri window call that
+// jsdom has no backend for. These tests exercise App-level behavior, not the
+// title bar, so stub it out (same stub App.windows.test.tsx uses).
+vi.mock("@/components/TitleBar", () => ({ TitleBar: () => null }));
 
 describe("App shell", () => {
   beforeEach(() => {
@@ -112,8 +119,11 @@ describe("App shell", () => {
     expect(tab?.paneTree).toEqual(leaf("right-leaf", { kind: "launcher" }));
   });
 
-  it("closes only one pane per Cmd+W press (no double-close)", () => {
-    // Three stacked launcher panes; ⌘W must peel exactly one, not cascade.
+  it("closes exactly one pane per trigger, keydown and menu-click alike (no double-close)", () => {
+    // Three stacked launcher panes; each ⌘W trigger must peel exactly one, not
+    // cascade. The keyboard press (App.tsx keydown) and the WindowMenuBar's
+    // "Close Tab" click (menuBridge) are two independent user gestures — see
+    // Task 3 — so each is fired once here and must close exactly one pane.
     const twoPanes = splitLeaf(leaf("p1", { kind: "launcher" }), "p1", "row", "p2", {
       kind: "launcher",
     });
@@ -139,16 +149,16 @@ describe("App shell", () => {
     const paneCount = (tree: LayoutNode): number =>
       tree.kind === "split" ? paneCount(tree.children[0]) + paneCount(tree.children[1]) : 1;
 
-    // A single keydown of ⌘W must not close a pane at all: ⌘W lives on the menu
-    // accelerator, so a stray keydown handler responding too would double-close.
+    // A single keydown of ⌘W closes exactly one pane, leaving two.
     fireEvent.keyDown(window, { code: "KeyW", key: "w", metaKey: true });
     let tab = useTabsStore.getState().tabs.find((t) => t.id === "a");
-    expect(paneCount(tab!.paneTree)).toBe(3);
+    expect(paneCount(tab!.paneTree)).toBe(2);
 
-    // One menu-driven ⌘W closes exactly one pane, leaving two.
+    // A separate menu-driven ⌘W (WindowMenuBar's "Close Tab" click) closes one
+    // more, leaving one — not two closed at once.
     act(() => menuBridge.closeTab?.());
     tab = useTabsStore.getState().tabs.find((t) => t.id === "a");
-    expect(paneCount(tab!.paneTree)).toBe(2);
+    expect(paneCount(tab!.paneTree)).toBe(1);
   });
 
   it("selects the Nth sidebar panel with Option+digit", () => {

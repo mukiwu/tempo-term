@@ -26,6 +26,12 @@ vi.mock("@tauri-apps/api/webview", () => ({
 const { check } = vi.hoisted(() => ({ check: vi.fn() }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check }));
 
+// TitleBar now renders on every platform (not just Windows — see Task 3), and
+// its WindowMenuBar tracks maximize state via a real Tauri window call that
+// jsdom has no backend for. These tests exercise App's menu-event wiring, not
+// the title bar, so stub it out (same stub App.windows.test.tsx uses).
+vi.mock("@/components/TitleBar", () => ({ TitleBar: () => null }));
+
 import App from "./App";
 import "./i18n";
 import { useSettingsStore } from "@/stores/settingsStore";

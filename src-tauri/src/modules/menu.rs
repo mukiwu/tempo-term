@@ -1,167 +1,54 @@
-use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem};
 use tauri::window::Color;
-use tauri::{App, AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{App, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
-const NEW_WINDOW_ID: &str = "new-window";
-const CLOSE_TAB_ID: &str = "close-tab";
-const CLOSE_WINDOW_ID: &str = "close-window";
-const OPEN_LOCATION_ID: &str = "preview-open-location";
-/// Emitted to the focused window when ⌘/Ctrl+L is pressed, so the frontend can
-/// focus the address bar of the active preview pane. A menu accelerator is used
-/// because the native preview webview swallows key events before the app webview
-/// can see them.
-const OPEN_LOCATION_EVENT: &str = "menu:preview-open-location";
-const CYCLE_PANE_ID: &str = "cycle-pane";
-/// Emitted to the focused window when ⌘/Ctrl+` is pressed, so the frontend can
-/// move focus to the next pane of the active tab. A menu accelerator is used for
-/// the same reason as Open Location: a focused native preview webview would
-/// otherwise swallow the key before the app webview's handler sees it.
-const CYCLE_PANE_EVENT: &str = "menu:focus-next-pane";
-const RERUN_SETUP_ID: &str = "rerun-setup";
-/// Emitted to the focused window when the user picks "Setup Wizard" from the
-/// File menu, so the frontend re-opens the first-run install guide on demand.
-const RERUN_SETUP_EVENT: &str = "menu:rerun-setup";
-
-/// Accelerator for a custom menu item, gated per platform.
+/// Build the native macOS menu, reduced to the system minimum (App + Edit).
 ///
-/// On macOS these accelerators are what actually fire the shortcut — they work
-/// even while a native preview webview holds keyboard focus (see the per-item
-/// comments below). On Windows the native menu bar does not exist: the main
-/// window runs with the native frame hidden (`set_decorations(false)` in
-/// lib.rs, custom React title bar), so a menu accelerator never fires. There the
-/// frontend handles the same shortcuts in its webview keydown handler instead
-/// (see the `IS_WINDOWS` block in App.tsx). Returning `None` on Windows keeps the
-/// menu items but strips their accelerators, so a shortcut can never fire twice.
-#[cfg(not(target_os = "windows"))]
-fn accel(shortcut: &str) -> Option<&str> {
-    Some(shortcut)
-}
-#[cfg(target_os = "windows")]
-fn accel(_shortcut: &str) -> Option<&str> {
-    None
-}
-
-/// Build the menu (Tauri's default plus custom items and a Cmd+W rebind), set it
-/// as the app menu, and wire the menu-event handler.
+/// Every custom item that used to live here (New Window, Close Tab, Close
+/// Window, Open Location, Cycle Pane, Setup Wizard) and its accelerator moved
+/// into the frontend: the self-drawn `WindowMenuBar` (see
+/// `src/components/menuBarMenus.ts`) now renders on both platforms, and
+/// `App.tsx`'s webview keydown handler drives the platform-primary-modifier
+/// shortcuts directly. Windows never had a native menu (the frame is hidden in
+/// favor of the custom React title bar); macOS still needs *a* native menu
+/// because the system requires one to exist for services / hide / quit, so a
+/// minimal App menu is kept, plus an Edit menu so Cmd+C/V/X/A keep routing
+/// through the system into whichever webview holds focus.
 pub fn init(app: &mut App) -> tauri::Result<()> {
-    // Owned handle so the menu-building borrows do not tangle with the later
-    // app.set_menu / app.on_menu_event calls.
-    let handle = app.handle().clone();
-    let menu = Menu::default(&handle)?;
-    let new_window = MenuItem::with_id(
-        &handle,
-        NEW_WINDOW_ID,
-        "New Window",
-        true,
-        accel("CmdOrCtrl+N"),
-    )?;
-    // Cmd+W must peel the active tab, not destroy the window. Tauri's default
-    // menu bundles a native "Close Window" (bound to the OS's standard Cmd+W) as
-    // the LAST item of BOTH the File and Window submenus; either one closes the
-    // real window at the runtime level before the frontend can react, and since
-    // this app is usually a single window that quits the whole app. Both are
-    // removed so Cmd+W is free for our custom "Close Tab"; closing the actual
-    // window moves to Shift+Cmd+W.
-    //
-    // Removal matches by POSITION, not text or id: predefined items are
-    // OS-localized (e.g. "Fermer la fenêtre") so a text match fails on non-English
-    // systems, and their MenuId is a random per-instance counter (per muda's
-    // source), so an id match fails too. The last-item position was confirmed
-    // empirically for this tauri/muda version.
-    //
-    // Cmd+W / Cmd+` / Cmd+L are driven by menu accelerators (not webview keydown)
-    // so they still fire when a native preview webview holds keyboard focus and
-    // would otherwise swallow the key. Each emits an event to the focused window;
-    // the frontend listens scoped to its own label.
-    let close_tab =
-        MenuItem::with_id(&handle, CLOSE_TAB_ID, "Close Tab", true, accel("CmdOrCtrl+W"))?;
-    let close_window = MenuItem::with_id(
-        &handle,
-        CLOSE_WINDOW_ID,
-        "Close Window",
-        true,
-        accel("Shift+CmdOrCtrl+W"),
-    )?;
-    let open_location = MenuItem::with_id(
-        &handle,
-        OPEN_LOCATION_ID,
-        "Open Location",
-        true,
-        accel("CmdOrCtrl+L"),
-    )?;
-    let cycle_pane =
-        MenuItem::with_id(&handle, CYCLE_PANE_ID, "Cycle Pane", true, accel("CmdOrCtrl+`"))?;
-    let rerun_setup = MenuItem::with_id(&handle, RERUN_SETUP_ID, "Setup Wizard", true, None::<&str>)?;
-    let mut inserted = false;
-    for item in menu.items()? {
-        let MenuItemKind::Submenu(submenu) = item else {
-            continue;
-        };
-        let text = submenu.text()?;
-        // Strip the trailing native "Close Window" from File and Window.
-        if text == "File" || text == "Window" {
-            let items = submenu.items()?;
-            if matches!(items.last(), Some(MenuItemKind::Predefined(_))) {
-                submenu.remove_at(items.len() - 1)?;
-            }
-        }
-        match text.as_str() {
-            "File" => {
-                submenu.insert(&new_window, 0)?;
-                submenu.insert(&PredefinedMenuItem::separator(&handle)?, 1)?;
-                submenu.append(&open_location)?;
-                submenu.append(&PredefinedMenuItem::separator(&handle)?)?;
-                submenu.append(&rerun_setup)?;
-                submenu.append(&PredefinedMenuItem::separator(&handle)?)?;
-                submenu.append(&close_tab)?;
-                inserted = true;
-            }
-            "Window" => {
-                submenu.append(&cycle_pane)?;
-                submenu.append(&close_window)?;
-            }
-            _ => {}
-        }
+    // Windows renders the in-window menu bar; no native menu at all.
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::menu::{AboutMetadata, MenuBuilder, SubmenuBuilder};
+        let handle = app.handle();
+
+        // App menu: macOS requires it; keep only system-provided items.
+        let app_menu = SubmenuBuilder::new(handle, "TempoTerm")
+            .about(Some(AboutMetadata::default()))
+            .separator()
+            .services()
+            .separator()
+            .hide()
+            .hide_others()
+            .show_all()
+            .separator()
+            .quit()
+            .build()?;
+
+        // Edit menu: keeps Cmd+C/V/X/A routed by the system into the webview.
+        let edit_menu = SubmenuBuilder::new(handle, "Edit")
+            .undo()
+            .redo()
+            .separator()
+            .cut()
+            .copy()
+            .paste()
+            .select_all()
+            .build()?;
+
+        let menu = MenuBuilder::new(handle)
+            .items(&[&app_menu, &edit_menu])
+            .build()?;
+        app.set_menu(menu)?;
     }
-    debug_assert!(
-        inserted,
-        "menu default no longer has a File submenu to attach custom items to"
-    );
-    app.set_menu(menu)?;
-    app.on_menu_event(|app, event| {
-        if event.id() == NEW_WINDOW_ID {
-            let _ = create_new_window(app);
-        } else if event.id() == CLOSE_TAB_ID {
-            // Target the focused window's label so only its frontend closes a
-            // tab. The webview listens scoped to its own label; a bare emit()
-            // would broadcast and close a tab in every open window.
-            if let Some(win) = app.get_focused_window() {
-                let _ = win.emit_to(win.label(), "menu:close-tab", ());
-            }
-        } else if event.id() == CLOSE_WINDOW_ID {
-            if let Some(win) = app.get_focused_window() {
-                let _ = win.close();
-            }
-        } else if event.id() == OPEN_LOCATION_ID {
-            // Target the focused window's label so only its frontend focuses the
-            // preview address bar; a bare emit() would broadcast to every window.
-            if let Some(win) = app.get_focused_window() {
-                let _ = win.emit_to(win.label(), OPEN_LOCATION_EVENT, ());
-            }
-        } else if event.id() == CYCLE_PANE_ID {
-            // Target the focused window's label so only its frontend advances the
-            // active pane; a bare emit() would cycle panes in every window.
-            if let Some(win) = app.get_focused_window() {
-                let _ = win.emit_to(win.label(), CYCLE_PANE_EVENT, ());
-            }
-        } else if event.id() == RERUN_SETUP_ID {
-            // Target the focused window's label so only its frontend re-opens the
-            // setup wizard; a bare emit() would open it in every window.
-            if let Some(win) = app.get_focused_window() {
-                let _ = win.emit_to(win.label(), RERUN_SETUP_EVENT, ());
-            }
-        }
-    });
     Ok(())
 }
 
