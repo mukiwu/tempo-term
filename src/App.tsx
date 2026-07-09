@@ -39,7 +39,9 @@ import { registerSecondaryWindowCleanup } from "@/lib/windowLifecycle";
 import { SshPromptDialog } from "@/modules/ssh/SshPromptDialog";
 import { SetupWizard } from "@/modules/setup/SetupWizard";
 import { detectTools, isToolReady } from "@/modules/setup/lib/setupTools";
-import { isMainWindow } from "@/lib/window";
+import { isMainWindow, closeWindow } from "@/lib/window";
+import { IS_WINDOWS } from "@/lib/platform";
+import { invoke } from "@tauri-apps/api/core";
 import { useForwardStatusListener } from "@/modules/ssh/lib/useForwardStatus";
 import { sftpSessionStore } from "@/modules/ssh/lib/sftpSessionStore";
 import { enforceLogRetention } from "@/modules/logs/lib/sessionLog";
@@ -348,6 +350,48 @@ function App() {
         return;
       }
 
+      // On Windows the native menu bar is hidden (the window runs with the frame
+      // off and a custom React title bar — see lib.rs set_decorations(false)), so
+      // the menu accelerators that drive these shortcuts on macOS never fire.
+      // Handle them here in the webview instead. Gated to Windows so macOS keeps
+      // its menu accelerators and never runs both (which would fire twice); on
+      // Windows the Rust side drops these accelerators too (see menu.rs `accel`).
+      // `code` is used so it matches regardless of keyboard layout.
+      if (IS_WINDOWS && !e.altKey) {
+        // Ctrl+W closes the active tab/pane; Shift+Ctrl+W closes the window.
+        if (e.code === "KeyW") {
+          e.preventDefault();
+          if (e.shiftKey) {
+            void closeWindow();
+          } else {
+            closeActiveTabOrPane();
+          }
+          return;
+        }
+        // Ctrl+` cycles focus through the active tab's panes.
+        if (e.code === "Backquote" && !e.shiftKey) {
+          e.preventDefault();
+          useTabsStore.getState().focusNextPane();
+          return;
+        }
+        // Ctrl+N opens a new window (mirrors File > New Window).
+        if (e.code === "KeyN" && !e.shiftKey) {
+          e.preventDefault();
+          void invoke("open_new_window").catch(() => {});
+          return;
+        }
+        // Ctrl+L focuses the active preview's address bar. Only acts on a preview
+        // pane, so a focused terminal keeps Ctrl+L (clear screen).
+        if (e.code === "KeyL" && !e.shiftKey) {
+          const controls = activePreviewControls();
+          if (controls) {
+            e.preventDefault();
+            controls.focusAddressBar();
+          }
+          return;
+        }
+      }
+
       // ⌘1…⌘9 switch to the Nth tab of the active space (matching the tab bar).
       if (digit !== null && !e.shiftKey && !e.altKey && !editable) {
         const state = useTabsStore.getState();
@@ -430,7 +474,7 @@ function App() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [closeActiveTabOrPane]);
 
   // ⌘W closes the active tab/pane. It is driven solely by the "Close Tab" menu
   // accelerator, NOT a keydown branch: the native menu fires even when a preview

@@ -22,6 +22,25 @@ const RERUN_SETUP_ID: &str = "rerun-setup";
 /// File menu, so the frontend re-opens the first-run install guide on demand.
 const RERUN_SETUP_EVENT: &str = "menu:rerun-setup";
 
+/// Accelerator for a custom menu item, gated per platform.
+///
+/// On macOS these accelerators are what actually fire the shortcut — they work
+/// even while a native preview webview holds keyboard focus (see the per-item
+/// comments below). On Windows the native menu bar does not exist: the main
+/// window runs with the native frame hidden (`set_decorations(false)` in
+/// lib.rs, custom React title bar), so a menu accelerator never fires. There the
+/// frontend handles the same shortcuts in its webview keydown handler instead
+/// (see the `IS_WINDOWS` block in App.tsx). Returning `None` on Windows keeps the
+/// menu items but strips their accelerators, so a shortcut can never fire twice.
+#[cfg(not(target_os = "windows"))]
+fn accel(shortcut: &str) -> Option<&str> {
+    Some(shortcut)
+}
+#[cfg(target_os = "windows")]
+fn accel(_shortcut: &str) -> Option<&str> {
+    None
+}
+
 /// Build the menu (Tauri's default plus custom items and a Cmd+W rebind), set it
 /// as the app menu, and wire the menu-event handler.
 pub fn init(app: &mut App) -> tauri::Result<()> {
@@ -34,7 +53,7 @@ pub fn init(app: &mut App) -> tauri::Result<()> {
         NEW_WINDOW_ID,
         "New Window",
         true,
-        Some("CmdOrCtrl+N"),
+        accel("CmdOrCtrl+N"),
     )?;
     // Cmd+W must peel the active tab, not destroy the window. Tauri's default
     // menu bundles a native "Close Window" (bound to the OS's standard Cmd+W) as
@@ -55,23 +74,23 @@ pub fn init(app: &mut App) -> tauri::Result<()> {
     // would otherwise swallow the key. Each emits an event to the focused window;
     // the frontend listens scoped to its own label.
     let close_tab =
-        MenuItem::with_id(&handle, CLOSE_TAB_ID, "Close Tab", true, Some("CmdOrCtrl+W"))?;
+        MenuItem::with_id(&handle, CLOSE_TAB_ID, "Close Tab", true, accel("CmdOrCtrl+W"))?;
     let close_window = MenuItem::with_id(
         &handle,
         CLOSE_WINDOW_ID,
         "Close Window",
         true,
-        Some("Shift+CmdOrCtrl+W"),
+        accel("Shift+CmdOrCtrl+W"),
     )?;
     let open_location = MenuItem::with_id(
         &handle,
         OPEN_LOCATION_ID,
         "Open Location",
         true,
-        Some("CmdOrCtrl+L"),
+        accel("CmdOrCtrl+L"),
     )?;
     let cycle_pane =
-        MenuItem::with_id(&handle, CYCLE_PANE_ID, "Cycle Pane", true, Some("CmdOrCtrl+`"))?;
+        MenuItem::with_id(&handle, CYCLE_PANE_ID, "Cycle Pane", true, accel("CmdOrCtrl+`"))?;
     let rerun_setup = MenuItem::with_id(&handle, RERUN_SETUP_ID, "Setup Wizard", true, None::<&str>)?;
     let mut inserted = false;
     for item in menu.items()? {

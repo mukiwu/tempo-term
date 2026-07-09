@@ -22,6 +22,65 @@ export interface NavKeyEvent {
   shiftKey: boolean;
 }
 
+/** Physical-key event shape used to detect app-level shortcuts (uses `code`). */
+export interface AppShortcutEvent {
+  code: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+}
+
+/**
+ * True for the global shortcuts the app handles at the window level, which the
+ * terminal must let bubble to the window handler instead of typing into the
+ * shell. `code` is used over `key` so it still matches when a modifier rewrites
+ * the character (macOS ⌥1 yields "¡").
+ *
+ * Cross-platform: ⌘/Ctrl+1-9 switch tab, ⌥1-9 switch sidebar, ⌘/Ctrl +/-/0 zoom,
+ * ⌘/Ctrl+` cycle pane.
+ *
+ * Windows-only: the app's other shortcuts use Ctrl as their modifier (macOS uses
+ * Cmd). Ctrl+<letter> combos are ALSO terminal control codes — Ctrl+T sends ^T,
+ * Ctrl+D sends EOF, Ctrl+W deletes a word — so when a terminal pane is focused
+ * xterm would send them to the shell and the app shortcut would never fire.
+ * Matching the Shortcuts settings list, let the app win here so the shortcuts
+ * behave the same whether or not a terminal has focus. macOS routes these
+ * through Cmd, which never collides with the terminal, so this branch is gated
+ * to Windows. Ctrl+L is deliberately excluded so a focused terminal keeps its
+ * clear-screen (Open Location applies only to a preview pane, never a terminal).
+ */
+export function isAppShortcut(event: AppShortcutEvent, isWindows: boolean): boolean {
+  const cmd = event.metaKey || event.ctrlKey;
+  if (/^(?:Digit|Numpad)[1-9]$/.test(event.code)) {
+    const switchTab = cmd && !event.shiftKey && !event.altKey;
+    const switchSidebar = event.altKey && !event.metaKey && !event.ctrlKey;
+    return switchTab || switchSidebar;
+  }
+  if (/^(?:Equal|Minus|Digit0|NumpadAdd|NumpadSubtract|Numpad0|Backquote)$/.test(event.code)) {
+    return cmd && !event.altKey;
+  }
+  if (isWindows && cmd && !event.altKey) {
+    switch (event.code) {
+      // Close Tab / Close Window, New Tab / New Terminal Tab, Split Right / Split
+      // Down — the Shift variants are valid app shortcuts too, so match any Shift.
+      case "KeyW":
+      case "KeyT":
+      case "KeyD":
+        return true;
+      // Find Files, Toggle Sidebar, New Window, Settings — no Shift variant.
+      case "KeyP":
+      case "KeyB":
+      case "KeyN":
+      case "Comma":
+        return !event.shiftKey;
+      default:
+        return false;
+    }
+  }
+  return false;
+}
+
 export function terminalKeySequence(event: NavKeyEvent, isMac: boolean): string | null {
   const { key, ctrlKey, metaKey, altKey, shiftKey } = event;
 

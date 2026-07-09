@@ -78,6 +78,14 @@ fn app_build_info() -> AppBuildInfo {
     }
 }
 
+/// Open a new window, mirroring the File > New Window menu item. On Windows the
+/// native menu bar is hidden, so its Ctrl+N accelerator never fires; the
+/// frontend invokes this command from its keydown handler instead (see App.tsx).
+#[tauri::command]
+fn open_new_window(app: tauri::AppHandle) -> tauri::Result<()> {
+    modules::menu::create_new_window(&app)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -156,6 +164,7 @@ pub fn run() {
             pty_close,
             pty_close_all,
             app_build_info,
+            open_new_window,
             terminal_clipboard_paths,
             terminal_clipboard_image_paths,
             terminal_clipboard_text,

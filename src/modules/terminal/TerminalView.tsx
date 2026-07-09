@@ -16,25 +16,6 @@ function isPtySession(s: PtySession | SshSession): s is PtySession {
   return "cwd" in s;
 }
 
-/**
- * True for the global shortcuts the app handles at the window level (⌘/Ctrl+1-9
- * switch tab, ⌥1-9 switch sidebar, ⌘/Ctrl +/-/0 zoom the UI). `code` is used
- * over `key` so it still matches when a modifier rewrites the character (macOS
- * ⌥1 yields "¡"). The terminal must let these pass through to the window handler
- * rather than typing them into the shell.
- */
-function isAppShortcut(event: KeyboardEvent): boolean {
-  const cmd = event.metaKey || event.ctrlKey;
-  if (/^(?:Digit|Numpad)[1-9]$/.test(event.code)) {
-    const switchTab = cmd && !event.shiftKey && !event.altKey;
-    const switchSidebar = event.altKey && !event.metaKey && !event.ctrlKey;
-    return switchTab || switchSidebar;
-  }
-  if (/^(?:Equal|Minus|Digit0|NumpadAdd|NumpadSubtract|Numpad0|Backquote)$/.test(event.code)) {
-    return cmd && !event.altKey;
-  }
-  return false;
-}
 import { useConnectionsStore } from "@/stores/connectionsStore";
 import {
   deleteTerminalHistory,
@@ -75,7 +56,7 @@ import {
 import { actionsFor, findActionLinks, type TerminalAction } from "./lib/actionLinks";
 import { ActionCard } from "./ActionCard";
 import { buildCellPositions, gatherLogicalLine } from "./lib/cellPositions";
-import { terminalKeySequence } from "./lib/terminalKeymap";
+import { terminalKeySequence, isAppShortcut } from "./lib/terminalKeymap";
 import { shouldCdToRoot } from "./lib/cwdSync";
 import { parseOsc7Cwd, parseOsc7RemotePath } from "./lib/osc7";
 import { remoteCwdStore } from "@/modules/ssh/lib/remoteCwdStore";
@@ -514,7 +495,7 @@ export function TerminalView({
       // ⌘/Ctrl +/-/0 zoom) must not be typed into the shell. Returning false
       // lets them bubble to the window handler instead; preventDefault stops
       // xterm's hidden textarea from emitting the character (e.g. macOS ⌥-symbols).
-      if (event.type === "keydown" && isAppShortcut(event)) {
+      if (event.type === "keydown" && isAppShortcut(event, IS_WINDOWS)) {
         event.preventDefault();
         return false;
       }
@@ -572,6 +553,25 @@ export function TerminalView({
             void handleTerminalPaste("cmd");
             return false;
           }
+        }
+        // Clipboard on Windows: Ctrl+C copies the current selection (like Windows
+        // Terminal / VS Code), then clears it so a second Ctrl+C interrupts. With
+        // NO selection it must fall through untouched so xterm sends 0x03 (SIGINT)
+        // to the shell — Ctrl+C is the interrupt key, so it can't unconditionally
+        // mean copy. (Ctrl+V paste is handled by the capture-phase interceptor.)
+        if (
+          IS_WINDOWS &&
+          event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          !event.shiftKey &&
+          (event.code === "KeyC" || event.key.toLowerCase() === "c") &&
+          term.hasSelection()
+        ) {
+          void navigator.clipboard.writeText(term.getSelection());
+          term.clearSelection();
+          event.preventDefault();
+          return false;
         }
       }
       return true;
