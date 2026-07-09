@@ -20,19 +20,115 @@ const TITLE_EVENT: &str = "preview://title";
 /// load). The frontend filters by `label` and follows the url in the address bar.
 const NAVIGATED_EVENT: &str = "preview://navigated";
 
-// Injected into every previewed page so ⌘/Ctrl + [ and ] drive the page's own
-// history even while the native webview — not the app — holds keyboard focus.
+// Injected into every previewed page so the app's keyboard shortcuts survive
+// even while the native webview — not the app — holds OS keyboard focus.
 // Uses capture so it beats a page's own key handlers.
-const HISTORY_KEY_SCRIPT: &str = r#"
+//
+// [ and ] drive the page's own history directly (`window.history`), no bridge
+// needed. W, L and ` need the *app* to react (close a tab, focus the address
+// bar, cycle panes), and this webview has no Tauri IPC capability at all (see
+// `preview_forward_key_action` below for why) — so instead of `invoke`, they
+// navigate to a fake, never-loaded `KEY_ACTION_SCHEME` URL that `on_navigation`
+// below recognizes, dispatches, and always cancels. This is the same
+// "intercept a scheme, cancel the navigation" trick apps have long used to
+// bridge custom URL schemes (e.g. `mailto:`) out of a webview, just repurposed
+// as a one-way signal instead of a real link.
+const KEY_FORWARD_SCRIPT: &str = r#"
 (function () {
+  function forward(action) {
+    window.location.href = 'tempo-preview-key:' + action;
+  }
   document.addEventListener('keydown', function (e) {
     if ((e.metaKey || e.ctrlKey) && !e.altKey) {
-      if (e.key === '[') { e.preventDefault(); window.history.back(); }
-      else if (e.key === ']') { e.preventDefault(); window.history.forward(); }
+      if (e.key === '[') { e.preventDefault(); window.history.back(); return; }
+      if (e.key === ']') { e.preventDefault(); window.history.forward(); return; }
+      if (e.code === 'KeyW') {
+        e.preventDefault();
+        e.stopPropagation();
+        forward(e.shiftKey ? 'close-window' : 'close-tab');
+        return;
+      }
+      if (e.code === 'KeyL' && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        forward('open-location');
+        return;
+      }
+      if (e.code === 'Backquote' && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        forward('cycle-pane');
+        return;
+      }
     }
   }, true);
 })();
 "#;
+
+/// Scheme used by `KEY_FORWARD_SCRIPT` to signal a whitelisted app-level key
+/// action back to Rust. Never a real navigation target — `on_navigation`
+/// recognizes it, dispatches the action, and always cancels the navigation so
+/// the webview never actually attempts to load it.
+const KEY_ACTION_SCHEME: &str = "tempo-preview-key";
+
+/// The fixed whitelist of UI actions the preview webview may trigger. Nothing
+/// outside this set can be forwarded — see `preview_key_action_from_str`.
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+enum PreviewKeyAction {
+    CloseTab,
+    CloseWindow,
+    OpenLocation,
+    CyclePane,
+}
+
+/// Parse a raw action string against the whitelist. Anything else — typos,
+/// unrelated strings, an attacker trying to widen the surface — is `None` and
+/// silently ignored by the caller.
+fn preview_key_action_from_str(action: &str) -> Option<PreviewKeyAction> {
+    match action {
+        "close-tab" => Some(PreviewKeyAction::CloseTab),
+        "close-window" => Some(PreviewKeyAction::CloseWindow),
+        "open-location" => Some(PreviewKeyAction::OpenLocation),
+        "cycle-pane" => Some(PreviewKeyAction::CyclePane),
+        _ => None,
+    }
+}
+
+/// Recognize a `KEY_ACTION_SCHEME` navigation attempt and resolve the action it
+/// carries. `None` for any other scheme (i.e. every real preview navigation).
+fn parse_preview_key_action(url: &Url) -> Option<PreviewKeyAction> {
+    if url.scheme() != KEY_ACTION_SCHEME {
+        return None;
+    }
+    preview_key_action_from_str(url.path())
+}
+
+/// Forward a whitelisted key action to the window that owns this preview
+/// webview — the window `preview_create` was called from, captured at
+/// creation time in the `on_navigation` closure below. This mirrors the old
+/// native `on_menu_event`'s `get_focused_window()` targeting, except the
+/// target here is the preview's owning window, not whichever window currently
+/// has OS focus: the preview holding keyboard focus already tells us which
+/// window the user means, so there is no ambiguity to resolve, and no need to
+/// broadcast to every window.
+fn forward_preview_key_action(app: &AppHandle, window_label: &str, action: PreviewKeyAction) {
+    match action {
+        PreviewKeyAction::CloseTab => {
+            let _ = app.emit_to(window_label, "menu:close-tab", ());
+        }
+        PreviewKeyAction::OpenLocation => {
+            let _ = app.emit_to(window_label, "menu:preview-open-location", ());
+        }
+        PreviewKeyAction::CyclePane => {
+            let _ = app.emit_to(window_label, "menu:focus-next-pane", ());
+        }
+        PreviewKeyAction::CloseWindow => {
+            if let Some(window) = app.get_window(window_label) {
+                let _ = window.close();
+            }
+        }
+    }
+}
 
 #[derive(Clone, Serialize)]
 struct TitlePayload {
@@ -90,7 +186,7 @@ pub async fn preview_create(
     let nav_win = win_label;
 
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
-        .initialization_script(HISTORY_KEY_SCRIPT)
+        .initialization_script(KEY_FORWARD_SCRIPT)
         .on_document_title_changed(move |_webview, title| {
             let _ = title_app.emit_to(
                 &title_win,
@@ -102,6 +198,16 @@ pub async fn preview_create(
             );
         })
         .on_navigation(move |url| {
+            // KEY_FORWARD_SCRIPT's W/L/` handling signals through a fake
+            // navigation rather than a real one (this webview has no IPC
+            // capability to `invoke` with — see the doc comment on
+            // KEY_FORWARD_SCRIPT). Intercept and cancel it here so it never
+            // actually attempts to load; everything else is a real
+            // navigation and gets observed as before.
+            if let Some(action) = parse_preview_key_action(url) {
+                forward_preview_key_action(&nav_app, &nav_win, action);
+                return false;
+            }
             let _ = nav_app.emit_to(
                 &nav_win,
                 NAVIGATED_EVENT,
@@ -242,5 +348,47 @@ mod tests {
         assert!(parse_preview_url("asset://localhost/x").is_ok());
         assert!(parse_preview_url("file:///etc/passwd").is_err());
         assert!(parse_preview_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn key_action_whitelist_accepts_only_known_actions() {
+        assert_eq!(
+            preview_key_action_from_str("close-tab"),
+            Some(PreviewKeyAction::CloseTab)
+        );
+        assert_eq!(
+            preview_key_action_from_str("close-window"),
+            Some(PreviewKeyAction::CloseWindow)
+        );
+        assert_eq!(
+            preview_key_action_from_str("open-location"),
+            Some(PreviewKeyAction::OpenLocation)
+        );
+        assert_eq!(
+            preview_key_action_from_str("cycle-pane"),
+            Some(PreviewKeyAction::CyclePane)
+        );
+        // Unknown/garbage/attacker-supplied strings are ignored, not errored.
+        assert_eq!(preview_key_action_from_str("close-taboo"), None);
+        assert_eq!(preview_key_action_from_str(""), None);
+        assert_eq!(preview_key_action_from_str("preview_navigate"), None);
+    }
+
+    #[test]
+    fn key_action_url_requires_the_dedicated_scheme() {
+        let action_url = Url::parse("tempo-preview-key:close-tab").unwrap();
+        assert_eq!(
+            parse_preview_key_action(&action_url),
+            Some(PreviewKeyAction::CloseTab)
+        );
+
+        // A real preview navigation (any http(s)/asset url) is never mistaken
+        // for a key action, even if the page path happens to match a
+        // whitelisted action name.
+        let real_nav = Url::parse("https://example.com/close-tab").unwrap();
+        assert_eq!(parse_preview_key_action(&real_nav), None);
+
+        let unknown_action = Url::parse("tempo-preview-key:not-whitelisted").unwrap();
+        assert_eq!(parse_preview_key_action(&unknown_action), None);
     }
 }

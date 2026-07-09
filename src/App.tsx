@@ -586,6 +586,16 @@ function App() {
       listenWebview("menu:preview-forward", () => {
         activePreviewControls()?.forward();
       }),
+      // Forwarded from the native preview webview itself when it holds OS
+      // keyboard focus (see preview.rs's KEY_FORWARD_SCRIPT) — the event
+      // firing at all already proves a preview pane triggered it, so unlike
+      // the in-app Cmd+L keydown handler there's no other pane kind this key
+      // could mean instead. Use the widened activePreviewControls the same
+      // way menu:preview-back does: the store's activeLeafId can lag behind
+      // which pane actually holds native focus.
+      listenWebview("menu:preview-open-location", () => {
+        activePreviewControls()?.focusAddressBar();
+      }),
       listenWebview("menu:zoom-in", () => {
         useSettingsStore.getState().zoomIn();
       }),

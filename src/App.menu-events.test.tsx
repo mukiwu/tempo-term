@@ -296,6 +296,47 @@ describe("App menu event wiring", () => {
     unregister();
   });
 
+  it("menu:preview-open-location reaches the tab's preview pane even when a different pane is focused", async () => {
+    // Cmd+L is forwarded here from the native preview webview itself (it holds
+    // OS keyboard focus, which is why the app's own keydown handler never
+    // sees the key at all — see preview.rs's KEY_FORWARD_SCRIPT). So unlike
+    // the in-app Cmd+L keydown path, there's no ambiguity about "which pane
+    // kind is this key overloaded for" to resolve against the focused leaf:
+    // the event firing at all already proves a preview triggered it. The
+    // store's activeLeafId can still lag OS focus though, so this must use
+    // the same widened activePreviewControls resolver menu:preview-back uses,
+    // not the strict focusedPreviewControls used by in-app keydowns.
+    const paneTree = splitLeaf(
+      leaf("leaf-1", { kind: "launcher" }),
+      "leaf-1",
+      "row",
+      "leaf-2",
+      { kind: "preview", url: "http://localhost/x" },
+    );
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs: [
+        {
+          id: "a",
+          spaceId: "s1",
+          title: "a",
+          kind: "launcher",
+          paneTree,
+          activeLeafId: "leaf-1",
+          paneOrder: ["leaf-1", "leaf-2"],
+        },
+      ],
+      activeId: "a",
+    });
+    const controls = { focusAddressBar: vi.fn(), back: vi.fn(), forward: vi.fn(), reload: vi.fn() };
+    const unregister = registerPreviewControls("leaf-2", controls);
+    render(<App />);
+    await fireMenuEvent("menu:preview-open-location");
+    expect(controls.focusAddressBar).toHaveBeenCalled();
+    unregister();
+  });
+
   it("Cmd+L keydown does not steal from a focused terminal, but menu:preview-back still reaches the preview sibling", async () => {
     // Same split as above, but the focused leaf is a terminal, not a launcher —
     // Ctrl/Cmd+L is the terminal's own "clear screen" shortcut, so the keydown
