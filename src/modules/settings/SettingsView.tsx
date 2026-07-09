@@ -15,6 +15,10 @@ import { AboutSettingsSection } from "./AboutSettingsSection";
 const SECTIONS = ["appearance", "terminal", "ai", "workspace", "shortcuts", "about"] as const;
 type SectionId = typeof SECTIONS[number];
 
+function isSectionId(value: string): value is SectionId {
+  return (SECTIONS as readonly string[]).includes(value);
+}
+
 /**
  * A read-only code snippet painted in the active theme's own colours, so its
  * syntax palette stays visible. Clicking a theme swatch below applies it and
@@ -164,16 +168,23 @@ export function SettingsView() {
   // open or an id that no longer exists.
   const [section, setSection] = useState<SectionId>(() => {
     const requested = useUiStore.getState().settingsSection;
-    return requested && (SECTIONS as readonly string[]).includes(requested)
-      ? (requested as SectionId)
-      : "appearance";
+    return requested && isSectionId(requested) ? requested : "appearance";
   });
 
-  // Clear the requested section once consumed, so a later plain openSettings()
-  // (no section argument) doesn't replay a stale deep-link.
+  // Subscribe to the requested section reactively (not just at mount) so a
+  // deep-link (e.g. Help > Keyboard Shortcuts) still switches the active
+  // section while the modal is already open. Every non-null value is
+  // consumed and cleared immediately after applying it, so a later plain
+  // openSettings() / setSettingsOpen(true) bypass (Cmd+, or the gear icon)
+  // never replays a stale section from an earlier deep-link.
+  const requestedSection = useUiStore((s) => s.settingsSection);
   useEffect(() => {
+    if (requestedSection === null) return;
+    if (isSectionId(requestedSection)) {
+      setSection(requestedSection);
+    }
     useUiStore.setState({ settingsSection: null });
-  }, []);
+  }, [requestedSection]);
 
   return (
     <div className="flex h-full w-full">

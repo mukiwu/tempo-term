@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { SettingsView } from "./SettingsView";
@@ -73,6 +73,60 @@ describe("SettingsView section deep-link", () => {
     expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute(
       "aria-current",
       "true",
+    );
+  });
+
+  it("reacts to a deep-link that arrives while the modal is already mounted", () => {
+    // Modal is already open on the default section (e.g. the user is looking
+    // at Appearance) when a second deep-link comes in, without unmounting.
+    useUiStore.setState({ settingsOpen: true, settingsSection: null });
+    render(<SettingsView />);
+    expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+
+    // e.g. Help > Keyboard Shortcuts clicked while settings are already showing.
+    act(() => {
+      useUiStore.getState().openSettings("shortcuts");
+    });
+
+    expect(screen.getByRole("button", { name: "Shortcuts" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute(
+      "aria-current",
+      "false",
+    );
+  });
+
+  it("consumes and clears a stuck section value instead of replaying it on the next plain open", () => {
+    // Simulate a value left stuck in the store from a prior deep-link that
+    // was never consumed (the bug this regression test guards against).
+    useUiStore.setState({ settingsSection: "shortcuts" });
+    const { unmount } = render(<SettingsView />);
+
+    expect(screen.getByRole("button", { name: "Shortcuts" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(useUiStore.getState().settingsSection).toBeNull();
+
+    unmount();
+
+    // A later bypass open (Cmd+, / gear icon) sets settingsOpen directly with
+    // no section — it must not replay the stale "shortcuts" value.
+    useUiStore.setState({ settingsOpen: true });
+    render(<SettingsView />);
+
+    expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Shortcuts" })).toHaveAttribute(
+      "aria-current",
+      "false",
     );
   });
 });
