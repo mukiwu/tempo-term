@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { buildMenus, type MenuContext } from "./menuBarMenus";
+import { DEFAULT_SIDEBAR_ORDER, type SidebarView } from "@/stores/uiStore";
 
 const baseCtx: MenuContext = {
   paneKind: "terminal",
   leafCount: 1,
   hasPreviewPane: false,
   isMaximized: false,
+  sidebarOrder: DEFAULT_SIDEBAR_ORDER,
 };
 
 describe("buildMenus", () => {
-  it("returns the 7 top-level menus in spec order", () => {
+  it("returns the 6 top-level menus in spec order", () => {
     const menus = buildMenus(baseCtx);
     expect(menus.map((m) => m.id)).toEqual([
       "file", "edit", "view", "terminal", "window", "help",
@@ -18,6 +20,21 @@ describe("buildMenus", () => {
     const view = menus.find((m) => m.id === "view");
     const sidebar = view?.items.find((i) => i.id === "sidebar-panel");
     expect(sidebar?.submenu).toHaveLength(7);
+  });
+
+  it("builds the sidebar submenu from the live, user-reordered sidebarOrder — not the fixed default order", () => {
+    // The user dragged "sessions" to the front in the icon bar; the ⌥N
+    // shortcut hints in menuBarMenus.ts must match, not the shipped default.
+    const reordered: SidebarView[] = [
+      "sessions",
+      ...DEFAULT_SIDEBAR_ORDER.filter((v) => v !== "sessions"),
+    ];
+    const ctx: MenuContext = { ...baseCtx, sidebarOrder: reordered };
+    const menus = buildMenus(ctx);
+    const view = menus.find((m) => m.id === "view");
+    const sidebar = view?.items.find((i) => i.id === "sidebar-panel");
+    expect(sidebar?.submenu?.map((i) => i.id)).toEqual(reordered.map((v) => `sidebar-${v}`));
+    expect(sidebar?.submenu?.[0]?.shortcut).toEqual({ mac: "⌥1", win: "Alt+1" });
   });
 
   it("disables save unless the focused pane is an editor", () => {

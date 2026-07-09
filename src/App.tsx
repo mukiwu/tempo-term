@@ -86,13 +86,19 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Controls for the preview pane the user should reach right now: the active
- * tab's focused leaf when it is itself a preview, otherwise the tab's first
- * preview pane (a preview can exist in a split without holding focus — e.g.
- * the user is typing in a sibling terminal/editor pane). undefined when the
- * active tab has no preview pane at all. Lets the ⌘/Ctrl+L, ⌘[ / ⌘] shortcuts,
- * and the View menu's Back/Forward items reach the right preview without
- * stealing those keys from editors/terminals.
+ * Controls for the preview pane the View menu's Back/Forward items (and the
+ * `menu:preview-back` / `menu:preview-forward` events they emit) should reach:
+ * the active tab's focused leaf when it is itself a preview, otherwise the
+ * tab's first preview pane (a preview can exist in a split without holding
+ * focus — e.g. the user is typing in a sibling terminal/editor pane).
+ * undefined when the active tab has no preview pane at all.
+ *
+ * Deliberately used ONLY by the menu listeners: their `disabled` predicate
+ * (`hasPreviewPane`/`noPreview` in menuBarMenus.ts) already gates on "does this
+ * tab have a preview pane anywhere", not "is a preview focused", so the action
+ * they fire must resolve the same way or a click on an enabled menu item could
+ * silently no-op. The keydown paths below use the stricter
+ * `focusedPreviewControls` instead — see its doc comment for why.
  */
 function activePreviewControls(): PreviewControls | undefined {
   const state = useTabsStore.getState();
@@ -106,6 +112,25 @@ function activePreviewControls(): PreviewControls | undefined {
   }
   const previewLeaf = computeLayout(tab.paneTree).find((p) => p.content.kind === "preview");
   return previewLeaf ? getPreviewControls(previewLeaf.id) : undefined;
+}
+
+/**
+ * Controls for the preview pane the FOCUSED leaf itself is — undefined
+ * whenever the focused leaf isn't a preview, even if a preview pane exists
+ * elsewhere in the same tab's split. Used by every keydown shortcut that
+ * doubles as something else on a non-preview pane: Ctrl/Cmd+L is a terminal's
+ * "clear screen", and Cmd+[ / Cmd+] are an editor's indent/outdent. Widening
+ * this the way `activePreviewControls` does for the menu items would steal
+ * those keys from whichever pane the user is actually typing into.
+ */
+function focusedPreviewControls(): PreviewControls | undefined {
+  const state = useTabsStore.getState();
+  const tab = state.tabs.find((tt) => tt.id === state.activeId);
+  if (!tab) {
+    return undefined;
+  }
+  const focused = findPaneContent(tab.paneTree, tab.activeLeafId);
+  return focused?.kind === "preview" ? getPreviewControls(tab.activeLeafId) : undefined;
 }
 
 /**
@@ -402,7 +427,7 @@ function App() {
         // pane, so a focused terminal keeps the primary-modifier+L shortcut
         // (clear screen).
         if (e.code === "KeyL" && !e.shiftKey) {
-          const controls = activePreviewControls();
+          const controls = focusedPreviewControls();
           if (controls) {
             e.preventDefault();
             controls.focusAddressBar();
@@ -448,7 +473,7 @@ function App() {
       // preview webview holds focus, an injected script handles them instead —
       // this covers the case where the app webview has focus.)
       if ((e.code === "BracketLeft" || e.code === "BracketRight") && !e.altKey && !e.shiftKey) {
-        const controls = activePreviewControls();
+        const controls = focusedPreviewControls();
         if (controls) {
           e.preventDefault();
           if (e.code === "BracketLeft") {
@@ -479,7 +504,7 @@ function App() {
         useUiStore.getState().toggleSidebar();
       } else if (key === ",") {
         e.preventDefault();
-        useUiStore.getState().setSettingsOpen(true);
+        useUiStore.getState().openSettings();
       } else if (key === "d") {
         // ⌘D splits left/right, ⌘⇧D splits top/bottom (no-op off a terminal tab).
         e.preventDefault();
@@ -532,10 +557,10 @@ function App() {
         useUiStore.getState().openSettings(typeof event.payload === "string" ? event.payload : undefined);
       }),
       listenWebview("menu:copy", () => {
-        void menuCopy();
+        void menuCopy().catch(() => {});
       }),
       listenWebview("menu:paste", () => {
-        void menuPaste();
+        void menuPaste().catch(() => {});
       }),
       listenWebview("menu:select-all", () => {
         menuSelectAll();

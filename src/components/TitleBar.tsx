@@ -66,6 +66,13 @@ function MenuItemRow({
       aria-disabled={disabled || undefined}
       aria-haspopup={item.submenu ? "menu" : undefined}
       aria-expanded={item.submenu ? isSubmenuOpen : undefined}
+      // A menu item click must not steal focus/selection from whatever the
+      // user had focused before opening the menu (a terminal, an editor, a
+      // text input) — Edit > Copy/Paste/Select All rely on that selection
+      // still being live for the document.execCommand fallback in
+      // editActions.ts. Mousedown is what normally moves focus, so block it
+      // here; onClick (focus-independent) still fires the action.
+      onMouseDown={(e) => e.preventDefault()}
       onMouseEnter={(e) => {
         // JS mouse events, not CSS :hover — the native preview webview floats
         // above all DOM in this app, so a WKWebView pop-up flyout must be driven
@@ -201,6 +208,10 @@ function WindowMenuBar() {
           type="button"
           aria-haspopup="menu"
           aria-expanded={openId === menu.id}
+          // Same rationale as MenuItemRow above: opening a top-level menu
+          // must not itself steal focus from whatever pane/input the user was
+          // in — only selecting an item runs an action.
+          onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             if (openId === menu.id) {
               setOpenId(null);

@@ -1,5 +1,13 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Force the primary modifier to Cmd (metaKey) regardless of the host OS running
+// the test, matching App.mac.test.tsx's convention — the keydown seam test
+// below needs a deterministic Cmd vs Ctrl gate.
+vi.mock("@/lib/platform", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/platform")>();
+  return { ...actual, IS_WINDOWS: false };
+});
 
 // Every `menu:*` listener in App.tsx is registered via getCurrentWebview().listen.
 // Capture every (event, handler) pair as it registers so tests can fire any menu
@@ -31,6 +39,18 @@ vi.mock("@tauri-apps/plugin-updater", () => ({ check }));
 // jsdom has no backend for. These tests exercise App's menu-event wiring, not
 // the title bar, so stub it out (same stub App.windows.test.tsx uses).
 vi.mock("@/components/TitleBar", () => ({ TitleBar: () => null }));
+
+// A tab whose paneTree has a "preview" leaf makes TabsArea mount the real,
+// lazily-loaded PreviewTabContent, which (a) calls getCurrentWindow()
+// unconditionally at render time — a Tauri API jsdom has no backend for — and
+// (b) registers its OWN previewControls on mount, clobbering whatever a test
+// registered manually for the same leaf id. These tests exercise the
+// previewControls registry directly (registering their own fake controls per
+// leaf below), never the real native webview, so stub the whole component out
+// — same convention as the TitleBar stub above.
+vi.mock("@/modules/preview/PreviewTabContent", () => ({
+  PreviewTabContent: () => null,
+}));
 
 import App from "./App";
 import "./i18n";
@@ -271,6 +291,47 @@ describe("App menu event wiring", () => {
     const controls = { focusAddressBar: vi.fn(), back: vi.fn(), forward: vi.fn(), reload: vi.fn() };
     const unregister = registerPreviewControls("leaf-2", controls);
     render(<App />);
+    await fireMenuEvent("menu:preview-back");
+    expect(controls.back).toHaveBeenCalled();
+    unregister();
+  });
+
+  it("Cmd+L keydown does not steal from a focused terminal, but menu:preview-back still reaches the preview sibling", async () => {
+    // Same split as above, but the focused leaf is a terminal, not a launcher —
+    // Ctrl/Cmd+L is the terminal's own "clear screen" shortcut, so the keydown
+    // path must resolve preview controls off the FOCUSED leaf only, while the
+    // menu path (View > Back, or a click) still reaches the tab's preview pane
+    // regardless of what's focused.
+    const paneTree = splitLeaf(
+      leaf("leaf-1", { kind: "terminal" }),
+      "leaf-1",
+      "row",
+      "leaf-2",
+      { kind: "preview", url: "http://localhost/x" },
+    );
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs: [
+        {
+          id: "a",
+          spaceId: "s1",
+          title: "a",
+          kind: "terminal",
+          paneTree,
+          activeLeafId: "leaf-1",
+          paneOrder: ["leaf-1", "leaf-2"],
+        },
+      ],
+      activeId: "a",
+    });
+    const controls = { focusAddressBar: vi.fn(), back: vi.fn(), forward: vi.fn(), reload: vi.fn() };
+    const unregister = registerPreviewControls("leaf-2", controls);
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: "KeyL", key: "l", metaKey: true });
+    expect(controls.focusAddressBar).not.toHaveBeenCalled();
+
     await fireMenuEvent("menu:preview-back");
     expect(controls.back).toHaveBeenCalled();
     unregister();

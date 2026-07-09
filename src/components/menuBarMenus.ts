@@ -7,7 +7,7 @@ import {
   leafIds,
   type PaneContent,
 } from "@/modules/terminal/lib/terminalLayout";
-import { DEFAULT_SIDEBAR_ORDER, type SidebarView } from "@/stores/uiStore";
+import { useUiStore, type SidebarView } from "@/stores/uiStore";
 import {
   closeWindow,
   emitWindowMenuEvent,
@@ -23,6 +23,11 @@ export interface MenuContext {
   leafCount: number;
   hasPreviewPane: boolean;
   isMaximized: boolean;
+  /** Icon-bar order, drag-reorderable and persisted (see uiStore.sidebarOrder).
+   *  Drives the sidebar submenu's item order and ⌥N shortcut hints, so both
+   *  stay in sync with the real ⌥N shortcut, which indexes into this same
+   *  array (App.tsx's keydown handler). */
+  sidebarOrder: SidebarView[];
 }
 
 export type MenuAction =
@@ -61,6 +66,7 @@ export function getMenuContext(isMaximized: boolean): MenuContext {
       ? computeLayout(tab.paneTree).some((p) => p.content.kind === "preview")
       : false,
     isMaximized,
+    sidebarOrder: useUiStore.getState().sidebarOrder,
   };
 }
 
@@ -70,7 +76,7 @@ export function executeMenuAction(action: MenuAction): void {
       void emitWindowMenuEvent(action.event, action.payload);
       break;
     case "newWindow":
-      void invoke("open_new_window");
+      void invoke("open_new_window").catch(() => {});
       break;
     case "window":
       if (action.op === "close") void closeWindow();
@@ -135,7 +141,7 @@ export function buildMenus(ctx: MenuContext): MenuDef[] {
           id: "sidebar-panel",
           labelKey: "menuBar.sidebarPanel",
           group: 0,
-          submenu: DEFAULT_SIDEBAR_ORDER.map((view, index) => ({
+          submenu: ctx.sidebarOrder.map((view, index) => ({
             id: `sidebar-${view}`,
             labelKey: SIDEBAR_LABEL_KEYS[view],
             group: 0,

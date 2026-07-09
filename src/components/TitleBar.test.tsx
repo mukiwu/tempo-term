@@ -168,11 +168,23 @@ describe("TitleBar", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("renders all 7 top-level menus", () => {
+  it("renders all 6 top-level menus", () => {
     render(<TitleBar />);
     for (const label of ["File", "Edit", "View", "Terminal", "Window", "Help"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
+  });
+
+  it("prevents default on mousedown for menu-bar buttons and dropdown items, so the underlying editable keeps its selection", () => {
+    render(<TitleBar />);
+    const fileButton = screen.getByRole("button", { name: "File" });
+    // fireEvent's dispatchEvent returns false when the event was canceled
+    // (preventDefault called) — the standard DOM signal, not a custom one.
+    expect(fireEvent.mouseDown(fileButton)).toBe(false);
+
+    fireEvent.click(fileButton);
+    const item = screen.getByRole("menuitem", { name: /New Window/ });
+    expect(fireEvent.mouseDown(item)).toBe(false);
   });
 
   it("greys out disabled items and does not emit on click", () => {
