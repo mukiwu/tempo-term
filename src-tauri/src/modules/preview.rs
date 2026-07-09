@@ -94,13 +94,39 @@ fn preview_key_action_from_str(action: &str) -> Option<PreviewKeyAction> {
     }
 }
 
-/// Recognize a `KEY_ACTION_SCHEME` navigation attempt and resolve the action it
-/// carries. `None` for any other scheme (i.e. every real preview navigation).
-fn parse_preview_key_action(url: &Url) -> Option<PreviewKeyAction> {
+/// What `on_navigation` should do with a navigation attempt, decided once by
+/// `decide_navigation` so the closure has nothing left to get wrong.
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+enum NavDecision {
+    /// Our scheme, whitelisted action: dispatch it, cancel the navigation.
+    ForwardAction(PreviewKeyAction),
+    /// Our scheme, but not a whitelisted action — typo, case mismatch,
+    /// authority-form url (`scheme://action`), or a stray query/fragment
+    /// tacked on. Swallowed with no event and no load attempt: the whitelist
+    /// is the only way in, everything else is refused, never passed through
+    /// to a real navigation.
+    CancelSilently,
+    /// Any other scheme: a real page navigation, only observed.
+    Observe,
+}
+
+/// Decide what `on_navigation` should do with a navigation attempt. Scheme is
+/// checked first: anything other than `KEY_ACTION_SCHEME` is a real
+/// navigation and always observed, regardless of its path. Under our own
+/// scheme, only an exact whitelisted action with no authority/query/fragment
+/// forwards; every other shape under that scheme is cancelled silently
+/// rather than falling through to a real load.
+fn decide_navigation(url: &Url) -> NavDecision {
     if url.scheme() != KEY_ACTION_SCHEME {
-        return None;
+        return NavDecision::Observe;
     }
-    preview_key_action_from_str(url.path())
+    if url.host().is_some() || url.query().is_some() || url.fragment().is_some() {
+        return NavDecision::CancelSilently;
+    }
+    match preview_key_action_from_str(url.path()) {
+        Some(action) => NavDecision::ForwardAction(action),
+        None => NavDecision::CancelSilently,
+    }
 }
 
 /// Forward a whitelisted key action to the window that owns this preview
@@ -197,27 +223,33 @@ pub async fn preview_create(
                 },
             );
         })
-        .on_navigation(move |url| {
+        .on_navigation(move |url| match decide_navigation(url) {
             // KEY_FORWARD_SCRIPT's W/L/` handling signals through a fake
             // navigation rather than a real one (this webview has no IPC
             // capability to `invoke` with — see the doc comment on
-            // KEY_FORWARD_SCRIPT). Intercept and cancel it here so it never
-            // actually attempts to load; everything else is a real
-            // navigation and gets observed as before.
-            if let Some(action) = parse_preview_key_action(url) {
+            // KEY_FORWARD_SCRIPT). Dispatch the action and cancel it so it
+            // never actually attempts to load.
+            NavDecision::ForwardAction(action) => {
                 forward_preview_key_action(&nav_app, &nav_win, action);
-                return false;
+                false
             }
-            let _ = nav_app.emit_to(
-                &nav_win,
-                NAVIGATED_EVENT,
-                NavigatedPayload {
-                    label: nav_label.clone(),
-                    url: url.to_string(),
-                },
-            );
-            // Always allow the navigation; we only observe it.
-            true
+            // Our scheme, but not a whitelisted action. Swallow it silently
+            // (no event, no load) instead of letting it fall through to a
+            // real navigation attempt with a nonsense url.
+            NavDecision::CancelSilently => false,
+            // A real page navigation: observe it so the address bar stays in
+            // sync, and allow it.
+            NavDecision::Observe => {
+                let _ = nav_app.emit_to(
+                    &nav_win,
+                    NAVIGATED_EVENT,
+                    NavigatedPayload {
+                        label: nav_label.clone(),
+                        url: url.to_string(),
+                    },
+                );
+                true
+            }
         });
 
     window
@@ -375,20 +407,49 @@ mod tests {
     }
 
     #[test]
-    fn key_action_url_requires_the_dedicated_scheme() {
-        let action_url = Url::parse("tempo-preview-key:close-tab").unwrap();
+    fn decide_navigation_forwards_whitelisted_actions() {
+        let url = Url::parse("tempo-preview-key:close-tab").unwrap();
         assert_eq!(
-            parse_preview_key_action(&action_url),
-            Some(PreviewKeyAction::CloseTab)
+            decide_navigation(&url),
+            NavDecision::ForwardAction(PreviewKeyAction::CloseTab)
+        );
+    }
+
+    #[test]
+    fn decide_navigation_cancels_silently_for_unrecognized_same_scheme_urls() {
+        // Unknown action name.
+        let garbage = Url::parse("tempo-preview-key:garbage").unwrap();
+        assert_eq!(decide_navigation(&garbage), NavDecision::CancelSilently);
+
+        // Whitelist match is case-sensitive; a differently-cased action is
+        // not a known action.
+        let wrong_case = Url::parse("tempo-preview-key:Close-Tab").unwrap();
+        assert_eq!(decide_navigation(&wrong_case), NavDecision::CancelSilently);
+
+        // Authority form (`scheme://host`) puts "close-tab" in the host, not
+        // the path — never mistaken for the real whitelisted action.
+        let authority_form = Url::parse("tempo-preview-key://close-tab").unwrap();
+        assert_eq!(
+            decide_navigation(&authority_form),
+            NavDecision::CancelSilently
         );
 
-        // A real preview navigation (any http(s)/asset url) is never mistaken
-        // for a key action, even if the page path happens to match a
-        // whitelisted action name.
-        let real_nav = Url::parse("https://example.com/close-tab").unwrap();
-        assert_eq!(parse_preview_key_action(&real_nav), None);
+        // A stray query string riding along with an otherwise-valid action
+        // is rejected outright rather than accepted with the extra data
+        // ignored.
+        let with_query = Url::parse("tempo-preview-key:close-tab?x=1").unwrap();
+        assert_eq!(decide_navigation(&with_query), NavDecision::CancelSilently);
+    }
 
-        let unknown_action = Url::parse("tempo-preview-key:not-whitelisted").unwrap();
-        assert_eq!(parse_preview_key_action(&unknown_action), None);
+    #[test]
+    fn decide_navigation_observes_real_navigations() {
+        // A real preview navigation (any http(s)/asset url) is always
+        // observed, even if the page path happens to match a whitelisted
+        // action name.
+        let real_nav = Url::parse("https://example.com/close-tab").unwrap();
+        assert_eq!(decide_navigation(&real_nav), NavDecision::Observe);
+
+        let root = Url::parse("https://example.com/").unwrap();
+        assert_eq!(decide_navigation(&root), NavDecision::Observe);
     }
 }
