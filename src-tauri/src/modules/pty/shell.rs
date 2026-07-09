@@ -248,6 +248,11 @@ pub fn login_args(shell: &str) -> Vec<String> {
 /// path as a percent-encoded `file://` URI, which keeps spaces and non-ASCII
 /// (e.g. CJK folder names) unambiguous. The env marker makes the wrap
 /// idempotent if the snippet is ever sourced twice.
+// The windows-integration helpers below are only called from the
+// Windows-gated block in session.rs, but their logic is platform-neutral on
+// purpose so the unit tests exercise the Windows behavior on any host. Keep
+// them compiled everywhere and just silence the dead-code lint off-Windows.
+#[cfg_attr(not(windows), allow(dead_code))]
 const POWERSHELL_OSC7_SNIPPET: &str = r#"if ($env:TEMPOTERM_OSC7 -ne '1') {
   $env:TEMPOTERM_OSC7 = '1'
   $global:__tempoTermPrompt = $function:prompt
@@ -266,6 +271,7 @@ const POWERSHELL_OSC7_SNIPPET: &str = r#"if ($env:TEMPOTERM_OSC7 -ne '1') {
 
 /// The last path component, split on both separators so a Windows path still
 /// resolves when this code is unit-tested on Unix, lowercased for matching.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn shell_file_name(shell: &str) -> String {
     shell
         .rsplit(['/', '\\'])
@@ -275,6 +281,7 @@ fn shell_file_name(shell: &str) -> String {
 }
 
 /// True for Windows PowerShell (`powershell.exe`) and PowerShell 7+ (`pwsh`).
+#[cfg_attr(not(windows), allow(dead_code))]
 fn is_powershell(shell: &str) -> bool {
     matches!(
         shell_file_name(shell).trim_end_matches(".exe"),
@@ -283,11 +290,13 @@ fn is_powershell(shell: &str) -> bool {
 }
 
 /// True for `cmd.exe`, the `COMSPEC` default.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn is_cmd(shell: &str) -> bool {
     shell_file_name(shell).trim_end_matches(".exe") == "cmd"
 }
 
 /// PowerShell's `-EncodedCommand` payload: base64 of the UTF-16LE script bytes.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn encoded_command(script: &str) -> String {
     let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
     STANDARD.encode(bytes)
@@ -298,6 +307,7 @@ fn encoded_command(script: &str) -> String {
 /// so it works under any ExecutionPolicy (a dot-sourced `.ps1` would be blocked
 /// by the client default, `Restricted`) and needs no quoting through the
 /// Windows command line. Other shells get nothing.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn windows_integration_args(shell: &str) -> Vec<String> {
     if !is_powershell(shell) {
         return Vec::new();
@@ -315,6 +325,7 @@ pub fn windows_integration_args(shell: &str) -> Vec<String> {
 /// `$P$G`, i.e. `C:\dir>`) with an OSC 7 report does the same job. The path
 /// arrives raw — unencoded spaces and backslashes — which the frontend parser
 /// tolerates. Other shells get nothing.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn windows_integration_env(
     shell: &str,
     current_prompt: Option<String>,

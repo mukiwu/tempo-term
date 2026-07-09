@@ -224,6 +224,7 @@ pub fn run() {
             preview_create,
             preview_navigate,
             preview_reload,
+            preview_set_bounds,
             preview_history_back,
             preview_history_forward,
             preview_close,
