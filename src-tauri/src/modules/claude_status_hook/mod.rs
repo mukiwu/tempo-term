@@ -10,7 +10,9 @@ use tauri::{AppHandle, Manager};
 
 use crate::modules::claude_progress::config_base_dir;
 
-/// The hook script body, embedded so install can write it to disk.
+/// The hook script body, embedded so install can write it to disk. Unused on
+/// Windows, where install is cleanup-only and never writes the script (#155).
+#[cfg_attr(windows, allow(dead_code))]
 pub const HOOK_SCRIPT: &str = include_str!("status-hook.sh");
 
 /// (Claude Code hook event, status argument) pairs we install. The argument is
@@ -31,6 +33,7 @@ const EVENTS: &[(&str, &str)] = &[
     ("SessionEnd", "end"),
 ];
 
+#[cfg_attr(windows, allow(dead_code))]
 fn our_command(script_path: &str, state: &str) -> String {
     format!("{script_path} {state}")
 }
@@ -48,7 +51,9 @@ fn normalize(s: &str) -> String {
 }
 
 /// Add our hook entry to each event without disturbing the user's own hooks.
-/// Idempotent: re-running never duplicates our entries.
+/// Idempotent: re-running never duplicates our entries. Unused on Windows, where
+/// install is cleanup-only and never merges our entries in (#155).
+#[cfg_attr(windows, allow(dead_code))]
 pub fn merge_hook_settings(mut existing: Value, script_path: &str, events: &[(&str, &str)]) -> Value {
     if !existing.is_object() {
         existing = json!({});
@@ -158,31 +163,43 @@ fn write_settings(settings_path: &PathBuf, value: &Value) -> Result<(), String> 
 }
 
 /// Write the hook script and register its entries in settings.json. Idempotent.
+///
+/// On Windows this is a cleanup-only no-op: the status mechanism (walk the
+/// process ancestry to the PTY and write an OSC to `/dev/$tty`) has no Windows
+/// backend, and Claude Code runs `command` hooks through cmd, which cannot
+/// execute a bare forward-slash `.sh` path — it pops the Windows "Open With"
+/// picker on every hook event (#155). Since install runs on every launch when
+/// tracking is enabled, we instead strip any entries an older build wrote so
+/// affected users recover automatically.
 #[tauri::command]
 pub fn claude_status_hook_install(app: AppHandle) -> Result<(), String> {
-    let (script_path, settings_path) = paths(&app)?;
-    if let Some(dir) = script_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&script_path, HOOK_SCRIPT).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
+    #[cfg(windows)]
     {
+        return claude_status_hook_uninstall(app);
+    }
+    #[cfg(not(windows))]
+    {
+        let (script_path, settings_path) = paths(&app)?;
+        if let Some(dir) = script_path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&script_path, HOOK_SCRIPT).map_err(|e| e.to_string())?;
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
             .map_err(|e| e.to_string())?;
+        let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
+        // Canonicalize to forward slashes so the command has one stable form (see
+        // `normalize`); a no-op on Unix, but keeps install/remove symmetric.
+        let script_str = normalize(script_str);
+        let script_str = script_str.as_str();
+        // Remove our existing entries first, then merge fresh. This migrates installs
+        // from older versions whose command arguments differed (e.g. Notification
+        // used to pass "waiting-approval") or whose path used backslashes; a plain
+        // merge would leave those stale entries behind alongside the new ones.
+        let cleaned = remove_hook_settings(read_settings(&settings_path)?, script_str, EVENTS);
+        let merged = merge_hook_settings(cleaned, script_str, EVENTS);
+        write_settings(&settings_path, &merged)
     }
-    let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
-    // Canonicalize to forward slashes so the command bash runs is valid on Windows
-    // and has one stable form (see `normalize`).
-    let script_str = normalize(script_str);
-    let script_str = script_str.as_str();
-    // Remove our existing entries first, then merge fresh. This migrates installs
-    // from older versions whose command arguments differed (e.g. Notification
-    // used to pass "waiting-approval") or whose path used backslashes; a plain
-    // merge would leave those stale entries behind alongside the new ones.
-    let cleaned = remove_hook_settings(read_settings(&settings_path)?, script_str, EVENTS);
-    let merged = merge_hook_settings(cleaned, script_str, EVENTS);
-    write_settings(&settings_path, &merged)
 }
 
 /// Remove our settings.json entries and delete the hook script.

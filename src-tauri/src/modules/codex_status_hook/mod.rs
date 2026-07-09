@@ -7,7 +7,11 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use toml_edit::{DocumentMut, Item, Table, value};
 
-use crate::modules::claude_status_hook::{merge_hook_settings, remove_hook_settings, HOOK_SCRIPT};
+use crate::modules::claude_status_hook::remove_hook_settings;
+// Only the non-Windows install path merges our entries and writes the script;
+// on Windows install is cleanup-only (#155), so these would be unused there.
+#[cfg(not(windows))]
+use crate::modules::claude_status_hook::{merge_hook_settings, HOOK_SCRIPT};
 
 /// Codex hook event to status argument. No `Notification` catch-all: Codex signals
 /// approval directly via `PermissionRequest`.
@@ -63,36 +67,45 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     })
 }
 
+/// Mirror of `claude_status_hook_install`. On Windows this is a cleanup-only
+/// no-op: the OSC→PTY status mechanism has no Windows backend, and a bare
+/// forward-slash `.sh` hook command pops the Windows "Open With" picker on every
+/// event (#155). Since install runs on every launch, we strip any entries an
+/// older build wrote so affected users recover automatically.
 #[tauri::command]
 pub fn codex_status_hook_install(app: AppHandle) -> Result<(), String> {
-    let (script_path, hooks_path, config_path) = codex_paths(&app)?;
-    if let Some(dir) = script_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&script_path, HOOK_SCRIPT).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
+    #[cfg(windows)]
     {
+        return codex_status_hook_uninstall(app);
+    }
+    #[cfg(not(windows))]
+    {
+        let (script_path, hooks_path, config_path) = codex_paths(&app)?;
+        if let Some(dir) = script_path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&script_path, HOOK_SCRIPT).map_err(|e| e.to_string())?;
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
             .map_err(|e| e.to_string())?;
-    }
-    let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
+        let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
 
-    // Ensure Codex's hooks feature is on, without clobbering the user's config.
-    let existing_toml = match std::fs::read_to_string(&config_path) {
-        Ok(t) => t,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(err) => return Err(err.to_string()),
-    };
-    if let Some(dir) = config_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    write_atomic(&config_path, &ensure_hooks_feature(&existing_toml)?)?;
+        // Ensure Codex's hooks feature is on, without clobbering the user's config.
+        let existing_toml = match std::fs::read_to_string(&config_path) {
+            Ok(t) => t,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(err) => return Err(err.to_string()),
+        };
+        if let Some(dir) = config_path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        write_atomic(&config_path, &ensure_hooks_feature(&existing_toml)?)?;
 
-    let cleaned = remove_hook_settings(read_json(&hooks_path)?, script_str, CODEX_EVENTS);
-    let merged = merge_hook_settings(cleaned, script_str, CODEX_EVENTS);
-    let text = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())? + "\n";
-    write_atomic(&hooks_path, &text)
+        let cleaned = remove_hook_settings(read_json(&hooks_path)?, script_str, CODEX_EVENTS);
+        let merged = merge_hook_settings(cleaned, script_str, CODEX_EVENTS);
+        let text = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())? + "\n";
+        write_atomic(&hooks_path, &text)
+    }
 }
 
 #[tauri::command]
@@ -115,7 +128,9 @@ pub fn codex_status_hook_uninstall(app: AppHandle) -> Result<(), String> {
 
 /// Ensure `[features] hooks = true` in the given config.toml text, preserving all
 /// other keys, tables, and comments. Returns the updated text. A blank input
-/// yields a document containing just the features table.
+/// yields a document containing just the features table. Unused on Windows,
+/// where install is cleanup-only and never enables the feature (#155).
+#[cfg_attr(windows, allow(dead_code))]
 pub fn ensure_hooks_feature(existing_toml: &str) -> Result<String, String> {
     let mut doc = existing_toml
         .parse::<DocumentMut>()
