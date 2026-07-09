@@ -18,6 +18,7 @@ export interface TerminalOps {
   selectAll: () => void;
   clear: () => void;
   openSearch: () => void;
+  paste: (text: string) => void;
 }
 
 const opsRegistry = new Map<string, TerminalOps>();

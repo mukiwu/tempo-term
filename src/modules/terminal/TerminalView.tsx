@@ -861,6 +861,7 @@ export function TerminalView({
             selectAll: () => term.selectAll(),
             clear: () => term.clear(),
             openSearch: () => openSearchBox(),
+            paste: (text) => term.paste(text),
           });
         }
         // A freshly opened tracking pane drives the explorer to its start dir

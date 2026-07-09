@@ -31,10 +31,18 @@ describe("edit actions", () => {
     expect(document.execCommand).toHaveBeenCalledWith("copy");
   });
 
-  it("pastes into a focused terminal via the bus", async () => {
-    focusedOps.value = { getSelection: () => "", selectAll: vi.fn(), clear: vi.fn(), openSearch: vi.fn() };
+  it("pastes into the focused terminal's own ops, not insertIntoActiveTerminal", async () => {
+    const paste = vi.fn();
+    focusedOps.value = { getSelection: () => "", selectAll: vi.fn(), clear: vi.fn(), openSearch: vi.fn(), paste };
     await menuPaste();
-    expect(insertActive).toHaveBeenCalledWith("clip");
+    expect(paste).toHaveBeenCalledWith("clip");
+    expect(insertActive).not.toHaveBeenCalled();
+  });
+
+  it("falls back to execCommand insertText without a terminal focused", async () => {
+    await menuPaste();
+    expect(document.execCommand).toHaveBeenCalledWith("insertText", false, "clip");
+    expect(insertActive).not.toHaveBeenCalled();
   });
 
   it("select-all targets the terminal when one is focused, else execCommand", () => {

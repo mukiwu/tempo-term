@@ -30,7 +30,13 @@ describe("terminal buffer readers", () => {
 });
 
 function makeOps(): TerminalOps {
-  return { getSelection: vi.fn(() => "sel"), selectAll: vi.fn(), clear: vi.fn(), openSearch: vi.fn() };
+  return {
+    getSelection: vi.fn(() => "sel"),
+    selectAll: vi.fn(),
+    clear: vi.fn(),
+    openSearch: vi.fn(),
+    paste: vi.fn(),
+  };
 }
 
 describe("terminal ops registry", () => {
