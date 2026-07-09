@@ -20,5 +20,6 @@ pub mod secrets;
 pub mod session_log;
 pub mod sessions_index;
 pub mod setup;
+pub mod status_ipc;
 pub mod sysmon;
 pub mod terminal_history;

@@ -62,6 +62,7 @@ fn build_shell_command(
     cwd: Option<String>,
     suggestions: bool,
     shell_override: Option<String>,
+    status_env: Vec<(String, String)>,
 ) -> (CommandBuilder, String) {
     let shell = resolve_shell_with(shell_override);
     let mut cmd = CommandBuilder::new(&shell);
@@ -101,6 +102,13 @@ fn build_shell_command(
     // so Claude sessions in other terminals never touch our UI.
     cmd.env("TEMPOTERM", "1");
 
+    // On Windows, point this pane's status-hook shim back at the app's loopback
+    // listener and tag it with the pane's pty id (see status_ipc). Empty on Unix,
+    // which delivers status through the OSC/tty path instead.
+    for (key, value) in status_env {
+        cmd.env(key, value);
+    }
+
     // When enabled, point zsh at a wrapper ZDOTDIR that loads the user's config
     // and then the bundled autosuggestions plugin. No-op for non-zsh shells.
     for (key, value) in autosuggest_env(&shell, suggestions) {
@@ -121,6 +129,7 @@ fn build_shell_command(
 /// reading) and reports the exit code through `on_exit`.
 pub fn spawn_with_sinks(
     state: &PtyState,
+    id: u32,
     cols: u16,
     rows: u16,
     cmd: CommandBuilder,
@@ -147,7 +156,6 @@ pub fn spawn_with_sinks(
         shell_name,
     });
 
-    let id = state.alloc_id();
     state.sessions.write().unwrap().insert(id, session);
 
     // Coalesce PTY output before it crosses the IPC boundary. The old design sent
@@ -241,7 +249,23 @@ pub fn spawn(
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
-    let (cmd, shell_name) = build_shell_command(cwd, suggestions, shell_override);
+    // Allocate the pty id up front so it can tag this pane's status env (the
+    // frontend matches session-status events back to the pane by this id).
+    let id = state.alloc_id();
+
+    // On Windows, hand the pane the loopback address + token + its id so its
+    // status-hook shim can report state (see status_ipc). Empty elsewhere.
+    #[cfg(windows)]
+    let status_env = {
+        use tauri::Manager;
+        app.try_state::<crate::modules::status_ipc::StatusIpc>()
+            .map(|ipc| ipc.env_for(id))
+            .unwrap_or_default()
+    };
+    #[cfg(not(windows))]
+    let status_env: Vec<(String, String)> = Vec::new();
+
+    let (cmd, shell_name) = build_shell_command(cwd, suggestions, shell_override, status_env);
 
     // Best-effort per-session logger; failure to start logging must not block
     // opening the terminal, so we discard the error and just don't log.
@@ -251,6 +275,7 @@ pub fn spawn(
 
     spawn_with_sinks(
         state,
+        id,
         cols,
         rows,
         cmd,
@@ -437,6 +462,7 @@ mod tests {
 
         spawn_with_sinks(
             &state,
+            state.alloc_id(),
             80,
             24,
             cmd,
@@ -481,7 +507,7 @@ mod tests {
     fn registers_session_in_state() {
         let state = PtyState::new();
         let cmd = CommandBuilder::new("/bin/echo");
-        let id = spawn_with_sinks(&state, 80, 24, cmd, "echo".to_string(), |_| true, |_| {})
+        let id = spawn_with_sinks(&state, state.alloc_id(), 80, 24, cmd, "echo".to_string(), |_| true, |_| {})
             .expect("spawn should succeed");
         assert!(state.get(id).is_ok());
     }

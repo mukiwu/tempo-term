@@ -7,11 +7,12 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use toml_edit::{DocumentMut, Item, Table, value};
 
-use crate::modules::claude_status_hook::{normalize, remove_hook_settings};
-// Only the non-Windows install path merges our entries and writes the script;
-// on Windows install is cleanup-only (#155), so these would be unused there.
+use crate::modules::claude_status_hook::{merge_hook_settings, normalize, remove_hook_settings};
+// The `.sh` body is only written on Unix; Windows registers the native shim.
 #[cfg(not(windows))]
-use crate::modules::claude_status_hook::{merge_hook_settings, HOOK_SCRIPT};
+use crate::modules::claude_status_hook::HOOK_SCRIPT;
+#[cfg(windows)]
+use crate::modules::claude_status_hook::{windows_shim_prefix, LEGACY_SCRIPT_MARKER, SHIM_MARKER};
 
 /// Codex hook event to status argument. No `Notification` catch-all: Codex signals
 /// approval directly via `PermissionRequest`.
@@ -67,16 +68,36 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     })
 }
 
-/// Mirror of `claude_status_hook_install`. On Windows this is a cleanup-only
-/// no-op: the OSC→PTY status mechanism has no Windows backend, and a bare
-/// forward-slash `.sh` hook command pops the Windows "Open With" picker on every
-/// event (#155). Since install runs on every launch, we strip any entries an
-/// older build wrote so affected users recover automatically.
+/// Mirror of `claude_status_hook_install`. Unix writes the `.sh` and points the
+/// hook at it; Windows registers the native shim (`"<exe>" --status-hook`) that
+/// reports over loopback (see `status_ipc`), because cmd can't run a bare `.sh`
+/// (#155). Either way Codex's `hooks` feature is enabled so it runs the hook.
 #[tauri::command]
 pub fn codex_status_hook_install(app: AppHandle) -> Result<(), String> {
     #[cfg(windows)]
     {
-        return codex_status_hook_uninstall(app);
+        let (script_path, hooks_path, config_path) = codex_paths(&app)?;
+        // No script file on Windows — remove a stale `.sh` a pre-IPC build wrote.
+        let _ = std::fs::remove_file(&script_path);
+
+        // Ensure Codex's hooks feature is on so it runs our shim hook.
+        let existing_toml = match std::fs::read_to_string(&config_path) {
+            Ok(t) => t,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(err) => return Err(err.to_string()),
+        };
+        if let Some(dir) = config_path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        write_atomic(&config_path, &ensure_hooks_feature(&existing_toml)?)?;
+
+        let prefix = windows_shim_prefix()?;
+        // Strip legacy `.sh` and any earlier shim entry, then merge the current one.
+        let cleaned = remove_hook_settings(read_json(&hooks_path)?, LEGACY_SCRIPT_MARKER, CODEX_EVENTS);
+        let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, CODEX_EVENTS);
+        let merged = merge_hook_settings(cleaned, &prefix, CODEX_EVENTS);
+        let text = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())? + "\n";
+        return write_atomic(&hooks_path, &text);
     }
     #[cfg(not(windows))]
     {
@@ -125,6 +146,10 @@ fn cleanup_hooks_json(hooks_path: &PathBuf, raw_script_path: &str) -> Result<(),
     let script_path = normalize(raw_script_path);
     let existing = read_json(hooks_path)?;
     let cleaned = remove_hook_settings(existing.clone(), &script_path, CODEX_EVENTS);
+    // On Windows our entry is the native shim, not the `.sh` path; strip it by
+    // its stable marker too (the exe path may have moved since install).
+    #[cfg(windows)]
+    let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, CODEX_EVENTS);
     if cleaned != existing {
         let text = serde_json::to_string_pretty(&cleaned).map_err(|e| e.to_string())? + "\n";
         write_atomic(hooks_path, &text)?;
@@ -152,9 +177,7 @@ pub fn codex_status_hook_uninstall(app: AppHandle) -> Result<(), String> {
 
 /// Ensure `[features] hooks = true` in the given config.toml text, preserving all
 /// other keys, tables, and comments. Returns the updated text. A blank input
-/// yields a document containing just the features table. Unused on Windows,
-/// where install is cleanup-only and never enables the feature (#155).
-#[cfg_attr(windows, allow(dead_code))]
+/// yields a document containing just the features table.
 pub fn ensure_hooks_feature(existing_toml: &str) -> Result<String, String> {
     let mut doc = existing_toml
         .parse::<DocumentMut>()

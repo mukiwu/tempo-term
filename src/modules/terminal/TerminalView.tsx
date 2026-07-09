@@ -1,4 +1,5 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ClipboardPaste, Copy, Loader2, WifiOff } from "lucide-react";
@@ -149,6 +150,9 @@ export function TerminalView({
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<TerminalHandle | null>(null);
   const sessionRef = useRef<PtySession | SshSession | null>(null);
+  // The backend pty id of this pane's local session, if any. Windows matches
+  // `session-status` IPC events (see status_ipc) back to the pane by this id.
+  const ptyIdRef = useRef<number | null>(null);
   // The debounced PTY-resize pusher created in the mount effect (see its
   // comment for why it's debounced), exposed here so other effects that
   // change the pane's size (e.g. the padding-change effect below) can share
@@ -321,6 +325,40 @@ export function TerminalView({
       }
       return true; // consume so the sequence never reaches the screen
     });
+
+    // Windows delivers session status over a loopback socket instead of the
+    // OSC/tty path above, which has no Windows backend (#155). The Rust listener
+    // (see status_ipc) emits `session-status` tagged with the reporting pane's
+    // pty id; match it to this pane and feed the same store. Reconstruct the OSC
+    // payload so `parseStatusOsc` stays the single source of truth for the
+    // notify→status mapping and validation.
+    let statusEventUnlisten: (() => void) | undefined;
+    let statusEventDisposed = false;
+    if (IS_WINDOWS) {
+      void listen<{ paneId: number; kind: string; payload: string }>(
+        "session-status",
+        (event) => {
+          if (event.payload.paneId !== ptyIdRef.current) return;
+          const leaf = leafIdRef.current;
+          if (!leaf) return;
+          const parsed = parseStatusOsc(
+            `tempoterm;${event.payload.kind};${event.payload.payload}`,
+          );
+          if (parsed?.kind === "status") {
+            useSessionStatusStore.getState().setStatus(leaf, parsed.status);
+          } else if (parsed?.kind === "end") {
+            useSessionStatusStore.getState().clear(leaf);
+          }
+        },
+      )
+        .then((un) => {
+          // Race-safe under StrictMode: if the effect already cleaned up before
+          // listen() resolved, unsubscribe immediately.
+          if (statusEventDisposed) un();
+          else statusEventUnlisten = un;
+        })
+        .catch(() => {});
+    }
 
     // OSC 7 cwd reports. Two emitters use this pane-lifetime handler: the
     // Windows local shell integration (see lib/osc7.ts), and — on every
@@ -836,6 +874,9 @@ export function TerminalView({
           return;
         }
         sessionRef.current = session;
+        // Record the pty id so Windows status-IPC events can be matched to this
+        // pane (see the session-status listener); SSH panes have no pty id.
+        ptyIdRef.current = isPtySession(session) ? session.id : null;
         // Register live SSH session so ConnectionsPanel can show forwarding status.
         const paneSshConn = sshRef.current;
         if (paneSshConn && !isPtySession(session)) {
@@ -960,6 +1001,8 @@ export function TerminalView({
       document.removeEventListener("keydown", onKeyDownCapture, true);
       document.removeEventListener("paste", onPasteCapture, true);
       statusOscHandler.dispose();
+      statusEventDisposed = true;
+      statusEventUnlisten?.();
       osc7Handler?.dispose();
       if (leafIdRef.current) {
         unregisterTerminal(leafIdRef.current);

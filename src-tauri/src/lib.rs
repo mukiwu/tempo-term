@@ -88,6 +88,17 @@ fn open_new_window(app: tauri::AppHandle) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Native status-hook shim: `tempo-term --status-hook <state>`. On Windows the
+    // CLI's settings.json registers this instead of a bare `.sh` (which cmd can't
+    // run — issue #155). Handle it before Tauri starts and exit; it's a no-op
+    // outside a tempo-term pane (guards on the TEMPOTERM_* env we inject there).
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("--status-hook") {
+        let state = args.next().unwrap_or_default();
+        modules::status_ipc::run_hook_shim(&state);
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -149,6 +160,20 @@ pub fn run() {
                     .resolve("resources/zsh-autosuggestions.zsh", tauri::path::BaseDirectory::Resource)
                 {
                     modules::pty::shell::init_autosuggest_zdotdir(&dir, &plugin);
+                }
+            }
+            // Windows delivers Claude/Codex session status over a loopback
+            // socket instead of the Unix OSC/tty path (#155): bind the listener
+            // now, before any pane spawns, and stash its address+token so each
+            // pane's env can point its status-hook shim back here. A bind failure
+            // just leaves status tracking off — never blocks startup.
+            #[cfg(windows)]
+            {
+                match modules::status_ipc::start(app.handle()) {
+                    Ok(ipc) => {
+                        app.manage(ipc);
+                    }
+                    Err(err) => eprintln!("status-ipc listener disabled: {err}"),
                 }
             }
             modules::menu::init(app)?;
