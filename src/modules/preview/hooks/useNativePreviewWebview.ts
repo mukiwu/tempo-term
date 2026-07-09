@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Webview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { debounce } from "@/lib/debounce";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { resolvePreviewSrc } from "../lib/resolvePreviewSrc";
@@ -161,15 +160,27 @@ export function useNativePreviewWebview({ url, leafId, visible, onNavigate, onTi
       lastRectRef.current = rect;
       // The host rect is in zoomed page pixels; the child webview lives in
       // unzoomed window pixels, so scale by the UI zoom factor.
+      //
+      // Position and size go through ONE Rust command on purpose. The JS
+      // setPosition + setSize pair is two IPC messages, and each is a
+      // read-modify-write of the full bounds inside tauri's runtime; on Windows
+      // the write lands asynchronously, so the second message could read back —
+      // and re-commit — a rect the first write had not applied yet, freezing
+      // the webview at its creation-time size with an L-shaped gap (#163).
       const z = zoomRef.current;
-      void webview.setPosition(new LogicalPosition(rect.x * z, rect.y * z)).catch(() => {});
-      void webview.setSize(new LogicalSize(rect.width * z, rect.height * z)).catch(() => {});
+      void invoke("preview_set_bounds", {
+        label,
+        x: rect.x * z,
+        y: rect.y * z,
+        width: rect.width * z,
+        height: rect.height * z,
+      }).catch(() => {});
     }
     if (!shownRef.current) {
       shownRef.current = true;
       void webview.show().catch(() => {});
     }
-  }, []);
+  }, [label]);
 
   // A zoom change keeps the host rect (page px) the same but moves/resizes its
   // on-screen footprint, so force a reposition when uiZoom changes.

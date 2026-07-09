@@ -6,7 +6,7 @@
 
 use serde::Serialize;
 use tauri::webview::WebviewBuilder;
-use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Url, WebviewUrl, Window};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl, Window};
 
 /// Prefix every preview webview label carries (see `previewWebviewLabel` in
 /// previewWebview.ts). Commands refuse any label without it, so they can never
@@ -124,6 +124,35 @@ pub async fn preview_create(
     Ok(())
 }
 
+/// Atomically move and resize the preview webview in ONE call. The rect is in
+/// unzoomed window (logical) pixels, same convention as `preview_create`.
+///
+/// This exists because the JS `setPosition` + `setSize` pair is not safe on
+/// Windows: in tauri's runtime each of the two messages does a read-modify-write
+/// of the full bounds (read current bounds, replace one half, write both back),
+/// and the write lands asynchronously (`SWP_ASYNCWINDOWPOS`). The second message
+/// can therefore read back a rect the first write has not applied yet and
+/// re-commit that stale half — in practice the webview kept its creation-time
+/// size while the position landed, leaving an L-shaped gap in the pane (#163).
+/// A single `set_bounds` carries both halves in one message, so nothing is ever
+/// read back or re-committed.
+#[tauri::command]
+pub fn preview_set_bounds(
+    app: AppHandle,
+    label: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    webview(&app, &label)?
+        .set_bounds(Rect {
+            position: LogicalPosition::new(x, y).into(),
+            size: LogicalSize::new(width, height).into(),
+        })
+        .map_err(|e| e.to_string())
+}
+
 /// Navigate the existing preview webview to a new url without recreating it, so
 /// its back/forward history survives.
 #[tauri::command]
@@ -192,5 +221,26 @@ fn parse_preview_url(url: &str) -> Result<Url, String> {
     match parsed.scheme() {
         "http" | "https" | "asset" => Ok(parsed),
         other => Err(format!("refusing to load unsupported scheme '{other}' in preview")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_guard_accepts_only_preview_labels() {
+        assert!(ensure_preview_label("preview-main-leaf1").is_ok());
+        assert!(ensure_preview_label("main").is_err());
+        assert!(ensure_preview_label("").is_err());
+    }
+
+    #[test]
+    fn preview_urls_reject_privileged_schemes() {
+        assert!(parse_preview_url("https://example.com").is_ok());
+        assert!(parse_preview_url("http://localhost:3000").is_ok());
+        assert!(parse_preview_url("asset://localhost/x").is_ok());
+        assert!(parse_preview_url("file:///etc/passwd").is_err());
+        assert!(parse_preview_url("javascript:alert(1)").is_err());
     }
 }
