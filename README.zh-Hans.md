@@ -152,3 +152,15 @@ pnpm build          # 构建前端
 pnpm test                       # 前端单元与集成测试（Vitest）
 cd src-tauri && cargo test      # 后端 Rust 测试
 ```
+
+## 赞助支持
+
+如果 TempoTerm 帮你省下了时间，欢迎小额赞助，支持项目持续开发
+
+<div align="center">
+
+<a href="https://portaly.cc/mukiwu/support">
+  <img src="https://img.shields.io/badge/%E2%9D%A4%20Support%20TempoTerm-Portaly-ff4f64?style=for-the-badge&labelColor=1a1a1a" alt="在 Portaly 上赞助 TempoTerm" height="40" />
+</a>
+
+</div>

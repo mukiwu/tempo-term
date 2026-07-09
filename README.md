@@ -159,3 +159,15 @@ cd src-tauri && cargo test      # backend Rust tests
 
 TempoTerm is licensed under the [Apache License 2.0](LICENSE).
 The TempoTerm name and logo are not licensed for use by derivative works (see [NOTICE](NOTICE)).
+
+## Support
+
+If TempoTerm saves you time, you can support its continued development. Every contribution helps keep the project moving.
+
+<div align="center">
+
+<a href="https://portaly.cc/mukiwu/support">
+  <img src="https://img.shields.io/badge/%E2%9D%A4%20Support%20TempoTerm-Portaly-ff4f64?style=for-the-badge&labelColor=1a1a1a" alt="Support TempoTerm on Portaly" height="40" />
+</a>
+
+</div>
