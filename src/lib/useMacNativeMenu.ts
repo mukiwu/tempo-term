@@ -25,7 +25,10 @@ export function useMacNativeMenu(): void {
 
     let disposed = false;
     let lastPushed: string | null = null;
-    let focused = true;
+    // Start pessimistic: pushing is gated until isFocused() confirms this
+    // window really is focused, so a background window opening never
+    // overwrites the app-global menu the focused window already pushed.
+    let focused = false;
     let maximized = false;
     let pending = false;
 
@@ -60,14 +63,19 @@ export function useMacNativeMenu(): void {
     cleanups.push(() => i18n.off("languageChanged", schedule));
 
     const win = getCurrentWindow();
-    void win.isFocused().then((value) => {
-      focused = value;
-      schedule();
-    });
-    void isWindowMaximized().then((value) => {
-      maximized = value;
-      schedule();
-    });
+    void win
+      .isFocused()
+      .then((value) => {
+        focused = value;
+        schedule();
+      })
+      .catch((error: unknown) => console.error("isFocused failed", error));
+    void isWindowMaximized()
+      .then((value) => {
+        maximized = value;
+        schedule();
+      })
+      .catch((error: unknown) => console.error("isMaximized failed", error));
 
     const unlistenPromises: Array<Promise<UnlistenFn>> = [
       win.onFocusChanged(({ payload }) => {
@@ -80,12 +88,14 @@ export function useMacNativeMenu(): void {
         }
       }),
       onWindowResized(() => {
-        void isWindowMaximized().then((value) => {
-          if (value !== maximized) {
-            maximized = value;
-            schedule();
-          }
-        });
+        void isWindowMaximized()
+          .then((value) => {
+            if (value !== maximized) {
+              maximized = value;
+              schedule();
+            }
+          })
+          .catch((error: unknown) => console.error("isMaximized failed", error));
       }),
       getCurrentWebview().listen<string>("native-menu-click", ({ payload }) => {
         // The async unlisten may not have resolved yet after cleanup; a click
@@ -105,7 +115,7 @@ export function useMacNativeMenu(): void {
       disposed = true;
       for (const cleanup of cleanups) cleanup();
       for (const promise of unlistenPromises) {
-        void promise.then((unlisten) => unlisten());
+        void promise.then((unlisten) => unlisten()).catch(() => {});
       }
     };
   }, []);

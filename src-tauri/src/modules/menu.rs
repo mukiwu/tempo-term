@@ -57,7 +57,7 @@ pub const NATIVE_MENU_EVENT: &str = "native-menu-click";
 #[cfg(target_os = "macos")]
 fn build_app_submenu(handle: &tauri::AppHandle) -> tauri::Result<tauri::menu::Submenu<tauri::Wry>> {
     use tauri::menu::{AboutMetadata, SubmenuBuilder};
-    SubmenuBuilder::new(handle, "TempoTerm")
+    SubmenuBuilder::new(handle, &handle.package_info().name)
         .about(Some(AboutMetadata::default()))
         .separator()
         .services()
