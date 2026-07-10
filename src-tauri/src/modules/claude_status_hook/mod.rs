@@ -1,7 +1,8 @@
-//! Installs a Claude Code hook that reports the live session state to tempo-term
-//! as an OSC sequence (see `status-hook.sh`). The merge/remove of the hook
-//! entries in `~/.claude/settings.json` is a pure function over the parsed JSON
-//! so it can be tested without touching the filesystem.
+//! Installs a Claude Code hook that reports the live session state to
+//! tempo-term over the loopback status IPC (see `status_ipc`): each hook event
+//! runs this very binary as `"<exe>" --status-hook <state>`. The merge/remove
+//! of the hook entries in `~/.claude/settings.json` is a pure function over
+//! the parsed JSON so it can be tested without touching the filesystem.
 
 use std::path::PathBuf;
 
@@ -9,11 +10,6 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::modules::claude_progress::config_base_dir;
-
-/// The hook script body, embedded so install can write it to disk. Unused on
-/// Windows, where install is cleanup-only and never writes the script (#155).
-#[cfg_attr(windows, allow(dead_code))]
-pub const HOOK_SCRIPT: &str = include_str!("status-hook.sh");
 
 /// (Claude Code hook event, status argument) pairs we install. The argument is
 /// the state passed to the hook script, except `Notification` passes the
@@ -33,9 +29,9 @@ const EVENTS: &[(&str, &str)] = &[
     ("SessionEnd", "end"),
 ];
 
-/// Build a hook command from a prefix and the state argument. The prefix is the
-/// Unix `.sh` script path, or on Windows the native shim invocation
-/// (`"<exe>" --status-hook`); either way the state is appended as the final arg.
+/// Build a hook command from a prefix and the state argument. The prefix is
+/// the native shim invocation (`"<exe>" --status-hook`); the state is appended
+/// as the final arg.
 fn our_command(prefix: &str, state: &str) -> String {
     format!("{prefix} {state}")
 }
@@ -45,42 +41,40 @@ fn our_command(prefix: &str, state: &str) -> String {
 /// reinstall/uninstall no matter where the executable now lives.
 pub const SHIM_MARKER: &str = "--status-hook";
 
-/// Substring identifying the legacy Unix `.sh` hook command, so a Windows
-/// install/uninstall also cleans up entries a pre-IPC build wrote.
-#[cfg_attr(not(windows), allow(dead_code))]
+/// Substring identifying the legacy Unix `.sh` hook command, so install/uninstall
+/// also cleans up entries a pre-IPC build wrote.
 pub const LEGACY_SCRIPT_MARKER: &str = "status-hook.sh";
 
 /// Build the shim prefix command from an already-resolved executable path.
-/// Split out from `windows_shim_prefix` so the string logic is testable on any
-/// platform (`current_exe()` itself is not worth mocking). Applies `normalize`
-/// for the same reason the script-path flows do: Claude Code runs `command`
-/// hooks through bash on a git-bash setup, which treats `\` as an escape and
-/// mangles a raw Windows path, so the shim would never run.
-#[cfg_attr(not(windows), allow(dead_code))]
-fn windows_shim_prefix_from_exe(exe: &str) -> String {
+/// Split out from `shim_prefix` so the string logic is testable without
+/// mocking `current_exe()`. Applies `normalize` because Claude Code may run
+/// `command` hooks through bash (git-bash on Windows), which treats `\` as an
+/// escape and mangles a raw Windows path; forward slashes work in cmd, bash,
+/// and sh alike.
+fn shim_prefix_from_exe(exe: &str) -> String {
     format!("\"{}\" {SHIM_MARKER}", normalize(exe))
 }
 
-/// The command prefix for the native shim on Windows: the app's own executable
-/// invoked as `--status-hook`, double-quoted so cmd handles a path with spaces
-/// (e.g. under `Program Files`). `merge_hook_settings` appends ` <state>`.
-#[cfg(windows)]
-pub fn windows_shim_prefix() -> Result<String, String> {
+/// The command prefix for the native status-hook shim: the app's own
+/// executable invoked as `--status-hook`, double-quoted so a path with spaces
+/// (e.g. `Program Files`, or a renamed `.app` bundle) survives the hook
+/// runner's shell parsing. `merge_hook_settings` appends ` <state>`.
+pub fn shim_prefix() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe = exe.to_str().ok_or("executable path is not valid UTF-8")?;
-    Ok(windows_shim_prefix_from_exe(exe))
+    Ok(shim_prefix_from_exe(exe))
 }
 
-/// Canonicalize a hook command (or our script path) for storage and comparison.
-/// On Windows the script path is built with backslashes, but Claude Code runs
-/// `command` hooks through bash, which treats `\` as an escape and mangles the
-/// path (`C:\Users\...` collapses to `C:Users...`, so the hook can't be found).
-/// Git Bash accepts forward slashes, so we store and match on a single
-/// forward-slash form. Applied unconditionally: Unix paths never contain a
-/// backslash, so this is effectively a no-op there, and keeping it
-/// platform-agnostic lets the dedup logic be tested on any CI runner.
+/// Canonicalize a hook command for storage and comparison. Hook commands may
+/// be executed via cmd or bash depending on the user's setup; bash treats `\`
+/// as an escape and mangles raw Windows paths (`C:\Users\...` collapses to
+/// `C:Users...`), while forward slashes are accepted by cmd, bash, and sh
+/// alike, so we store and match on a single forward-slash form. Applied
+/// unconditionally: Unix paths never contain a backslash, so this is
+/// effectively a no-op there, and keeping it platform-agnostic lets the dedup
+/// logic be tested on any CI runner.
 /// `pub(crate)`: `codex_status_hook` mirrors this same normalize-before-match
-/// step for its own hooks.json cleanup (see #155 follow-up).
+/// step for its own hooks.json cleanup.
 pub(crate) fn normalize(s: &str) -> String {
     s.replace('\\', "/")
 }
@@ -198,50 +192,20 @@ fn write_settings(settings_path: &PathBuf, value: &Value) -> Result<(), String> 
 
 /// Register the status hook in settings.json. Idempotent.
 ///
-/// Unix writes the `.sh` script and points the hook at it, delivering state as an
-/// OSC to `/dev/$tty`. Windows can't run a bare `.sh` through cmd (it pops the
-/// "Open With" picker — #155) and has no `/dev/$tty`, so it registers the native
-/// shim (`"<exe>" --status-hook <state>`) that reports over loopback instead (see
-/// `status_ipc`); it writes no script and migrates away any legacy `.sh` entry.
+/// Every platform registers the native shim (`"<exe>" --status-hook <state>`)
+/// that reports over loopback (see `status_ipc`); no script is written. Also
+/// migrates old installs: removes the legacy `.sh` file a pre-#181 build wrote
+/// and strips its settings entries, plus any earlier shim entry (the exe path
+/// may have moved between installs).
 #[tauri::command]
 pub fn claude_status_hook_install(app: AppHandle) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let (script_path, settings_path) = paths(&app)?;
-        // No script file on Windows — the shim is our own executable. Remove a
-        // stale `.sh` a pre-IPC build may have written.
-        let _ = std::fs::remove_file(&script_path);
-        let prefix = windows_shim_prefix()?;
-        // Strip legacy `.sh` entries and any earlier shim entry (the exe path may
-        // have moved between installs), then merge the current shim command.
-        let cleaned = remove_hook_settings(read_settings(&settings_path)?, LEGACY_SCRIPT_MARKER, EVENTS);
-        let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, EVENTS);
-        let merged = merge_hook_settings(cleaned, &prefix, EVENTS);
-        return write_settings(&settings_path, &merged);
-    }
-    #[cfg(not(windows))]
-    {
-        let (script_path, settings_path) = paths(&app)?;
-        if let Some(dir) = script_path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(&script_path, HOOK_SCRIPT).map_err(|e| e.to_string())?;
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
-        let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
-        // Canonicalize to forward slashes so the command has one stable form (see
-        // `normalize`); a no-op on Unix, but keeps install/remove symmetric.
-        let script_str = normalize(script_str);
-        let script_str = script_str.as_str();
-        // Remove our existing entries first, then merge fresh. This migrates installs
-        // from older versions whose command arguments differed (e.g. Notification
-        // used to pass "waiting-approval") or whose path used backslashes; a plain
-        // merge would leave those stale entries behind alongside the new ones.
-        let cleaned = remove_hook_settings(read_settings(&settings_path)?, script_str, EVENTS);
-        let merged = merge_hook_settings(cleaned, script_str, EVENTS);
-        write_settings(&settings_path, &merged)
-    }
+    let (script_path, settings_path) = paths(&app)?;
+    let _ = std::fs::remove_file(&script_path);
+    let prefix = shim_prefix()?;
+    let cleaned = remove_hook_settings(read_settings(&settings_path)?, LEGACY_SCRIPT_MARKER, EVENTS);
+    let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, EVENTS);
+    let merged = merge_hook_settings(cleaned, &prefix, EVENTS);
+    write_settings(&settings_path, &merged)
 }
 
 /// Remove our entries from the settings file at `settings_path`, skipping the
@@ -261,9 +225,9 @@ fn cleanup_settings(settings_path: &PathBuf, raw_script_path: &str) -> Result<()
     let script_path = normalize(raw_script_path);
     let existing = read_settings(settings_path)?;
     let cleaned = remove_hook_settings(existing.clone(), &script_path, EVENTS);
-    // On Windows our entry is the native shim, not the `.sh` path; strip it by
-    // its stable marker too (the exe path may have moved since install).
-    #[cfg(windows)]
+    // Our entry may be the native shim rather than the legacy `.sh` path;
+    // strip it by its stable marker too (the exe path may have moved since
+    // install).
     let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, EVENTS);
     if cleaned != existing {
         write_settings(settings_path, &cleaned)?;
@@ -432,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_install_dedups_across_slash_styles() {
+    fn install_dedups_across_slash_styles() {
         // An older Windows install wrote the command with backslashes, which bash
         // can't run (C:\Users\... collapses to C:Users...). The install sequence
         // (remove then merge) must strip that stale entry and leave exactly one
@@ -458,9 +422,9 @@ mod tests {
         assert_eq!(cmds, vec!["C:/Users/me/.claude/tempoterm/status-hook.sh active"]);
     }
 
-    // The Windows install registers a native shim command instead of a `.sh`.
-    // These exercise that prefix through the shared merge/remove logic; pure, so
-    // they run on every CI runner.
+    // Install registers a native shim command (`"<exe>" --status-hook`), not a
+    // `.sh`. These exercise that prefix through the shared merge/remove logic;
+    // pure, so they run on every CI runner.
     const SHIM_PREFIX: &str = r#""C:\Program Files\TempoTerm\tempo-term.exe" --status-hook"#;
 
     #[test]
@@ -485,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_reinstall_replaces_a_moved_exe_shim() {
+    fn reinstall_replaces_a_moved_exe_shim() {
         // A prior install pointed the shim at an old exe path; reinstall (remove
         // by marker, then merge) must leave exactly one entry at the new path.
         let old = merge_hook_settings(json!({}), r#""C:\old\tempo-term.exe" --status-hook"#, EVENTS);
@@ -501,19 +465,20 @@ mod tests {
     }
 
     #[test]
-    fn windows_shim_prefix_normalizes_backslashes() {
+    fn shim_prefix_normalizes_backslashes() {
         // Claude Code runs `command` hooks through bash on a git-bash setup; a
         // raw backslash path (`C:\Program Files\...`) gets its backslashes eaten
         // as escapes and the shim never runs. The prefix must be built on the
         // same forward-slash form as the script-path flows (see `normalize`).
-        let prefix = windows_shim_prefix_from_exe(r"C:\Program Files\TempoTerm\tempo-term.exe");
+        let prefix = shim_prefix_from_exe(r"C:\Program Files\TempoTerm\tempo-term.exe");
         assert_eq!(prefix, r#""C:/Program Files/TempoTerm/tempo-term.exe" --status-hook"#);
     }
 
     #[test]
-    fn windows_install_strips_legacy_sh_entry() {
-        // A pre-IPC Windows build left a bare `.sh` entry (the #155 culprit); the
-        // install's remove-by-LEGACY_SCRIPT_MARKER pass must drop it.
+    fn install_strips_legacy_sh_entry() {
+        // A pre-IPC build (any platform — macOS wrote these until #181) left a
+        // `.sh` entry; the install's remove-by-LEGACY_SCRIPT_MARKER pass must
+        // drop it.
         let legacy = json!({
             "hooks": { "PreToolUse": [
                 { "hooks": [{ "type": "command", "command": "C:/Users/me/.claude/tempoterm/status-hook.sh active" }] }

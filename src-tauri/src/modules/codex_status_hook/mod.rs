@@ -1,18 +1,17 @@
 //! Installs tempo-term's status hook into Codex's config so Codex sessions
-//! report live state as OSC, mirroring the Claude installer. Reuses the shared
-//! pure merge over hooks.json and ensures Codex's hooks feature flag is on.
+//! report live state over the loopback status IPC, mirroring the Claude
+//! installer. Reuses the shared pure merge over hooks.json and ensures
+//! Codex's hooks feature flag is on.
 
 use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 use toml_edit::{DocumentMut, Item, Table, value};
 
-use crate::modules::claude_status_hook::{merge_hook_settings, normalize, remove_hook_settings};
-// The `.sh` body is only written on Unix; Windows registers the native shim.
-#[cfg(not(windows))]
-use crate::modules::claude_status_hook::HOOK_SCRIPT;
-#[cfg(windows)]
-use crate::modules::claude_status_hook::{windows_shim_prefix, LEGACY_SCRIPT_MARKER, SHIM_MARKER};
+use crate::modules::claude_status_hook::{
+    merge_hook_settings, normalize, remove_hook_settings, shim_prefix, LEGACY_SCRIPT_MARKER,
+    SHIM_MARKER,
+};
 
 /// Codex hook event to status argument. No `Notification` catch-all: Codex signals
 /// approval directly via `PermissionRequest`.
@@ -68,65 +67,35 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     })
 }
 
-/// Mirror of `claude_status_hook_install`. Unix writes the `.sh` and points the
-/// hook at it; Windows registers the native shim (`"<exe>" --status-hook`) that
-/// reports over loopback (see `status_ipc`), because cmd can't run a bare `.sh`
-/// (#155). Either way Codex's `hooks` feature is enabled so it runs the hook.
+/// Mirror of `claude_status_hook_install`: registers the native shim
+/// (`"<exe>" --status-hook`) that reports over loopback (see `status_ipc`),
+/// migrating away any legacy `.sh` a pre-#181 build wrote. Also enables
+/// Codex's `hooks` feature so it runs the hook.
 #[tauri::command]
 pub fn codex_status_hook_install(app: AppHandle) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let (script_path, hooks_path, config_path) = codex_paths(&app)?;
-        // No script file on Windows — remove a stale `.sh` a pre-IPC build wrote.
-        let _ = std::fs::remove_file(&script_path);
+    let (script_path, hooks_path, config_path) = codex_paths(&app)?;
+    // No script file — the shim is our own executable. Remove a stale `.sh` a
+    // pre-#181 build may have written.
+    let _ = std::fs::remove_file(&script_path);
 
-        // Ensure Codex's hooks feature is on so it runs our shim hook.
-        let existing_toml = match std::fs::read_to_string(&config_path) {
-            Ok(t) => t,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(err) => return Err(err.to_string()),
-        };
-        if let Some(dir) = config_path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
-        write_atomic(&config_path, &ensure_hooks_feature(&existing_toml)?)?;
-
-        let prefix = windows_shim_prefix()?;
-        // Strip legacy `.sh` and any earlier shim entry, then merge the current one.
-        let cleaned = remove_hook_settings(read_json(&hooks_path)?, LEGACY_SCRIPT_MARKER, CODEX_EVENTS);
-        let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, CODEX_EVENTS);
-        let merged = merge_hook_settings(cleaned, &prefix, CODEX_EVENTS);
-        let text = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())? + "\n";
-        return write_atomic(&hooks_path, &text);
+    // Ensure Codex's hooks feature is on so it runs our shim hook.
+    let existing_toml = match std::fs::read_to_string(&config_path) {
+        Ok(t) => t,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err.to_string()),
+    };
+    if let Some(dir) = config_path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    #[cfg(not(windows))]
-    {
-        let (script_path, hooks_path, config_path) = codex_paths(&app)?;
-        if let Some(dir) = script_path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(&script_path, HOOK_SCRIPT).map_err(|e| e.to_string())?;
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
-        let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
+    write_atomic(&config_path, &ensure_hooks_feature(&existing_toml)?)?;
 
-        // Ensure Codex's hooks feature is on, without clobbering the user's config.
-        let existing_toml = match std::fs::read_to_string(&config_path) {
-            Ok(t) => t,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(err) => return Err(err.to_string()),
-        };
-        if let Some(dir) = config_path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
-        write_atomic(&config_path, &ensure_hooks_feature(&existing_toml)?)?;
-
-        let cleaned = remove_hook_settings(read_json(&hooks_path)?, script_str, CODEX_EVENTS);
-        let merged = merge_hook_settings(cleaned, script_str, CODEX_EVENTS);
-        let text = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())? + "\n";
-        write_atomic(&hooks_path, &text)
-    }
+    let prefix = shim_prefix()?;
+    // Strip legacy `.sh` and any earlier shim entry, then merge the current one.
+    let cleaned = remove_hook_settings(read_json(&hooks_path)?, LEGACY_SCRIPT_MARKER, CODEX_EVENTS);
+    let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, CODEX_EVENTS);
+    let merged = merge_hook_settings(cleaned, &prefix, CODEX_EVENTS);
+    let text = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())? + "\n";
+    write_atomic(&hooks_path, &text)
 }
 
 /// Remove our entries from `hooks_path`, skipping the rewrite entirely when
@@ -146,9 +115,9 @@ fn cleanup_hooks_json(hooks_path: &PathBuf, raw_script_path: &str) -> Result<(),
     let script_path = normalize(raw_script_path);
     let existing = read_json(hooks_path)?;
     let cleaned = remove_hook_settings(existing.clone(), &script_path, CODEX_EVENTS);
-    // On Windows our entry is the native shim, not the `.sh` path; strip it by
-    // its stable marker too (the exe path may have moved since install).
-    #[cfg(windows)]
+    // Our entry may be the native shim rather than the legacy `.sh` path;
+    // strip it by its stable marker too (the exe path may have moved since
+    // install).
     let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, CODEX_EVENTS);
     if cleaned != existing {
         let text = serde_json::to_string_pretty(&cleaned).map_err(|e| e.to_string())? + "\n";
