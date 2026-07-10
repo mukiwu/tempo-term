@@ -138,4 +138,36 @@ describe("App shell — Windows keyboard shortcuts", () => {
     fireEvent.keyDown(window, { code: "Backquote", key: "`", ctrlKey: true });
     expect(useTabsStore.getState().activeId).toBe("b");
   });
+
+  it("cycles focus between panes in a two-pane tab with Ctrl+`", () => {
+    const paneTree = splitLeaf(
+      leaf("left-leaf", { kind: "launcher" }),
+      "left-leaf",
+      "row",
+      "right-leaf",
+      { kind: "launcher" },
+    );
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs: [
+        {
+          id: "a",
+          spaceId: "s1",
+          title: "a",
+          kind: "launcher" as const,
+          paneTree,
+          activeLeafId: "left-leaf",
+          paneOrder: ["left-leaf", "right-leaf"],
+        },
+      ],
+      activeId: "a",
+    });
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: "Backquote", key: "`", ctrlKey: true });
+
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === "a");
+    expect(tab?.activeLeafId).toBe("right-leaf");
+  });
 });

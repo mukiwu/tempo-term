@@ -116,6 +116,17 @@ describe("App menu event wiring", () => {
     expect(useTabsStore.getState().tabs.some((t) => t.kind === "terminal")).toBe(true);
   });
 
+  it("menu:new-terminal-tab threads the workspace root as the new tab's cwd", async () => {
+    useWorkspaceStore.setState({ rootPath: "/tmp/demo-project" });
+    render(<App />);
+    await fireMenuEvent("menu:new-terminal-tab");
+    const tab = useTabsStore.getState().tabs.find((t) => t.kind === "terminal")!;
+    expect(tab.cwd).toBe("/tmp/demo-project");
+    // The pane leaf must carry the same cwd, not just the tab — resolveTerminalCwd
+    // ranks the pane's own cwd above the tab's, so the terminal actually spawns there.
+    expect(tab.paneTree).toEqual(leaf(tab.activeLeafId, { kind: "terminal", cwd: "/tmp/demo-project" }));
+  });
+
   it("menu:save saves the focused editor pane via the editor bus", async () => {
     useTabsStore.setState({
       spaces: [{ id: "s1", name: "Space 1" }],
@@ -415,6 +426,40 @@ describe("App menu event wiring", () => {
     await fireMenuEvent("menu:split-right");
     const afterRight = useTabsStore.getState().tabs.find((t) => t.id === "a")!;
     expect(afterRight.paneTree.kind).toBe("split");
+  });
+
+  it("menu:focus-next-pane moves focus to the next pane in a two-pane tab", async () => {
+    // This event is the tail of the menu-click routes: the macOS native menu
+    // (useMacNativeMenu, added in #190) and the Windows in-window WindowMenuBar
+    // both funnel through executeMenuAction -> emitWindowMenuEvent -> this
+    // listener. The keyboard path (Ctrl/Cmd+`) has its own coverage.
+    const paneTree = splitLeaf(
+      leaf("left-leaf", { kind: "launcher" }),
+      "left-leaf",
+      "row",
+      "right-leaf",
+      { kind: "launcher" },
+    );
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs: [
+        {
+          id: "a",
+          spaceId: "s1",
+          title: "a",
+          kind: "launcher" as const,
+          paneTree,
+          activeLeafId: "left-leaf",
+          paneOrder: ["left-leaf", "right-leaf"],
+        },
+      ],
+      activeId: "a",
+    });
+    render(<App />);
+    await fireMenuEvent("menu:focus-next-pane");
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === "a");
+    expect(tab?.activeLeafId).toBe("right-leaf");
   });
 
   it("menu:check-updates opens settings on About and runs a manual check", async () => {

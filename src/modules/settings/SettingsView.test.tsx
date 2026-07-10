@@ -101,6 +101,33 @@ describe("SettingsView section deep-link", () => {
     );
   });
 
+  it("keeps the current section and still clears settingsSection when an invalid id arrives while mounted", () => {
+    // A reactive deep-link with an unknown section id must not disturb whatever
+    // section is currently showing (unlike the mount-time fallback, which lands
+    // on Appearance) — but settingsSection is still cleared unconditionally so a
+    // later plain open doesn't replay it.
+    useUiStore.setState({ settingsOpen: true, settingsSection: null });
+    render(<SettingsView />);
+
+    act(() => {
+      useUiStore.getState().openSettings("shortcuts");
+    });
+    expect(screen.getByRole("button", { name: "Shortcuts" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+
+    act(() => {
+      useUiStore.getState().openSettings("not-a-real-section");
+    });
+
+    expect(screen.getByRole("button", { name: "Shortcuts" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(useUiStore.getState().settingsSection).toBeNull();
+  });
+
   it("consumes and clears a stuck section value instead of replaying it on the next plain open", () => {
     // Simulate a value left stuck in the store from a prior deep-link that
     // was never consumed (the bug this regression test guards against).
