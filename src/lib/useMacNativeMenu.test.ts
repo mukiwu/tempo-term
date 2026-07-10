@@ -85,6 +85,22 @@ describe("useMacNativeMenu", () => {
     expect(invokeMock).toHaveBeenCalledTimes(2);
   });
 
+  it("stops pushing after unmount", async () => {
+    const { unmount } = renderHook(() => useMacNativeMenu());
+    await flush();
+    const callsAfterMount = invokeMock.mock.calls.length;
+    unmount();
+    // A model-relevant change after unmount must not reach set_native_menu:
+    // the store subscriptions were released synchronously by the cleanup, and
+    // the disposed guard blocks any push already sitting in the microtask queue.
+    const order = [...useUiStore.getState().sidebarOrder];
+    act(() => {
+      useUiStore.setState({ sidebarOrder: [order[1], order[0], ...order.slice(2)] });
+    });
+    await flush();
+    expect(invokeMock.mock.calls.length).toBe(callsAfterMount);
+  });
+
   it("routes native-menu-click through executeMenuAction", async () => {
     renderHook(() => useMacNativeMenu());
     await flush();
