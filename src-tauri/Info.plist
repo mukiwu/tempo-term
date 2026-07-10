@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged into the generated bundle Info.plist at build time (keys here
+	     win). Without a localization declaration, macOS renders every
+	     system-provided UI surface — most visibly the WKWebView context menu
+	     kept native in editors/notes — in English regardless of the user's
+	     system language. Declaring the app's supported localizations lets
+	     AppKit/WebKit pick the user's language for those menus. -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hant</string>
+	</array>
+	<key>CFBundleAllowMixedLocalizations</key>
+	<true/>
+</dict>
+</plist>
