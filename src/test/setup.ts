@@ -1,6 +1,20 @@
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 
+// Node 26 exposes a disabled localStorage accessor by default. Vitest 3 sees
+// that accessor and skips copying jsdom's Storage instance onto the test global,
+// leaving localStorage undefined. Restore jsdom's browser-faithful storage.
+const testDom = (globalThis as typeof globalThis & {
+  jsdom?: { window: Window };
+}).jsdom;
+
+if (testDom) {
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: testDom.window.localStorage,
+  });
+}
+
 // jsdom ships without a canvas implementation, a ResizeObserver or matchMedia.
 // xterm.js touches all three at import/render time, so provide light stubs to
 // keep the test console clean and let terminal-adjacent components mount.
