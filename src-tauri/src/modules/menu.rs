@@ -226,16 +226,12 @@ fn rebuild_menu(app: &tauri::AppHandle, model: &NativeMenuModel) -> tauri::Resul
 pub fn set_native_menu(app: AppHandle, model: NativeMenuModel) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        // AppKit requires menu mutation on the main thread; commands run off it.
-        // Block on the result so a rebuild failure reaches the frontend caller
-        // (and its log) while the previous menu stays in place.
-        let (tx, rx) = std::sync::mpsc::channel();
-        let handle = app.clone();
-        app.run_on_main_thread(move || {
-            let _ = tx.send(rebuild_menu(&handle, &model).map_err(|e| e.to_string()));
-        })
-        .map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())?
+        // set_menu dispatches to the main thread internally; wrapping this in an
+        // extra run_on_main_thread nests that dispatch and the NSApp menu bar
+        // never refreshes (verified on-device), so call it directly and let a
+        // rebuild failure bubble to the frontend caller while the previous menu
+        // stays in place.
+        rebuild_menu(&app, &model).map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
