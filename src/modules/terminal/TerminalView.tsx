@@ -224,6 +224,9 @@ export function TerminalView({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null);
   // Lets the right-click menu call the in-effect smart-paste handler.
   const pasteRef = useRef<((kind: "ctrl" | "cmd") => void) | null>(null);
+  // Lets the right-click menu call the in-effect openSearchBox, which also
+  // refocuses and selects the input when the bar is already open.
+  const openSearchRef = useRef<(() => void) | null>(null);
   // The hover action card (IP / host:port / archive quick commands), positioned
   // at the cursor. A short hide delay lets the pointer travel from the link into
   // the card without it vanishing.
@@ -428,9 +431,20 @@ export function TerminalView({
             : null;
         }
       }
+      // On Linux the Rust clipboard backend is a stub: terminal_clipboard_text
+      // resolves Ok("") and the path/image probes return nothing (see
+      // src-tauri/src/modules/clipboard.rs), which would make a menu paste a
+      // silent no-op there. When every native probe came back empty, read the
+      // web clipboard instead. File paths win before this fallback is
+      // consulted, so the Windows files-copied flow is unchanged, and
+      // macOS/Windows return real text through the fast path above.
+      const effectiveClipboardText =
+        !clipboardText && filePaths.length === 0 && imagePaths.length === 0
+          ? await navigator.clipboard.readText().catch(() => "")
+          : clipboardText;
       const action = resolvePasteAction({
         shortcut: kind,
-        clipboardText,
+        clipboardText: effectiveClipboardText,
         filePaths,
         imagePaths,
         foregroundCommand: command,
@@ -454,6 +468,9 @@ export function TerminalView({
       }
     }
     pasteRef.current = handleTerminalPaste;
+    // openSearchBox is declared further down in this effect; function
+    // declarations hoist, so wiring the ref here keeps it beside pasteRef.
+    openSearchRef.current = openSearchBox;
 
     function isTerminalPasteShortcut(event: KeyboardEvent): "ctrl" | "cmd" | null {
       const isV = event.code === "KeyV" || event.key.toLowerCase() === "v";
@@ -1494,11 +1511,31 @@ export function TerminalView({
         // context-menu work; Windows started it in #184 because WebView2's
         // native paste is ~5s). Backed by the same fast clipboard path as
         // the paste keybinding.
+        const target = event.target;
+        // Text fields rendered inside this pane (e.g. the search bar's input)
+        // must NOT get the terminal menu — its Paste would write the clipboard
+        // into the pty instead of the field. Returning without preventDefault
+        // leaves the event to the window-level InputContextMenu, which shows
+        // the proper text-field menu. xterm's own hidden helper textarea
+        // (inside .xterm) is exempt: right-clicking the terminal lands on it,
+        // and it must keep the terminal menu.
+        if (
+          (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
+          !target.closest(".xterm")
+        ) {
+          return;
+        }
+        // Terminal not mounted yet: show no menu (spec: error handling) and
+        // fall back to the app-wide blanket suppression.
+        const handle = handleRef.current;
+        if (!handle) {
+          return;
+        }
         event.preventDefault();
         setContextMenu({
           x: event.clientX,
           y: event.clientY,
-          hasSelection: handleRef.current?.term.hasSelection() ?? false,
+          hasSelection: handle.term.hasSelection(),
         });
       }}
     >
@@ -1540,7 +1577,7 @@ export function TerminalView({
               },
               selectAll: () => handleRef.current?.term.selectAll(),
               clear: () => handleRef.current?.term.clear(),
-              search: () => setSearchOpen(true),
+              search: () => openSearchRef.current?.(),
             };
             return {
               id: spec.action,
