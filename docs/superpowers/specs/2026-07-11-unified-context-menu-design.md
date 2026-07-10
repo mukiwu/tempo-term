@@ -14,7 +14,7 @@ PR #184 之後右鍵選單行為在兩個平台分歧：Windows 的純文字欄�
 
 - 三個平台右鍵行為一致：文字欄位出自訂選單、終端機出自訂五項選單、其餘區域無選單
 - 筆記（Tiptap）與編輯器（CodeMirror）兩平台都維持原生選單，行為不變
-- dev build 的空白區域保留原生選單，macOS 開發時右鍵 Inspect Element 不受影響
+- dev build 的空白區域保留原生選單（三平台一致，Windows dev 也會看到原生選單，屬預期），macOS 開發時右鍵 Inspect Element 不受影響
 - Windows 行為與 #184 相比零變化（終端機選單多三項除外）
 - 既有測試全綠，新行為有對應測試
 
@@ -64,9 +64,8 @@ PR #184 之後右鍵選單行為在兩個平台分歧：Windows 的純文字欄�
 
 ### 4. i18n
 
-- `actions.selectAll`、`actions.copy`、`actions.paste`、`actions.search` 已存在
-- 新增 `actions.clear`（en 為 Clear，zh-Hant 為清空畫面）
-- 終端機選單直接沿用 actions 命名空間，不另開
+- 實作時修正：終端機選單沿用既有的 terminal 前綴鍵（terminalCopy、terminalPaste 本來就在），新增 terminalSelectAll、terminalClear，搜尋放 terminalSearch.label（common.json 已有 terminalSearch 物件給 SearchBar 用，攤平鍵會撞名蓋掉它）
+- 原定沿用 actions 命名空間的想法作廢，terminal 前綴的區域性更好
 
 ## 錯誤處理
 
