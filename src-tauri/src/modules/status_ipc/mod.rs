@@ -36,12 +36,14 @@ pub const ENV_MARKER: &str = "TEMPOTERM";
 
 /// The Tauri event the listener emits; the frontend routes it to the pane whose
 /// pty id matches `pane_id` (see TerminalView).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const STATUS_EVENT: &str = "session-status";
 
 /// A parsed status message. `kind` is `status` (a direct state like
 /// `active`/`idle`) or `notify` (a Claude notification_type the app resolves).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub struct StatusMessage {
     pub pane_id: u32,
     pub kind: String,
@@ -52,6 +54,7 @@ pub struct StatusMessage {
 /// `<token>\t<paneId>\t<kind>\t<payload>`. Returns the message only when the
 /// token matches and the pane id parses, so a spoofed or malformed line is
 /// dropped. Pure so it can be unit-tested without a socket.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn parse_message(line: &str, expected_token: &str) -> Option<StatusMessage> {
     let mut parts = line.trim_end_matches(['\n', '\r']).splitn(4, '\t');
     let token = parts.next()?;

@@ -47,6 +47,7 @@ pub const SHIM_MARKER: &str = "--status-hook";
 
 /// Substring identifying the legacy Unix `.sh` hook command, so a Windows
 /// install/uninstall also cleans up entries a pre-IPC build wrote.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub const LEGACY_SCRIPT_MARKER: &str = "status-hook.sh";
 
 /// Build the shim prefix command from an already-resolved executable path.
