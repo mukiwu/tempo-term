@@ -49,6 +49,17 @@ pub const SHIM_MARKER: &str = "--status-hook";
 /// install/uninstall also cleans up entries a pre-IPC build wrote.
 pub const LEGACY_SCRIPT_MARKER: &str = "status-hook.sh";
 
+/// Build the shim prefix command from an already-resolved executable path.
+/// Split out from `windows_shim_prefix` so the string logic is testable on any
+/// platform (`current_exe()` itself is not worth mocking). Applies `normalize`
+/// for the same reason the script-path flows do: Claude Code runs `command`
+/// hooks through bash on a git-bash setup, which treats `\` as an escape and
+/// mangles a raw Windows path, so the shim would never run.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_shim_prefix_from_exe(exe: &str) -> String {
+    format!("\"{}\" {SHIM_MARKER}", normalize(exe))
+}
+
 /// The command prefix for the native shim on Windows: the app's own executable
 /// invoked as `--status-hook`, double-quoted so cmd handles a path with spaces
 /// (e.g. under `Program Files`). `merge_hook_settings` appends ` <state>`.
@@ -56,7 +67,7 @@ pub const LEGACY_SCRIPT_MARKER: &str = "status-hook.sh";
 pub fn windows_shim_prefix() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe = exe.to_str().ok_or("executable path is not valid UTF-8")?;
-    Ok(format!("\"{exe}\" {SHIM_MARKER}"))
+    Ok(windows_shim_prefix_from_exe(exe))
 }
 
 /// Canonicalize a hook command (or our script path) for storage and comparison.
@@ -486,6 +497,16 @@ mod tests {
             .filter_map(|e| e["hooks"][0]["command"].as_str())
             .collect();
         assert_eq!(cmds, vec![r#""C:\new\tempo-term.exe" --status-hook active"#]);
+    }
+
+    #[test]
+    fn windows_shim_prefix_normalizes_backslashes() {
+        // Claude Code runs `command` hooks through bash on a git-bash setup; a
+        // raw backslash path (`C:\Program Files\...`) gets its backslashes eaten
+        // as escapes and the shim never runs. The prefix must be built on the
+        // same forward-slash form as the script-path flows (see `normalize`).
+        let prefix = windows_shim_prefix_from_exe(r"C:\Program Files\TempoTerm\tempo-term.exe");
+        assert_eq!(prefix, r#""C:/Program Files/TempoTerm/tempo-term.exe" --status-hook"#);
     }
 
     #[test]

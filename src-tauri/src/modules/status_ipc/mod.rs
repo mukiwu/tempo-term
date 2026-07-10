@@ -22,6 +22,11 @@ use std::net::TcpListener;
 
 use serde::Serialize;
 
+/// How long the shim waits to connect (and to write) before giving up. A status
+/// ping must never stall the hook that sent it (see module docs), so both the
+/// connect and the write below are bounded to this.
+const SEND_TIMEOUT: Duration = Duration::from_millis(200);
+
 /// Environment variable names shared by the app (which sets them per pane) and
 /// the shim (which reads them). Public so `pty::session` and the shim agree.
 pub const ENV_ADDR: &str = "TEMPOTERM_STATUS_ADDR";
@@ -103,6 +108,14 @@ impl StatusIpc {
 /// Each accepted connection is one status message; valid ones are emitted to the
 /// frontend as [`STATUS_EVENT`]. Returns the [`StatusIpc`] handle to manage, or
 /// an error if the port can't be bound (then status tracking is simply off).
+///
+/// Connections are handled sequentially on the accept-loop thread rather than
+/// one thread per connection: any local process can open connections to this
+/// loopback port, and an unbounded thread-per-connection loop lets it exhaust
+/// the process's threads. A status ping is one short line, and the tight read
+/// timeout in `handle_connection` bounds how long a slow or hung client can
+/// occupy the loop, so a flood of connections costs bounded time per
+/// connection rather than one OS thread each.
 #[cfg(windows)]
 pub fn start(app: &tauri::AppHandle) -> Result<StatusIpc, String> {
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
@@ -114,11 +127,7 @@ pub fn start(app: &tauri::AppHandle) -> Result<StatusIpc, String> {
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
-            let app = app.clone();
-            let token = accept_token.clone();
-            // A short-lived thread per connection so one slow/hung client never
-            // blocks other panes' status pings.
-            std::thread::spawn(move || handle_connection(stream, &token, &app));
+            handle_connection(stream, &accept_token, &app);
         }
     });
 
@@ -130,13 +139,18 @@ pub fn start(app: &tauri::AppHandle) -> Result<StatusIpc, String> {
 
 #[cfg(windows)]
 fn handle_connection(stream: TcpStream, token: &str, app: &tauri::AppHandle) {
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    // Bounded so a slow or hung client can only occupy the (single) accept
+    // loop for a short, fixed time — see `start`.
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
     let mut buf = String::new();
     // A status line is tiny; cap the read so a misbehaving client can't stream
     // unbounded data into memory.
     if stream.take(4096).read_to_string(&mut buf).is_err() {
         return;
     }
+    // The token check (first field parsed in `parse_message`) is the first
+    // gate on an accepted connection: an untrusted local process still has to
+    // guess the per-run secret before anything it sends is acted on.
     if let Some(msg) = parse_message(&buf, token) {
         use tauri::Emitter;
         let _ = app.emit(STATUS_EVENT, msg);
@@ -190,10 +204,19 @@ pub fn run_hook_shim(state: &str) {
     };
 
     let line = encode_message(&token, &pane_id, kind, &payload);
-    if let Ok(mut stream) = TcpStream::connect(&addr) {
-        let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
-        let _ = stream.write_all(line.as_bytes());
-    }
+    send_status(&addr, &line);
+}
+
+/// Connect to `addr` and write `line`, bounded by [`SEND_TIMEOUT`] on both the
+/// connect and the write so a dead or firewalled listener can never stall the
+/// hook that called us. Any failure (bad address, refused/timed-out connect,
+/// write error) is a silent no-op — see module docs. Split out from
+/// `run_hook_shim` so the socket logic is unit-testable on its own.
+fn send_status(addr: &str, line: &str) {
+    let Ok(socket_addr) = addr.parse::<std::net::SocketAddr>() else { return };
+    let Ok(mut stream) = TcpStream::connect_timeout(&socket_addr, SEND_TIMEOUT) else { return };
+    let _ = stream.set_write_timeout(Some(SEND_TIMEOUT));
+    let _ = stream.write_all(line.as_bytes());
 }
 
 /// Pull `notification_type` out of the hook's stdin JSON. Tolerant of surrounding
@@ -304,5 +327,33 @@ mod tests {
         let b = generate_token();
         assert!(!a.is_empty());
         assert_ne!(a, b, "two tokens should not collide");
+    }
+
+    #[test]
+    fn send_status_to_an_unused_port_returns_quickly() {
+        // Bind an ephemeral listener just to learn a currently-unused port, then
+        // drop it immediately so nothing is listening. A blocking connect with
+        // no timeout can stall for many seconds against a dead/firewalled
+        // listener; connect_timeout must bound the wait so a status ping can
+        // never stall the hook that sent it.
+        let addr = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap()
+        };
+        let start = std::time::Instant::now();
+        send_status(&addr.to_string(), "token\t1\tstatus\tactive");
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(2),
+            "send_status must not block waiting on a dead listener"
+        );
+    }
+
+    #[test]
+    fn send_status_ignores_an_unparseable_address() {
+        // Not a valid SocketAddr; must return immediately rather than panic or
+        // attempt a connect.
+        let start = std::time::Instant::now();
+        send_status("not-an-address", "token\t1\tstatus\tactive");
+        assert!(start.elapsed() < std::time::Duration::from_millis(50));
     }
 }
