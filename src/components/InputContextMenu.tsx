@@ -4,7 +4,6 @@ import { Copy, ClipboardPaste, Scissors, TextSelect } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 import type { ComponentType } from "react";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
-import { IS_WINDOWS } from "@/lib/platform";
 import { terminalClipboardText } from "@/modules/terminal/lib/terminalClipboard";
 import {
   isPlainTextField,
@@ -13,6 +12,7 @@ import {
   inputMenuSpecs,
   replaceRange,
   getSelectionRange,
+  isDevBuild,
   type EditableField,
   type FieldContext,
   type InputMenuAction,
@@ -36,10 +36,11 @@ const ICONS: Record<InputMenuAction, ComponentType<LucideProps>> = {
 };
 
 /**
- * Windows-only replacement for the WebView2 context menu on plain text fields
+ * App-styled replacement for the browser context menu on plain text fields
  * (`<input>` / `<textarea>`), and a blanket suppressor of the browser menu
- * everywhere else. Mounted once near the app root. Non-Windows platforms keep
- * their richer native menus, so the effect never installs there.
+ * everywhere else (skipped in dev builds so Inspect Element stays reachable).
+ * Mounted once near the app root and active on every platform; it started as
+ * a Windows-only fix because WebView2's native paste takes ~5s.
  *
  * Actions restore the field's focus and act on the selection captured at
  * right-click time. Cut/paste edit through `replaceRange`, which dispatches an
@@ -51,12 +52,9 @@ export function InputContextMenu() {
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   useEffect(() => {
-    if (!IS_WINDOWS) {
-      return;
-    }
     function onContextMenu(e: MouseEvent) {
       // A component already showed its own menu (tab bar, file tree, git graph,
-      // Monaco, the terminal's Windows menu, …) — leave it be.
+      // Monaco, the terminal's menu, …) — leave it be.
       if (e.defaultPrevented) {
         return;
       }
@@ -80,6 +78,10 @@ export function InputContextMenu() {
         return;
       }
       // Everywhere else: kill the browser menu (Reload / Save as / Inspect …).
+      // Dev builds keep it so right-click → Inspect Element still works.
+      if (isDevBuild()) {
+        return;
+      }
       e.preventDefault();
     }
     window.addEventListener("contextmenu", onContextMenu);

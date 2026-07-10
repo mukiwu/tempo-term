@@ -150,3 +150,13 @@ export function inputMenuSpecs(ctx: FieldContext): InputMenuItemSpec[] {
   specs.push({ action: "selectAll", enabled: ctx.hasValue });
   return specs;
 }
+
+/**
+ * Whether this is a dev build. Blank-area context-menu suppression is skipped
+ * in dev so right-click → Inspect Element stays reachable while debugging;
+ * text-field and terminal custom menus still apply so the feature itself is
+ * testable in dev. A function (not a constant) so tests can stub it.
+ */
+export function isDevBuild(): boolean {
+  return import.meta.env.DEV;
+}
