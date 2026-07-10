@@ -44,6 +44,31 @@ pub enum NativeItemKind {
     Predefined,
 }
 
+/// Event emitted to the focused window when a native menu item is clicked.
+/// Predefined items (copy/paste/undo/etc.) are handled by the system and never
+/// reach `on_menu_event`, so only custom item ids are ever seen here.
+pub const NATIVE_MENU_EVENT: &str = "native-menu-click";
+
+/// Build the App submenu (About/Services/Hide/Quit): the one macOS requires to
+/// exist for services / hide / quit to work at all. `set_menu` replaces the
+/// entire menu bar, so every rebuild (fallback `init()` and `set_native_menu`)
+/// must prepend this or TempoTerm/about/quit disappear from the menu bar.
+#[cfg(target_os = "macos")]
+fn build_app_submenu(handle: &tauri::AppHandle) -> tauri::Result<tauri::menu::Submenu<tauri::Wry>> {
+    use tauri::menu::{AboutMetadata, SubmenuBuilder};
+    SubmenuBuilder::new(handle, "TempoTerm")
+        .about(Some(AboutMetadata::default()))
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()
+}
+
 /// Build the native macOS menu, reduced to the system minimum (App + Edit).
 ///
 /// Every custom item that used to live here (New Window, Close Tab, Close
@@ -56,25 +81,19 @@ pub enum NativeItemKind {
 /// because the system requires one to exist for services / hide / quit, so a
 /// minimal App menu is kept, plus an Edit menu so Cmd+C/V/X/A keep routing
 /// through the system into whichever webview holds focus.
+///
+/// This is the fallback menu shown before the frontend pushes its own model
+/// via `set_native_menu`; once it does, `rebuild_menu` replaces the Edit menu
+/// with the frontend's menus (App submenu is always prepended, see
+/// `build_app_submenu`).
 pub fn init(app: &mut App) -> tauri::Result<()> {
     // Windows renders the in-window menu bar; no native menu at all.
     #[cfg(target_os = "macos")]
     {
-        use tauri::menu::{AboutMetadata, MenuBuilder, SubmenuBuilder};
+        use tauri::menu::{MenuBuilder, SubmenuBuilder};
         let handle = app.handle();
 
-        // App menu: macOS requires it; keep only system-provided items.
-        let app_menu = SubmenuBuilder::new(handle, "TempoTerm")
-            .about(Some(AboutMetadata::default()))
-            .separator()
-            .services()
-            .separator()
-            .hide()
-            .hide_others()
-            .show_all()
-            .separator()
-            .quit()
-            .build()?;
+        let app_menu = build_app_submenu(handle)?;
 
         // Edit menu: keeps Cmd+C/V/X/A routed by the system into the webview.
         let edit_menu = SubmenuBuilder::new(handle, "Edit")
@@ -91,8 +110,138 @@ pub fn init(app: &mut App) -> tauri::Result<()> {
             .items(&[&app_menu, &edit_menu])
             .build()?;
         app.set_menu(menu)?;
+
+        // Dispatch custom item clicks to the focused window; predefined items
+        // (copy/paste/undo/etc.) are handled by the system and never reach here.
+        app.on_menu_event(|app, event| {
+            use tauri::Emitter;
+            if let Some(win) = app.get_focused_window() {
+                let id = event.id().0.clone();
+                let _ = win.emit_to(win.label(), NATIVE_MENU_EVENT, id);
+            }
+        });
     }
     Ok(())
+}
+
+/// One item built by [`build_items`]. Kept as an enum (rather than
+/// `Box<dyn IsMenuItem>`) so submenus can still call type-specific methods if
+/// ever needed; `as_menu_item` is the uniform view used to attach items to a
+/// parent builder.
+#[cfg(target_os = "macos")]
+enum BuiltItem {
+    Item(tauri::menu::MenuItem<tauri::Wry>),
+    Predefined(tauri::menu::PredefinedMenuItem<tauri::Wry>),
+    Sub(tauri::menu::Submenu<tauri::Wry>),
+}
+
+#[cfg(target_os = "macos")]
+impl BuiltItem {
+    fn as_menu_item(&self) -> &dyn tauri::menu::IsMenuItem<tauri::Wry> {
+        match self {
+            BuiltItem::Item(i) => i,
+            BuiltItem::Predefined(i) => i,
+            BuiltItem::Sub(i) => i,
+        }
+    }
+}
+
+/// Recursively build muda menu items from the frontend-provided defs.
+/// Unknown predefined names are skipped rather than erroring, so a frontend
+/// shipped ahead of this binary degrades gracefully instead of breaking the
+/// whole menu rebuild.
+#[cfg(target_os = "macos")]
+fn build_items(app: &tauri::AppHandle, defs: &[NativeMenuItem]) -> tauri::Result<Vec<BuiltItem>> {
+    use tauri::menu::{MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+    let mut out = Vec::new();
+    for def in defs {
+        match def.kind {
+            NativeItemKind::Separator => {
+                out.push(BuiltItem::Predefined(PredefinedMenuItem::separator(app)?));
+            }
+            NativeItemKind::Predefined => {
+                // Empty label -> None keeps muda's default text (undo/redo/cut).
+                let text = (!def.label.is_empty()).then_some(def.label.as_str());
+                let item = match def.predefined.as_deref() {
+                    Some("copy") => PredefinedMenuItem::copy(app, text)?,
+                    Some("paste") => PredefinedMenuItem::paste(app, text)?,
+                    Some("selectAll") => PredefinedMenuItem::select_all(app, text)?,
+                    Some("cut") => PredefinedMenuItem::cut(app, text)?,
+                    Some("undo") => PredefinedMenuItem::undo(app, text)?,
+                    Some("redo") => PredefinedMenuItem::redo(app, text)?,
+                    // Unknown predefined name from a newer frontend: skip, never crash.
+                    _ => continue,
+                };
+                out.push(BuiltItem::Predefined(item));
+            }
+            NativeItemKind::Custom => {
+                if let Some(children) = &def.items {
+                    let built = build_items(app, children)?;
+                    let mut sb = SubmenuBuilder::new(app, &def.label);
+                    for child in &built {
+                        sb = sb.item(child.as_menu_item());
+                    }
+                    out.push(BuiltItem::Sub(sb.build()?));
+                } else {
+                    let mut builder =
+                        MenuItemBuilder::with_id(def.id.as_str(), &def.label).enabled(def.enabled);
+                    if let Some(acc) = &def.accelerator {
+                        builder = builder.accelerator(acc);
+                    }
+                    out.push(BuiltItem::Item(builder.build(app)?));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Replace the whole menu bar with the App submenu plus every menu from the
+/// frontend model. `set_menu` swaps the bar wholesale, so the App submenu
+/// (About/Services/Hide/Quit) is rebuilt and prepended on every call.
+#[cfg(target_os = "macos")]
+fn rebuild_menu(app: &tauri::AppHandle, model: &NativeMenuModel) -> tauri::Result<()> {
+    use tauri::menu::{MenuBuilder, SubmenuBuilder};
+    let mut mb = MenuBuilder::new(app).item(&build_app_submenu(app)?);
+    for menu in &model.menus {
+        let built = build_items(app, &menu.items)?;
+        // Carry the frontend's menu id onto the muda Submenu id so the menu
+        // stays addressable by id (and `NativeMenu::id` isn't dead code on
+        // macOS, the only platform that ever reads this model).
+        let mut sb = SubmenuBuilder::with_id(app, menu.id.as_str(), &menu.label);
+        for child in &built {
+            sb = sb.item(child.as_menu_item());
+        }
+        mb = mb.item(&sb.build()?);
+    }
+    app.set_menu(mb.build()?)?;
+    Ok(())
+}
+
+/// Rebuild the native macOS menu bar from the model the frontend pushed
+/// (`src/lib/nativeMenu.ts` invokes this on menu-tree changes).
+/// No-op stub off macOS: the frontend hook only runs on macOS, but the command
+/// must exist on every platform so `generate_handler!` stays cfg-free.
+#[tauri::command]
+pub fn set_native_menu(app: AppHandle, model: NativeMenuModel) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        // AppKit requires menu mutation on the main thread; commands run off it.
+        // Block on the result so a rebuild failure reaches the frontend caller
+        // (and its log) while the previous menu stays in place.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = app.clone();
+        app.run_on_main_thread(move || {
+            let _ = tx.send(rebuild_menu(&handle, &model).map_err(|e| e.to_string()));
+        })
+        .map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, model);
+        Ok(())
+    }
 }
 
 /// Open a new window mirroring the main window's configuration. Each new window

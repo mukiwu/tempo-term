@@ -65,6 +65,7 @@ use modules::sessions_index::{
     sessions_project_stats, sessions_stats, SessionsIndexState,
 };
 use modules::setup::{detect_tools, install_tool};
+use modules::menu::set_native_menu;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -204,6 +205,7 @@ pub fn run() {
             pty_close_all,
             app_build_info,
             open_new_window,
+            set_native_menu,
             terminal_clipboard_paths,
             terminal_clipboard_image_paths,
             terminal_clipboard_text,
