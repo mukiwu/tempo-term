@@ -143,10 +143,11 @@ fn cleanup_hooks_json(hooks_path: &PathBuf, raw_script_path: &str) -> Result<(),
     Ok(())
 }
 
-/// Also called (via
-/// `crate::modules::codex_status_hook::codex_status_hook_uninstall`) from
-/// `lib.rs`'s `.setup()` on Windows, independent of the user's
-/// `claudeStatusTracking` setting (see #155 follow-up, Fix 2).
+/// Mirror of `claude_status_hook_uninstall` for Codex: remove our hooks.json
+/// entries and delete the legacy script. Only invoked from the frontend when
+/// the user turns status tracking off; the launch-time migration path is
+/// `codex_status_hook_cleanup_legacy`. Leaves `[features] hooks = true` in
+/// config.toml: it is shared infra other tools (e.g. CodeIsland) rely on.
 #[tauri::command]
 pub fn codex_status_hook_uninstall(app: AppHandle) -> Result<(), String> {
     let (script_path, hooks_path, _config_path) = codex_paths(&app)?;

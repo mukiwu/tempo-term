@@ -92,10 +92,11 @@ fn open_new_window(app: tauri::AppHandle) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Native status-hook shim: `tempo-term --status-hook <state>`. On Windows the
-    // CLI's settings.json registers this instead of a bare `.sh` (which cmd can't
-    // run — issue #155). Handle it before Tauri starts and exit; it's a no-op
-    // outside a tempo-term pane (guards on the TEMPOTERM_* env we inject there).
+    // Native status-hook shim: `tempo-term --status-hook <state>`. Every
+    // platform's Claude/Codex hook config registers this command (see
+    // claude_status_hook); handle it before Tauri starts and exit. It's a
+    // no-op outside a tempo-term pane (guards on the TEMPOTERM_* env we
+    // inject there).
     let mut args = std::env::args().skip(1);
     if args.next().as_deref() == Some("--status-hook") {
         let state = args.next().unwrap_or_default();

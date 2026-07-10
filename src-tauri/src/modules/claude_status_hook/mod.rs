@@ -281,10 +281,9 @@ fn cleanup_settings(settings_path: &PathBuf, raw_script_path: &str) -> Result<()
     Ok(())
 }
 
-/// Remove our settings.json entries and delete the hook script. Also called
-/// (via `crate::modules::claude_status_hook::claude_status_hook_uninstall`)
-/// from `lib.rs`'s `.setup()` on Windows, independent of the user's
-/// `claudeStatusTracking` setting (see #155 follow-up, Fix 2).
+/// Remove our settings.json entries and delete the legacy hook script. Only
+/// invoked from the frontend when the user turns status tracking off; the
+/// launch-time migration path is `claude_status_hook_cleanup_legacy`.
 #[tauri::command]
 pub fn claude_status_hook_uninstall(app: AppHandle) -> Result<(), String> {
     let (script_path, settings_path) = paths(&app)?;

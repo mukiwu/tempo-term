@@ -312,9 +312,11 @@ export function TerminalView({
       onDrop: (total) => noteDroppedOutput(total),
     });
 
-    // The session-status hook (see claude_status_hook) emits OSC 6973 on this
-    // pane's tty when Claude changes state. Capture it here, where we know the
-    // leaf id, and feed the per-leaf status store that drives the card badge.
+    // OSC 6973 session status. Local panes report over the loopback IPC
+    // listener below; this in-band handler is the delivery path for SSH
+    // remote panes whose remote setup writes the status OSC on the pty
+    // stream. Capture it here, where we know the leaf id, and feed the
+    // per-leaf status store that drives the card badge.
     const statusOscHandler = term.parser.registerOscHandler(STATUS_OSC_CODE, (payload) => {
       const leaf = leafIdRef.current;
       if (leaf) {
@@ -881,7 +883,7 @@ export function TerminalView({
           return;
         }
         sessionRef.current = session;
-        // Record the pty id so Windows status-IPC events can be matched to this
+        // Record the pty id so session-status IPC events can be matched to this
         // pane (see the session-status listener); SSH panes have no pty id.
         ptyIdRef.current = isPtySession(session) ? session.id : null;
         // Register live SSH session so ConnectionsPanel can show forwarding status.
