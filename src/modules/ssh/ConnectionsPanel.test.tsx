@@ -9,6 +9,7 @@ vi.mock("react-i18next", () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
       opts?.name ? `${key}:${opts.name}` : key,
   }),
+  initReactI18next: { type: "3rdParty", init: () => {} },
 }));
 
 const CONNECTION = {

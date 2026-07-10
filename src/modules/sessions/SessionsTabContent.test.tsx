@@ -86,6 +86,7 @@ vi.mock("react-i18next", () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
       opts?.count !== undefined ? `${key}:${opts.count}` : key,
   }),
+  initReactI18next: { type: "3rdParty", init: () => {} },
 }));
 
 function session(overrides: Partial<SessionSummary>): SessionSummary {
