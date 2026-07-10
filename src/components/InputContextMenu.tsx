@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Copy, ClipboardPaste, Scissors, TextSelect } from "lucide-react";
 import type { LucideProps } from "lucide-react";
@@ -8,6 +8,7 @@ import { terminalClipboardText } from "@/modules/terminal/lib/terminalClipboard"
 import {
   isPlainTextField,
   isRichEditable,
+  isEditorSurface,
   readFieldContext,
   inputMenuSpecs,
   replaceRange,
@@ -50,8 +51,21 @@ const ICONS: Record<InputMenuAction, ComponentType<LucideProps>> = {
 export function InputContextMenu() {
   const { t } = useTranslation();
   const [menu, setMenu] = useState<MenuState | null>(null);
+  // The element with an active IME composition, if any. Tracked so a
+  // right-click during composition keeps the native menu (which commits the
+  // composition correctly) instead of ours — replaceRange rewriting the value
+  // mid-composition would corrupt the composed text.
+  const composingRef = useRef<EventTarget | null>(null);
 
   useEffect(() => {
+    function onCompositionStart(e: CompositionEvent) {
+      composingRef.current = e.target;
+    }
+    function onCompositionEnd(e: CompositionEvent) {
+      if (composingRef.current === e.target) {
+        composingRef.current = null;
+      }
+    }
     function onContextMenu(e: MouseEvent) {
       // A component already showed its own menu (tab bar, file tree, git graph,
       // Monaco, the terminal's menu, …) — leave it be.
@@ -59,6 +73,11 @@ export function InputContextMenu() {
         return;
       }
       const target = e.target;
+      // Mid-IME-composition: keep the native menu (no preventDefault), matching
+      // the pre-unification behavior. See composingRef above.
+      if (composingRef.current !== null && target === composingRef.current) {
+        return;
+      }
       if (isPlainTextField(target)) {
         e.preventDefault();
         const { start, end } = getSelectionRange(target);
@@ -72,9 +91,11 @@ export function InputContextMenu() {
         });
         return;
       }
-      // contentEditable (Tiptap notes): keep the native menu — its spellcheck and
-      // copy/paste beat a custom one, and driving it would fight the editor.
-      if (isRichEditable(target)) {
+      // contentEditable (Tiptap notes) and editor surfaces (CodeMirror diff
+      // view, Monaco): keep the native menu — its spellcheck and copy/paste
+      // beat a custom one, and driving it would fight the editor. The surface
+      // check catches read-only CodeMirror, whose content is not contentEditable.
+      if (isRichEditable(target) || isEditorSurface(target)) {
         return;
       }
       // Everywhere else: kill the browser menu (Reload / Save as / Inspect …).
@@ -84,8 +105,16 @@ export function InputContextMenu() {
       }
       e.preventDefault();
     }
+    // Capture phase so composition state is tracked even if an editor stops
+    // propagation of these events in the bubble phase.
+    window.addEventListener("compositionstart", onCompositionStart, true);
+    window.addEventListener("compositionend", onCompositionEnd, true);
     window.addEventListener("contextmenu", onContextMenu);
-    return () => window.removeEventListener("contextmenu", onContextMenu);
+    return () => {
+      window.removeEventListener("compositionstart", onCompositionStart, true);
+      window.removeEventListener("compositionend", onCompositionEnd, true);
+      window.removeEventListener("contextmenu", onContextMenu);
+    };
   }, []);
 
   const runAction = useCallback(
@@ -126,6 +155,12 @@ export function InputContextMenu() {
             } catch {
               text = "";
             }
+          }
+          // On Linux the Rust command is a stub that RESOLVES with "" (no
+          // native clipboard backend there), so the catch above never runs.
+          // Retry the web clipboard whenever the fast path came back empty.
+          if (!text) {
+            text = await navigator.clipboard.readText().catch(() => "");
           }
           if (text) {
             field.focus();

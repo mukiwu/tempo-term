@@ -55,6 +55,22 @@ export function isRichEditable(target: EventTarget | null): boolean {
   return target.isContentEditable === true;
 }
 
+/**
+ * True when the target sits inside a code/rich editor surface (CodeMirror,
+ * Monaco, ProseMirror), which must keep its native context menu. Needed on top
+ * of `isRichEditable` because a read-only CodeMirror — the diff view uses
+ * `EditorView.editable.of(false)` — renders its content with
+ * `contenteditable="false"`, so `isContentEditable` is false there even though
+ * the element is still an editor surface, and the blanket suppression would
+ * otherwise leave it with no menu at all.
+ */
+export function isEditorSurface(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return target.closest(".cm-editor, .monaco-editor, .ProseMirror") !== null;
+}
+
 export interface FieldContext {
   /** A non-empty selection exists, so Cut/Copy have something to act on. */
   hasSelection: boolean;
