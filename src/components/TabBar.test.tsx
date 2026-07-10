@@ -106,10 +106,18 @@ describe("TabBar tab context menu", () => {
     render(<TabBar />);
     fireEvent.contextMenu(screen.getByRole("tab"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Rename Tab" }));
-    // Right-clicking the rename field must not bubble up and open a fresh tab
-    // menu over the input being edited.
-    fireEvent.contextMenu(screen.getByRole("textbox"));
-    expect(screen.queryByRole("menuitem")).toBeNull();
+    // Right-clicking the rename field must not open a fresh tab menu, but the
+    // event must still bubble to the window so the app-wide text-field menu
+    // (InputContextMenu) can handle it.
+    const onWindowContextMenu = vi.fn();
+    window.addEventListener("contextmenu", onWindowContextMenu);
+    try {
+      fireEvent.contextMenu(screen.getByRole("textbox"));
+      expect(screen.queryByRole("menuitem")).toBeNull();
+      expect(onWindowContextMenu).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener("contextmenu", onWindowContextMenu);
+    }
   });
 
   it("marks the tab strip as a drop target for open-in-new-tab", () => {

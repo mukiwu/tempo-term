@@ -122,6 +122,9 @@ function TabItem({ id }: { id: string }) {
       onClick={() => setActive(tab.id)}
       onDoubleClick={startRename}
       onContextMenu={(e) => {
+        // Right-clicks on the rename input skip the tab menu and bubble to the
+        // window-level InputContextMenu, like every other text field.
+        if (e.target instanceof HTMLInputElement) return;
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
       }}
@@ -150,7 +153,6 @@ function TabItem({ id }: { id: string }) {
           onBlur={commit}
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
-          onContextMenu={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === "Enter") commit();
             if (e.key === "Escape") setEditing(false);

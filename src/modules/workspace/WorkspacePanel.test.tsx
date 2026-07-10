@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { WorkspacePanel } from "./WorkspacePanel";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -340,6 +340,26 @@ describe("WorkspacePanel", () => {
     expect(useTabsStore.getState().tabs.find((tab) => tab.id === "t2")).toBeDefined();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+  });
+
+  it("does not reopen the card context menu when right-clicking the rename input", () => {
+    render(<WorkspacePanel />);
+    const alpha = screen.getByRole("button", { name: /alpha/ });
+    fireEvent.contextMenu(alpha);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Rename Tab/i }));
+    // Right-clicking the rename field must not reopen the card menu, but the
+    // event must still bubble to the window so the app-wide text-field menu
+    // (InputContextMenu) can handle it.
+    const onWindowContextMenu = vi.fn();
+    window.addEventListener("contextmenu", onWindowContextMenu);
+    try {
+      fireEvent.contextMenu(screen.getByDisplayValue("alpha"));
+      expect(screen.queryByRole("menuitem", { name: /Rename Tab/i })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Close Tab/i })).toBeNull();
+      expect(onWindowContextMenu).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener("contextmenu", onWindowContextMenu);
+    }
   });
 
   it("renames a tab from the sidebar context menu", () => {

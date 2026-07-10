@@ -288,6 +288,9 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
       type="button"
       onClick={() => setActive(tab.id)}
       onContextMenu={(event) => {
+        // Right-clicks on the rename input skip the card menu and bubble to
+        // the window-level InputContextMenu, like every other text field.
+        if (event.target instanceof HTMLInputElement) return;
         event.preventDefault();
         setMenu({ x: event.clientX, y: event.clientY });
       }}
@@ -311,7 +314,6 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
               onBlur={commitRename}
               onClick={(event) => event.stopPropagation()}
               onPointerDown={(event) => event.stopPropagation()}
-              onContextMenu={(event) => event.stopPropagation()}
               onKeyDown={(event) => {
                 if (event.key === "Enter") commitRename();
                 if (event.key === "Escape") setEditing(false);
