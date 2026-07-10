@@ -45,6 +45,7 @@ import { detectTools, isToolReady } from "@/modules/setup/lib/setupTools";
 import { isMainWindow, closeWindow } from "@/lib/window";
 import { IS_WINDOWS } from "@/lib/platform";
 import { invoke } from "@tauri-apps/api/core";
+import { useMacNativeMenu } from "@/lib/useMacNativeMenu";
 import { useForwardStatusListener } from "@/modules/ssh/lib/useForwardStatus";
 import { sftpSessionStore } from "@/modules/ssh/lib/sftpSessionStore";
 import { enforceLogRetention } from "@/modules/logs/lib/sessionLog";
@@ -218,6 +219,7 @@ function App() {
   useWatchSessions();
   useWatchNotes();
   useForwardStatusListener();
+  useMacNativeMenu();
 
   useEffect(() => {
     applyTheme(getTheme(themeId), document.documentElement);
