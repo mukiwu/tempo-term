@@ -1,6 +1,49 @@
 use tauri::window::Color;
 use tauri::{App, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
+/// Menu model pushed from the frontend (src/lib/nativeMenu.ts). Fields are only
+/// read inside the macOS-only builder, hence the dead_code guard keeping the
+/// Windows CI build warning-free.
+#[derive(serde::Deserialize)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub struct NativeMenuModel {
+    pub menus: Vec<NativeMenu>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub struct NativeMenu {
+    pub id: String,
+    pub label: String,
+    pub items: Vec<NativeMenuItem>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub struct NativeMenuItem {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub accelerator: Option<String>,
+    pub kind: NativeItemKind,
+    #[serde(default)]
+    pub predefined: Option<String>,
+    #[serde(default)]
+    pub items: Option<Vec<NativeMenuItem>>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub enum NativeItemKind {
+    Custom,
+    Separator,
+    Predefined,
+}
+
 /// Build the native macOS menu, reduced to the system minimum (App + Edit).
 ///
 /// Every custom item that used to live here (New Window, Close Tab, Close
@@ -105,5 +148,41 @@ fn next_window_label(app: &AppHandle) -> String {
             return label;
         }
         i += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserializes_native_menu_model() {
+        let json = r#"{
+          "menus": [{
+            "id": "view",
+            "label": "檢視",
+            "items": [
+              { "id": "toggle-sidebar", "label": "切換側邊欄", "enabled": true,
+                "accelerator": "Cmd+B", "kind": "custom" },
+              { "id": "sep-1", "label": "", "enabled": false, "kind": "separator" },
+              { "id": "copy", "label": "複製", "enabled": true,
+                "kind": "predefined", "predefined": "copy" },
+              { "id": "sidebar-panel", "label": "側邊欄面板", "enabled": true, "kind": "custom",
+                "items": [
+                  { "id": "sidebar-notes", "label": "筆記", "enabled": true,
+                    "accelerator": "Alt+1", "kind": "custom" }
+                ] }
+            ]
+          }]
+        }"#;
+        let model: NativeMenuModel = serde_json::from_str(json).expect("model deserializes");
+        assert_eq!(model.menus.len(), 1);
+        let menu = &model.menus[0];
+        assert_eq!(menu.id, "view");
+        assert_eq!(menu.items.len(), 4);
+        assert!(matches!(menu.items[1].kind, NativeItemKind::Separator));
+        assert_eq!(menu.items[2].predefined.as_deref(), Some("copy"));
+        let sub = menu.items[3].items.as_ref().expect("submenu items");
+        assert_eq!(sub[0].accelerator.as_deref(), Some("Alt+1"));
     }
 }
