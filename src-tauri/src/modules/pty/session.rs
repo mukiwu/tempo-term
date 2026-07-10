@@ -102,9 +102,9 @@ fn build_shell_command(
     // so Claude sessions in other terminals never touch our UI.
     cmd.env("TEMPOTERM", "1");
 
-    // On Windows, point this pane's status-hook shim back at the app's loopback
-    // listener and tag it with the pane's pty id (see status_ipc). Empty on Unix,
-    // which delivers status through the OSC/tty path instead.
+    // Point this pane's status-hook shim back at the app's loopback listener
+    // and tag it with the pane's pty id (see status_ipc). Empty when the
+    // listener failed to start.
     for (key, value) in status_env {
         cmd.env(key, value);
     }
@@ -253,17 +253,14 @@ pub fn spawn(
     // frontend matches session-status events back to the pane by this id).
     let id = state.alloc_id();
 
-    // On Windows, hand the pane the loopback address + token + its id so its
-    // status-hook shim can report state (see status_ipc). Empty elsewhere.
-    #[cfg(windows)]
+    // Hand the pane the loopback address + token + its id so its status-hook
+    // shim can report state (see status_ipc).
     let status_env = {
         use tauri::Manager;
         app.try_state::<crate::modules::status_ipc::StatusIpc>()
             .map(|ipc| ipc.env_for(id))
             .unwrap_or_default()
     };
-    #[cfg(not(windows))]
-    let status_env: Vec<(String, String)> = Vec::new();
 
     let (cmd, shell_name) = build_shell_command(cwd, suggestions, shell_override, status_env);
 

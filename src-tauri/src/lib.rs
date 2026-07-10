@@ -162,19 +162,16 @@ pub fn run() {
                     modules::pty::shell::init_autosuggest_zdotdir(&dir, &plugin);
                 }
             }
-            // Windows delivers Claude/Codex session status over a loopback
-            // socket instead of the Unix OSC/tty path (#155): bind the listener
-            // now, before any pane spawns, and stash its address+token so each
-            // pane's env can point its status-hook shim back here. A bind failure
-            // just leaves status tracking off — never blocks startup.
-            #[cfg(windows)]
-            {
-                match modules::status_ipc::start(app.handle()) {
-                    Ok(ipc) => {
-                        app.manage(ipc);
-                    }
-                    Err(err) => eprintln!("status-ipc listener disabled: {err}"),
+            // Claude/Codex session status arrives over a loopback socket (#155,
+            // ported to all platforms in #181): bind the listener now, before
+            // any pane spawns, and stash its address+token so each pane's env
+            // can point its status-hook shim back here. A bind failure just
+            // leaves status tracking off — never blocks startup.
+            match modules::status_ipc::start(app.handle()) {
+                Ok(ipc) => {
+                    app.manage(ipc);
                 }
+                Err(err) => eprintln!("status-ipc listener disabled: {err}"),
             }
             modules::menu::init(app)?;
             // Windows: the status hooks' install command is cleanup-only (#155,

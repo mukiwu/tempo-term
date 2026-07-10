@@ -1,11 +1,12 @@
-//! Windows status delivery over a loopback socket, replacing the Unix
-//! `/dev/$tty` OSC mechanism that has no Windows backend (see
-//! `claude_status_hook`). On Windows, Claude Code / Codex run `command` hooks
-//! through cmd, which cannot execute a bare `.sh` (issue #155); instead we
-//! register a native shim — this very binary invoked as `tempo-term --status-hook
-//! <state>` — that reports the pane's live state to a small TCP listener the app
-//! runs on `127.0.0.1`. The frontend then lights the same session-status badge
-//! it lights from the OSC path on Unix.
+//! Session-status delivery over a loopback socket. Claude Code / Codex hooks
+//! run a native shim — this very binary invoked as `tempo-term --status-hook
+//! <state>` — that reports the pane's live state to a small TCP listener the
+//! app runs on `127.0.0.1`. Originally built for Windows (#155), where hooks
+//! run through cmd, which can't execute a bare `.sh`; now the one delivery
+//! path on every platform (#181), replacing the injected script + `/dev/$tty`
+//! OSC + process-ancestry walk that macOS used to need. The frontend keeps an
+//! OSC 6973 handler for SSH remote panes, which still deliver in-band over
+//! the pty stream.
 //!
 //! Correlation: each pane's shell is spawned with `TEMPOTERM_PANE_ID` (the pty
 //! session id) and `TEMPOTERM_STATUS_ADDR` in its environment — the same channel
@@ -15,10 +16,8 @@
 //! another local process can't spoof a pane's badge over the open loopback port.
 
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
-#[cfg(windows)]
-use std::net::TcpListener;
 
 use serde::Serialize;
 
@@ -36,14 +35,12 @@ pub const ENV_MARKER: &str = "TEMPOTERM";
 
 /// The Tauri event the listener emits; the frontend routes it to the pane whose
 /// pty id matches `pane_id` (see TerminalView).
-#[cfg_attr(not(windows), allow(dead_code))]
 pub const STATUS_EVENT: &str = "session-status";
 
 /// A parsed status message. `kind` is `status` (a direct state like
 /// `active`/`idle`) or `notify` (a Claude notification_type the app resolves).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(not(windows), allow(dead_code))]
 pub struct StatusMessage {
     pub pane_id: u32,
     pub kind: String,
@@ -54,7 +51,6 @@ pub struct StatusMessage {
 /// `<token>\t<paneId>\t<kind>\t<payload>`. Returns the message only when the
 /// token matches and the pane id parses, so a spoofed or malformed line is
 /// dropped. Pure so it can be unit-tested without a socket.
-#[cfg_attr(not(windows), allow(dead_code))]
 pub fn parse_message(line: &str, expected_token: &str) -> Option<StatusMessage> {
     let mut parts = line.trim_end_matches(['\n', '\r']).splitn(4, '\t');
     let token = parts.next()?;
@@ -86,14 +82,11 @@ fn encode_message(token: &str, pane_id: &str, kind: &str, payload: &str) -> Stri
 }
 
 /// Live listener details handed to each pane so its shim can phone home.
-/// Windows-only: Unix delivers status through the OSC/`/dev/tty` path instead.
-#[cfg(windows)]
 pub struct StatusIpc {
     addr: String,
     token: String,
 }
 
-#[cfg(windows)]
 impl StatusIpc {
     /// The `(name, value)` env pairs to inject into a pane spawned as `pane_id`,
     /// so its status hook can reach us and be trusted. Returns `None` when the
@@ -119,7 +112,6 @@ impl StatusIpc {
 /// timeout in `handle_connection` bounds how long a slow or hung client can
 /// occupy the loop, so a flood of connections costs bounded time per
 /// connection rather than one OS thread each.
-#[cfg(windows)]
 pub fn start(app: &tauri::AppHandle) -> Result<StatusIpc, String> {
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -140,7 +132,6 @@ pub fn start(app: &tauri::AppHandle) -> Result<StatusIpc, String> {
     })
 }
 
-#[cfg(windows)]
 fn handle_connection(stream: TcpStream, token: &str, app: &tauri::AppHandle) {
     // Bounded so a slow or hung client can only occupy the (single) accept
     // loop for a short, fixed time — see `start`.
@@ -162,7 +153,6 @@ fn handle_connection(stream: TcpStream, token: &str, app: &tauri::AppHandle) {
 
 /// 16 random bytes, URL-safe base64. Enough to keep a co-resident local process
 /// from guessing the token and spoofing a pane's badge.
-#[cfg(windows)]
 fn generate_token() -> String {
     use base64::Engine;
     let mut bytes = [0u8; 16];
@@ -313,7 +303,6 @@ mod tests {
         assert_eq!(notification_type("not json"), None);
     }
 
-    #[cfg(windows)]
     #[test]
     fn env_for_carries_addr_token_and_pane_id() {
         let ipc = StatusIpc { addr: "127.0.0.1:5000".into(), token: "tok".into() };
@@ -323,7 +312,6 @@ mod tests {
         assert!(env.contains(&(ENV_PANE_ID.to_string(), "42".to_string())));
     }
 
-    #[cfg(windows)]
     #[test]
     fn generated_tokens_are_nonempty_and_vary() {
         let a = generate_token();
