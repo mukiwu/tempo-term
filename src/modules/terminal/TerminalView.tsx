@@ -1,8 +1,17 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
-import { ClipboardPaste, Copy, Loader2, WifiOff } from "lucide-react";
+import {
+  ClipboardPaste,
+  Copy,
+  Eraser,
+  Loader2,
+  Search,
+  TextSelect,
+  WifiOff,
+  type LucideProps,
+} from "lucide-react";
 import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { createOutputWriter } from "./lib/outputWriter";
@@ -60,6 +69,7 @@ import { actionsFor, findActionLinks, type TerminalAction } from "./lib/actionLi
 import { ActionCard } from "./ActionCard";
 import { buildCellPositions, gatherLogicalLine } from "./lib/cellPositions";
 import { terminalKeySequence, isAppShortcut } from "./lib/terminalKeymap";
+import { terminalMenuSpecs, type TerminalMenuAction } from "./lib/terminalMenuItems";
 import { shouldCdToRoot } from "./lib/cwdSync";
 import { parseOsc7Cwd, parseOsc7RemotePath } from "./lib/osc7";
 import { remoteCwdStore } from "@/modules/ssh/lib/remoteCwdStore";
@@ -1480,13 +1490,10 @@ export function TerminalView({
         void handlePathDrop(paths, files);
       }}
       onContextMenu={(event) => {
-        // Windows only: replace the WebView2 native menu (whose paste is slow,
-        // ~5s) with our own, backed by the same fast clipboard path as Ctrl+V.
-        // macOS and Linux keep their native menus — neither has the slow-paste
-        // problem, so there's no reason to override their richer native menu.
-        if (!IS_WINDOWS) {
-          return;
-        }
+        // All platforms get the app menu (unified in the cross-platform
+        // context-menu work; Windows started it in #184 because WebView2's
+        // native paste is ~5s). Backed by the same fast clipboard path as
+        // the paste keybinding.
         event.preventDefault();
         setContextMenu({
           x: event.clientX,
@@ -1501,34 +1508,49 @@ export function TerminalView({
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          items={[
-            ...(contextMenu.hasSelection
-              ? [
-                  {
-                    id: "copy",
-                    label: t("terminalCopy"),
-                    icon: Copy,
-                    onSelect: () => {
-                      const term = handleRef.current?.term;
-                      if (term?.hasSelection()) {
-                        void navigator.clipboard.writeText(term.getSelection());
-                      }
-                    },
-                  } satisfies ContextMenuItem,
-                ]
-              : []),
-            {
-              id: "paste",
-              label: t("terminalPaste"),
-              icon: ClipboardPaste,
+          items={terminalMenuSpecs({ hasSelection: contextMenu.hasSelection }).map((spec) => {
+            const icons = {
+              copy: Copy,
+              paste: ClipboardPaste,
+              selectAll: TextSelect,
+              clear: Eraser,
+              search: Search,
+            } satisfies Record<TerminalMenuAction, ComponentType<LucideProps>>;
+            // Literal t() calls per key — a dynamic t(labels[action]) can fail
+            // typecheck if the project ever adopts typed i18next keys.
+            const labels: Record<TerminalMenuAction, string> = {
+              copy: t("terminalCopy"),
+              paste: t("terminalPaste"),
+              selectAll: t("terminalSelectAll"),
+              clear: t("terminalClear"),
+              search: t("terminalSearch.label"),
+            };
+            const actions: Record<TerminalMenuAction, () => void> = {
+              copy: () => {
+                const term = handleRef.current?.term;
+                if (term?.hasSelection()) {
+                  void navigator.clipboard.writeText(term.getSelection());
+                }
+              },
               // "cmd" so an empty clipboard is a no-op; "ctrl" would inject the
               // raw paste control byte, which a menu paste should never do.
-              onSelect: () => {
+              paste: () => {
                 pasteRef.current?.("cmd");
                 handleRef.current?.term.focus();
               },
-            } satisfies ContextMenuItem,
-          ]}
+              selectAll: () => handleRef.current?.term.selectAll(),
+              clear: () => handleRef.current?.term.clear(),
+              search: () => setSearchOpen(true),
+            };
+            return {
+              id: spec.action,
+              label: labels[spec.action],
+              icon: icons[spec.action],
+              disabled: !spec.enabled,
+              group: spec.group,
+              onSelect: actions[spec.action],
+            } satisfies ContextMenuItem;
+          })}
         />
       )}
       {actionCard && (

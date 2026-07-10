@@ -4,6 +4,8 @@
   "terminalConnecting": "Starting shell…",
   "terminalCopy": "Copy",
   "terminalPaste": "Paste",
+  "terminalSelectAll": "Select All",
+  "terminalClear": "Clear",
   "outputThrottled": "Output throttled, skipped {{size}} to keep the UI responsive",
   "openLinkHint": "{{mods}}-click to open",
   "actionLinks": {
@@ -23,6 +25,7 @@
     "cancel": "Cancel"
   },
   "terminalSearch": {
+    "label": "Search",
     "placeholder": "Find in terminal",
     "next": "Find next",
     "previous": "Find previous",

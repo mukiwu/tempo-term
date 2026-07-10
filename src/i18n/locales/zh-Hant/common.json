@@ -4,6 +4,8 @@
   "terminalConnecting": "啟動中…",
   "terminalCopy": "複製",
   "terminalPaste": "貼上",
+  "terminalSelectAll": "全選",
+  "terminalClear": "清空畫面",
   "outputThrottled": "輸出太快，已略過 {{size}} 以維持介面流暢",
   "openLinkHint": "{{mods}} + 點擊開啟",
   "actionLinks": {
@@ -23,6 +25,7 @@
     "cancel": "取消"
   },
   "terminalSearch": {
+    "label": "搜尋",
     "placeholder": "在終端機中搜尋",
     "next": "下一個",
     "previous": "上一個",
