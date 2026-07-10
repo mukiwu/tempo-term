@@ -18,12 +18,15 @@ use tauri::{AppHandle, Emitter, Manager, State};
 const MAX_TITLE_CHARS: usize = 80;
 
 /// Derive a human-readable title for a session from its transcript JSONL, in
-/// priority order: the name the user set with Claude Code's `/rename` (latest
-/// wins), else the latest `ai-title` record, else the first user text message.
-/// Returns trimmed text truncated to MAX_TITLE_CHARS characters, or None when no
-/// source exists. The `/rename` name is preferred because it is the user's
-/// explicit intent; the other two are the fallback when they never renamed.
+/// priority order: the latest structured `custom-title` record (how current
+/// Claude Code persists `/rename`), else the latest rename parsed from the
+/// `/rename` stdout echo (older transcripts), else the latest `ai-title`
+/// record, else the first user text message. Returns trimmed text truncated to
+/// MAX_TITLE_CHARS characters, or None when no source exists. The rename
+/// sources are preferred because they carry the user's explicit intent; the
+/// other two are the fallback when they never renamed.
 pub fn extract_session_title(contents: &str) -> Option<String> {
+    let mut custom_title: Option<String> = None;
     let mut renamed: Option<String> = None;
     let mut ai_title: Option<String> = None;
     let mut first_user: Option<String> = None;
@@ -37,6 +40,20 @@ pub fn extract_session_title(contents: &str) -> Option<String> {
             Err(_) => continue,
         };
         match value.get("type").and_then(Value::as_str) {
+            // Current Claude Code writes `/rename` as a structured record
+            // ({"type":"custom-title","customTitle":"NAME",...}). The sessionId
+            // field is ignored: the transcript is already per-session. Latest wins;
+            // a blank customTitle counts as absent so it can't shadow the fallbacks.
+            Some("custom-title") => {
+                if let Some(title) = value
+                    .get("customTitle")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|title| !title.is_empty())
+                {
+                    custom_title = Some(title.to_string());
+                }
+            }
             Some("ai-title") => {
                 if let Some(title) = value.get("aiTitle").and_then(Value::as_str) {
                     ai_title = Some(title.to_string());
@@ -63,7 +80,7 @@ pub fn extract_session_title(contents: &str) -> Option<String> {
             _ => {}
         }
     }
-    let raw = renamed.or(ai_title).or(first_user)?;
+    let raw = custom_title.or(renamed).or(ai_title).or(first_user)?;
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;
@@ -459,6 +476,53 @@ mod tests {
         );
         // Latest /rename wins over the auto ai-title and the first message.
         assert_eq!(extract_session_title(contents).as_deref(), Some("my-feature"));
+    }
+
+    #[test]
+    fn title_prefers_the_latest_custom_title_record() {
+        // Mixed old/new transcript: the structured custom-title record beats the
+        // stdout-parsed rename, the ai-title, and the first message; latest wins.
+        let contents = concat!(
+            r#"{"type":"user","message":{"content":[{"type":"text","text":"do a thing"}]}}"#,
+            "\n",
+            r#"{"type":"ai-title","aiTitle":"Auto title"}"#,
+            "\n",
+            r#"{"type":"custom-title","customTitle":"first-name","sessionId":"abc"}"#,
+            "\n",
+            r#"{"type":"system","subtype":"local_command","content":"<local-command-stdout>Session renamed to: stdout-name</local-command-stdout>"}"#,
+            "\n",
+            r#"{"type":"custom-title","customTitle":"final-name","sessionId":"abc"}"#,
+            "\n",
+        );
+        assert_eq!(extract_session_title(contents).as_deref(), Some("final-name"));
+    }
+
+    #[test]
+    fn blank_custom_title_is_treated_as_absent() {
+        // A whitespace-only customTitle must not shadow the fallback chain.
+        let contents = concat!(
+            r#"{"type":"custom-title","customTitle":"   ","sessionId":"abc"}"#,
+            "\n",
+            r#"{"type":"system","subtype":"local_command","content":"<local-command-stdout>Session renamed to: stdout-name</local-command-stdout>"}"#,
+            "\n",
+        );
+        assert_eq!(extract_session_title(contents).as_deref(), Some("stdout-name"));
+    }
+
+    #[test]
+    fn malformed_custom_title_records_are_treated_as_absent() {
+        // Missing key or a non-string value must fall through, not panic or win.
+        let contents = concat!(
+            r#"{"type":"custom-title","sessionId":"abc"}"#,
+            "\n",
+            r#"{"type":"custom-title","customTitle":42,"sessionId":"abc"}"#,
+            "\n",
+            r#"{"type":"custom-title","customTitle":null,"sessionId":"abc"}"#,
+            "\n",
+            r#"{"type":"ai-title","aiTitle":"Auto title"}"#,
+            "\n",
+        );
+        assert_eq!(extract_session_title(contents).as_deref(), Some("Auto title"));
     }
 
     #[test]
