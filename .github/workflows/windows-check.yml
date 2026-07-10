@@ -1,0 +1,58 @@
+name: Windows Check
+
+# Lightweight per-PR Windows compile check.
+#
+# PR #190 introduced the first cfg-split Rust code: `set_native_menu`'s
+# `#[cfg(not(target_os = "macos"))]` no-op stub plus `dead_code`-guarded model
+# structs. Those guards only get exercised against a Windows target, which
+# previously happened solely at release time via windows-build.yml (a `v*` tag),
+# so a broken guard or a Windows-only warning would surface at release instead of
+# on the PR that caused it.
+#
+# This job runs `cargo check` on `windows-latest` for every PR and every push to
+# master, with warnings promoted to errors, so Windows compile cleanliness is
+# verified on each change. It deliberately does NOT build the installer — that
+# stays in windows-build.yml; this is just a fast type-check.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight check.
+concurrency:
+  group: windows-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-check-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # `cargo check` skips beforeBuildCommand and never bundles, so the frontend
+      # never has to be built here: tauri-build tolerates the missing
+      # `frontendDist` (../dist) during a check — verified locally. We only care
+      # about the Rust type-check, so no pnpm install / frontend build is needed.
+      - name: Cargo check (warnings as errors)
+        shell: bash
+        working-directory: src-tauri
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo check --target x86_64-pc-windows-msvc
