@@ -5,9 +5,9 @@ description: Use when writing or reviewing code in this Tauri app that can behav
 
 # Windows × Tauri guardrails (tempo-term)
 
-Development happens on macOS. Windows is built only by `.github/workflows/windows-build.yml` (on a `windows-latest` runner) and run by users. That gap is why every Windows bug in this repo's history reached a release: it compiled and ran fine on the mac, and nobody exercised Windows until CI or a user did.
+Development happens on macOS. Two GitHub Actions cover Windows: `.github/workflows/windows-check.yml` runs `cargo check` with warnings-as-errors on a `windows-latest` runner for **every PR and push to master** (added in #191), and `.github/workflows/windows-build.yml` builds the actual bundle only on a `v*` tag (or manual dispatch). So a *compile or warning* regression now fails the PR that caused it; but a *runtime, bundle, or behavior* bug still compiles clean and only surfaces in the tagged Windows build or on a user's machine. Historically there was no per-PR gate at all — which is why every Windows bug in this repo's history before #191 reached a release.
 
-This skill is the checklist that closes the gap. Read it before touching any of the surfaces below, and run the pre-flight list before a release.
+This skill is the checklist that closes the remaining gap: everything `cargo check` cannot see. Read it before touching any of the surfaces below, and run the pre-flight list before a release.
 
 ## Pre-flight checklist
 
@@ -18,10 +18,10 @@ Apply while writing, not after. Each line links to the detailed rule.
 - [ ] **A subprocess with no timeout?** A hung `gh`/`git` blocks the caller thread forever; add a timeout. [→](#3-give-external-commands-a-timeout)
 - [ ] **Injecting a command into a pty?** Terminate with `\r`, not `\n`, or ConPTY leaves it on a `>>` continuation line. [→](#4-inject-pty-commands-with-cr-not-lf)
 - [ ] **Building a path that bash will run?** Use forward slashes; never inject a bare `.sh`; quote Windows paths with double quotes. [→](#5-paths-forward-slashes-for-bash-double-quotes-for-shells)
-- [ ] **A `#[cfg(unix)]` API or a new native crate?** It must still compile on Windows. Provide a Windows arm or cfg-gate cleanly. [→](#6-unix-only-apis-and-native-crates-must-still-build-on-windows)
+- [ ] **A `#[cfg(unix)]` API, a cfg-split command, or a new native crate?** It must compile **warning-free** on Windows — `windows-check.yml` runs `cargo check` with `-D warnings` per PR. Provide a Windows arm or cfg-gate cleanly, and `allow(dead_code)`/`allow(unused_variables)` the mac-only bits. [→](#6-unix-only-apis-and-native-crates-must-still-build-on-windows)
 - [ ] **Reaching into `/proc`, `lsof`, a unix socket, pty foreground?** No Windows backend exists; skip the feature there or return a clean `None`. [→](#7-no-windows-backend-skip-do-not-crash-or-spin)
 - [ ] **Frontend behavior gated on platform?** Route Windows through `IS_WINDOWS`, do not leave it `IS_MAC`-only. [→](#8-frontend-gate-on-is_windows-not-just-is_mac)
-- [ ] **Release?** Windows CI is the compile gate; `latest.json` notes get re-patched; functional test on a real Windows host. [→](#release-checklist-windows)
+- [ ] **Release?** `windows-build.yml` is the bundle/link gate (per-PR `cargo check` already covered compile); `latest.json` notes get re-patched; functional test on a real Windows host. [→](#release-checklist-windows)
 
 ## Failure catalog (what this repo has actually hit)
 
@@ -33,6 +33,7 @@ Apply while writing, not after. Each line links to the detailed rule.
 | Status hook never fires / spams "Open With" dialog | bash escapes `\`; a bare `.sh` under cmd triggers ShellExecute picker | Forward-slash paths; do not inject a bare `.sh` on Windows | #76, #155 (open) |
 | `cargo build` fails on a stock Windows box | `aws-lc-sys` (via russh default `aws-lc-rs`) needs NASM | Use russh `ring` backend | #75 |
 | Windows release fails to compile (E0599) once SSH landed | `AgentClient::connect_env` is `#[cfg(unix)]` | Windows arm: `connect_named_pipe` / `connect_pageant` | #52, #54 |
+| Windows warns `unused variable` / `dead_code`, then fails under `-D warnings` | A cfg-split command's structs/params are only read in the `#[cfg(target_os = "macos")]` arm; the Windows arm is a no-op stub | `#[cfg_attr(not(target_os = "macos"), allow(dead_code))]` on the model, `allow(unused_variables)` on the fn | #190, gated #191 |
 | Terminal paste does nothing | Native paste suppressed everywhere; smart-paste mac-only; backend empty off mac | Route `Ctrl+V` via `IS_WINDOWS`; read clipboard with `clipboard-win` | #75 |
 | cwd tracking dead / 1.2s poll fires empty IPC every terminal | `pty_cwd` has no Windows backend (`/proc`, `lsof` absent) | Skip the poll on Windows, or use OSC 7 shell integration | #105, #115 |
 | Updater "更新內容" dialog empty after a release | Windows CI `tauri-action` rewrites `latest.json` and wipes `notes` | Re-patch notes post-build from `CHANGELOG-NEXT.md` | #43 |
@@ -94,9 +95,10 @@ Rule: any code that auto-types a command into a pane (`runCommandInTerminal`, la
 The dev box **cannot cross-compile** the Windows bundle — `git2`, `font-kit`, `portable-pty`, and crypto crates all pull native code, so only `windows-build.yml` on a Windows runner catches a break. Two recurring traps:
 
 - **A `#[cfg(unix)]` API used unconditionally fails to compile on Windows (E0599).** `AgentClient::connect_env` (unix socket) needed a Windows arm (`connect_named_pipe` / `connect_pageant`) and the shared loop extracted into a generic helper (#52, #54). When an API has no Windows form, cfg-gate it and provide a Windows path or a clean error — do not leave the call unconditional.
+- **A cfg-split command warns on Windows even when it compiles.** `set_native_menu` (`src-tauri/src/modules/menu.rs`) keeps its `NativeMenuModel` structs and its `app` param only for the `#[cfg(target_os = "macos")]` arm; on Windows they are dead code / an unused variable, so `windows-check.yml`'s `cargo check -D warnings` fails the PR (#190 shipped the warning, #191 added the gate). Guard the mac-only bits: `#[cfg_attr(not(target_os = "macos"), allow(dead_code))]` on the types, `#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]` on the fn. Prefer these cfg-scoped `allow`s over an `_`-prefix, which would also hide the value from the macOS arm that needs it.
 - **A new native crate may need a Windows toolchain.** `aws-lc-sys` needs NASM; switching russh to its `ring` backend removed that so `cargo build` works on a stock Windows MSVC setup (#75). Before adding a crate with a `-sys` dependency, check its Windows build requirements.
 
-If you touch anything a Windows build compiles, kick `windows-build.yml` (`workflow_dispatch`) and confirm it is green before merging — it is the only compile gate you have.
+`windows-check.yml` now compiles the Windows target on every PR with warnings-as-errors, so a broken cfg-gate or a Windows-only warning fails the PR automatically — no manual step. For anything `cargo check` cannot prove (bundling, native-crate link, runtime), still kick `windows-build.yml` (`workflow_dispatch`) and confirm it is green before merging.
 
 ## 7. No Windows backend: skip, do not crash or spin
 
@@ -117,7 +119,7 @@ Platform branches written as "mac vs everything else" silently break Windows. Te
 
 The release is two-phase: `scripts/release.sh` runs on the mac (build, notarize, `latest.json`, `gh release create` with the `v*` tag), and the tag push triggers `windows-build.yml`, which builds on Windows, uploads `.exe`/`.msi`, and merges the `windows-x86_64` platform into `latest.json`.
 
-- [ ] **Windows CI is green.** It is the only thing that compiles the Windows target; a red build means the release ships no working Windows binary.
+- [ ] **Windows CI is green.** `windows-check.yml` gates *compilation* per PR, but `windows-build.yml` is the only thing that *bundles and links* the actual Windows binary; a red build means the release ships no working Windows binary.
 - [ ] **The tagged commit still has a populated `CHANGELOG-NEXT.md`.** `windows-build.yml` re-patches `latest.json`'s `notes` from the changelog at the tagged commit. If the changelog was already archived/emptied, notes (macOS included) get wiped (#43). Do not point the tag at a master HEAD whose changelog was cleared.
 - [ ] **Do not hand-patch `latest.json` before CI finishes** — `tauri-action` rewrites it mid-run and would clobber your patch. Patch only after CI, via `node scripts/patchManifestNotes.mjs <manifest> <changelog>` then `gh release upload --clobber`.
 - [ ] **Functional-test on a real Windows host.** CI proves it compiles and bundles, not that it works. The recurring gap in this repo's PRs is the unchecked "Windows real verification" box. Use the CI artifact from the branch to smoke-test paste, launcher, terminal cwd, and the updater dialog.
@@ -125,5 +127,5 @@ The release is two-phase: `scripts/release.sh` runs on the mac (build, notarize,
 ## How to actually verify on Windows
 
 - **Dev never shows console-flash / spawn-cost bugs** — a debug build owns a console. Reproduce these only in a **release** build (or the CI artifact).
-- No Windows box? Push the branch and run `windows-build.yml` via `workflow_dispatch`; download the artifact to test.
+- No Windows box? The per-PR `windows-check.yml` already gates *compilation* (warnings included); to test *behavior*, push the branch and run `windows-build.yml` via `workflow_dispatch`, then download the artifact.
 - Keep platform logic in **pure functions parameterized by `windows: bool`** (see `pr/mod.rs`) so the Windows path has real unit tests that run on the mac, instead of `#[cfg(windows)]` code that is never executed until a user hits it.
