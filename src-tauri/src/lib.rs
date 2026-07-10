@@ -12,8 +12,12 @@ use modules::claude_progress::{
     claude_progress_unwatch, claude_progress_watch, claude_session_title, ClaudeProgressState,
 };
 use modules::codex_progress::{codex_session_title, CodexProgressState};
-use modules::claude_status_hook::{claude_status_hook_install, claude_status_hook_uninstall};
-use modules::codex_status_hook::{codex_status_hook_install, codex_status_hook_uninstall};
+use modules::claude_status_hook::{
+    claude_status_hook_cleanup_legacy, claude_status_hook_install, claude_status_hook_uninstall,
+};
+use modules::codex_status_hook::{
+    codex_status_hook_cleanup_legacy, codex_status_hook_install, codex_status_hook_uninstall,
+};
 use modules::notes::{notes_unwatch, notes_watch, NotesWatchState};
 use modules::clipboard::{
     terminal_clipboard_image_paths, terminal_clipboard_paths, terminal_clipboard_text,
@@ -174,21 +178,17 @@ pub fn run() {
                 Err(err) => eprintln!("status-ipc listener disabled: {err}"),
             }
             modules::menu::init(app)?;
-            // Windows: the status hooks' install command is cleanup-only (#155,
-            // since a bare `.sh` hook command pops the "Open With" dialog on
-            // every event there). But the only launch-time caller of install is
-            // gated on the user's `claudeStatusTracking` setting (see App.tsx) —
-            // a user who flipped that off to work around the dialog storm would
-            // otherwise never get cleaned up. Run cleanup here instead,
-            // independent of any frontend setting, on every launch. Both
-            // uninstall fns are already best-effort and idempotent (a no-op
-            // rewrite is skipped internally — see PR #176 review Fix 3), so a
-            // direct cfg-gated call needs no extra wrapper.
-            #[cfg(target_os = "windows")]
+            // Migrate old installs off the pre-#181 `.sh` status hooks: strip
+            // their config entries and delete the script, on every platform,
+            // independent of the `claudeStatusTracking` setting — the only
+            // launch-time caller of install is gated on that setting (see
+            // App.tsx), so a user who disabled tracking would otherwise never
+            // get migrated. Legacy-only and skip-write-when-clean, so a
+            // migrated machine's launch touches no config file.
             {
                 let handle = app.handle().clone();
-                let _ = claude_status_hook_uninstall(handle.clone());
-                let _ = codex_status_hook_uninstall(handle);
+                let _ = claude_status_hook_cleanup_legacy(handle.clone());
+                let _ = codex_status_hook_cleanup_legacy(handle);
             }
             Ok(())
         })

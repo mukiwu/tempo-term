@@ -190,6 +190,22 @@ fn write_settings(settings_path: &PathBuf, value: &Value) -> Result<(), String> 
     Ok(())
 }
 
+/// File-level install: reconcile `settings_path` to hold exactly our current
+/// shim entries (stripping legacy `.sh` and moved-exe shim entries), writing
+/// only when the result differs from what's on disk — a steady-state launch
+/// must not touch the file at all (no mtime churn, no re-sorted keys, no race
+/// with Claude Code's own writes). Split from the command for testability.
+fn install_into(settings_path: &PathBuf, prefix: &str) -> Result<(), String> {
+    let existing = read_settings(settings_path)?;
+    let cleaned = remove_hook_settings(existing.clone(), LEGACY_SCRIPT_MARKER, EVENTS);
+    let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, EVENTS);
+    let merged = merge_hook_settings(cleaned, prefix, EVENTS);
+    if merged == existing {
+        return Ok(());
+    }
+    write_settings(settings_path, &merged)
+}
+
 /// Register the status hook in settings.json. Idempotent.
 ///
 /// Every platform registers the native shim (`"<exe>" --status-hook <state>`)
@@ -197,15 +213,45 @@ fn write_settings(settings_path: &PathBuf, value: &Value) -> Result<(), String> 
 /// migrates old installs: removes the legacy `.sh` file a pre-#181 build wrote
 /// and strips its settings entries, plus any earlier shim entry (the exe path
 /// may have moved between installs).
+/// Steady state is a no-op: the file is only written when its content would change.
 #[tauri::command]
 pub fn claude_status_hook_install(app: AppHandle) -> Result<(), String> {
     let (script_path, settings_path) = paths(&app)?;
     let _ = std::fs::remove_file(&script_path);
     let prefix = shim_prefix()?;
-    let cleaned = remove_hook_settings(read_settings(&settings_path)?, LEGACY_SCRIPT_MARKER, EVENTS);
-    let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, EVENTS);
-    let merged = merge_hook_settings(cleaned, &prefix, EVENTS);
-    write_settings(&settings_path, &merged)
+    install_into(&settings_path, &prefix)
+}
+
+/// Strip only legacy `.sh` hook entries from `settings_path`, leaving current
+/// shim entries alone; skip the rewrite when nothing legacy exists. This is
+/// the launch-time migration pass (see `claude_status_hook_cleanup_legacy`):
+/// unlike `cleanup_settings` it must never remove the live shim entries, or
+/// every launch would undo the install and reintroduce the write churn.
+fn cleanup_legacy_entries(settings_path: &PathBuf) -> Result<(), String> {
+    if !settings_path.exists() {
+        return Ok(());
+    }
+    let existing = read_settings(settings_path)?;
+    let cleaned = remove_hook_settings(existing.clone(), LEGACY_SCRIPT_MARKER, EVENTS);
+    if cleaned != existing {
+        write_settings(settings_path, &cleaned)?;
+    }
+    Ok(())
+}
+
+/// Launch-time migration off the pre-#181 `.sh` delivery: strip legacy
+/// settings entries and delete the script file. Runs on every platform, every
+/// launch, independent of the user's `claudeStatusTracking` setting — a user
+/// who disabled tracking (so install never runs) still gets migrated. Called
+/// from `lib.rs`'s `.setup()`; steady state touches nothing.
+pub fn claude_status_hook_cleanup_legacy(app: AppHandle) -> Result<(), String> {
+    let (script_path, settings_path) = paths(&app)?;
+    cleanup_legacy_entries(&settings_path)?;
+    let _ = std::fs::remove_file(&script_path);
+    if let Some(dir) = script_path.parent() {
+        let _ = std::fs::remove_dir(dir); // best-effort, only succeeds when empty
+    }
+    Ok(())
 }
 
 /// Remove our entries from the settings file at `settings_path`, skipping the
@@ -486,5 +532,84 @@ mod tests {
         });
         let cleaned = remove_hook_settings(legacy, LEGACY_SCRIPT_MARKER, EVENTS);
         assert!(cleaned.get("hooks").is_none());
+    }
+
+    #[test]
+    fn install_skips_rewrite_when_settings_already_correct() {
+        // Steady state: settings already hold exactly our current shim entries.
+        // A reinstall must not rewrite the file (no mtime churn, no re-sorted
+        // keys, no race with Claude Code's own writes).
+        let dir = temp_dir_for("install-noop");
+        let settings_path = dir.join("settings.json");
+        let merged = merge_hook_settings(json!({}), SHIM_PREFIX, EVENTS);
+        let original = serde_json::to_string_pretty(&merged).unwrap() + "\n";
+        std::fs::write(&settings_path, &original).unwrap();
+
+        install_into(&settings_path, SHIM_PREFIX).unwrap();
+
+        let after = std::fs::read_to_string(&settings_path).unwrap();
+        assert_eq!(after, original, "an already-correct settings.json must be left byte-identical");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn install_writes_when_settings_are_missing_our_entries() {
+        let dir = temp_dir_for("install-fresh");
+        let settings_path = dir.join("settings.json");
+        std::fs::write(&settings_path, "{}\n").unwrap();
+
+        install_into(&settings_path, SHIM_PREFIX).unwrap();
+
+        let after: Value = serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+        assert_eq!(
+            after["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+            format!("{SHIM_PREFIX} active")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cleanup_legacy_strips_sh_entries_but_keeps_shim_entries() {
+        // The launch-time pass must migrate legacy `.sh` entries away without
+        // touching current shim entries — otherwise every launch would undo
+        // the install and force a rewrite (the churn this task removes).
+        let dir = temp_dir_for("legacy-only");
+        let settings_path = dir.join("settings.json");
+        let with_shim = merge_hook_settings(json!({}), SHIM_PREFIX, EVENTS);
+        let with_both = merge_hook_settings(with_shim, "/Users/me/.claude/tempoterm/status-hook.sh", EVENTS);
+        std::fs::write(&settings_path, serde_json::to_string_pretty(&with_both).unwrap()).unwrap();
+
+        cleanup_legacy_entries(&settings_path).unwrap();
+
+        let after: Value = serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+        let cmds: Vec<&str> = after["hooks"]["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| e["hooks"][0]["command"].as_str())
+            .collect();
+        assert_eq!(cmds, vec![format!("{SHIM_PREFIX} active")]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cleanup_legacy_skips_rewrite_when_no_sh_entries_exist() {
+        // Post-migration steady state: nothing legacy left. The file must come
+        // out byte-identical, launch after launch.
+        let dir = temp_dir_for("legacy-noop");
+        let settings_path = dir.join("settings.json");
+        let merged = merge_hook_settings(json!({}), SHIM_PREFIX, EVENTS);
+        let original = serde_json::to_string_pretty(&merged).unwrap() + "\n";
+        std::fs::write(&settings_path, &original).unwrap();
+
+        cleanup_legacy_entries(&settings_path).unwrap();
+
+        let after = std::fs::read_to_string(&settings_path).unwrap();
+        assert_eq!(after, original);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
