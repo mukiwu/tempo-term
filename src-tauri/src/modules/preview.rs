@@ -5,6 +5,10 @@
 // side (via `Webview.getByLabel`); only creation and history control live here.
 
 use serde::Serialize;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::webview::WebviewBuilder;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl, Window};
 
@@ -33,10 +37,21 @@ const NAVIGATED_EVENT: &str = "preview://navigated";
 // "intercept a scheme, cancel the navigation" trick apps have long used to
 // bridge custom URL schemes (e.g. `mailto:`) out of a webview, just repurposed
 // as a one-way signal instead of a real link.
+//
+// A previewed page's OWN script can also fire `window.location.href =
+// 'tempo-preview-key:close-tab'` directly — the scheme is not a secret, it's
+// visible right here. Without a check, that would let any page (or a
+// compromised/malicious one loaded in the preview) close tabs or windows in
+// the host app. `TOKEN` closes that hole: it's minted fresh per preview
+// webview (see `generate_preview_token`) and baked into this script's IIFE
+// scope by `preview_create` before the page's own scripts ever run. A page
+// script can trigger navigations, but it cannot read a variable local to this
+// closure, so it cannot forge a value `decide_navigation` will accept.
 const KEY_FORWARD_SCRIPT: &str = r#"
 (function () {
+  var TOKEN = "__TEMPO_PREVIEW_TOKEN__";
   function forward(action) {
-    window.location.href = 'tempo-preview-key:' + action;
+    window.location.href = 'tempo-preview-key:' + action + '?t=' + TOKEN;
   }
   document.addEventListener('keydown', function (e) {
     if ((e.metaKey || e.ctrlKey) && !e.altKey) {
@@ -113,20 +128,59 @@ enum NavDecision {
 /// Decide what `on_navigation` should do with a navigation attempt. Scheme is
 /// checked first: anything other than `KEY_ACTION_SCHEME` is a real
 /// navigation and always observed, regardless of its path. Under our own
-/// scheme, only an exact whitelisted action with no authority/query/fragment
-/// forwards; every other shape under that scheme is cancelled silently
-/// rather than falling through to a real load.
-fn decide_navigation(url: &Url) -> NavDecision {
+/// scheme, forwarding requires ALL of: no authority/fragment, an exact
+/// whitelisted action, and a query string that is exactly `t=<expected_token>`
+/// (nothing else, no extra parameters). Every other shape under that scheme —
+/// including a bare action with no token at all, the pre-nonce form a stale
+/// or forged navigation would use — is cancelled silently rather than falling
+/// through to a real load. `expected_token` is the per-preview-webview token
+/// `preview_create` minted and baked into `KEY_FORWARD_SCRIPT`'s closure, so
+/// only that script (never a page's own script) can produce a match.
+fn decide_navigation(url: &Url, expected_token: &str) -> NavDecision {
     if url.scheme() != KEY_ACTION_SCHEME {
         return NavDecision::Observe;
     }
-    if url.host().is_some() || url.query().is_some() || url.fragment().is_some() {
+    if url.host().is_some() || url.fragment().is_some() {
         return NavDecision::CancelSilently;
     }
-    match preview_key_action_from_str(url.path()) {
-        Some(action) => NavDecision::ForwardAction(action),
-        None => NavDecision::CancelSilently,
+    let Some(action) = preview_key_action_from_str(url.path()) else {
+        return NavDecision::CancelSilently;
+    };
+    let mut pairs = url.query_pairs();
+    let token_matches = matches!(
+        (pairs.next(), pairs.next()),
+        (Some((key, value)), None) if key == "t" && value == expected_token
+    );
+    if token_matches {
+        NavDecision::ForwardAction(action)
+    } else {
+        NavDecision::CancelSilently
     }
+}
+
+/// A counter mixed into every generated token so two previews created within
+/// the same process tick never collide.
+static PREVIEW_TOKEN_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Mint a per-preview-webview token to gate `tempo-preview-key:` navigations
+/// (see `KEY_FORWARD_SCRIPT` and `decide_navigation`). This only has to resist
+/// a previewed page's own script guessing it — that script cannot read this
+/// process's clock, pid, or counter state, let alone the Rust closure the
+/// token is compared against — so no crate dependency is pulled in purely for
+/// this; the wall-clock time, process id and a monotonic counter are hashed
+/// together with the standard library's `DefaultHasher`. Not a cryptographic
+/// secret, and not meant to be one.
+fn generate_preview_token() -> String {
+    let mut hasher = DefaultHasher::new();
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .hash(&mut hasher);
+    std::process::id().hash(&mut hasher);
+    PREVIEW_TOKEN_COUNTER
+        .fetch_add(1, Ordering::Relaxed)
+        .hash(&mut hasher);
+    format!("{:x}", hasher.finish())
 }
 
 /// Forward a whitelisted key action to the window that owns this preview
@@ -211,8 +265,14 @@ pub async fn preview_create(
     let nav_app = app.clone();
     let nav_win = win_label;
 
+    // Mint this preview's token and bake it into its own copy of the
+    // key-forward script (see the doc comments on `KEY_FORWARD_SCRIPT` and
+    // `decide_navigation`). Each preview webview gets a distinct token.
+    let nav_token = generate_preview_token();
+    let init_script = KEY_FORWARD_SCRIPT.replace("__TEMPO_PREVIEW_TOKEN__", &nav_token);
+
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
-        .initialization_script(KEY_FORWARD_SCRIPT)
+        .initialization_script(init_script)
         .on_document_title_changed(move |_webview, title| {
             let _ = title_app.emit_to(
                 &title_win,
@@ -223,7 +283,7 @@ pub async fn preview_create(
                 },
             );
         })
-        .on_navigation(move |url| match decide_navigation(url) {
+        .on_navigation(move |url| match decide_navigation(url, &nav_token) {
             // KEY_FORWARD_SCRIPT's W/L/` handling signals through a fake
             // navigation rather than a real one (this webview has no IPC
             // capability to `invoke` with — see the doc comment on
@@ -406,39 +466,80 @@ mod tests {
         assert_eq!(preview_key_action_from_str("preview_navigate"), None);
     }
 
+    const TEST_TOKEN: &str = "secret-token-123";
+
     #[test]
-    fn decide_navigation_forwards_whitelisted_actions() {
-        let url = Url::parse("tempo-preview-key:close-tab").unwrap();
+    fn decide_navigation_forwards_whitelisted_actions_with_the_correct_token() {
+        let url = Url::parse("tempo-preview-key:close-tab?t=secret-token-123").unwrap();
         assert_eq!(
-            decide_navigation(&url),
+            decide_navigation(&url, TEST_TOKEN),
             NavDecision::ForwardAction(PreviewKeyAction::CloseTab)
         );
     }
 
     #[test]
-    fn decide_navigation_cancels_silently_for_unrecognized_same_scheme_urls() {
-        // Unknown action name.
-        let garbage = Url::parse("tempo-preview-key:garbage").unwrap();
-        assert_eq!(decide_navigation(&garbage), NavDecision::CancelSilently);
+    fn decide_navigation_cancels_silently_when_the_token_is_missing_or_wrong() {
+        // No query at all (the pre-nonce shape a forged/stale navigation
+        // would use, and what a page's own script could still fire even
+        // without ever seeing the real token).
+        let no_token = Url::parse("tempo-preview-key:close-tab").unwrap();
+        assert_eq!(decide_navigation(&no_token, TEST_TOKEN), NavDecision::CancelSilently);
 
-        // Whitelist match is case-sensitive; a differently-cased action is
-        // not a known action.
-        let wrong_case = Url::parse("tempo-preview-key:Close-Tab").unwrap();
-        assert_eq!(decide_navigation(&wrong_case), NavDecision::CancelSilently);
-
-        // Authority form (`scheme://host`) puts "close-tab" in the host, not
-        // the path — never mistaken for the real whitelisted action.
-        let authority_form = Url::parse("tempo-preview-key://close-tab").unwrap();
+        // Right shape, wrong value — a guess never matches the minted token.
+        let wrong_token = Url::parse("tempo-preview-key:close-tab?t=guess").unwrap();
         assert_eq!(
-            decide_navigation(&authority_form),
+            decide_navigation(&wrong_token, TEST_TOKEN),
             NavDecision::CancelSilently
         );
 
-        // A stray query string riding along with an otherwise-valid action
-        // is rejected outright rather than accepted with the extra data
-        // ignored.
-        let with_query = Url::parse("tempo-preview-key:close-tab?x=1").unwrap();
-        assert_eq!(decide_navigation(&with_query), NavDecision::CancelSilently);
+        // Right token value under the wrong query key doesn't count.
+        let wrong_key = Url::parse("tempo-preview-key:close-tab?token=secret-token-123").unwrap();
+        assert_eq!(
+            decide_navigation(&wrong_key, TEST_TOKEN),
+            NavDecision::CancelSilently
+        );
+
+        // A correct token riding along with an extra parameter is rejected
+        // outright rather than accepted with the extra data ignored.
+        let extra_param =
+            Url::parse("tempo-preview-key:close-tab?t=secret-token-123&x=1").unwrap();
+        assert_eq!(
+            decide_navigation(&extra_param, TEST_TOKEN),
+            NavDecision::CancelSilently
+        );
+
+        // A correct token with a fragment tacked on is rejected too.
+        let with_fragment =
+            Url::parse("tempo-preview-key:close-tab?t=secret-token-123#frag").unwrap();
+        assert_eq!(
+            decide_navigation(&with_fragment, TEST_TOKEN),
+            NavDecision::CancelSilently
+        );
+    }
+
+    #[test]
+    fn decide_navigation_cancels_silently_for_unrecognized_same_scheme_urls() {
+        // Unknown action name, even with the correct token.
+        let garbage = Url::parse("tempo-preview-key:garbage?t=secret-token-123").unwrap();
+        assert_eq!(decide_navigation(&garbage, TEST_TOKEN), NavDecision::CancelSilently);
+
+        // Whitelist match is case-sensitive; a differently-cased action is
+        // not a known action.
+        let wrong_case = Url::parse("tempo-preview-key:Close-Tab?t=secret-token-123").unwrap();
+        assert_eq!(
+            decide_navigation(&wrong_case, TEST_TOKEN),
+            NavDecision::CancelSilently
+        );
+
+        // Authority form (`scheme://host`) puts "close-tab" in the host, not
+        // the path — never mistaken for the real whitelisted action, token or
+        // not.
+        let authority_form =
+            Url::parse("tempo-preview-key://close-tab?t=secret-token-123").unwrap();
+        assert_eq!(
+            decide_navigation(&authority_form, TEST_TOKEN),
+            NavDecision::CancelSilently
+        );
     }
 
     #[test]
@@ -447,9 +548,20 @@ mod tests {
         // observed, even if the page path happens to match a whitelisted
         // action name.
         let real_nav = Url::parse("https://example.com/close-tab").unwrap();
-        assert_eq!(decide_navigation(&real_nav), NavDecision::Observe);
+        assert_eq!(decide_navigation(&real_nav, TEST_TOKEN), NavDecision::Observe);
 
         let root = Url::parse("https://example.com/").unwrap();
-        assert_eq!(decide_navigation(&root), NavDecision::Observe);
+        assert_eq!(decide_navigation(&root, TEST_TOKEN), NavDecision::Observe);
+    }
+
+    #[test]
+    fn preview_tokens_are_not_reused_across_generations() {
+        // Not a security property by itself (the token isn't secret once you
+        // know the algorithm), just a sanity check that the counter/clock/pid
+        // mix actually varies call to call instead of collapsing to a
+        // constant.
+        let a = generate_preview_token();
+        let b = generate_preview_token();
+        assert_ne!(a, b);
     }
 }

@@ -115,6 +115,11 @@ function MenuItemRow({
  * native menu emits, so App.tsx's existing listeners stay the single source of
  * truth for what each action does.
  */
+// How long a sibling-row hover holds off closing the open submenu, so diagonal
+// mouse travel from the submenu row toward its flyout (which necessarily
+// crosses sibling rows first) has time to land before the flyout disappears.
+const SUBMENU_CLOSE_DELAY_MS = 180;
+
 function WindowMenuBar() {
   const { t } = useTranslation();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -124,6 +129,37 @@ function WindowMenuBar() {
   const [isMaximized, setIsMaximized] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const submenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function clearSubmenuCloseTimer() {
+    if (submenuCloseTimer.current !== null) {
+      clearTimeout(submenuCloseTimer.current);
+      submenuCloseTimer.current = null;
+    }
+  }
+
+  // Close immediately: used for every close that isn't the sibling-hover
+  // tunneling case below (item selected, menu dismissed, menu switched).
+  function closeSubmenuNow() {
+    clearSubmenuCloseTimer();
+    setSubmenuId(null);
+  }
+
+  // Hovering a sibling row schedules the close instead of firing it
+  // immediately, so the cursor has SUBMENU_CLOSE_DELAY_MS to reach the
+  // flyout (entering the submenu's own row again, or the flyout itself,
+  // cancels the pending close — see the handlers below).
+  function scheduleSubmenuClose() {
+    clearSubmenuCloseTimer();
+    submenuCloseTimer.current = setTimeout(() => {
+      submenuCloseTimer.current = null;
+      setSubmenuId(null);
+    }, SUBMENU_CLOSE_DELAY_MS);
+  }
+
+  // Timer must not outlive the component, and must not fire against a menu
+  // that's already been torn down and remounted.
+  useEffect(() => clearSubmenuCloseTimer, []);
 
   // The native preview webview floats above all DOM, so hide it while a menu is
   // open or it would cover the dropdown (same guard ContextMenu uses).
@@ -155,7 +191,7 @@ function WindowMenuBar() {
     if (item.disabled?.(ctx) || !item.action) return;
     executeMenuAction(item.action);
     setOpenId(null);
-    setSubmenuId(null);
+    closeSubmenuNow();
   };
 
   // Close on outside pointer / Escape / resize. The menu-bar buttons count as
@@ -169,17 +205,17 @@ function WindowMenuBar() {
         return;
       }
       setOpenId(null);
-      setSubmenuId(null);
+      closeSubmenuNow();
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setOpenId(null);
-        setSubmenuId(null);
+        closeSubmenuNow();
       }
     }
     function onResize() {
       setOpenId(null);
-      setSubmenuId(null);
+      closeSubmenuNow();
     }
     document.addEventListener("mousedown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
@@ -195,7 +231,7 @@ function WindowMenuBar() {
     const rect = el.getBoundingClientRect();
     setAnchor({ x: rect.left, y: rect.bottom });
     setOpenId(id);
-    setSubmenuId(null);
+    closeSubmenuNow();
   }
 
   const activeMenu = menus.find((m) => m.id === openId) ?? null;
@@ -215,7 +251,7 @@ function WindowMenuBar() {
           onClick={(e) => {
             if (openId === menu.id) {
               setOpenId(null);
-              setSubmenuId(null);
+              closeSubmenuNow();
             } else {
               openFrom(e.currentTarget, menu.id);
             }
@@ -258,14 +294,24 @@ function WindowMenuBar() {
                     isSubmenuOpen={isSubmenuOpen}
                     onSelect={() => onItemSelect(item)}
                     onSubmenuEnter={(rect) => {
+                      // Re-entering the row that owns the open flyout (or
+                      // entering a different submenu row, handled the same
+                      // way) is itself a cancel: there is no pending close to
+                      // honor once the cursor is back on a submenu row.
+                      clearSubmenuCloseTimer();
                       setSubmenuAnchor({ x: rect.right, y: rect.top });
                       setSubmenuId(item.id);
                     }}
-                    onSiblingEnter={() => setSubmenuId(null)}
+                    onSiblingEnter={scheduleSubmenuClose}
                   />
                   {item.submenu && isSubmenuOpen && submenuAnchor && (
                     <div
                       role="menu"
+                      // The cursor reaching the flyout — even via a row deep
+                      // inside it that has no handler of its own — cancels
+                      // any close scheduled by the sibling-row it crossed to
+                      // get here.
+                      onMouseEnter={clearSubmenuCloseTimer}
                       style={{ position: "fixed", left: submenuAnchor.x, top: submenuAnchor.y }}
                       className="z-[210] min-w-[180px] overflow-hidden rounded-md border border-border-strong bg-bg-elevated py-1 text-[13px] shadow-lg"
                     >

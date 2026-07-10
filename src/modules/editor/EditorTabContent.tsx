@@ -147,12 +147,23 @@ export function EditorTabContent({
     }
   }
 
-  // Let the File menu's Save action (and its Cmd/Ctrl+S accelerator) reach
-  // this pane without threading a save callback through the pane tree.
+  // The pane that renders us doesn't put a `key` on `path` (PaneTabContent),
+  // so opening a different file in the same pane rerenders this component
+  // instance instead of remounting it. Keep the latest `save` (and thus the
+  // latest `path`) in a ref so the saver registered below never goes stale.
+  const saveRef = useRef(save);
   useEffect(() => {
-    registerEditorSaver(leafId, () => void save());
+    saveRef.current = save;
+  });
+
+  // Let the File menu's Save action (and its Cmd/Ctrl+S accelerator) reach
+  // this pane without threading a save callback through the pane tree. The
+  // wrapper is registered once per leafId and always calls through the ref,
+  // so it keeps saving whichever file is currently open even after `path`
+  // changes without a remount.
+  useEffect(() => {
+    registerEditorSaver(leafId, () => void saveRef.current());
     return () => unregisterEditorSaver(leafId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leafId]);
 
   // Re-read the file from disk into the buffer (content + baseline → clean), so

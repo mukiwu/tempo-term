@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen, fireEvent } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { useTabsStore, type Tab } from "@/stores/tabsStore";
 import { leaf } from "@/modules/terminal/lib/terminalLayout";
@@ -204,6 +204,52 @@ describe("TitleBar", () => {
     fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Sidebar Panel/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Explorer/ }));
     expect(emitWindowMenuEvent).toHaveBeenCalledWith("menu:sidebar-panel", "explorer");
+  });
+
+  describe("submenu hover-close delay", () => {
+    // Diagonal mouse travel from the "Sidebar Panel" row toward its flyout
+    // crosses a sibling row first ("Toggle Sidebar" or "Preview Back"). An
+    // instant close on that sibling-enter kills the flyout before the
+    // cursor arrives — this delay is what lets diagonal travel succeed.
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("keeps the submenu open when the cursor reaches the flyout before the close delay elapses", () => {
+      vi.useFakeTimers();
+      render(<TitleBar />);
+      fireEvent.click(screen.getByRole("button", { name: "View" }));
+      fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Sidebar Panel/ }));
+      const flyout = screen.getByRole("menuitem", { name: /Explorer/ }).closest('[role="menu"]');
+      expect(flyout).not.toBeNull();
+
+      fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Toggle Sidebar/ }));
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      // The cursor reaches the flyout inside the close window — cancels it.
+      fireEvent.mouseEnter(flyout as Element);
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+
+      expect(screen.getByRole("menuitem", { name: /Explorer/ })).toBeInTheDocument();
+    });
+
+    it("closes the submenu once the close delay elapses without the cursor reaching the flyout", () => {
+      vi.useFakeTimers();
+      render(<TitleBar />);
+      fireEvent.click(screen.getByRole("button", { name: "View" }));
+      fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Sidebar Panel/ }));
+      expect(screen.getByRole("menuitem", { name: /Explorer/ })).toBeInTheDocument();
+
+      fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Toggle Sidebar/ }));
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+
+      expect(screen.queryByRole("menuitem", { name: /Explorer/ })).toBeNull();
+    });
   });
 });
 

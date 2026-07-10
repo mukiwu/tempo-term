@@ -85,7 +85,7 @@ export function executeMenuAction(action: MenuAction): void {
       else void toggleFullscreenWindow();
       break;
     case "url":
-      void openUrl(action.url);
+      void openUrl(action.url).catch(() => {});
       break;
   }
 }
