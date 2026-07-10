@@ -634,18 +634,7 @@ export function SourceControlView() {
   }
 
   return (
-    // Suppress the WebView's own context menu anywhere in the panel; rows
-    // layer the app ContextMenu on top via their own handlers. Text inputs
-    // keep the native menu — it's how right-click paste works.
-    <div
-      className="flex h-full flex-col bg-bg-inset"
-      onContextMenu={(e) => {
-        const el = e.target as HTMLElement;
-        if (!(el instanceof HTMLTextAreaElement) && !(el instanceof HTMLInputElement)) {
-          e.preventDefault();
-        }
-      }}
-    >
+    <div className="flex h-full flex-col bg-bg-inset">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
         <span className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
           {t("title")}
