@@ -103,11 +103,10 @@ function MenuItemRow({
 }
 
 /**
- * Text menu bar (File / Edit / View / Terminal / Window / Help) for the custom
- * title bar. The native menu bar is gone because the frame is hidden
- * (`decorations(false)`) — and even if shown it is OS-drawn and can't follow the
- * app's theme. This self-drawn menu uses the same CSS tokens as the rest of the
- * UI, so it recolours with the theme.
+ * In-window text menu bar (File / Edit / View / Terminal / Window / Help) for Windows.
+ * On Windows the native frame is hidden (`decorations(false)`), so this self-drawn menu
+ * bar renders to replace it. On macOS, the native menu bar handles these menus, so this
+ * component does not render.
  *
  * Menu structure and disabled/action logic live in `menuBarMenus.ts`
  * (data-driven: `buildMenus` + `getMenuContext`). Each item either runs a direct
@@ -390,7 +389,7 @@ export function TitleBar() {
         <img src="/icon.png" alt="" className="h-4 w-4 rounded-sm" draggable={false} />
         <span className="text-[13px] font-semibold text-fg">{t("appName")}</span>
       </div>
-      <WindowMenuBar />
+      {IS_WINDOWS && <WindowMenuBar />}
       <div data-tauri-drag-region className="h-full flex-1" />
       {IS_WINDOWS && (
         <div className="flex h-full shrink-0 items-center">

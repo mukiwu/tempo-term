@@ -258,9 +258,9 @@ describe("on macOS", () => {
     platformMock.isWindows = false;
   });
 
-  it("renders the menu bar without window control buttons", () => {
+  it("does not render the in-window menu bar (native menu owns it)", () => {
     render(<TitleBar />);
-    expect(screen.getByRole("button", { name: "File" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "File" })).toBeNull();
     expect(screen.queryByLabelText("Minimize")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Close")).not.toBeInTheDocument();
   });
