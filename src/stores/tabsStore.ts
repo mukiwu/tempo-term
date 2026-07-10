@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import i18n from "@/i18n";
 import { uid } from "@/lib/id";
 import { perWindowStorage } from "@/lib/window";
 import { markFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
@@ -181,6 +182,10 @@ interface TabsState {
 const nextTabId = () => uid("tab");
 const nextPaneId = () => uid("pane");
 const nextSpaceId = () => uid("space");
+
+/** Default name for a newly created space, localized (e.g. "Group 3" / "群組 3"). */
+const defaultSpaceName = (index: number) =>
+  i18n.t("workspace.spaceDefaultName", { index });
 
 function basename(path: string): string {
   const seg = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
@@ -395,7 +400,7 @@ export const useTabsStore = create<TabsState>()(
       return current;
     }
     const id = nextSpaceId();
-    const name = `Workspace ${get().spaces.length + 1}`;
+    const name = defaultSpaceName(get().spaces.length + 1);
     set((state) => ({ spaces: [...state.spaces, { id, name }], activeSpaceId: id }));
     return id;
   },
@@ -403,7 +408,7 @@ export const useTabsStore = create<TabsState>()(
   newSpace: (name) => {
     const id = nextSpaceId();
     set((state) => ({
-      spaces: [...state.spaces, { id, name: name ?? `Workspace ${state.spaces.length + 1}` }],
+      spaces: [...state.spaces, { id, name: name ?? defaultSpaceName(state.spaces.length + 1) }],
       activeSpaceId: id,
       activeId: null,
     }));

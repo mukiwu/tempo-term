@@ -278,6 +278,7 @@
     },
     "spaces": "群組",
     "newSpace": "新增群組",
+    "spaceDefaultName": "群組 {{index}}",
     "renameSpace": "重新命名群組",
     "deleteSpace": "刪除群組",
     "addTab": "新增分頁",

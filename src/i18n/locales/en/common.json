@@ -278,6 +278,7 @@
     },
     "spaces": "Groups",
     "newSpace": "New group",
+    "spaceDefaultName": "Group {{index}}",
     "renameSpace": "Rename group",
     "deleteSpace": "Delete group",
     "addTab": "Add tab",
