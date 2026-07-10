@@ -337,14 +337,13 @@ function WindowMenuBar() {
 }
 
 /**
- * Custom title bar for both platforms. On Windows the native frame is hidden
+ * Custom title bar, Windows only. The native frame is hidden
  * (`decorations(false)`): a self-drawn text menu bar sits on the left, a
  * draggable region fills the middle, and the minimize / maximize-restore / close
  * controls sit on the right — each control group is kept non-draggable so clicks
- * aren't swallowed by the drag region. On macOS the native frame stays (overlay
- * title bar, traffic lights) but the native menu is reduced to the system
- * minimum (App + Edit — see menu.rs), so this same menu bar renders there too,
- * offset by a fixed-width inset that reserves space for the traffic lights.
+ * aren't swallowed by the drag region. On macOS this renders nothing: the
+ * native menu bar owns the menus (menu.rs) and TabBar is the window's first
+ * row, reserving the traffic-light overlay space with its own left padding.
  */
 export function TitleBar() {
   const { t } = useTranslation();
@@ -368,18 +367,12 @@ export function TitleBar() {
     };
   }, []);
 
+  if (!IS_WINDOWS) {
+    return null;
+  }
+
   return (
     <div className="flex h-8 shrink-0 items-center border-b border-border bg-bg-inset">
-      {!IS_WINDOWS && (
-        // Reserves space for the native traffic lights (overlay title bar), so
-        // the menu bar/brand mark never renders underneath them. 78px is the
-        // standard macOS overlay traffic-light width.
-        <div
-          data-testid="traffic-light-inset"
-          data-tauri-drag-region
-          className="h-full w-[78px] shrink-0"
-        />
-      )}
       {/* Brand mark. Kept a drag region so the window can be moved from here;
           the img/span aren't interactive, so dragging still works. */}
       <div
@@ -389,42 +382,40 @@ export function TitleBar() {
         <img src="/icon.png" alt="" className="h-4 w-4 rounded-sm" draggable={false} />
         <span className="text-[13px] font-semibold text-fg">{t("appName")}</span>
       </div>
-      {IS_WINDOWS && <WindowMenuBar />}
+      <WindowMenuBar />
       <div data-tauri-drag-region className="h-full flex-1" />
-      {IS_WINDOWS && (
-        <div className="flex h-full shrink-0 items-center">
-          <Tooltip label={t("titleBar.minimize")} side="bottom">
-            <button
-              type="button"
-              aria-label={t("titleBar.minimize")}
-              onClick={() => void minimizeWindow()}
-              className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
-            >
-              <Minus size={15} />
-            </button>
-          </Tooltip>
-          <Tooltip label={isMaximized ? t("titleBar.restore") : t("titleBar.maximize")} side="bottom">
-            <button
-              type="button"
-              aria-label={isMaximized ? t("titleBar.restore") : t("titleBar.maximize")}
-              onClick={() => void toggleMaximizeWindow()}
-              className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
-            >
-              {isMaximized ? <RestoreIcon size={11} /> : <Square size={12} />}
-            </button>
-          </Tooltip>
-          <Tooltip label={t("titleBar.close")} side="bottom">
-            <button
-              type="button"
-              aria-label={t("titleBar.close")}
-              onClick={() => void closeWindow()}
-              className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-danger hover:text-white"
-            >
-              <X size={16} />
-            </button>
-          </Tooltip>
-        </div>
-      )}
+      <div className="flex h-full shrink-0 items-center">
+        <Tooltip label={t("titleBar.minimize")} side="bottom">
+          <button
+            type="button"
+            aria-label={t("titleBar.minimize")}
+            onClick={() => void minimizeWindow()}
+            className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
+          >
+            <Minus size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip label={isMaximized ? t("titleBar.restore") : t("titleBar.maximize")} side="bottom">
+          <button
+            type="button"
+            aria-label={isMaximized ? t("titleBar.restore") : t("titleBar.maximize")}
+            onClick={() => void toggleMaximizeWindow()}
+            className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
+          >
+            {isMaximized ? <RestoreIcon size={11} /> : <Square size={12} />}
+          </button>
+        </Tooltip>
+        <Tooltip label={t("titleBar.close")} side="bottom">
+          <button
+            type="button"
+            aria-label={t("titleBar.close")}
+            onClick={() => void closeWindow()}
+            className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-danger hover:text-white"
+          >
+            <X size={16} />
+          </button>
+        </Tooltip>
+      </div>
     </div>
   );
 }
