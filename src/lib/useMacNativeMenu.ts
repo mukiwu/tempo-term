@@ -88,6 +88,9 @@ export function useMacNativeMenu(): void {
         });
       }),
       getCurrentWebview().listen<string>("native-menu-click", ({ payload }) => {
+        // The async unlisten may not have resolved yet after cleanup; a click
+        // draining in that window must not act on a torn-down component.
+        if (disposed) return;
         const ctx = getMenuContext(maximized);
         const item = findItemById(buildMenus(ctx), payload);
         // Re-check disabled: the native menu state may lag a store change by

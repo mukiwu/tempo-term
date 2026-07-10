@@ -47,6 +47,7 @@ pub enum NativeItemKind {
 /// Event emitted to the focused window when a native menu item is clicked.
 /// Predefined items (copy/paste/undo/etc.) are handled by the system and never
 /// reach `on_menu_event`, so only custom item ids are ever seen here.
+#[cfg(target_os = "macos")]
 pub const NATIVE_MENU_EVENT: &str = "native-menu-click";
 
 /// Build the App submenu (About/Services/Hide/Quit): the one macOS requires to
