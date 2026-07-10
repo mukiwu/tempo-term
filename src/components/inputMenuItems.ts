@@ -65,7 +65,9 @@ export function isRichEditable(target: EventTarget | null): boolean {
  * otherwise leave it with no menu at all.
  */
 export function isEditorSurface(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
+  // Element, not HTMLElement: editors decorate with SVG (fold arrows, lint
+  // markers), and those must keep the editor's native menu too.
+  if (!(target instanceof Element)) {
     return false;
   }
   return target.closest(".cm-editor, .monaco-editor, .ProseMirror") !== null;

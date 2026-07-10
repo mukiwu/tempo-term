@@ -99,6 +99,16 @@ describe("isEditorSurface", () => {
     expect(isEditorSurface(document.createElement("div"))).toBe(false);
     expect(isEditorSurface(null)).toBe(false);
   });
+
+  it("is true for SVG decorations inside an editor (fold arrows, lint markers)", () => {
+    // SVG elements are Element but not HTMLElement; the check must not lose
+    // them or the editor's native menu dies on icon right-clicks in prod.
+    const editor = document.createElement("div");
+    editor.className = "cm-editor";
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    editor.appendChild(icon);
+    expect(isEditorSurface(icon)).toBe(true);
+  });
 });
 
 describe("readFieldContext", () => {

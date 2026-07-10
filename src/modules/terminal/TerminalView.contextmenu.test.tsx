@@ -252,6 +252,20 @@ describe("TerminalView context menu on non-Windows platforms", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
+  it("leaves overlay chrome (buttons and other widgets) to the window-level handler", () => {
+    // The search bar's close button, the action card and future overlays all
+    // float above the xterm mount; the terminal menu's Paste writes into the
+    // pty, so only the terminal surface itself may open it.
+    const { terminal } = renderTerminal();
+    const chrome = document.createElement("button");
+    terminal.appendChild(chrome);
+
+    const notPrevented = rightClick(chrome);
+
+    expect(notPrevented).toBe(true);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
   it("keeps the terminal menu for xterm's own hidden helper textarea", () => {
     const { terminal } = renderTerminal();
     // The mocked createTerminal renders no DOM, so fabricate the structure the

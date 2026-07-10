@@ -1512,16 +1512,15 @@ export function TerminalView({
         // native paste is ~5s). Backed by the same fast clipboard path as
         // the paste keybinding.
         const target = event.target;
-        // Text fields rendered inside this pane (e.g. the search bar's input)
-        // must NOT get the terminal menu — its Paste would write the clipboard
-        // into the pty instead of the field. Returning without preventDefault
-        // leaves the event to the window-level InputContextMenu, which shows
-        // the proper text-field menu. xterm's own hidden helper textarea
-        // (inside .xterm) is exempt: right-clicking the terminal lands on it,
-        // and it must keep the terminal menu.
+        // Only the terminal surface itself (anything inside the .xterm mount,
+        // or the pane's own background) gets the terminal menu — its Paste
+        // writes the clipboard into the pty. Overlay chrome floating above the
+        // mount (the search bar and its buttons, the action card, future
+        // widgets) falls through without preventDefault to the window-level
+        // InputContextMenu, which shows the right menu per element.
         if (
-          (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
-          !target.closest(".xterm")
+          !(target instanceof Element) ||
+          (!target.closest(".xterm") && target !== event.currentTarget)
         ) {
           return;
         }
