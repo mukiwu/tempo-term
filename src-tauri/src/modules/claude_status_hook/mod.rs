@@ -46,7 +46,9 @@ fn our_command(script_path: &str, state: &str) -> String {
 /// forward-slash form. Applied unconditionally: Unix paths never contain a
 /// backslash, so this is effectively a no-op there, and keeping it
 /// platform-agnostic lets the dedup logic be tested on any CI runner.
-fn normalize(s: &str) -> String {
+/// `pub(crate)`: `codex_status_hook` mirrors this same normalize-before-match
+/// step for its own hooks.json cleanup (see #155 follow-up).
+pub(crate) fn normalize(s: &str) -> String {
     s.replace('\\', "/")
 }
 
@@ -202,21 +204,38 @@ pub fn claude_status_hook_install(app: AppHandle) -> Result<(), String> {
     }
 }
 
-/// Remove our settings.json entries and delete the hook script.
+/// Remove our entries from the settings file at `settings_path`, skipping the
+/// rewrite entirely when nothing changed. `raw_script_path` need not be
+/// pre-normalized: it is normalized internally (see `normalize`) before
+/// matching, so entries are found regardless of which slash style
+/// `script_path.to_str()` produced (e.g. an old Windows build's backslash
+/// path) — PR #176 review Fix 1. Only rewrites when an entry was actually
+/// removed, so a file with nothing of ours in it (the common case on every
+/// launch) is never touched — no re-sorted keys, no race with Claude Code's
+/// own writes — PR #176 review Fix 3. A missing file is a no-op, so
+/// uninstalling never creates an empty `{}` file for a user with no settings.
+fn cleanup_settings(settings_path: &PathBuf, raw_script_path: &str) -> Result<(), String> {
+    if !settings_path.exists() {
+        return Ok(());
+    }
+    let script_path = normalize(raw_script_path);
+    let existing = read_settings(settings_path)?;
+    let cleaned = remove_hook_settings(existing.clone(), &script_path, EVENTS);
+    if cleaned != existing {
+        write_settings(settings_path, &cleaned)?;
+    }
+    Ok(())
+}
+
+/// Remove our settings.json entries and delete the hook script. Also called
+/// (via `crate::modules::claude_status_hook::claude_status_hook_uninstall`)
+/// from `lib.rs`'s `.setup()` on Windows, independent of the user's
+/// `claudeStatusTracking` setting (see #155 follow-up, Fix 2).
 #[tauri::command]
 pub fn claude_status_hook_uninstall(app: AppHandle) -> Result<(), String> {
     let (script_path, settings_path) = paths(&app)?;
     let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
-    // Match on the same forward-slash form install wrote (see `normalize`), so we
-    // also clean up entries left by older backslash installs.
-    let script_str = normalize(script_str);
-    let script_str = script_str.as_str();
-    // Only rewrite settings.json if it already exists, so uninstalling never
-    // creates an empty `{}` file for a user who has no settings.
-    if settings_path.exists() {
-        let cleaned = remove_hook_settings(read_settings(&settings_path)?, script_str, EVENTS);
-        write_settings(&settings_path, &cleaned)?;
-    }
+    cleanup_settings(&settings_path, script_str)?;
     let _ = std::fs::remove_file(&script_path);
     if let Some(dir) = script_path.parent() {
         let _ = std::fs::remove_dir(dir); // best-effort, only succeeds when empty
@@ -284,6 +303,49 @@ mod tests {
         let other = json!({ "hooks": { "PreToolUse": [{ "hooks": [{ "type": "command", "command": "user" }] }] } });
         let cleaned = remove_hook_settings(other.clone(), "/p/status-hook.sh", EVENTS);
         assert_eq!(cleaned, other);
+    }
+
+    fn temp_dir_for(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("tt-claude-hook-cleanup-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // --- cleanup_settings: PR #176 review findings ---------------------------
+
+    #[test]
+    fn cleanup_settings_skips_rewrite_when_nothing_to_remove() {
+        // Fix 3: a settings.json with no tempo-term entries must come out
+        // byte-identical, including key order. serde_json has no preserve_order
+        // feature, so any unconditional rewrite would re-sort these keys
+        // alphabetically even though nothing changed — that's the bug.
+        let dir = temp_dir_for("noop");
+        let settings_path = dir.join("settings.json");
+        let original = "{\n  \"zeta\": 1,\n  \"alpha\": 2\n}\n";
+        std::fs::write(&settings_path, original).unwrap();
+
+        cleanup_settings(&settings_path, "/p/status-hook.sh").unwrap();
+
+        let after = std::fs::read_to_string(&settings_path).unwrap();
+        assert_eq!(after, original, "file with nothing to remove must be left byte-identical");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cleanup_settings_rewrites_when_an_entry_is_actually_removed() {
+        let dir = temp_dir_for("changed");
+        let settings_path = dir.join("settings.json");
+        let merged = merge_hook_settings(json!({}), "/p/status-hook.sh", EVENTS);
+        std::fs::write(&settings_path, serde_json::to_string_pretty(&merged).unwrap()).unwrap();
+
+        cleanup_settings(&settings_path, "/p/status-hook.sh").unwrap();
+
+        let after: Value = serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+        assert!(after.get("hooks").is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

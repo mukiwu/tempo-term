@@ -152,6 +152,22 @@ pub fn run() {
                 }
             }
             modules::menu::init(app)?;
+            // Windows: the status hooks' install command is cleanup-only (#155,
+            // since a bare `.sh` hook command pops the "Open With" dialog on
+            // every event there). But the only launch-time caller of install is
+            // gated on the user's `claudeStatusTracking` setting (see App.tsx) —
+            // a user who flipped that off to work around the dialog storm would
+            // otherwise never get cleaned up. Run cleanup here instead,
+            // independent of any frontend setting, on every launch. Both
+            // uninstall fns are already best-effort and idempotent (a no-op
+            // rewrite is skipped internally — see PR #176 review Fix 3), so a
+            // direct cfg-gated call needs no extra wrapper.
+            #[cfg(target_os = "windows")]
+            {
+                let handle = app.handle().clone();
+                let _ = claude_status_hook_uninstall(handle.clone());
+                let _ = codex_status_hook_uninstall(handle);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

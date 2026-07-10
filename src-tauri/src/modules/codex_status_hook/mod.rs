@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use toml_edit::{DocumentMut, Item, Table, value};
 
-use crate::modules::claude_status_hook::remove_hook_settings;
+use crate::modules::claude_status_hook::{normalize, remove_hook_settings};
 // Only the non-Windows install path merges our entries and writes the script;
 // on Windows install is cleanup-only (#155), so these would be unused there.
 #[cfg(not(windows))]
@@ -108,17 +108,41 @@ pub fn codex_status_hook_install(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Remove our entries from `hooks_path`, skipping the rewrite entirely when
+/// nothing changed. `raw_script_path` need not be pre-normalized: it is
+/// normalized internally (see `normalize`) before matching, mirroring
+/// `claude_status_hook`'s `cleanup_settings`. Without this, `remove_hook_settings`
+/// only normalizes the *stored* side, so a raw backslash needle (as
+/// `script_path.to_str()` yields on Windows) never matches, and the delegated
+/// cleanup silently removes zero entries — PR #176 review Fix 1. Only rewrites
+/// when an entry was actually removed, so a hooks.json with nothing of ours in
+/// it (the common case on every launch) is left untouched — PR #176 review
+/// Fix 3. A missing file is a no-op.
+fn cleanup_hooks_json(hooks_path: &PathBuf, raw_script_path: &str) -> Result<(), String> {
+    if !hooks_path.exists() {
+        return Ok(());
+    }
+    let script_path = normalize(raw_script_path);
+    let existing = read_json(hooks_path)?;
+    let cleaned = remove_hook_settings(existing.clone(), &script_path, CODEX_EVENTS);
+    if cleaned != existing {
+        let text = serde_json::to_string_pretty(&cleaned).map_err(|e| e.to_string())? + "\n";
+        write_atomic(hooks_path, &text)?;
+    }
+    Ok(())
+}
+
+/// Also called (via
+/// `crate::modules::codex_status_hook::codex_status_hook_uninstall`) from
+/// `lib.rs`'s `.setup()` on Windows, independent of the user's
+/// `claudeStatusTracking` setting (see #155 follow-up, Fix 2).
 #[tauri::command]
 pub fn codex_status_hook_uninstall(app: AppHandle) -> Result<(), String> {
     let (script_path, hooks_path, _config_path) = codex_paths(&app)?;
     let script_str = script_path.to_str().ok_or("script path is not valid UTF-8")?;
     // Leave `[features] hooks = true` in config.toml: it is shared infra other
     // tools (e.g. CodeIsland) rely on. Only remove our hooks.json entries + script.
-    if hooks_path.exists() {
-        let cleaned = remove_hook_settings(read_json(&hooks_path)?, script_str, CODEX_EVENTS);
-        let text = serde_json::to_string_pretty(&cleaned).map_err(|e| e.to_string())? + "\n";
-        write_atomic(&hooks_path, &text)?;
-    }
+    cleanup_hooks_json(&hooks_path, script_str)?;
     let _ = std::fs::remove_file(&script_path);
     if let Some(dir) = script_path.parent() {
         let _ = std::fs::remove_dir(dir);
@@ -212,5 +236,78 @@ mod tests {
         assert!(out.contains("# flag for multi-agent"));
         assert!(out.contains("multi_agent = true"));
         assert!(out.contains("hooks = true"));
+    }
+
+    fn temp_dir_for(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("tt-codex-hook-cleanup-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // --- cleanup_hooks_json: PR #176 review findings --------------------------
+
+    #[test]
+    fn cleanup_hooks_json_removes_stale_backslash_entries_given_a_raw_backslash_path() {
+        // Fix 1: on Windows, `script_path.to_str()` yields backslashes. The
+        // stored command may also be backslash (an old Windows build wrote it
+        // raw, no normalize). remove_hook_settings only normalizes the stored
+        // side, so the caller's needle must be normalized too, or nothing
+        // matches and the delegated cleanup silently removes zero entries.
+        let dir = temp_dir_for("backslash-needle");
+        let hooks_path = dir.join("hooks.json");
+        let stale = json!({
+            "hooks": {
+                "PreToolUse": [
+                    { "hooks": [{ "type": "command", "command": r"C:\Users\me\.codex\tempoterm\status-hook.sh active" }] }
+                ]
+            }
+        });
+        std::fs::write(&hooks_path, serde_json::to_string_pretty(&stale).unwrap()).unwrap();
+
+        // Raw, un-normalized script path, exactly as `script_path.to_str()`
+        // would hand it to us on Windows.
+        let raw_script_path = r"C:\Users\me\.codex\tempoterm\status-hook.sh";
+        cleanup_hooks_json(&hooks_path, raw_script_path).unwrap();
+
+        let after: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&hooks_path).unwrap()).unwrap();
+        assert!(after.get("hooks").is_none(), "stale backslash entry should have been removed");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cleanup_hooks_json_skips_rewrite_when_nothing_to_remove() {
+        // Fix 3: a hooks.json with no tempo-term entries must come out
+        // byte-identical, including key order (no preserve_order feature, so
+        // any unconditional rewrite re-sorts keys alphabetically).
+        let dir = temp_dir_for("noop");
+        let hooks_path = dir.join("hooks.json");
+        let original = "{\n  \"zeta\": 1,\n  \"alpha\": 2\n}\n";
+        std::fs::write(&hooks_path, original).unwrap();
+
+        cleanup_hooks_json(&hooks_path, "/home/me/.codex/tempoterm/status-hook.sh").unwrap();
+
+        let after = std::fs::read_to_string(&hooks_path).unwrap();
+        assert_eq!(after, original, "file with nothing to remove must be left byte-identical");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cleanup_hooks_json_rewrites_when_an_entry_is_actually_removed() {
+        let dir = temp_dir_for("changed");
+        let hooks_path = dir.join("hooks.json");
+        let merged = merge_hook_settings(json!({}), "/c/status-hook.sh", CODEX_EVENTS);
+        std::fs::write(&hooks_path, serde_json::to_string_pretty(&merged).unwrap()).unwrap();
+
+        cleanup_hooks_json(&hooks_path, "/c/status-hook.sh").unwrap();
+
+        let after: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&hooks_path).unwrap()).unwrap();
+        assert!(after.get("hooks").is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
