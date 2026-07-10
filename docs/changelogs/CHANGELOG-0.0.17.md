@@ -24,6 +24,11 @@
 
 - 歷史對話列表改用虛擬化渲染，累積上萬筆 session 時開啟面板不再卡頓數秒 (#167)
 
+### 感謝
+
+- 感謝 @oberonlai 貢獻首次啟動設定精靈、側邊欄圖示拖曳排序、歷史對話列表虛擬化、git／gh 指令非同步化與終端卡頓修正（#159, #165, #167, #168, #169）
+- 感謝 @yw-chan 貢獻 Windows 上注入指令無法執行的修復（#160），以及 icon font 與網頁預覽兩個問題的精準回報（#163, #164）
+
 ## English
 
 ### feat
@@ -49,3 +54,8 @@
 ### perf
 
 - The session history list is now virtualized, so opening the panel stays smooth even with tens of thousands of accumulated sessions (#167)
+
+### Thanks
+
+- Thanks to @oberonlai for contributing the first-launch setup wizard, draggable sidebar icon order, the virtualized session history list, async git / gh commands and the terminal jank fix (#159, #165, #167, #168, #169)
+- Thanks to @yw-chan for contributing the fix for stranded injected commands on Windows (#160) and for the precise reports on the icon font and preview pane issues (#163, #164)
