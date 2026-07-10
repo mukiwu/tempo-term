@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/i18n/config";
+import { IS_MAC } from "@/lib/platform";
+import { LANGUAGE_AT_LAUNCH } from "@/lib/launchLanguage";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import { getTheme, THEMES, type AppTheme } from "@/themes/themes";
@@ -90,7 +93,15 @@ function AppearanceSection() {
               key={lng}
               type="button"
               aria-pressed={language === lng}
-              onClick={() => setLanguage(lng as SupportedLanguage)}
+              onClick={() => {
+                setLanguage(lng as SupportedLanguage);
+                if (IS_MAC) {
+                  // Keep the per-app AppleLanguages preference in step so the
+                  // native menus (editor, notes) follow after a relaunch —
+                  // AppKit only reads it at launch.
+                  void invoke("set_app_languages", { languages: [lng] }).catch(() => {});
+                }
+              }}
               className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
                 language === lng
                   ? "border-accent bg-bg-elevated text-fg"
@@ -101,6 +112,11 @@ function AppearanceSection() {
             </button>
           ))}
         </div>
+        {IS_MAC && language !== LANGUAGE_AT_LAUNCH && (
+          <p data-testid="language-restart-hint" className="mt-2 text-xs text-fg-muted">
+            {t("language.restartHint")}
+          </p>
+        )}
       </div>
 
       <div>

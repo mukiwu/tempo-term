@@ -1,8 +1,25 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { SettingsView } from "./SettingsView";
 import { useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+
+// Flippable per test: the AppleLanguages sync and its restart hint are
+// macOS-only (native menus are an AppKit concern).
+const platformMock = vi.hoisted(() => ({ isMac: true }));
+vi.mock("@/lib/platform", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/platform")>();
+  return {
+    ...actual,
+    get IS_MAC() {
+      return platformMock.isMac;
+    },
+  };
+});
+
+const invokeMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 
 // Every settings section pulls in its own Tauri/store dependencies (invoke,
 // openUrl, secretsHasKey, ...); stub them all so this test stays focused on
@@ -29,9 +46,13 @@ vi.mock("./AboutSettingsSection", () => ({
 // Snapshot the store (actions included) at load so each test starts from a
 // complete, clean state rather than only resetting the fields we touch.
 const initialUiState = useUiStore.getState();
+const initialSettingsState = useSettingsStore.getState();
 
 beforeEach(() => {
   useUiStore.setState(initialUiState, true);
+  useSettingsStore.setState(initialSettingsState, true);
+  platformMock.isMac = true;
+  invokeMock.mockClear();
 });
 
 describe("SettingsView section deep-link", () => {
@@ -155,5 +176,45 @@ describe("SettingsView section deep-link", () => {
       "aria-current",
       "false",
     );
+  });
+});
+
+describe("SettingsView language switch native-menu sync (macOS)", () => {
+  function openAppearance() {
+    useUiStore.setState({ settingsOpen: true, settingsSection: "appearance" });
+    render(<SettingsView />);
+  }
+
+  it("writes the per-app AppleLanguages preference when the language changes", () => {
+    openAppearance();
+
+    fireEvent.click(screen.getByRole("button", { name: "正體中文" }));
+
+    expect(invokeMock).toHaveBeenCalledWith("set_app_languages", {
+      languages: ["zh-Hant"],
+    });
+  });
+
+  it("shows a restart hint once the language differs from the one at launch", () => {
+    openAppearance();
+    expect(screen.queryByTestId("language-restart-hint")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "正體中文" }));
+    expect(screen.getByTestId("language-restart-hint")).toBeInTheDocument();
+
+    // Switching back to the launch language: native menus already match it,
+    // so the hint disappears.
+    fireEvent.click(screen.getByRole("button", { name: "English" }));
+    expect(screen.queryByTestId("language-restart-hint")).not.toBeInTheDocument();
+  });
+
+  it("does nothing on non-macOS platforms", () => {
+    platformMock.isMac = false;
+    openAppearance();
+
+    fireEvent.click(screen.getByRole("button", { name: "正體中文" }));
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("language-restart-hint")).not.toBeInTheDocument();
   });
 });

@@ -70,7 +70,8 @@
     "description": "選擇整個介面使用的語言",
     "system": "跟隨系統",
     "en": "English",
-    "zh-Hant": "正體中文"
+    "zh-Hant": "正體中文",
+    "restartHint": "編輯器與筆記的原生選單要重新啟動 app 後才會跟著切換"
   },
   "theme": {
     "label": "主題",

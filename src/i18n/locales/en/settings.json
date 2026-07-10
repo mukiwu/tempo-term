@@ -70,7 +70,8 @@
     "description": "Choose the language used across the interface",
     "system": "Follow system",
     "en": "English",
-    "zh-Hant": "正體中文"
+    "zh-Hant": "正體中文",
+    "restartHint": "Native menus in the editor and notes follow this language after you restart the app"
   },
   "theme": {
     "label": "Theme",

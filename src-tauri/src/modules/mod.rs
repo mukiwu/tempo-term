@@ -10,6 +10,7 @@ pub mod editor_watch;
 pub mod fonts;
 pub mod fs;
 pub mod git;
+pub mod locale;
 pub mod menu;
 pub mod notes;
 pub mod ports;
