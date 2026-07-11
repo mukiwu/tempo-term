@@ -2,43 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" href="/icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TempoTerm</title>
-    <style>
-      /* Themed background and a splash spinner shown before the JS bundle and
-         React have painted, so a cold start is a dark loading screen rather
-         than a blank flash. React replaces #root's contents on mount. */
-      html,
-      body,
-      #root {
-        height: 100%;
-        margin: 0;
-        background: #222222;
-      }
-      #app-splash {
-        position: fixed;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #222222;
-      }
-      #app-splash::after {
-        content: "";
-        width: 22px;
-        height: 22px;
-        border-radius: 50%;
-        border: 2px solid #3a3a3a;
-        border-top-color: #5eaab5;
-        animation: app-splash-spin 0.7s linear infinite;
-      }
-      @keyframes app-splash-spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-    </style>
+    <!-- Splash styles live in public/splash.css on purpose: keeping this HTML
+         free of embedded style elements keeps Tauri's codegen from adding a
+         CSP token that would neutralize the relaxed runtime-style allowance
+         xterm/Tiptap/CodeMirror depend on. Rationale in that file. -->
+    <link rel="stylesheet" href="/splash.css" />
   </head>
 
   <body>
