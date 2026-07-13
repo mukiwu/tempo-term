@@ -218,6 +218,63 @@ fn search_dirs(
     dirs
 }
 
+/// Bin directories for Node version managers whose global CLIs live outside a
+/// GUI launch's minimal PATH: nvm (one bin per installed node version), volta,
+/// and asdf. `nvm_versions` are the version dir names read from
+/// `~/.nvm/versions/node` (e.g. "v22.14.0"). Pure so the path shape and the
+/// per-version expansion are unit-tested; the directory read that supplies
+/// `nvm_versions` lives in `read_nvm_node_versions`. Unix-focused — these
+/// managers' Windows layouts differ and npm-prefix/winget already cover the
+/// Windows CLIs.
+fn node_version_manager_dirs(home: Option<&str>, nvm_versions: &[String]) -> Vec<PathBuf> {
+    let Some(home) = home else {
+        return Vec::new();
+    };
+    let home = PathBuf::from(home);
+    let mut dirs = vec![
+        home.join(".volta").join("bin"),
+        home.join(".asdf").join("shims"),
+    ];
+    let nvm_node = home.join(".nvm").join("versions").join("node");
+    for version in nvm_versions {
+        dirs.push(nvm_node.join(version).join("bin"));
+    }
+    dirs
+}
+
+/// Version directory names under `~/.nvm/versions/node` (e.g. "v22.14.0"), or
+/// empty when nvm isn't installed. Touches the filesystem, so it's kept out of
+/// the pure path helpers and its output is fed into `node_version_manager_dirs`.
+fn read_nvm_node_versions(home: Option<&str>) -> Vec<String> {
+    let Some(home) = home else {
+        return Vec::new();
+    };
+    let node_root = PathBuf::from(home).join(".nvm").join("versions").join("node");
+    let Ok(entries) = std::fs::read_dir(&node_root) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect()
+}
+
+/// First existing `name` across `dirs`, or None. Split out of `find_tool` so the
+/// PATH-independent resolution — a tool present only under an nvm bin, exactly
+/// the GUI-launch case this fixes — is unit-tested without mutating process env.
+fn resolve_in_dirs(names: &[String], dirs: &[PathBuf]) -> Option<PathBuf> {
+    for dir in dirs {
+        for name in names {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
 /// Absolute path to `stem`'s executable, or None when it isn't installed.
 /// Resolving to an absolute path (never spawning a bare name) both finds the
 /// Windows `.exe`/`.cmd` forms and avoids the `CreateProcess` CWD-search hijack,
@@ -231,21 +288,21 @@ fn find_tool(stem: &str) -> Option<PathBuf> {
     let localappdata = std::env::var("LOCALAPPDATA").ok();
     let windows = cfg!(windows);
     let names = exe_names(stem, windows);
-    for dir in search_dirs(
+    let mut dirs = search_dirs(
         path_env.as_deref(),
         home.as_deref(),
         appdata.as_deref(),
         localappdata.as_deref(),
         windows,
-    ) {
-        for name in &names {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
+    );
+    // A GUI launch's PATH omits nvm/volta/asdf, so global CLIs installed on a
+    // version-managed node (claude/codex via `npm i -g`) are invisible to the
+    // PATH+Homebrew search above. Append those bins so they're found too.
+    if !windows {
+        let nvm_versions = read_nvm_node_versions(home.as_deref());
+        dirs.extend(node_version_manager_dirs(home.as_deref(), &nvm_versions));
     }
-    None
+    resolve_in_dirs(&names, &dirs)
 }
 
 /// Build a `Command` with the console suppressed on Windows. A release build has
@@ -483,5 +540,99 @@ mod tests {
         assert!(unix.contains(&PathBuf::from("/usr/local/bin")));
         let win = search_dirs(None, None, None, None, true);
         assert!(win.contains(&PathBuf::from(r"C:\ProgramData\chocolatey\bin")));
+    }
+
+    #[test]
+    fn node_version_manager_dirs_covers_nvm_volta_asdf() {
+        // A GUI launch's PATH omits nvm/volta/asdf (they're wired up in the
+        // interactive shell's rc files), so global CLIs installed under them —
+        // claude/codex via `npm i -g` on an nvm node — go undetected (#unknown).
+        // Each nvm node version has its own global bin, so every installed
+        // version dir must be searched.
+        let versions = vec!["v22.14.0".to_string(), "v20.11.0".to_string()];
+        let dirs = node_version_manager_dirs(Some("/home/me"), &versions);
+        assert!(dirs.contains(&PathBuf::from("/home/me/.volta/bin")));
+        assert!(dirs.contains(&PathBuf::from("/home/me/.asdf/shims")));
+        assert!(dirs.contains(&PathBuf::from("/home/me/.nvm/versions/node/v22.14.0/bin")));
+        assert!(dirs.contains(&PathBuf::from("/home/me/.nvm/versions/node/v20.11.0/bin")));
+    }
+
+    #[test]
+    fn node_version_manager_dirs_empty_without_home() {
+        // A bare GUI launch can hand us no HOME; must return empty, not panic.
+        assert!(node_version_manager_dirs(None, &["v22.14.0".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn read_nvm_node_versions_lists_installed_version_dirs() {
+        // A controlled ~/.nvm/versions/node tree: the reader returns each
+        // version directory name and ignores stray files.
+        let base = std::env::temp_dir().join("tempo_setup_nvm_read_test");
+        let _ = std::fs::remove_dir_all(&base);
+        let node_root = base.join(".nvm").join("versions").join("node");
+        std::fs::create_dir_all(node_root.join("v22.14.0").join("bin")).unwrap();
+        std::fs::create_dir_all(node_root.join("v18.20.0").join("bin")).unwrap();
+        std::fs::write(node_root.join("alias"), b"default").unwrap();
+
+        let versions = read_nvm_node_versions(base.to_str());
+        assert!(versions.contains(&"v22.14.0".to_string()));
+        assert!(versions.contains(&"v18.20.0".to_string()));
+        // A plain file (nvm's `alias`) is not a version dir.
+        assert!(!versions.contains(&"alias".to_string()));
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn read_nvm_node_versions_empty_when_absent() {
+        // No nvm install (or no HOME): empty, never an error.
+        let missing = std::env::temp_dir().join("tempo_setup_nvm_absent_test_xyz");
+        let _ = std::fs::remove_dir_all(&missing);
+        assert!(read_nvm_node_versions(missing.to_str()).is_empty());
+        assert!(read_nvm_node_versions(None).is_empty());
+    }
+
+    #[test]
+    fn resolves_a_tool_present_only_under_an_nvm_bin() {
+        // The exact GUI-launch bug: a CLI installed via `npm i -g` on an
+        // nvm-managed node lives only under ~/.nvm/versions/node/<ver>/bin and
+        // never on the app's PATH. End-to-end, detection must still resolve it
+        // from the version-manager dirs alone.
+        let base = std::env::temp_dir().join("tempo_setup_e2e_nvm");
+        let _ = std::fs::remove_dir_all(&base);
+        let bin = base
+            .join(".nvm")
+            .join("versions")
+            .join("node")
+            .join("v22.22.2")
+            .join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("claude"), b"#!/bin/sh\n").unwrap();
+
+        // No PATH involved — only the nvm dirs discovered from HOME.
+        let versions = read_nvm_node_versions(base.to_str());
+        let dirs = node_version_manager_dirs(base.to_str(), &versions);
+        let found = resolve_in_dirs(&["claude".to_string()], &dirs);
+
+        assert!(found.is_some(), "claude under an nvm bin must be found");
+        assert!(found.unwrap().ends_with("v22.22.2/bin/claude"));
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    #[ignore = "env-dependent: run manually on a machine with an nvm-installed claude"]
+    fn real_env_finds_nvm_installed_claude() {
+        // Proof on the real machine: using ONLY the version-manager dirs derived
+        // from HOME — never PATH — resolve the actual nvm-installed claude. This
+        // is the release/GUI scenario (PATH lacks nvm). Run with:
+        //   cargo test -p tempo-term real_env_finds_nvm_installed_claude -- --ignored --nocapture
+        let home = std::env::var("HOME").ok();
+        let versions = read_nvm_node_versions(home.as_deref());
+        let dirs = node_version_manager_dirs(home.as_deref(), &versions);
+        let found = resolve_in_dirs(&["claude".to_string()], &dirs);
+        println!("HOME nvm node versions: {versions:?}");
+        println!("claude resolved from nvm dirs (no PATH): {found:?}");
+        assert!(found.is_some(), "expected to find the nvm-installed claude");
     }
 }
