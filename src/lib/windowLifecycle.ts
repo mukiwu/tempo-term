@@ -57,18 +57,25 @@ export async function restoreFocusOnWindowRefocus(): Promise<(() => void) | null
     }
   };
   document.addEventListener("focusin", track);
-  const unlisten = await win.onFocusChanged(({ payload: focused }) => {
-    if (!focused) {
-      return;
-    }
-    const active = document.activeElement;
-    const focusWasLost = active === null || active === document.body;
-    if (document.hasFocus() && focusWasLost && lastFocused?.isConnected) {
-      lastFocused.focus({ preventScroll: true });
-    }
-  });
-  return () => {
+  try {
+    const unlisten = await win.onFocusChanged(({ payload: focused }) => {
+      if (!focused) {
+        return;
+      }
+      const active = document.activeElement;
+      const focusWasLost = active === null || active === document.body;
+      if (document.hasFocus() && focusWasLost && lastFocused?.isConnected) {
+        lastFocused.focus({ preventScroll: true });
+      }
+    });
+    return () => {
+      document.removeEventListener("focusin", track);
+      unlisten();
+    };
+  } catch (error) {
+    // Registration failed: drop the listener we already attached so it can't
+    // leak, since we never hand back a cleanup function.
     document.removeEventListener("focusin", track);
-    unlisten();
-  };
+    throw error;
+  }
 }

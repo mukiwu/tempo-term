@@ -150,6 +150,15 @@ describe("restoreFocusOnWindowRefocus", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it("removes the focusin listener if registration fails", async () => {
+    const onFocusChanged = vi.fn().mockRejectedValue(new Error("ipc failed"));
+    getCurrentWindow.mockReturnValue({ onFocusChanged });
+    const removeSpy = vi.spyOn(document, "removeEventListener");
+
+    await expect(restoreFocusOnWindowRefocus()).rejects.toThrow("ipc failed");
+    expect(removeSpy).toHaveBeenCalledWith("focusin", expect.any(Function));
+  });
+
   it("stops tracking focus after the returned unlisten is called", async () => {
     const win = mockFocusWindow();
     const unlisten = await restoreFocusOnWindowRefocus();
