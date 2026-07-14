@@ -87,9 +87,19 @@ fn app_build_info() -> AppBuildInfo {
 /// Open a new window, mirroring the File > New Window menu item. On Windows the
 /// native menu bar is hidden, so its Ctrl+N accelerator never fires; the
 /// frontend invokes this command from its keydown handler instead (see App.tsx).
+///
+/// Must be async: on Windows, building a webview window inside a synchronous
+/// command deadlocks the event loop (wry#583), leaving a blank unclosable
+/// window shell and dead IPC. Async commands run off the main thread, which is
+/// the pattern the Tauri docs prescribe for window creation; spawn_blocking
+/// keeps the blocking main-thread round-trips off the async worker pool,
+/// matching the rest of the codebase.
 #[tauri::command]
-fn open_new_window(app: tauri::AppHandle) -> tauri::Result<()> {
-    modules::menu::create_new_window(&app)
+async fn open_new_window(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || modules::menu::create_new_window(&app))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
