@@ -32,6 +32,11 @@ async function requestCompletion(
   language: string,
 ): Promise<string> {
   const { providerId, model, customBaseUrl } = useChatStore.getState();
+  // A bare local provider (LM Studio, custom) starts with no model until the
+  // user types one; skip the doomed IPC round-trip that would fire per keystroke.
+  if (!model.trim()) {
+    return "";
+  }
   const provider = providerById(providerId);
   const reply = await aiChat({
     provider: provider.id,

@@ -49,4 +49,10 @@ describe("resolveBaseUrl", () => {
     const custom = providerById(CUSTOM_PROVIDER_ID);
     expect(resolveBaseUrl(custom, "   ")).toBe(custom.baseUrl);
   });
+
+  it("tolerates a missing custom base URL from unhydrated/old state", () => {
+    const custom = providerById(CUSTOM_PROVIDER_ID);
+    expect(resolveBaseUrl(custom, undefined)).toBe(custom.baseUrl);
+    expect(resolveBaseUrl(custom, null)).toBe(custom.baseUrl);
+  });
 });

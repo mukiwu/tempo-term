@@ -100,9 +100,13 @@ export function providerById(id: string): ProviderPreset {
  * override falls back to the custom preset's seed so a request never targets a
  * bare "/chat/completions" path.
  */
-export function resolveBaseUrl(provider: ProviderPreset, customBaseUrl: string): string {
+export function resolveBaseUrl(
+  provider: ProviderPreset,
+  customBaseUrl: string | undefined | null,
+): string {
   if (provider.id !== CUSTOM_PROVIDER_ID) {
     return provider.baseUrl;
   }
-  return customBaseUrl.trim() || provider.baseUrl;
+  // Tolerate a missing value from unhydrated/older persisted state.
+  return (customBaseUrl ?? "").trim() || provider.baseUrl;
 }

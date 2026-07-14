@@ -91,20 +91,25 @@ function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; ne
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
 
+  // The custom provider is keyless for local servers but may point at a remote
+  // OpenAI-compatible endpoint (OpenRouter, DeepInfra, an authed self-host), so
+  // it allows an optional key even though it does not require one.
+  const allowsKey = needsKey || id === CUSTOM_PROVIDER_ID;
+
   const refresh = () => {
-    if (needsKey) {
+    if (allowsKey) {
       secretsHasKey(id).then(setHasKey).catch(() => setHasKey(false));
     }
   };
 
-  useEffect(refresh, [id, needsKey]);
+  useEffect(refresh, [id, allowsKey]);
 
   return (
     <div className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
       <KeyRound size={15} className="shrink-0 text-fg-subtle" />
       <span className="w-32 shrink-0 text-sm text-fg">{label}</span>
 
-      {!needsKey ? (
+      {!allowsKey ? (
         <span className="text-xs text-fg-subtle">{t("aiKeys.localNoKey")}</span>
       ) : editing ? (
         <form
