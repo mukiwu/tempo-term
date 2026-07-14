@@ -21,6 +21,7 @@ Apply while writing, not after. Each line links to the detailed rule.
 - [ ] **A `#[cfg(unix)]` API, a cfg-split command, or a new native crate?** It must compile **warning-free** on Windows — `windows-check.yml` runs `cargo check` with `-D warnings` per PR. Provide a Windows arm or cfg-gate cleanly, and `allow(dead_code)`/`allow(unused_variables)` the mac-only bits. [→](#6-unix-only-apis-and-native-crates-must-still-build-on-windows)
 - [ ] **Reaching into `/proc`, `lsof`, a unix socket, pty foreground?** No Windows backend exists; skip the feature there or return a clean `None`. [→](#7-no-windows-backend-skip-do-not-crash-or-spin)
 - [ ] **Frontend behavior gated on platform?** Route Windows through `IS_WINDOWS`, do not leave it `IS_MAC`-only. [→](#8-frontend-gate-on-is_windows-not-just-is_mac)
+- [ ] **Creating a window or webview from a `#[tauri::command]`?** The command must be `async` (and wrap the build in `spawn_blocking`), or WebView2 deadlocks. [→](#9-window-creation-deadlocks-in-a-sync-command)
 - [ ] **Release?** `windows-build.yml` is the bundle/link gate (per-PR `cargo check` already covered compile); `latest.json` notes get re-patched; functional test on a real Windows host. [→](#release-checklist-windows)
 
 ## Failure catalog (what this repo has actually hit)
@@ -38,6 +39,7 @@ Apply while writing, not after. Each line links to the detailed rule.
 | cwd tracking dead / 1.2s poll fires empty IPC every terminal | `pty_cwd` has no Windows backend (`/proc`, `lsof` absent) | Skip the poll on Windows, or use OSC 7 shell integration | #105, #115 |
 | Updater "更新內容" dialog empty after a release | Windows CI `tauri-action` rewrites `latest.json` and wipes `notes` | Re-patch notes post-build from `CHANGELOG-NEXT.md` | #43 |
 | Diff-open lag only in the release build | Same console-flash spawn cost, per git subprocess | `CREATE_NO_WINDOW` (see row 1) | #82 |
+| Ctrl+N opens a blank unclosable window; shortcuts die app-wide | `WebviewWindowBuilder::build()` in a **sync** command deadlocks the WebView2 event loop (wry#583) | Window-creating commands must be `async` + `spawn_blocking` | #209 |
 
 ---
 
@@ -112,6 +114,28 @@ Rule: when a feature's backend is a no-op on Windows, gate the frontend caller t
 ## 8. Frontend: gate on `IS_WINDOWS`, not just `IS_MAC`
 
 Platform branches written as "mac vs everything else" silently break Windows. Terminal paste was suppressed on all platforms and the smart-paste shortcut was `IS_MAC`-only, so Windows had no paste at all (#75). Window decorations are native on Windows and need a custom `TitleBar` (#67). Use `IS_WINDOWS` from `src/lib/platform.ts` and give Windows its own explicit branch.
+
+---
+
+## 9. Window creation deadlocks in a sync command
+
+`WebviewWindowBuilder::build()` (and `WindowBuilder`/`WebviewBuilder`) **deadlocks on Windows when called from a synchronous `#[tauri::command]` or event handler**. WebView2 dispatches window creation as a message to the main event loop and blocks on the reply; a sync command runs on that same thread, so it waits on itself (upstream wry#583, called out in the Tauri builder docs). macOS/WKWebView has no such constraint, so this **never reproduces in dev on the mac** — only on a user's Windows machine.
+
+The symptom is nasty and non-obvious: the OS window shell appears painted only with the builder's `background_color` (a blank dark rectangle — the webview never initializes), `decorations(false)` means no native frame and the React `TitleBar` never renders so there is **no close button**, and the wedged event loop kills every subsequent IPC-based shortcut app-wide. That was #208: a user pressing Ctrl+N (wired to the `open_new_window` command) got an unclosable blank window and a dead app.
+
+The fix is what the Tauri docs prescribe — make the command `async` so it runs off the main thread — plus `spawn_blocking` so the blocking main-thread round-trips (`build()`, `inner_size()`, `scale_factor()`) stay off the shared async worker pool, matching how every other async command here handles blocking work:
+
+```rust
+#[tauri::command]
+async fn open_new_window(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || modules::menu::create_new_window(&app))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+```
+
+Any command that builds a window or webview must follow this shape. Note that `async` commands can now run concurrently, so window-label allocation (`next_window_label`) can race across two rapid invocations — benign here (one window opens, the duplicate `build()` errors), but worth knowing if label collisions ever matter.
 
 ---
 
