@@ -38,7 +38,7 @@ import { installStatusHook, installCodexStatusHook } from "@/modules/claude-prog
 import { installSessionNotifications } from "@/modules/claude-progress/lib/sessionNotifications";
 import { ensureNotificationPermission } from "@/modules/claude-progress/lib/notify";
 import { useWatchNotes } from "@/modules/notes/lib/useWatchNotes";
-import { registerSecondaryWindowCleanup } from "@/lib/windowLifecycle";
+import { registerSecondaryWindowCleanup, restoreFocusOnWindowRefocus } from "@/lib/windowLifecycle";
 import { SshPromptDialog } from "@/modules/ssh/SshPromptDialog";
 import { SetupWizard } from "@/modules/setup/SetupWizard";
 import { detectTools, isToolReady } from "@/modules/setup/lib/setupTools";
@@ -300,6 +300,30 @@ function App() {
       })
       .catch(() => {});
     return () => unlisten?.();
+  }, []);
+
+  // On Windows, WebView2 drops DOM focus when the window regains focus, so
+  // keyboard input dies until the user clicks (issue #205). Restore it. No-op
+  // off Windows, where WKWebView already does this natively. `disposed` guards
+  // the async gap: the hook attaches a focusin listener synchronously, so if
+  // this effect tears down before registration resolves (StrictMode remount),
+  // we still dispose it the moment it does.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    void restoreFocusOnWindowRefocus()
+      .then((off) => {
+        if (disposed) {
+          off?.();
+          return;
+        }
+        unlisten = off;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   // Close any open SFTP connections when this window goes away so no remote

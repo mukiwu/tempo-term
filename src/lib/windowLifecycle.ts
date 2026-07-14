@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isMainWindow } from "@/lib/window";
+import { IS_WINDOWS } from "@/lib/platform";
 import { closeLocalSessions } from "@/modules/terminal/lib/pty-bridge";
 
 /**
@@ -23,4 +24,51 @@ export async function registerSecondaryWindowCleanup(): Promise<(() => void) | n
     await closeLocalSessions();
     await win.destroy();
   });
+}
+
+/**
+ * On Windows, WebView2 does not restore DOM focus to the previously-focused
+ * element when the OS window regains focus, so keystrokes go nowhere until the
+ * user clicks (issue #205). WKWebView on macOS restores it natively, so this is
+ * a no-op there — and skipping macOS also avoids fighting its native handling.
+ *
+ * We track the last-focused element via a `focusin` listener rather than reading
+ * `document.activeElement` at window-blur time: WebView2 may drop DOM focus
+ * before the blur event reaches us, so the active element is unreliable by then.
+ * On re-focus we restore it — but only if (a) this webview actually holds focus
+ * (`onFocusChanged` fires for the whole OS window, so a sibling child webview
+ * like the native preview regaining focus would otherwise steal it back into the
+ * main webview), (b) focus was genuinely lost, and (c) the element is still in
+ * the DOM — so we never yank focus from a dialog that opened meanwhile or a tab
+ * that closed while we were away. Restoring the element (not just calling
+ * webview.set_focus in Rust) is required because set_focus only focuses the
+ * webview container, not the DOM node.
+ */
+export async function restoreFocusOnWindowRefocus(): Promise<(() => void) | null> {
+  if (!IS_WINDOWS) {
+    return null;
+  }
+  const win = getCurrentWindow();
+  let lastFocused: HTMLElement | null = null;
+  const track = (event: FocusEvent) => {
+    const el = event.target;
+    if (el instanceof HTMLElement && el !== document.body) {
+      lastFocused = el;
+    }
+  };
+  document.addEventListener("focusin", track);
+  const unlisten = await win.onFocusChanged(({ payload: focused }) => {
+    if (!focused) {
+      return;
+    }
+    const active = document.activeElement;
+    const focusWasLost = active === null || active === document.body;
+    if (document.hasFocus() && focusWasLost && lastFocused?.isConnected) {
+      lastFocused.focus({ preventScroll: true });
+    }
+  });
+  return () => {
+    document.removeEventListener("focusin", track);
+    unlisten();
+  };
 }
