@@ -528,6 +528,7 @@ export function SourceControlView() {
   const [refreshing, setRefreshing] = useState(false);
   const providerId = useChatStore((s) => s.providerId);
   const model = useChatStore((s) => s.model);
+  const customBaseUrl = useChatStore((s) => s.customBaseUrl);
   const openDiffTab = useTabsStore((s) => s.openDiffTab);
   // Repo-relative path of the file awaiting discard confirmation, if any.
   const [discardTarget, setDiscardTarget] = useState<string | null>(null);
@@ -609,7 +610,7 @@ export function SourceControlView() {
     try {
       const diff = await gitDiff(repoPath, true);
       if (diff.trim()) {
-        setMessage(await generateCommitMessage(diff, providerId, model));
+        setMessage(await generateCommitMessage(diff, providerId, model, customBaseUrl));
       }
     } catch {
       // leave the message as-is on failure

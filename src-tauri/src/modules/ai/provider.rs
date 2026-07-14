@@ -18,17 +18,37 @@ pub struct ProviderRequest {
 }
 
 /// Allow https everywhere, and plain http only for loopback hosts so local
-/// model servers (Ollama, LM Studio) work without opening an SSRF hole.
+/// model servers (Ollama, LM Studio) work without opening an SSRF hole. The
+/// base URL is user-supplied for the custom provider, so parse it properly
+/// rather than prefix-matching: `http://localhost@evil.com` must not pass as
+/// loopback (reqwest sends it — and the Authorization header — to evil.com).
 pub fn is_allowed_url(url: &str) -> bool {
-    if let Some(rest) = url.strip_prefix("https://") {
-        return !rest.is_empty();
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    // Embedded credentials let a loopback-looking string resolve to a foreign
+    // host; reject them outright.
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return false;
     }
-    if let Some(rest) = url.strip_prefix("http://") {
-        return rest.starts_with("localhost")
-            || rest.starts_with("127.0.0.1")
-            || rest.starts_with("[::1]");
+    match parsed.scheme() {
+        "https" => parsed.host_str().is_some(),
+        "http" => match parsed.host_str() {
+            Some("localhost") => true,
+            Some(host) => {
+                // host_str keeps IPv6 in brackets; strip them before parsing.
+                let bare = host
+                    .strip_prefix('[')
+                    .and_then(|h| h.strip_suffix(']'))
+                    .unwrap_or(host);
+                bare.parse::<std::net::IpAddr>()
+                    .map(|ip| ip.is_loopback())
+                    .unwrap_or(false)
+            }
+            None => false,
+        },
+        _ => false,
     }
-    false
 }
 
 fn trim_base(base_url: &str) -> &str {
@@ -166,9 +186,35 @@ mod tests {
         assert!(is_allowed_url("https://api.openai.com/v1"));
         assert!(is_allowed_url("http://localhost:11434/v1"));
         assert!(is_allowed_url("http://127.0.0.1:1234/v1"));
+        assert!(is_allowed_url("http://[::1]:1234/v1"));
+        assert!(is_allowed_url("http://127.0.0.2:8080/v1")); // 127.0.0.0/8 loopback
         assert!(!is_allowed_url("http://example.com"));
         assert!(!is_allowed_url("ftp://example.com"));
         assert!(!is_allowed_url("https://"));
+    }
+
+    #[test]
+    fn rejects_loopback_prefix_spoofs() {
+        // Substring/prefix tricks that a naive check would wave through.
+        assert!(!is_allowed_url("http://localhost.evil.com/v1"));
+        assert!(!is_allowed_url("http://127.0.0.1.evil.com/v1"));
+        assert!(!is_allowed_url("http://localhost@evil.com/v1"));
+        assert!(!is_allowed_url("http://user:pass@localhost/v1"));
+        // https with embedded credentials is likewise refused.
+        assert!(!is_allowed_url("https://localhost@evil.com/v1"));
+    }
+
+    #[test]
+    fn loopback_check_is_value_based_not_textual() {
+        // Numeric encodings that the URL parser normalizes to 127.0.0.1 must be
+        // allowed (reqwest dials the same normalized host), so http loopback
+        // detection stays value-based, not textual.
+        assert!(is_allowed_url("http://2130706433/v1")); // decimal 127.0.0.1
+        assert!(is_allowed_url("http://127.1/v1")); // short form of 127.0.0.1
+        // Fail-closed on non-loopback and mapped forms.
+        assert!(!is_allowed_url("http://0.0.0.0/v1"));
+        assert!(!is_allowed_url("http://[::ffff:127.0.0.1]/v1"));
+        assert!(!is_allowed_url("http://localhost./v1")); // trailing dot
     }
 
     #[test]

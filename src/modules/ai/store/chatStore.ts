@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { perWindowStorage } from "@/lib/window";
 import { aiChat } from "../lib/aiBridge";
 import { composeMessages, type ChatMessage } from "../lib/chat";
-import { providerById, PROVIDERS } from "../lib/providers";
+import { providerById, PROVIDERS, resolveBaseUrl, CUSTOM_PROVIDER_ID } from "../lib/providers";
 
 function getErrorMessage(error: unknown): string {
   if (typeof error === "string") {
@@ -18,6 +18,8 @@ function getErrorMessage(error: unknown): string {
 interface ChatState {
   providerId: string;
   model: string;
+  /** User-supplied base URL for the custom OpenAI-compatible provider. */
+  customBaseUrl: string;
   messages: ChatMessage[];
   sending: boolean;
   error: string | null;
@@ -25,6 +27,7 @@ interface ChatState {
   attachedPaths: string[];
   setProvider: (id: string) => void;
   setModel: (model: string) => void;
+  setCustomBaseUrl: (url: string) => void;
   send: (text: string, systemPrompt: string) => Promise<void>;
   clear: () => void;
   attachPath: (path: string) => void;
@@ -39,6 +42,7 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       providerId: PROVIDERS[0].id,
       model: PROVIDERS[0].models[0],
+      customBaseUrl: providerById(CUSTOM_PROVIDER_ID).baseUrl,
       messages: [],
       sending: false,
       error: null,
@@ -46,17 +50,27 @@ export const useChatStore = create<ChatState>()(
 
       setProvider: (id) => {
         const provider = providerById(id);
-        set({ providerId: provider.id, model: provider.models[0] });
+        const switching = get().providerId !== provider.id;
+        set({
+          providerId: provider.id,
+          // A preset with a fixed list seeds its first model. A bare endpoint
+          // (LM Studio, custom) has none: clear the field on an actual switch
+          // so the user types their local model instead of inheriting a stale
+          // one the server would reject; keep it when re-selecting the same one.
+          model: provider.models[0] ?? (switching ? "" : get().model),
+        });
       },
 
       setModel: (model) => set({ model }),
+
+      setCustomBaseUrl: (url) => set({ customBaseUrl: url }),
 
       send: async (text, systemPrompt) => {
         const trimmed = text.trim();
         if (!trimmed || get().sending) {
           return;
         }
-        const { providerId, model, messages } = get();
+        const { providerId, model, customBaseUrl, messages } = get();
         const provider = providerById(providerId);
         const payload = composeMessages(systemPrompt, messages, trimmed);
 
@@ -70,7 +84,7 @@ export const useChatStore = create<ChatState>()(
           const reply = await aiChat({
             provider: provider.id,
             kind: provider.kind,
-            baseUrl: provider.baseUrl,
+            baseUrl: resolveBaseUrl(provider, customBaseUrl),
             model,
             messages: payload,
           });
@@ -105,6 +119,7 @@ export const useChatStore = create<ChatState>()(
       partialize: (state) => ({
         providerId: state.providerId,
         model: state.model,
+        customBaseUrl: state.customBaseUrl,
         attachedPaths: state.attachedPaths,
       }),
     },

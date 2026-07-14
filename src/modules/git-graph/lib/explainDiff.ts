@@ -1,6 +1,6 @@
 import { aiChat } from "@/modules/ai/lib/aiBridge";
 import { composeMessages } from "@/modules/ai/lib/chat";
-import { providerById } from "@/modules/ai/lib/providers";
+import { providerById, resolveBaseUrl } from "@/modules/ai/lib/providers";
 import { redactSecrets } from "@/modules/ai/lib/redact";
 
 export const EXPLAIN_SYSTEM_PROMPT =
@@ -31,6 +31,7 @@ export async function explainDiff(
   providerId: string,
   model: string,
   lang: string,
+  customBaseUrl: string,
 ): Promise<string> {
   const provider = providerById(providerId);
   const messages = composeMessages(
@@ -41,7 +42,7 @@ export async function explainDiff(
   return aiChat({
     provider: provider.id,
     kind: provider.kind,
-    baseUrl: provider.baseUrl,
+    baseUrl: resolveBaseUrl(provider, customBaseUrl),
     model,
     messages,
   });

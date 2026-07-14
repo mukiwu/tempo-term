@@ -8,7 +8,7 @@ import { isMarkdownPath, languageLabel, loadLanguageExtension } from "./lib/lang
 import { inlineCompletion, type CompletionRequest } from "./lib/inlineCompletion";
 import { useEditorStore } from "./store/editorStore";
 import { aiChat } from "@/modules/ai/lib/aiBridge";
-import { providerById } from "@/modules/ai/lib/providers";
+import { providerById, resolveBaseUrl } from "@/modules/ai/lib/providers";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { buildCompletionMessages, cleanCompletion } from "@/modules/ai/lib/completion";
 import { externalChangeAction, manualReloadAction, shouldReloadFromDisk } from "./lib/reload";
@@ -31,12 +31,12 @@ async function requestCompletion(
   suffix: string,
   language: string,
 ): Promise<string> {
-  const { providerId, model } = useChatStore.getState();
+  const { providerId, model, customBaseUrl } = useChatStore.getState();
   const provider = providerById(providerId);
   const reply = await aiChat({
     provider: provider.id,
     kind: provider.kind,
-    baseUrl: provider.baseUrl,
+    baseUrl: resolveBaseUrl(provider, customBaseUrl),
     model,
     messages: buildCompletionMessages(prefix, suffix, language),
   });

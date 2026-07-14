@@ -32,7 +32,14 @@ pub async fn ai_chat(
         return Err(format!("request URL is not permitted: {}", request.url));
     }
 
-    let client = reqwest::Client::new();
+    // No redirects: is_allowed_url only vets the first hop, so a redirect could
+    // send the request (and, for a non-custom provider, its key) to a host the
+    // loopback/https policy never approved. This proxy only ever talks to one
+    // API root, so following redirects is never legitimate anyway.
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| e.to_string())?;
     let mut builder = client.post(&request.url).json(&request.body);
     for (name, value) in &request.headers {
         builder = builder.header(name, value);

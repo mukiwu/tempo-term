@@ -193,6 +193,7 @@ export function CommitDetailsPanel({ repo, selection, onClose, labels }: CommitD
   const { i18n } = useTranslation("gitGraph");
   const providerId = useChatStore((s) => s.providerId);
   const model = useChatStore((s) => s.model);
+  const customBaseUrl = useChatStore((s) => s.customBaseUrl);
 
   const persistLeftWidth = useCallback(() => {
     localStorage.setItem(
@@ -444,6 +445,7 @@ export function CommitDetailsPanel({ repo, selection, onClose, labels }: CommitD
                     diffText={diffText}
                     providerId={providerId}
                     model={model}
+                    customBaseUrl={customBaseUrl}
                     lang={i18n.language}
                     labels={{
                       generate: labels.aiGenerate,

@@ -115,7 +115,9 @@
     "description": "選擇 AI 助理預設使用的服務商與模型，可在聊天面板隨時切換",
     "provider": "服務商",
     "model": "模型",
-    "customPlaceholder": "輸入自訂模型名稱"
+    "customPlaceholder": "輸入自訂模型名稱",
+    "baseUrl": "服務位址",
+    "baseUrlHint": "OpenAI 相容端點。https 不限位址；純 http 僅限 localhost"
   },
   "aiInline": {
     "label": "行內程式碼補完",

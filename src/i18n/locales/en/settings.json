@@ -115,7 +115,9 @@
     "description": "Choose the provider and model the assistant uses by default; you can switch anytime in the chat panel",
     "provider": "Provider",
     "model": "Model",
-    "customPlaceholder": "Type a custom model name"
+    "customPlaceholder": "Type a custom model name",
+    "baseUrl": "Base URL",
+    "baseUrlHint": "OpenAI-compatible endpoint. https is allowed anywhere; plain http only for localhost."
   },
   "aiInline": {
     "label": "Inline code completion",

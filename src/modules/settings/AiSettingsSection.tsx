@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, KeyRound } from "lucide-react";
-import { PROVIDERS, providerById } from "@/modules/ai/lib/providers";
+import { PROVIDERS, providerById, CUSTOM_PROVIDER_ID } from "@/modules/ai/lib/providers";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { Combobox } from "@/components/Combobox";
@@ -15,8 +15,10 @@ function DefaultModelRow() {
   const { t } = useTranslation("settings");
   const providerId = useChatStore((s) => s.providerId);
   const model = useChatStore((s) => s.model);
+  const customBaseUrl = useChatStore((s) => s.customBaseUrl);
   const setProvider = useChatStore((s) => s.setProvider);
   const setModel = useChatStore((s) => s.setModel);
+  const setCustomBaseUrl = useChatStore((s) => s.setCustomBaseUrl);
   const provider = providerById(providerId);
 
   return (
@@ -44,6 +46,20 @@ function DefaultModelRow() {
           className="w-56"
         />
       </div>
+      {provider.id === CUSTOM_PROVIDER_ID && (
+        <div className="mt-2">
+          <input
+            type="text"
+            value={customBaseUrl}
+            onChange={(e) => setCustomBaseUrl(e.target.value)}
+            aria-label={t("aiModel.baseUrl")}
+            placeholder="http://localhost:1234/v1"
+            spellCheck={false}
+            className="w-full max-w-md rounded-md border border-border bg-bg px-2 py-1 text-sm text-fg outline-none focus:border-accent"
+          />
+          <p className="mt-1 text-xs text-fg-muted">{t("aiModel.baseUrlHint")}</p>
+        </div>
+      )}
     </div>
   );
 }

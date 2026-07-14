@@ -19,6 +19,7 @@ interface DiffExplainProps {
   diffText: string;
   providerId: string;
   model: string;
+  customBaseUrl: string;
   lang: string;
   labels: DiffExplainLabels;
 }
@@ -43,6 +44,7 @@ export function DiffExplain({
   diffText,
   providerId,
   model,
+  customBaseUrl,
   lang,
   labels,
 }: DiffExplainProps) {
@@ -60,12 +62,14 @@ export function DiffExplain({
     setError(null);
     setLoading(true);
     try {
-      const hasKey = await secretsHasKey(providerById(providerId).id);
-      if (!hasKey) {
+      // Local providers (Ollama, LM Studio, a keyless custom endpoint) need no
+      // key, so only gate on a missing key when the provider actually requires one.
+      const provider = providerById(providerId);
+      if (provider.needsKey && !(await secretsHasKey(provider.id))) {
         setError(labels.needKey);
         return;
       }
-      const text = await explainDiff(diffText, file, providerId, model, lang);
+      const text = await explainDiff(diffText, file, providerId, model, lang, customBaseUrl);
       explanationCache.set(cacheKey, text);
       setExplanation(text);
     } catch (e: unknown) {

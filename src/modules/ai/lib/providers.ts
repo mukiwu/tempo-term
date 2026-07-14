@@ -1,5 +1,8 @@
 export type ProviderKind = "openai" | "anthropic" | "google";
 
+/** Provider id whose base URL the user supplies, for any OpenAI-compatible server. */
+export const CUSTOM_PROVIDER_ID = "custom";
+
 export interface ProviderPreset {
   id: string;
   label: string;
@@ -65,8 +68,41 @@ export const PROVIDERS: ProviderPreset[] = [
     models: ["llama3.2", "qwen2.5-coder", "qwen2.5"],
     needsKey: false,
   },
+  {
+    id: "lmstudio",
+    label: "LM Studio (local)",
+    kind: "openai",
+    baseUrl: "http://localhost:1234/v1",
+    models: [],
+    needsKey: false,
+  },
+  {
+    id: CUSTOM_PROVIDER_ID,
+    label: "Custom (OpenAI-compatible)",
+    kind: "openai",
+    // Editable per user via chatStore.customBaseUrl; this is only the seed value
+    // shown in the settings field. Covers any OpenAI-compatible server (oMLX,
+    // vLLM, a non-default LM Studio port, …). Keyless like the other local
+    // presets: an empty key is sent as `Bearer ` and local servers ignore it.
+    baseUrl: "http://localhost:1234/v1",
+    models: [],
+    needsKey: false,
+  },
 ];
 
 export function providerById(id: string): ProviderPreset {
   return PROVIDERS.find((p) => p.id === id) ?? PROVIDERS[0];
+}
+
+/**
+ * Effective base URL for a request. Only the custom provider reads the
+ * user-supplied override; everything else uses its fixed preset URL. A blank
+ * override falls back to the custom preset's seed so a request never targets a
+ * bare "/chat/completions" path.
+ */
+export function resolveBaseUrl(provider: ProviderPreset, customBaseUrl: string): string {
+  if (provider.id !== CUSTOM_PROVIDER_ID) {
+    return provider.baseUrl;
+  }
+  return customBaseUrl.trim() || provider.baseUrl;
 }

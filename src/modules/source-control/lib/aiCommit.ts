@@ -1,6 +1,6 @@
 import { aiChat } from "@/modules/ai/lib/aiBridge";
 import { composeMessages } from "@/modules/ai/lib/chat";
-import { providerById } from "@/modules/ai/lib/providers";
+import { providerById, resolveBaseUrl } from "@/modules/ai/lib/providers";
 import { redactSecrets } from "@/modules/ai/lib/redact";
 
 const SYSTEM_PROMPT =
@@ -30,13 +30,14 @@ export async function generateCommitMessage(
   diff: string,
   providerId: string,
   model: string,
+  customBaseUrl: string,
 ): Promise<string> {
   const provider = providerById(providerId);
   const messages = composeMessages(SYSTEM_PROMPT, [], buildCommitPrompt(diff));
   const reply = await aiChat({
     provider: provider.id,
     kind: provider.kind,
-    baseUrl: provider.baseUrl,
+    baseUrl: resolveBaseUrl(provider, customBaseUrl),
     model,
     messages,
   });
