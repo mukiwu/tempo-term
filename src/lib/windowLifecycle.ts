@@ -21,7 +21,14 @@ export async function registerSecondaryWindowCleanup(): Promise<(() => void) | n
     }
     cleaning = true;
     event.preventDefault();
-    await closeLocalSessions();
+    // Session cleanup is best-effort: the close is already prevented, so a
+    // closeLocalSessions failure must not skip destroy or the window is stranded
+    // open with no way to close it.
+    try {
+      await closeLocalSessions();
+    } catch {
+      // fall through to destroy
+    }
     await win.destroy();
   });
 }
