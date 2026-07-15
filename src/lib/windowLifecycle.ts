@@ -17,19 +17,30 @@ export async function registerSecondaryWindowCleanup(): Promise<(() => void) | n
   let cleaning = false;
   return win.onCloseRequested(async (event) => {
     if (cleaning) {
+      // A second request (double Cmd+W, rapid clicks) while the first cleanup is
+      // in flight must also be prevented, or Tauri's default close races the
+      // in-progress closeLocalSessions and orphans its PTYs.
+      event.preventDefault();
       return;
     }
     cleaning = true;
     event.preventDefault();
-    // Session cleanup is best-effort: the close is already prevented, so a
-    // closeLocalSessions failure must not skip destroy or the window is stranded
-    // open with no way to close it.
     try {
-      await closeLocalSessions();
-    } catch {
-      // fall through to destroy
+      // Session cleanup is best-effort: the close is already prevented, so a
+      // closeLocalSessions failure must not skip destroy or the window is
+      // stranded open with no way to close it.
+      try {
+        await closeLocalSessions();
+      } catch {
+        // fall through to destroy
+      }
+      await win.destroy();
+    } catch (error) {
+      // destroy failed: reset so the user can try closing again instead of being
+      // stuck with a permanently un-closeable window.
+      cleaning = false;
+      throw error;
     }
-    await win.destroy();
   });
 }
 

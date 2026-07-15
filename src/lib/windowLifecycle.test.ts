@@ -102,9 +102,10 @@ describe("registerSecondaryWindowCleanup", () => {
     expect(destroy).toHaveBeenCalled();
   });
 
-  it("cleans up only once when the close is requested twice", async () => {
-    // The `cleaning` guard stops a second close request (e.g. while the first
-    // destroy is in flight) from closing sessions or destroying twice.
+  it("prevents but does not re-clean when the close is requested twice", async () => {
+    // The second request (double Cmd+W while the first cleanup is in flight) must
+    // still be prevented so Tauri's default close can't race the cleanup, but it
+    // must not close sessions or destroy a second time.
     let handler: (e: { preventDefault: () => void }) => Promise<void> = async () => {};
     const onCloseRequested = vi.fn(async (h) => {
       handler = h;
@@ -115,11 +116,38 @@ describe("registerSecondaryWindowCleanup", () => {
     getCurrentWindow.mockReturnValue({ label: "win-1", onCloseRequested, destroy });
 
     await registerSecondaryWindowCleanup();
-    await handler({ preventDefault: vi.fn() });
-    await handler({ preventDefault: vi.fn() });
+    const preventFirst = vi.fn();
+    const preventSecond = vi.fn();
+    await handler({ preventDefault: preventFirst });
+    await handler({ preventDefault: preventSecond });
 
+    expect(preventFirst).toHaveBeenCalled();
+    expect(preventSecond).toHaveBeenCalled();
     expect(closeLocalSessions).toHaveBeenCalledTimes(1);
     expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("can be retried after a destroy failure instead of stranding the window", async () => {
+    // If destroy fails, `cleaning` must reset so a later close request runs the
+    // cleanup again rather than being swallowed by the reentrancy guard forever.
+    let handler: (e: { preventDefault: () => void }) => Promise<void> = async () => {};
+    const onCloseRequested = vi.fn(async (h) => {
+      handler = h;
+      return () => {};
+    });
+    const destroy = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("destroy failed"))
+      .mockResolvedValueOnce(undefined);
+    closeLocalSessions.mockResolvedValue(undefined);
+    getCurrentWindow.mockReturnValue({ label: "win-1", onCloseRequested, destroy });
+
+    await registerSecondaryWindowCleanup();
+    await expect(handler({ preventDefault: vi.fn() })).rejects.toThrow("destroy failed");
+    await handler({ preventDefault: vi.fn() });
+
+    expect(destroy).toHaveBeenCalledTimes(2);
+    expect(closeLocalSessions).toHaveBeenCalledTimes(2);
   });
 });
 
