@@ -73,7 +73,7 @@ describe("chatStore.setProvider model handling", () => {
   it("seeds the first preset model when switching to one that has models", () => {
     useChatStore.setState({ providerId: "lmstudio", model: "local-x" });
     useChatStore.getState().setProvider("openai");
-    expect(useChatStore.getState().model).toBe("gpt-5.5");
+    expect(useChatStore.getState().model).toBe("gpt-5.6-sol");
   });
 
   it("keeps the typed model when re-selecting the same bare-endpoint provider", () => {
