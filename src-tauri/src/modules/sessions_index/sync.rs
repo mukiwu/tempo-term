@@ -113,12 +113,12 @@ fn parse_meta(agent: &'static str, path: &Path) -> Option<ParsedSession> {
 fn commit(index: &Index, session: &ParsedSession, file_path: &str, mtime: i64, size: i64) -> bool {
     match index.upsert_session(session, file_path, mtime, size) {
         Ok(()) => true,
-        Err(_err) => {
-            // Only read by the debug-only log below, so it is unused in release
-            // builds; the underscore keeps -D-warnings-clean without dropping the
-            // debug message.
+        Err(err) => {
             #[cfg(debug_assertions)]
-            eprintln!("sessions_index: failed to upsert {file_path}: {_err}");
+            eprintln!("sessions_index: failed to upsert {file_path}: {err}");
+            // The log above is compiled out in release, so consume `err` here to
+            // stay warning-clean without an underscore-prefixed binding.
+            let _ = err;
             false
         }
     }
