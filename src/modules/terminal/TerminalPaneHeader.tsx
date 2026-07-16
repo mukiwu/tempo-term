@@ -1,11 +1,10 @@
 import { PaneHeader } from "@/components/PaneHeader";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { Tooltip } from "@/components/Tooltip";
-import { buildCrumbs, type Crumb } from "@/lib/breadcrumb";
-import { loadCrumbSiblings, useHomeDir } from "@/components/paneCrumbs";
+import { buildCrumbs } from "@/lib/breadcrumb";
+import { listSubdirectories, useHomeDir } from "@/components/paneCrumbs";
 import { shellQuotePath } from "@/modules/explorer/lib/dragEntry";
 import { PaneWorktreeMenu, usePaneRepoPath } from "@/modules/worktrees/PaneWorktreeMenu";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { writeToTerminal } from "./lib/terminalBus";
 
 /**
@@ -33,11 +32,8 @@ export function TerminalPaneHeader({
   onClose: () => void;
 }) {
   const repoPath = usePaneRepoPath(sshConnectionId ? undefined : cwd);
-  const workspaceRoot = useWorkspaceStore((s) => (sshConnectionId ? null : s.rootPath));
   const homeDir = useHomeDir(sshConnectionId);
-  const crumbs = cwd ? buildCrumbs(cwd, { workspaceRoot, homeDir }) : [];
-
-  const loadSiblings = (crumb: Crumb) => loadCrumbSiblings(crumb, "dirs", sshConnectionId);
+  const crumbs = cwd ? buildCrumbs(cwd, { homeDir }) : [];
 
   return (
     <PaneHeader
@@ -46,7 +42,10 @@ export function TerminalPaneHeader({
           <Tooltip label={cwd!} className="min-w-0">
             <Breadcrumb
               crumbs={crumbs}
-              loadSiblings={loadSiblings}
+              menu={{
+                kind: "tree",
+                loadChildren: (path) => listSubdirectories(path, sshConnectionId),
+              }}
               onSelect={(path) => writeToTerminal(leafId, `cd ${shellQuotePath(path)}\r`)}
             />
           </Tooltip>

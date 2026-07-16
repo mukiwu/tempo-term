@@ -29,10 +29,12 @@ describe("TerminalPaneHeader", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fsHomeDir.mockResolvedValue("/Users/muki");
+    // The workspace root must NOT affect the trail: it follows the focused
+    // terminal's cwd, and a trail anchored to it re-roots on focus changes.
     useWorkspaceStore.setState({ rootPath: "/Users/muki/w/tempo-term" });
   });
 
-  it("shows workspace-relative crumbs for the pane's cwd", () => {
+  it("shows the stable home-relative trail regardless of the workspace root", async () => {
     render(
       <TerminalPaneHeader
         cwd="/Users/muki/w/tempo-term/src"
@@ -42,15 +44,16 @@ describe("TerminalPaneHeader", () => {
       />,
     );
 
+    expect(await screen.findByRole("button", { name: "w" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "tempo-term" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "src" })).toBeInTheDocument();
   });
 
-  it("lists only sibling directories and cds into the chosen one", async () => {
+  it("lists the segment's subdirectories (dirs only) and cds into the chosen one", async () => {
     fsReadDir.mockResolvedValue([
-      { name: "tempo-term", path: "/Users/muki/w/tempo-term", is_dir: true, size: 0 },
-      { name: "other proj", path: "/Users/muki/w/other proj", is_dir: true, size: 0 },
-      { name: "README.md", path: "/Users/muki/w/README.md", is_dir: false, size: 1 },
+      { name: "src", path: "/Users/muki/w/tempo-term/src", is_dir: true, size: 0 },
+      { name: "my docs", path: "/Users/muki/w/tempo-term/my docs", is_dir: true, size: 0 },
+      { name: "README.md", path: "/Users/muki/w/tempo-term/README.md", is_dir: false, size: 1 },
     ]);
     render(
       <TerminalPaneHeader
@@ -62,11 +65,28 @@ describe("TerminalPaneHeader", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "tempo-term" }));
-    const sibling = await screen.findByRole("menuitem", { name: "other proj" });
-    expect(fsReadDir).toHaveBeenCalledWith("/Users/muki/w");
+    const child = await screen.findByRole("menuitem", { name: "my docs" });
+    expect(fsReadDir).toHaveBeenCalledWith("/Users/muki/w/tempo-term");
     expect(screen.queryByRole("menuitem", { name: "README.md" })).toBeNull();
 
-    fireEvent.click(sibling);
-    expect(writeToTerminal).toHaveBeenCalledWith("leaf1", "cd '/Users/muki/w/other proj'\r");
+    fireEvent.click(child);
+    expect(writeToTerminal).toHaveBeenCalledWith("leaf1", "cd '/Users/muki/w/tempo-term/my docs'\r");
+  });
+
+  it("cds back to the segment itself via the menu's head row", async () => {
+    fsReadDir.mockResolvedValue([]);
+    render(
+      <TerminalPaneHeader
+        cwd="/Users/muki/w/tempo-term/src"
+        leafId="leaf1"
+        showClose={false}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "tempo-term" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "tempo-term" }));
+
+    expect(writeToTerminal).toHaveBeenCalledWith("leaf1", "cd /Users/muki/w/tempo-term\r");
   });
 });

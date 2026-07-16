@@ -258,6 +258,10 @@
       "copied": "已複製"
     }
   },
+  "breadcrumb": {
+    "expand": "展開 {{name}}",
+    "collapse": "收合 {{name}}"
+  },
   "workspace": {
     "openFolder": "開啟資料夾",
     "openFile": "開啟檔案",

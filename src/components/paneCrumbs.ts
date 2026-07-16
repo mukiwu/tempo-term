@@ -49,25 +49,30 @@ export function useHomeDir(sshConnectionId: string | undefined): string | null {
   return home;
 }
 
-/**
- * A crumb's siblings: the entries sharing its parent directory. A terminal
- * lists directories (cd targets); an editor lists files (things a pane can
- * show). Remote crumbs are read through the connection's SFTP session, and
- * come back as plain remote paths either way.
- */
-export async function loadCrumbSiblings(
-  crumb: Crumb,
-  kind: "dirs" | "files",
+async function listEntries(
+  dirPath: string,
+  keep: "dirs" | "files",
   sshConnectionId?: string,
 ): Promise<Crumb[]> {
-  const parent = dirname(crumb.path);
   const entries = await fsReadDir(
-    sshConnectionId ? buildRemoteUri(sshConnectionId, parent) : parent,
+    sshConnectionId ? buildRemoteUri(sshConnectionId, dirPath) : dirPath,
   );
   return entries
-    .filter((entry) => (kind === "dirs" ? entry.is_dir : !entry.is_dir))
+    .filter((entry) => (keep === "dirs" ? entry.is_dir : !entry.is_dir))
     .map((entry) => ({
       label: entry.name,
+      // Remote entries come back as ssh:// uris; cd (and the editor) want the
+      // plain path.
       path: parseRemoteUri(entry.path)?.path ?? entry.path,
     }));
+}
+
+/** A directory's subdirectories — the terminal tree menu's next level down. */
+export function listSubdirectories(dirPath: string, sshConnectionId?: string): Promise<Crumb[]> {
+  return listEntries(dirPath, "dirs", sshConnectionId);
+}
+
+/** The files sharing a file's folder — the editor's filename-segment menu. */
+export function listSiblingFiles(filePath: string, sshConnectionId?: string): Promise<Crumb[]> {
+  return listEntries(dirname(filePath), "files", sshConnectionId);
 }

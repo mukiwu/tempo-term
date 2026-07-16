@@ -13,5 +13,5 @@ The unified h-7 strip at the top of a pane. Full headers (terminal, editor, prev
 _Avoid_: toolbar (reserved for rows of actions inside content, like GitGraphToolbar)
 
 **Breadcrumb**:
-The location trail on the left of a terminal or editor pane header. Clicking a segment opens a menu of that segment's siblings, and choosing one switches what this pane shows; it never opens a new tab.
+The location trail on the left of a terminal or editor pane header, always home-relative (absolute outside home). Clicking a segment opens its menu — the segment itself plus its subdirectories for a terminal (directories expand in place), the files sharing the folder for an editor — and choosing an entry switches what this pane shows; it never opens a new tab.
 _Avoid_: path bar, address bar (that is the preview pane's URL row)

@@ -12,10 +12,9 @@ import {
 import { PaneHeader } from "@/components/PaneHeader";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { Tooltip } from "@/components/Tooltip";
-import { buildCrumbs, type Crumb } from "@/lib/breadcrumb";
-import { loadCrumbSiblings, useHomeDir } from "@/components/paneCrumbs";
+import { buildCrumbs } from "@/lib/breadcrumb";
+import { listSiblingFiles, useHomeDir } from "@/components/paneCrumbs";
 import { buildRemoteUri, parseRemoteUri } from "@/modules/ssh/lib/remotePath";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { isHtmlPath, isMarkdownPath } from "./lib/language";
 
 export type EditorMode = "edit" | "split" | "preview";
@@ -64,13 +63,10 @@ export function EditorPaneHeader({
   const isHtml = isHtmlPath(path);
 
   // A remote file's crumbs come from its plain remote path, relative to the
-  // remote home; the workspace root only ever applies to local files.
+  // remote home.
   const remote = parseRemoteUri(path);
-  const workspaceRoot = useWorkspaceStore((s) => (remote ? null : s.rootPath));
   const homeDir = useHomeDir(remote?.connectionId);
-  const crumbs = buildCrumbs(remote?.path ?? path, { workspaceRoot, homeDir });
-
-  const loadSiblings = (crumb: Crumb) => loadCrumbSiblings(crumb, "files", remote?.connectionId);
+  const crumbs = buildCrumbs(remote?.path ?? path, { homeDir });
 
   return (
     <PaneHeader
@@ -79,9 +75,12 @@ export function EditorPaneHeader({
           <Tooltip label={path} className="min-w-0">
             <Breadcrumb
               crumbs={crumbs}
-              loadSiblings={loadSiblings}
               clickable="last"
-              siblingIcon={FileText}
+              menu={{
+                kind: "list",
+                loadItems: (crumb) => listSiblingFiles(crumb.path, remote?.connectionId),
+                icon: FileText,
+              }}
               onSelect={(picked) =>
                 onSwitchFile(remote ? buildRemoteUri(remote.connectionId, picked) : picked)
               }

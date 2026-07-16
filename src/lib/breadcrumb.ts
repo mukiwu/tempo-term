@@ -1,9 +1,11 @@
 /**
  * Builds the breadcrumb trail a pane header shows for a path.
  *
- * Root rules (see docs/adr and CONTEXT.md "Breadcrumb"): inside the workspace
- * the trail starts at the workspace root's own name; outside it falls back to
- * home-relative; outside home the absolute path is shown in full.
+ * Root rules (see docs/adr and CONTEXT.md "Breadcrumb"): under home the trail
+ * is home-relative (the home prefix omitted, home itself shown as "~");
+ * outside home the absolute path is shown in full. Deliberately NOT
+ * workspace-relative: the workspace root follows the focused terminal's cwd,
+ * so trails anchored to it re-rooted themselves on every focus change.
  */
 
 export interface Crumb {
@@ -14,7 +16,6 @@ export interface Crumb {
 }
 
 export interface CrumbRoots {
-  workspaceRoot?: string | null;
   homeDir?: string | null;
 }
 
@@ -38,11 +39,6 @@ function separatorOf(path: string): string {
 export function buildCrumbs(path: string, roots: CrumbRoots): Crumb[] {
   const target = trimTrailing(path);
   const sep = separatorOf(target);
-  const workspaceRoot = roots.workspaceRoot ? trimTrailing(roots.workspaceRoot) : null;
-
-  if (workspaceRoot && isInside(target, workspaceRoot)) {
-    return [{ label: lastSegment(workspaceRoot), path: workspaceRoot }, ...crumbsBelow(workspaceRoot, target, sep)];
-  }
 
   const homeDir = roots.homeDir ? trimTrailing(roots.homeDir) : null;
   if (homeDir && isInside(target, homeDir)) {
@@ -74,10 +70,4 @@ function crumbsBelow(root: string, target: string, sep: string): Crumb[] {
     crumbs.push({ label: segment, path: current });
   }
   return crumbs;
-}
-
-function lastSegment(path: string): string {
-  const segments = trimTrailing(path).split(SEPARATORS);
-  const last = segments[segments.length - 1];
-  return last && last.length > 0 ? last : path;
 }

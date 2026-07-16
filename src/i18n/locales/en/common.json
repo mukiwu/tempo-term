@@ -258,6 +258,10 @@
       "copied": "Copied"
     }
   },
+  "breadcrumb": {
+    "expand": "Expand {{name}}",
+    "collapse": "Collapse {{name}}"
+  },
   "workspace": {
     "openFolder": "Open Folder",
     "openFile": "Open File",
