@@ -93,8 +93,8 @@
     "paneMenu": "worktree 功能",
     "newFromPane": "新增 worktree…",
     "manageFromPane": "這個 repo 的 worktree…",
-    "hintTitle": "worktree 的入口在這",
-    "hintBody": "這個終端機在一個 git repo 裡,所以你可以另外開一個 worktree,那是一個獨立的目錄、可以跑自己的 agent,不會動到你現在開著的東西",
-    "hintDismiss": "知道了"
+    "hintTitle": "終端機選單列",
+    "hintBody": "可以新增 worktree，或是查看已有的 worktree",
+    "hintDismiss": "關閉"
   }
 }

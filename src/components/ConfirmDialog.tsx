@@ -60,7 +60,7 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-md border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-bg-inset"
+            className="rounded-md border border-border px-3 py-1.5 text-sm text-fg-muted hover:bg-bg-inset"
           >
             {cancelLabel}
           </button>
@@ -68,7 +68,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={confirmDisabled}
-            className="rounded-md bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-red-600"
+            className="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-red-600"
           >
             {confirmLabel}
           </button>

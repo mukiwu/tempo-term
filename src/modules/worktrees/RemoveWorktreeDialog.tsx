@@ -88,20 +88,20 @@ export function RemoveWorktreeDialog({
     >
       <div className="mt-3 flex flex-col gap-3">
         {blocker === "locked" && detail.lockReason && (
-          <p className="text-xs text-warning">{t("remove.lockedReason", { reason: detail.lockReason })}</p>
+          <p className="text-sm text-warning">{t("remove.lockedReason", { reason: detail.lockReason })}</p>
         )}
 
         {needsAcknowledgement && !impossible && (
           <div className="flex flex-col gap-2 rounded-md border border-danger/40 bg-danger/5 px-3 py-2">
-            <p className="text-xs text-danger">
+            <p className="text-sm text-danger">
               {dirty === null ? t("remove.dirtyUnknown") : t("remove.dirty", { count: dirty })}
             </p>
-            <label className="flex items-start gap-2 text-xs text-fg-muted">
+            <label className="flex cursor-pointer items-start gap-2 text-sm leading-snug text-fg-muted">
               <input
                 type="checkbox"
                 checked={acknowledged}
                 onChange={(e) => setAcknowledged(e.target.checked)}
-                className="mt-0.5"
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
               />
               {t("remove.discard")}
             </label>
@@ -110,27 +110,27 @@ export function RemoveWorktreeDialog({
 
         {!impossible && detail.branch && !detail.prunable && (
           <div className="flex flex-col gap-1.5">
-            <label className="flex items-start gap-2 text-xs text-fg-muted">
+            <label className="flex cursor-pointer items-start gap-2 text-sm leading-snug text-fg-muted">
               <input
                 type="checkbox"
                 checked={deleteBranch}
                 onChange={(e) => setDeleteBranch(e.target.checked)}
-                className="mt-0.5"
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
               />
               {t("remove.deleteBranch", { branch: detail.branch })}
             </label>
             {deleteBranch ? (
-              <label className="ml-5 flex items-start gap-2 text-xs text-fg-muted">
+              <label className="ml-6 flex cursor-pointer items-start gap-2 text-sm leading-snug text-fg-muted">
                 <input
                   type="checkbox"
                   checked={forceDeleteBranch}
                   onChange={(e) => setForceDeleteBranch(e.target.checked)}
-                  className="mt-0.5"
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
                 />
                 {t("remove.forceDeleteBranch")}
               </label>
             ) : (
-              <p className="ml-5 text-[11px] text-fg-subtle">{t("remove.deleteBranchHint")}</p>
+              <p className="ml-6 text-sm text-fg-subtle">{t("remove.deleteBranchHint")}</p>
             )}
           </div>
         )}

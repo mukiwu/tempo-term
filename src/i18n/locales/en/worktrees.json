@@ -93,8 +93,8 @@
     "paneMenu": "Worktree actions",
     "newFromPane": "New worktree…",
     "manageFromPane": "Worktrees in this repo…",
-    "hintTitle": "Worktrees live here",
-    "hintBody": "This terminal is in a git repo, so you can branch off into a worktree of its own — a separate directory with its own agent — without touching what you have open.",
-    "hintDismiss": "Got it"
+    "hintTitle": "Terminal menu",
+    "hintBody": "Create a worktree here, or look at the ones you already have",
+    "hintDismiss": "Close"
   }
 }

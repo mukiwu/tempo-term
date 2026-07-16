@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderGit2, MoreHorizontal, Plus } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
@@ -20,14 +20,14 @@ import { useUiStore } from "@/stores/uiStore";
  * itself until a worktree exists. This is where someone with none finds out
  * they can have one, so it carries the one-time hint.
  */
-export function PaneWorktreeMenu({ cwd }: { cwd: string | undefined }) {
-  const { t } = useTranslation("worktrees");
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
+/**
+ * The repo a pane's shell is in, or null when it is not in one.
+ *
+ * A hook rather than a check inside the menu, because the pane's whole control
+ * cluster has to know whether this item exists before it decides to draw itself.
+ */
+export function usePaneRepoPath(cwd: string | undefined): string | null {
   const info = useWorktreeStore((s) => (cwd ? s.infos[cwd] : undefined));
-  const openWorktrees = useUiStore((s) => s.openWorktrees);
-  const hintSeen = useSettingsStore((s) => s.worktreeHintSeen);
-  const setHintSeen = useSettingsStore((s) => s.setWorktreeHintSeen);
 
   useEffect(() => {
     if (!cwd) {
@@ -38,11 +38,19 @@ export function PaneWorktreeMenu({ cwd }: { cwd: string | undefined }) {
     void useWorktreeStore.getState().refresh([cwd]);
   }, [cwd]);
 
-  // A linked worktree reports its main path; a plain repo is its own root.
-  const repoPath = info ? (info.isWorktree ? info.mainPath : info.cwd) : null;
-  if (!repoPath) {
+  if (!info) {
     return null;
   }
+  // A linked worktree reports its main path; a plain repo is its own root.
+  return info.isWorktree ? info.mainPath : info.cwd;
+}
+
+export function PaneWorktreeMenu({ repoPath }: { repoPath: string }) {
+  const { t } = useTranslation("worktrees");
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const openWorktrees = useUiStore((s) => s.openWorktrees);
+  const hintSeen = useSettingsStore((s) => s.worktreeHintSeen);
+  const setHintSeen = useSettingsStore((s) => s.setWorktreeHintSeen);
 
   const items: ContextMenuItem[] = [
     {
@@ -63,9 +71,8 @@ export function PaneWorktreeMenu({ cwd }: { cwd: string | undefined }) {
 
   return (
     <>
-      <Tooltip label={t("pane.paneMenu")} className="absolute right-7 top-1.5 z-10">
+      <Tooltip label={t("pane.paneMenu")}>
         <button
-          ref={buttonRef}
           type="button"
           aria-label={t("pane.paneMenu")}
           onClick={(e) => {
@@ -78,26 +85,31 @@ export function PaneWorktreeMenu({ cwd }: { cwd: string | undefined }) {
               setHintSeen(true);
             }
           }}
-          className="rounded bg-bg-inset/80 p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
+          className="rounded p-0.5 text-fg-subtle transition-colors hover:bg-border-strong hover:text-fg"
         >
           <MoreHorizontal size={12} />
         </button>
       </Tooltip>
 
       {!hintSeen && (
-        // Anchored to the button rather than a modal: it is pointing at a
-        // control, and a dialog in the middle of the screen would have to
-        // describe where to look instead of just being there.
-        <div className="absolute right-1.5 top-8 z-20 w-64 rounded-lg border border-border bg-bg-elevated p-3 shadow-xl">
-          <p className="text-xs font-semibold text-fg">{t("pane.hintTitle")}</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-fg-muted">{t("pane.hintBody")}</p>
+        // Anchored under the notch rather than centred as a dialog: it is
+        // pointing at one control, and an arrow saying "this one" beats a
+        // sentence describing where to look. Positioned against the pane, which
+        // is the nearest positioned ancestor.
+        <div className="absolute right-1 top-9 z-20 w-72 rounded-lg border border-border-strong bg-bg-elevated p-3 shadow-xl">
+          <span
+            aria-hidden
+            className="absolute -top-[5px] right-[35px] h-2 w-2 rotate-45 border-l border-t border-border-strong bg-bg-elevated"
+          />
+          <p className="text-sm font-semibold text-fg">{t("pane.hintTitle")}</p>
+          <p className="mt-1 text-sm leading-relaxed text-fg-muted">{t("pane.hintBody")}</p>
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               setHintSeen(true);
             }}
-            className="mt-2 rounded px-2 py-1 text-[11px] text-accent hover:bg-bg-inset"
+            className="mt-2 rounded py-1 text-sm text-accent transition-colors hover:text-fg"
           >
             {t("pane.hintDismiss")}
           </button>
