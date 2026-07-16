@@ -46,7 +46,7 @@ const baseCtx: MenuContext = {
   leafCount: 2,
   hasPreviewPane: false,
   isMaximized: false,
-  sidebarOrder: ["workspaces", "explorer", "sourceControl", "notes", "ai", "connections", "sessions"],
+  panelOrder: ["workspaces", "explorer", "sourceControl", "notes", "ai", "connections", "sessions", "ports"],
 };
 
 const t = (key: string) => key; // identity；label 內容用 key 斷言，翻譯覆蓋另測
@@ -104,7 +104,7 @@ describe("serializeNativeMenu", () => {
   it("serializes the sidebar submenu from ctx order with alt accelerators", () => {
     const reordered: MenuContext = {
       ...baseCtx,
-      sidebarOrder: ["notes", "explorer", "workspaces", "sourceControl", "ai", "connections", "sessions"],
+      panelOrder: ["notes", "explorer", "workspaces", "sourceControl", "ai", "connections", "sessions", "ports"],
     };
     const model = serializeNativeMenu(t, reordered);
     const view = model.menus[2];
@@ -112,10 +112,10 @@ describe("serializeNativeMenu", () => {
     expect(panel?.kind).toBe("custom");
     expect(panel?.items?.map((i) => i.id)).toEqual([
       "sidebar-notes", "sidebar-explorer", "sidebar-workspaces", "sidebar-sourceControl",
-      "sidebar-ai", "sidebar-connections", "sidebar-sessions",
+      "sidebar-ai", "sidebar-connections", "sidebar-sessions", "sidebar-ports",
     ]);
     expect(panel?.items?.[0].accelerator).toBe("Alt+1");
-    expect(panel?.items?.[6].accelerator).toBe("Alt+7");
+    expect(panel?.items?.[7].accelerator).toBe("Alt+8");
   });
 
   it("converts the zoom-in shortcut to Cmd+Equal", () => {

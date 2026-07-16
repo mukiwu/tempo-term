@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildMenus, computeVisibleCount, type MenuContext } from "./menuBarMenus";
-import { DEFAULT_SIDEBAR_ORDER, type SidebarView } from "@/stores/uiStore";
+import { PANEL_IDS, type PanelId } from "@/stores/uiStore";
 
 const baseCtx: MenuContext = {
   paneKind: "terminal",
   leafCount: 1,
   hasPreviewPane: false,
   isMaximized: false,
-  sidebarOrder: DEFAULT_SIDEBAR_ORDER,
+  panelOrder: [...PANEL_IDS],
 };
 
 describe("buildMenus", () => {
@@ -16,20 +16,17 @@ describe("buildMenus", () => {
     expect(menus.map((m) => m.id)).toEqual([
       "file", "edit", "view", "terminal", "window", "help",
     ]);
-    // 6 menus + the sidebar submenu makes the 7th level of the spec tree
+    // One submenu entry per dockable panel (the eight panels).
     const view = menus.find((m) => m.id === "view");
     const sidebar = view?.items.find((i) => i.id === "sidebar-panel");
-    expect(sidebar?.submenu).toHaveLength(7);
+    expect(sidebar?.submenu).toHaveLength(8);
   });
 
-  it("builds the sidebar submenu from the live, user-reordered sidebarOrder — not the fixed default order", () => {
-    // The user dragged "sessions" to the front in the icon bar; the ⌥N
-    // shortcut hints in menuBarMenus.ts must match, not the shipped default.
-    const reordered: SidebarView[] = [
-      "sessions",
-      ...DEFAULT_SIDEBAR_ORDER.filter((v) => v !== "sessions"),
-    ];
-    const ctx: MenuContext = { ...baseCtx, sidebarOrder: reordered };
+  it("builds the panel submenu from the live dock order — not a fixed default", () => {
+    // The user dragged "sessions" to the front; the ⌥N shortcut hints in
+    // menuBarMenus.ts must match that live order, not the shipped default.
+    const reordered: PanelId[] = ["sessions", ...PANEL_IDS.filter((v) => v !== "sessions")];
+    const ctx: MenuContext = { ...baseCtx, panelOrder: reordered };
     const menus = buildMenus(ctx);
     const view = menus.find((m) => m.id === "view");
     const sidebar = view?.items.find((i) => i.id === "sidebar-panel");

@@ -67,9 +67,14 @@ describe("useMacNativeMenu", () => {
   it("re-pushes when a model-relevant store slice changes", async () => {
     renderHook(() => useMacNativeMenu());
     await flush();
-    const order = [...useUiStore.getState().sidebarOrder];
+    const left = [...useUiStore.getState().panelOrder.left];
     act(() => {
-      useUiStore.setState({ sidebarOrder: [order[1], order[0], ...order.slice(2)] });
+      useUiStore.setState({
+        panelOrder: {
+          ...useUiStore.getState().panelOrder,
+          left: [left[1], left[0], ...left.slice(2)],
+        },
+      });
     });
     await flush();
     expect(invokeMock).toHaveBeenCalledTimes(2);
@@ -93,9 +98,14 @@ describe("useMacNativeMenu", () => {
     // A model-relevant change after unmount must not reach set_native_menu:
     // the store subscriptions were released synchronously by the cleanup, and
     // the disposed guard blocks any push already sitting in the microtask queue.
-    const order = [...useUiStore.getState().sidebarOrder];
+    const left = [...useUiStore.getState().panelOrder.left];
     act(() => {
-      useUiStore.setState({ sidebarOrder: [order[1], order[0], ...order.slice(2)] });
+      useUiStore.setState({
+        panelOrder: {
+          ...useUiStore.getState().panelOrder,
+          left: [left[1], left[0], ...left.slice(2)],
+        },
+      });
     });
     await flush();
     expect(invokeMock.mock.calls.length).toBe(callsAfterMount);

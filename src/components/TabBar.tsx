@@ -9,6 +9,7 @@ import {
   History,
   LayoutGrid,
   PanelLeft,
+  PanelRight,
   Plus,
   Search,
   SquareTerminal,
@@ -234,8 +235,9 @@ export function TabBar() {
   const activeSpaceId = useTabsStore((s) => s.activeSpaceId);
   const visibleTabs = tabs.filter((tab) => tab.spaceId === activeSpaceId);
   const openLauncherTab = useTabsStore((s) => s.openLauncherTab);
-  const toggleSidebar = useUiStore((s) => s.toggleSidebar);
-  const sidebarVisible = useUiStore((s) => s.sidebarVisible);
+  const toggleSide = useUiStore((s) => s.toggleSide);
+  const leftVisible = useUiStore((s) => s.visible.left);
+  const rightVisible = useUiStore((s) => s.visible.right);
   const openFileFinder = useUiStore((s) => s.openFileFinder);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const canSearchFiles = canSearchRoot(rootPath);
@@ -275,10 +277,10 @@ export function TabBar() {
         <button
           type="button"
           aria-label={t("workspace.toggleSidebar")}
-          aria-pressed={sidebarVisible}
-          onClick={toggleSidebar}
+          aria-pressed={leftVisible}
+          onClick={() => toggleSide("left")}
           className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-bg-elevated ${
-            sidebarVisible ? "text-fg" : "text-fg-subtle hover:text-fg"
+            leftVisible ? "text-fg" : "text-fg-subtle hover:text-fg"
           }`}
         >
           <PanelLeft size={16} />
@@ -332,6 +334,19 @@ export function TabBar() {
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
         >
           <Search size={15} />
+        </button>
+      </Tooltip>
+      <Tooltip label={t("workspace.toggleRightSidebar")} side="bottom" className="shrink-0">
+        <button
+          type="button"
+          aria-label={t("workspace.toggleRightSidebar")}
+          aria-pressed={rightVisible}
+          onClick={() => toggleSide("right")}
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-bg-elevated ${
+            rightVisible ? "text-fg" : "text-fg-subtle hover:text-fg"
+          }`}
+        >
+          <PanelRight size={16} />
         </button>
       </Tooltip>
     </header>

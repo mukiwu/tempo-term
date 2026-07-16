@@ -72,7 +72,7 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
   const setPaneContent = useTabsStore((s) => s.setPaneContent);
   const closeTab = useTabsStore((s) => s.closeTab);
   const setRoot = useWorkspaceStore((s) => s.setRoot);
-  const selectSidebar = useUiStore((s) => s.selectSidebar);
+  const activatePanel = useUiStore((s) => s.activatePanel);
   const createNote = useNotesStore((s) => s.createNote);
 
   const resolved: LauncherTarget = target ?? { mode: "newTab" };
@@ -186,7 +186,7 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
               return;
             }
             setRoot(folder);
-            selectSidebar("explorer");
+            activatePanel("explorer");
             apply({ kind: "terminal" });
           },
         },

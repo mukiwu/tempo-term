@@ -149,6 +149,7 @@
     "switchSidebar": "切換側邊功能選單",
     "findFiles": "尋找檔案",
     "toggleSidebar": "顯示／隱藏側邊欄",
+    "toggleRightSidebar": "顯示／隱藏右側欄",
     "zoomIn": "放大介面",
     "zoomOut": "縮小介面",
     "resetZoom": "重設縮放",

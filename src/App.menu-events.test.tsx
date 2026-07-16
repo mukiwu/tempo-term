@@ -89,10 +89,8 @@ describe("App menu event wiring", () => {
     check.mockReset().mockResolvedValue(null);
     useSettingsStore.setState({ language: "en", themeId: "vitesse-dark", uiZoom: 1 });
     useUiStore.setState({
-      sidebarVisible: true,
       settingsOpen: false,
       settingsSection: null,
-      sidebarView: "explorer",
       fileFinderOpen: false,
       panelDock: { ...DEFAULT_DOCK.panelDock },
       panelOrder: {

@@ -135,7 +135,7 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const openInNewTab = useTabsStore((s) => s.openInNewTab);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
-  const selectSidebar = useUiStore((s) => s.selectSidebar);
+  const activatePanel = useUiStore((s) => s.activatePanel);
   const attachPath = useChatStore((s) => s.attachPath);
   const activeEditorPath = useTabsStore((s) => {
     const active = s.tabs.find((tab) => tab.id === s.activeId);
@@ -260,7 +260,7 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
 
   function attachToAgent() {
     attachPath(entry.path);
-    selectSidebar("ai");
+    activatePanel("ai");
   }
 
   const menuItems: ContextMenuItem[] = [

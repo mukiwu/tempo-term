@@ -38,9 +38,7 @@ describe("App shell — macOS keyboard shortcuts", () => {
   beforeEach(() => {
     useSettingsStore.setState({ language: "en", themeId: "vitesse-dark" });
     useUiStore.setState({
-      sidebarVisible: true,
       settingsOpen: false,
-      sidebarView: "explorer",
       fileFinderOpen: false,
     });
     useWorkspaceStore.setState({ rootPath: null });

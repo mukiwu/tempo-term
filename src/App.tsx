@@ -598,6 +598,9 @@ function App() {
       listenWebview("menu:toggle-sidebar", () => {
         useUiStore.getState().toggleSide("left");
       }),
+      listenWebview("menu:toggle-right-sidebar", () => {
+        useUiStore.getState().toggleSide("right");
+      }),
       listenWebview("menu:sidebar-panel", (event) => {
         const id = event.payload as PanelId;
         if ((PANEL_IDS as readonly string[]).includes(id)) {

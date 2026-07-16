@@ -149,6 +149,7 @@
     "switchSidebar": "Switch sidebar panel",
     "findFiles": "Find files",
     "toggleSidebar": "Toggle sidebar",
+    "toggleRightSidebar": "Toggle right sidebar",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "resetZoom": "Reset zoom",

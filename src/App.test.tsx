@@ -37,9 +37,7 @@ describe("App shell", () => {
     // Show the sidebar (with its Explorer/Git/Notes tabs) and the settings
     // modal (with the language picker); keep it light for jsdom.
     useUiStore.setState({
-      sidebarVisible: true,
       settingsOpen: true,
-      sidebarView: "explorer",
       fileFinderOpen: false,
       panelDock: { ...DEFAULT_DOCK.panelDock },
       panelOrder: {

@@ -7,7 +7,7 @@ import {
   leafIds,
   type PaneContent,
 } from "@/modules/terminal/lib/terminalLayout";
-import { useUiStore, type SidebarView } from "@/stores/uiStore";
+import { useUiStore, type PanelId } from "@/stores/uiStore";
 import {
   closeWindow,
   emitWindowMenuEvent,
@@ -23,11 +23,10 @@ export interface MenuContext {
   leafCount: number;
   hasPreviewPane: boolean;
   isMaximized: boolean;
-  /** Icon-bar order, drag-reorderable and persisted (see uiStore.sidebarOrder).
-   *  Drives the sidebar submenu's item order and ⌥N shortcut hints, so both
-   *  stay in sync with the real ⌥N shortcut, which indexes into this same
-   *  array (App.tsx's keydown handler). */
-  sidebarOrder: SidebarView[];
+  /** All dock panels in the concatenated left-then-right order. Drives the panel
+   *  submenu's item order and ⌥N shortcut hints, matching the real ⌥N shortcut,
+   *  which indexes into this same order (App.tsx's keydown handler). */
+  panelOrder: PanelId[];
 }
 
 export type MenuAction =
@@ -59,6 +58,7 @@ export function getMenuContext(isMaximized: boolean): MenuContext {
   const state = useTabsStore.getState();
   const tab = state.tabs.find((t) => t.id === state.activeId);
   const content = tab ? findPaneContent(tab.paneTree, tab.activeLeafId) : undefined;
+  const dock = useUiStore.getState();
   return {
     paneKind: content?.kind,
     leafCount: tab ? leafIds(tab.paneTree).length : 0,
@@ -66,7 +66,7 @@ export function getMenuContext(isMaximized: boolean): MenuContext {
       ? computeLayout(tab.paneTree).some((p) => p.content.kind === "preview")
       : false,
     isMaximized,
-    sidebarOrder: useUiStore.getState().sidebarOrder,
+    panelOrder: [...dock.panelOrder.left, ...dock.panelOrder.right],
   };
 }
 
@@ -90,7 +90,7 @@ export function executeMenuAction(action: MenuAction): void {
   }
 }
 
-const SIDEBAR_LABEL_KEYS: Record<SidebarView, string> = {
+const PANEL_LABEL_KEYS: Record<PanelId, string> = {
   workspaces: "nav.workspaces",
   explorer: "nav.explorer",
   sourceControl: "nav.git",
@@ -98,6 +98,7 @@ const SIDEBAR_LABEL_KEYS: Record<SidebarView, string> = {
   ai: "nav.ai",
   connections: "nav.connections",
   sessions: "nav.sessions",
+  ports: "nav.ports",
 };
 
 const notEditor = (ctx: MenuContext) => ctx.paneKind !== "editor";
@@ -137,16 +138,17 @@ export function buildMenus(ctx: MenuContext): MenuDef[] {
       labelKey: "menuBar.view",
       items: [
         { id: "toggle-sidebar", labelKey: "menuBar.toggleSidebar", group: 0, shortcut: { mac: "⌘B", win: "Ctrl+B" }, action: { kind: "event", event: "menu:toggle-sidebar" } },
+        { id: "toggle-right-sidebar", labelKey: "menuBar.toggleRightSidebar", group: 0, shortcut: { mac: "⌥⌘B", win: "Ctrl+Alt+B" }, action: { kind: "event", event: "menu:toggle-right-sidebar" } },
         {
           id: "sidebar-panel",
           labelKey: "menuBar.sidebarPanel",
           group: 0,
-          submenu: ctx.sidebarOrder.map((view, index) => ({
-            id: `sidebar-${view}`,
-            labelKey: SIDEBAR_LABEL_KEYS[view],
+          submenu: ctx.panelOrder.map((id, index) => ({
+            id: `sidebar-${id}`,
+            labelKey: PANEL_LABEL_KEYS[id],
             group: 0,
             shortcut: { mac: `⌥${index + 1}`, win: `Alt+${index + 1}` },
-            action: { kind: "event" as const, event: "menu:sidebar-panel", payload: view },
+            action: { kind: "event" as const, event: "menu:sidebar-panel", payload: id },
           })),
         },
         { id: "preview-back", labelKey: "menuBar.previewBack", group: 1, shortcut: { mac: "⌘[", win: "Ctrl+[" }, action: { kind: "event", event: "menu:preview-back" }, disabled: noPreview },
