@@ -265,21 +265,20 @@ function BreadcrumbPopover({
     const Icon = icon;
     return (
       <div key={key} className="flex items-center" style={{ paddingLeft: depth * 14 }}>
-        {menu.kind === "tree" &&
-          (toggleNode ? (
-            <button
-              type="button"
-              aria-label={t(toggleNode.expanded ? "breadcrumb.collapse" : "breadcrumb.expand", {
-                name: label,
-              })}
-              onClick={() => toggle(toggleNode)}
-              className="ml-1 rounded p-0.5 text-fg-subtle hover:bg-bg hover:text-fg"
-            >
-              {toggleNode.expanded ? <Minus size={12} /> : <Plus size={12} />}
-            </button>
-          ) : (
-            <span className="ml-1 w-[17px] shrink-0" />
-          ))}
+        {/* Only expandable rows get the toggle column; the head row (the
+            segment itself) sits flush left so the hierarchy reads at a glance. */}
+        {menu.kind === "tree" && toggleNode && (
+          <button
+            type="button"
+            aria-label={t(toggleNode.expanded ? "breadcrumb.collapse" : "breadcrumb.expand", {
+              name: label,
+            })}
+            onClick={() => toggle(toggleNode)}
+            className="ml-1 rounded p-0.5 text-fg-subtle hover:bg-bg hover:text-fg"
+          >
+            {toggleNode.expanded ? <Minus size={12} /> : <Plus size={12} />}
+          </button>
+        )}
         <button
           type="button"
           role="menuitem"
