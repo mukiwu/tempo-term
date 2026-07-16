@@ -1,0 +1,35 @@
+{
+  "title": "Worktrees",
+  "badge": "{{count}} worktree",
+  "badge_other": "{{count}} worktrees",
+  "scope": {
+    "repo": "This repo",
+    "global": "All repos",
+    "repoName": "Worktrees in {{name}}"
+  },
+  "row": {
+    "main": "main",
+    "detached": "detached",
+    "open": "Open in this window",
+    "dirty": "{{count}} uncommitted change",
+    "dirty_other": "{{count}} uncommitted changes",
+    "locked": "Locked",
+    "lockedReason": "Locked: {{reason}}",
+    "stale": "Directory is gone",
+    "measure": "Measure size",
+    "measuring": "Measuring…"
+  },
+  "agent": {
+    "active": "Working",
+    "thinking": "Thinking",
+    "waiting-approval": "Waiting for you",
+    "idle": "Idle"
+  },
+  "empty": {
+    "repo": "No worktrees in this repo yet",
+    "repoHint": "Create one from a terminal's ⋯ menu",
+    "global": "No worktrees anywhere yet",
+    "globalHint": "Repos show up here once they have a worktree"
+  },
+  "close": "Close"
+}

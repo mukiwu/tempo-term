@@ -8,6 +8,7 @@ import enNotes from "./locales/en/notes.json";
 import enPreview from "./locales/en/preview.json";
 import enGitGraph from "./locales/en/gitGraph.json";
 import enOnboarding from "./locales/en/onboarding.json";
+import enWorktrees from "./locales/en/worktrees.json";
 import zhHantCommon from "./locales/zh-Hant/common.json";
 import zhHantSettings from "./locales/zh-Hant/settings.json";
 import zhHantExplorer from "./locales/zh-Hant/explorer.json";
@@ -18,6 +19,7 @@ import zhHantNotes from "./locales/zh-Hant/notes.json";
 import zhHantPreview from "./locales/zh-Hant/preview.json";
 import zhHantGitGraph from "./locales/zh-Hant/gitGraph.json";
 import zhHantOnboarding from "./locales/zh-Hant/onboarding.json";
+import zhHantWorktrees from "./locales/zh-Hant/worktrees.json";
 
 export const SUPPORTED_LANGUAGES = ["en", "zh-Hant"] as const;
 
@@ -36,6 +38,7 @@ export const NAMESPACES = [
   "preview",
   "gitGraph",
   "onboarding",
+  "worktrees",
 ] as const;
 
 export const DEFAULT_NAMESPACE = "common";
@@ -52,6 +55,7 @@ export const resources = {
     preview: enPreview,
     gitGraph: enGitGraph,
     onboarding: enOnboarding,
+    worktrees: enWorktrees,
   },
   "zh-Hant": {
     common: zhHantCommon,
@@ -64,6 +68,7 @@ export const resources = {
     preview: zhHantPreview,
     gitGraph: zhHantGitGraph,
     onboarding: zhHantOnboarding,
+    worktrees: zhHantWorktrees,
   },
 } as const;
 

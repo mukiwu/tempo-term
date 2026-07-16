@@ -6,6 +6,7 @@ import { useSystemStats } from "@/modules/sysmon/lib/useSystemStats";
 import { formatBytes, formatPercent, formatRate, ramPercent } from "@/modules/sysmon/lib/format";
 import { Tooltip } from "@/components/Tooltip";
 import { PortsIndicator } from "@/modules/ports/PortsIndicator";
+import { WorktreesIndicator } from "@/modules/worktrees/WorktreesIndicator";
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -56,6 +57,7 @@ export function StatusBar() {
       )}
 
       <div className="ml-auto flex items-center gap-1">
+        <WorktreesIndicator />
         <PortsIndicator />
         {showIndicator && (
           <Tooltip label={t("statusBar.updateAvailable")} side="top">

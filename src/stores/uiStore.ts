@@ -35,6 +35,15 @@ export const MAX_COL = 640;
 
 const DOCK_STORAGE_KEY = "tempoterm-dock-layout";
 
+/** Which worktrees the manager is showing: one repo's, or every known repo's. */
+export type WorktreeScope = "repo" | "global";
+
+export interface WorktreesModalState {
+  scope: WorktreeScope;
+  /** The repo to scope to; null in global scope. */
+  repoPath: string | null;
+}
+
 export interface DockLayout {
   /** Which side each panel lives on. Derived from `panelOrder`; one entry per panel. */
   panelDock: Record<PanelId, DockSide>;
@@ -198,6 +207,12 @@ interface UiState {
   terminalOpen: boolean;
   fileFinderOpen: boolean;
   /**
+   * The worktrees manager, or null when closed. Deliberately not a `PanelId`:
+   * creating and pruning worktrees is occasional housekeeping, so it is a modal
+   * rather than a ninth dock column permanently spending screen width on it.
+   */
+  worktreesModal: WorktreesModalState | null;
+  /**
    * Number of full-screen overlays (modals, dialogs, context menus) currently
    * mounted. The native preview webview floats above all DOM, so it must hide
    * itself whenever an overlay is open. Tracked as a counter because several
@@ -222,6 +237,10 @@ interface UiState {
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
   setFileFinderOpen: (open: boolean) => void;
+  /** Show the worktrees manager. The entry point picks the scope: the status-bar
+   *  badge means "everything", a terminal means "the repo I am in". */
+  openWorktrees: (scope: WorktreeScope, repoPath?: string | null) => void;
+  closeWorktrees: () => void;
   /** Open the global fuzzy file search palette (Cmd/Ctrl+P). Independent of
    *  the sidebar — it renders as a top-anchored overlay regardless of which
    *  sidebar panel (if any) is currently showing. */
@@ -243,6 +262,7 @@ export const useUiStore = create<UiState>((set) => {
     setupWizardOpen: false,
     terminalOpen: true,
     fileFinderOpen: false,
+    worktreesModal: null,
     overlayCount: 0,
 
     activatePanel: (id) =>
@@ -305,6 +325,11 @@ export const useUiStore = create<UiState>((set) => {
     setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
     toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
     setFileFinderOpen: (fileFinderOpen) => set({ fileFinderOpen }),
+
+    openWorktrees: (scope, repoPath = null) =>
+      set({ worktreesModal: { scope, repoPath: scope === "global" ? null : repoPath } }),
+
+    closeWorktrees: () => set({ worktreesModal: null }),
 
     openFileFinder: () => set({ fileFinderOpen: true }),
 

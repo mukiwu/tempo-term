@@ -4,6 +4,8 @@ import { TabBar } from "@/components/TabBar";
 import { TitleBar } from "@/components/TitleBar";
 import { DockShell } from "@/components/dock/DockShell";
 import { StatusBar } from "@/components/StatusBar";
+import { WorktreesModal } from "@/modules/worktrees/WorktreesModal";
+import { useWorktreeDiscovery } from "@/modules/worktrees/lib/useWorktreeDiscovery";
 import { SettingsModal } from "@/components/SettingsModal";
 import { UpdateModal } from "@/components/UpdateModal";
 import { UpdateToast } from "@/components/UpdateToast";
@@ -152,6 +154,7 @@ function App() {
   const themeId = useSettingsStore((s) => s.themeId);
   const uiZoom = useSettingsStore((s) => s.uiZoom);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const worktreesModal = useUiStore((s) => s.worktreesModal);
   const setupWizardOpen = useUiStore((s) => s.setupWizardOpen);
   const setSetupWizardOpen = useUiStore((s) => s.setSetupWizardOpen);
   const fileFinderOpen = useUiStore((s) => s.fileFinderOpen);
@@ -206,6 +209,7 @@ function App() {
     }
   }, []);
 
+  useWorktreeDiscovery();
   useWatchSessions();
   useWatchNotes();
   useForwardStatusListener();
@@ -690,6 +694,7 @@ function App() {
 
       <StatusBar />
       {settingsOpen && <SettingsModal />}
+      {worktreesModal && <WorktreesModal state={worktreesModal} />}
       {setupWizardOpen && <SetupWizard />}
       {fileFinderOpen && canSearchRoot(rootPath) && (
         <FileFinder root={rootPath} onClose={() => setFileFinderOpen(false)} />

@@ -1,0 +1,35 @@
+{
+  "title": "Worktree",
+  "badge": "{{count}} 個 worktree",
+  "badge_other": "{{count}} 個 worktree",
+  "scope": {
+    "repo": "這個 repo",
+    "global": "全部 repo",
+    "repoName": "{{name}} 的 worktree"
+  },
+  "row": {
+    "main": "主要",
+    "detached": "分離 HEAD",
+    "open": "已在這個視窗開著",
+    "dirty": "{{count}} 個未提交變更",
+    "dirty_other": "{{count}} 個未提交變更",
+    "locked": "已鎖定",
+    "lockedReason": "已鎖定：{{reason}}",
+    "stale": "目錄已不存在",
+    "measure": "計算佔用",
+    "measuring": "計算中…"
+  },
+  "agent": {
+    "active": "執行中",
+    "thinking": "思考中",
+    "waiting-approval": "等待你的輸入",
+    "idle": "閒置"
+  },
+  "empty": {
+    "repo": "這個 repo 還沒有 worktree",
+    "repoHint": "從終端機右上角的 ⋯ 選單建立",
+    "global": "還沒有任何 worktree",
+    "globalHint": "repo 一旦有了 worktree 就會出現在這裡"
+  },
+  "close": "關閉"
+}
