@@ -17,8 +17,17 @@ interface SessionStatusState {
   clear: (leafId: string) => void;
 }
 
-/** Most-to-least urgent, matching tabSessionStatus so an icon and a card agree. */
-const AGGREGATE_PRIORITY: SessionStatus[] = ["waiting-approval", "active", "thinking", "idle"];
+/**
+ * Most-to-least urgent. Exported as the single source of this order: a dock
+ * strip icon, a workspace card, and a worktree row all reduce the same per-leaf
+ * statuses, and a second copy of the list is exactly how they start disagreeing.
+ */
+export const AGGREGATE_PRIORITY: SessionStatus[] = [
+  "waiting-approval",
+  "active",
+  "thinking",
+  "idle",
+];
 
 /**
  * The single most-urgent live status across every tracked terminal leaf, or null

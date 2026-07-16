@@ -1,0 +1,32 @@
+import { IS_WINDOWS } from "@/lib/platform";
+
+/**
+ * A path in one comparable form: separators unified, trailing slashes dropped,
+ * and case folded on Windows, where the filesystem is case-insensitive and the
+ * pty's spelling of a path need not match git's.
+ */
+function normalize(path: string, windows: boolean): string {
+  const unified = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return windows ? unified.toLowerCase() : unified;
+}
+
+/**
+ * Whether `child` is `parent` itself, or sits inside it.
+ *
+ * Deliberately not a bare `startsWith`: this feature parks worktrees in a
+ * `<repo>-worktrees/` sibling of the repo, so a prefix test would report every
+ * worktree as living inside the repo it came from — silently mis-attributing
+ * agent status and making "focus the existing tab" open the wrong one. The
+ * boundary has to fall on a separator.
+ *
+ * `windows` is a parameter rather than a direct `IS_WINDOWS` read so both
+ * platforms' behavior is covered by tests on either machine.
+ */
+export function isUnder(child: string, parent: string, windows: boolean = IS_WINDOWS): boolean {
+  const from = normalize(child, windows);
+  const root = normalize(parent, windows);
+  if (!from || !root) {
+    return false;
+  }
+  return from === root || from.startsWith(`${root}/`);
+}

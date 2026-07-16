@@ -1,9 +1,7 @@
 import type { Tab } from "@/stores/tabsStore";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus";
-
-/** Most-to-least urgent, so a busy pane wins the badge over a quiet one. */
-const PRIORITY: SessionStatus[] = ["waiting-approval", "active", "thinking", "idle"];
+import { AGGREGATE_PRIORITY } from "@/modules/claude-progress/lib/sessionStatusStore";
 
 /**
  * The session status to show on a tab's card: the highest-priority live status
@@ -22,5 +20,5 @@ export function tabSessionStatus(
       }
     }
   }
-  return PRIORITY.find((status) => present.has(status)) ?? null;
+  return AGGREGATE_PRIORITY.find((status) => present.has(status)) ?? null;
 }
