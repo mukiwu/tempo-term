@@ -59,8 +59,11 @@ export function worktreeSessionStatus(
   const status = AGGREGATE_PRIORITY.find((candidate) => agentByStatus.has(candidate)) ?? null;
   return {
     status,
-    // Name the agent that actually holds the reported state, so a row saying
-    // "waiting" points at the one waiting rather than whichever was found first.
-    agent: status ? (agentByStatus.get(status) ?? fallbackAgent) : fallbackAgent,
+    // Only ever name the agent that actually holds the reported state. If that
+    // pane's agent is not classified yet, say nothing rather than borrowing the
+    // fallback: a row reading "Claude — waiting for you" while Claude is the
+    // *idle* pane and something else is waiting is worse than an unnamed row.
+    // The fallback exists solely for a worktree with an agent but no status yet.
+    agent: status ? (agentByStatus.get(status) ?? null) : fallbackAgent,
   };
 }

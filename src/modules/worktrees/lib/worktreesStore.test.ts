@@ -6,6 +6,9 @@ const { gitWorktreeListDetailed, gitWorktreeDiskSize } = vi.hoisted(() => ({
 }));
 vi.mock("./worktreesBridge", () => ({ gitWorktreeListDetailed, gitWorktreeDiskSize }));
 
+const { gitResolveRepo } = vi.hoisted(() => ({ gitResolveRepo: vi.fn() }));
+vi.mock("@/modules/source-control/lib/gitBridge", () => ({ gitResolveRepo }));
+
 import { useWorktreeRegistryStore } from "@/stores/worktreeRegistryStore";
 import type { WorktreeDetail } from "../types";
 import { useWorktreesStore } from "./worktreesStore";
@@ -30,6 +33,8 @@ beforeEach(() => {
   useWorktreeRegistryStore.setState({ byRepo: {} });
   gitWorktreeListDetailed.mockReset();
   gitWorktreeDiskSize.mockReset();
+  gitResolveRepo.mockReset();
+  gitResolveRepo.mockResolvedValue("/repo");
 });
 
 describe("worktreesStore.refresh", () => {
@@ -83,17 +88,43 @@ describe("worktreesStore.refresh", () => {
     expect(gitWorktreeListDetailed).toHaveBeenCalledTimes(2);
   });
 
-  it("forgets a repo whose path no longer resolves", async () => {
+  it("forgets a repo once its path really stops being one", async () => {
     gitWorktreeListDetailed.mockResolvedValue([detail("/repo", true), detail("/repo-wt/x")]);
     await store().refresh("/repo");
     expect(useWorktreeRegistryStore.getState().byRepo["/repo"]).toBeDefined();
 
     // The repo was deleted or moved out from under us.
     gitWorktreeListDetailed.mockRejectedValue(new Error("not a git repository"));
+    gitResolveRepo.mockResolvedValue(null);
     await expect(store().refresh("/repo")).rejects.toThrow();
 
     expect(useWorktreeRegistryStore.getState().byRepo["/repo"]).toBeUndefined();
     expect(useWorktreesStore.getState().byRepo["/repo"]).toBeUndefined();
+  });
+
+  it("keeps a repo when the scan fails but the repo is still there", async () => {
+    // A git lock or a spawn hiccup fails exactly like a deleted repo. Dropping
+    // the entry would under-count the badge silently, which is the one failure
+    // mode nobody would notice.
+    gitWorktreeListDetailed.mockResolvedValue([detail("/repo", true), detail("/repo-wt/x")]);
+    await store().refresh("/repo");
+
+    gitWorktreeListDetailed.mockRejectedValue(new Error("index.lock exists"));
+    gitResolveRepo.mockResolvedValue("/repo");
+    await expect(store().refresh("/repo")).rejects.toThrow();
+
+    expect(useWorktreeRegistryStore.getState().byRepo["/repo"]?.worktreeCount).toBe(1);
+  });
+
+  it("keeps a repo when even the probe fails, rather than forgetting on a guess", async () => {
+    gitWorktreeListDetailed.mockResolvedValue([detail("/repo", true), detail("/repo-wt/x")]);
+    await store().refresh("/repo");
+
+    gitWorktreeListDetailed.mockRejectedValue(new Error("boom"));
+    gitResolveRepo.mockRejectedValue(new Error("probe also failed"));
+    await expect(store().refresh("/repo")).rejects.toThrow();
+
+    expect(useWorktreeRegistryStore.getState().byRepo["/repo"]).toBeDefined();
   });
 });
 

@@ -73,6 +73,21 @@ describe("worktreeSessionStatus", () => {
     expect(result).toEqual({ status: "waiting-approval", agent: "codex" });
   });
 
+  it("names no agent rather than borrowing one from a different pane", () => {
+    // The waiting pane's agent is not classified yet, while another pane holds
+    // an idle Claude. Saying "Claude — waiting for you" would point at the one
+    // agent that is definitely *not* waiting.
+    const tabs = [tabAt("a", "p1", WT), tabAt("b", "p2", `${WT}/src`)];
+    const result = worktreeSessionStatus(
+      tabs,
+      { p1: "idle", p2: "waiting-approval" },
+      { p1: "claude" },
+      WT,
+      false,
+    );
+    expect(result).toEqual({ status: "waiting-approval", agent: null });
+  });
+
   it("still names an agent when its pane has no status yet", () => {
     const tabs = [tabAt("a", "p1", WT)];
     expect(worktreeSessionStatus(tabs, {}, { p1: "claude" }, WT, false)).toEqual({

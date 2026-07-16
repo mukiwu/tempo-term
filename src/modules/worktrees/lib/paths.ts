@@ -6,8 +6,13 @@ import { IS_WINDOWS } from "@/lib/platform";
  * pty's spelling of a path need not match git's.
  */
 function normalize(path: string, windows: boolean): string {
-  const unified = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return windows ? unified.toLowerCase() : unified;
+  const unified = path.replace(/\\/g, "/");
+  const trimmed = unified.replace(/\/+$/, "");
+  // "/" and "//" trim away to nothing, but the filesystem root is a real
+  // directory rather than an empty path — collapsing it would make `isUnder`
+  // reject everything beneath it.
+  const rooted = trimmed === "" && unified.startsWith("/") ? "/" : trimmed;
+  return windows ? rooted.toLowerCase() : rooted;
 }
 
 /**
@@ -28,5 +33,11 @@ export function isUnder(child: string, parent: string, windows: boolean = IS_WIN
   if (!from || !root) {
     return false;
   }
-  return from === root || from.startsWith(`${root}/`);
+  if (from === root) {
+    return true;
+  }
+  // A root that already ends in its separator ("/" itself, or a drive root)
+  // must not get a second one appended, or the prefix becomes unmatchable.
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+  return from.startsWith(prefix);
 }

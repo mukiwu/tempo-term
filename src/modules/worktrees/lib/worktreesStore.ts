@@ -1,7 +1,23 @@
 import { create } from "zustand";
+import { gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
 import { useWorktreeRegistryStore } from "@/stores/worktreeRegistryStore";
 import type { WorktreeDetail } from "../types";
 import { gitWorktreeDiskSize, gitWorktreeListDetailed } from "./worktreesBridge";
+
+/**
+ * Whether `repoPath` is still a git repository — the non-brittle signal for
+ * "this entry is genuinely gone", as opposed to matching git's stderr, which is
+ * localized and would misfire in any non-English shell.
+ *
+ * Defaults to `true` if the probe itself fails: never forget a repo on a guess.
+ */
+async function stillARepo(repoPath: string): Promise<boolean> {
+  try {
+    return (await gitResolveRepo(repoPath)) !== null;
+  } catch {
+    return true;
+  }
+}
 
 /**
  * In-flight scans and size walks, keyed by path. Module-level rather than in the
@@ -40,9 +56,15 @@ export const useWorktreesStore = create<WorktreesState>((set) => ({
         useWorktreeRegistryStore.getState().record(repoPath, linked);
         return details;
       })
-      .catch((error: unknown) => {
-        // The path stopped resolving as a repo (deleted, moved, or a drive that
-        // went away). Drop it rather than leaving a row that can never load.
+      .catch(async (error: unknown) => {
+        // A failed scan is not proof the repo is gone — a git lock or a spawn
+        // hiccup fails the same way. Ask for the real signal before dropping
+        // anything, because the two mistakes are not equal: silently forgetting
+        // a live repo under-counts the badge invisibly, while keeping a stale
+        // one is visible in the manager and can be forgotten from there.
+        if (await stillARepo(repoPath)) {
+          throw error;
+        }
         useWorktreeRegistryStore.getState().forget(repoPath);
         set((state) => {
           if (!(repoPath in state.byRepo)) {

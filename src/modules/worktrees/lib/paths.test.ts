@@ -54,4 +54,18 @@ describe("isUnder", () => {
     expect(isUnder("/a/b", "", false)).toBe(false);
     expect(isUnder("", "/a/b", false)).toBe(false);
   });
+
+  it("treats the filesystem root as a real directory", () => {
+    // "/" trims to the empty string; if that collapses into "no path", the root
+    // stops containing anything at all.
+    expect(isUnder("/a/b", "/", false)).toBe(true);
+    expect(isUnder("/", "/", false)).toBe(true);
+    // ...and the prefix must not become "//".
+    expect(isUnder("//a", "/", false)).toBe(true);
+  });
+
+  it("handles a Windows drive root", () => {
+    expect(isUnder("C:\\src", "C:\\", true)).toBe(true);
+    expect(isUnder("C:\\", "C:\\", true)).toBe(true);
+  });
 });
