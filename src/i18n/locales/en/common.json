@@ -52,7 +52,8 @@
     "gitGraph": "Git Graph",
     "settings": "Settings",
     "connections": "Connections",
-    "sessions": "AI Sessions"
+    "sessions": "AI Sessions",
+    "ports": "Ports"
   },
   "statusBar": {
     "ready": "Ready",

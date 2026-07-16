@@ -2,15 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TabBar } from "@/components/TabBar";
 import { TitleBar } from "@/components/TitleBar";
-import { Sidebar } from "@/components/Sidebar";
-import { Resizer } from "@/components/Resizer";
+import { DockShell } from "@/components/dock/DockShell";
 import { StatusBar } from "@/components/StatusBar";
 import { SettingsModal } from "@/components/SettingsModal";
 import { UpdateModal } from "@/components/UpdateModal";
 import { UpdateToast } from "@/components/UpdateToast";
 import { NotifyToast } from "@/components/NotifyToast";
-import { TabsArea } from "@/components/TabsArea";
-import { useUiStore, type SidebarView } from "@/stores/uiStore";
+import { useUiStore, PANEL_IDS, type PanelId } from "@/stores/uiStore";
 import { useFontStore, shouldPrefetchFontReport } from "@/stores/fontStore";
 import { useUpdaterStore } from "@/stores/updaterStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -50,13 +48,6 @@ import { useForwardStatusListener } from "@/modules/ssh/lib/useForwardStatus";
 import { sftpSessionStore } from "@/modules/ssh/lib/sftpSessionStore";
 import { enforceLogRetention } from "@/modules/logs/lib/sessionLog";
 import { InputContextMenu } from "@/components/InputContextMenu";
-
-const MIN_SIDEBAR = 180;
-const MAX_SIDEBAR = 640;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
 
 /**
  * The 1-9 a number-row key represents, read from `code` rather than `key` so it
@@ -160,14 +151,12 @@ function App() {
   const { t } = useTranslation();
   const themeId = useSettingsStore((s) => s.themeId);
   const uiZoom = useSettingsStore((s) => s.uiZoom);
-  const sidebarVisible = useUiStore((s) => s.sidebarVisible);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const setupWizardOpen = useUiStore((s) => s.setupWizardOpen);
   const setSetupWizardOpen = useUiStore((s) => s.setSetupWizardOpen);
   const fileFinderOpen = useUiStore((s) => s.fileFinderOpen);
   const setFileFinderOpen = useUiStore((s) => s.setFileFinderOpen);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
-  const [sidebarWidth, setSidebarWidth] = useState(260);
   const [pendingCloseAction, setPendingCloseAction] = useState<(() => void) | null>(null);
 
   // Cmd/Ctrl+P with no open folder (or a remote one) sets fileFinderOpen with
@@ -395,12 +384,14 @@ function App() {
       // field (the terminal is excluded — see isEditableTarget).
       const editable = isEditableTarget(e.target);
 
-      // ⌥1…⌥7 jump straight to a sidebar panel by its position in the icon bar.
+      // ⌥1…⌥N jump straight to a dock panel by its position in the concatenated
+      // left-then-right icon order; activating it reveals its column.
       if (digit !== null && e.altKey && !e.metaKey && !e.ctrlKey && !editable) {
-        const view = useUiStore.getState().sidebarOrder[digit - 1];
-        if (view) {
+        const s = useUiStore.getState();
+        const id = [...s.panelOrder.left, ...s.panelOrder.right][digit - 1];
+        if (id) {
           e.preventDefault();
-          useUiStore.getState().selectSidebar(view);
+          s.activatePanel(id);
         }
         return;
       }
@@ -512,6 +503,14 @@ function App() {
         }
       }
 
+      // ⌘B toggles the left dock column, ⌘⌥B the right. Read `code` (not `key`)
+      // because ⌥ rewrites `e.key` on macOS (⌥B → "∫").
+      if (e.code === "KeyB") {
+        e.preventDefault();
+        useUiStore.getState().toggleSide(e.altKey ? "right" : "left");
+        return;
+      }
+
       const key = e.key.toLowerCase();
       if (key === "t") {
         e.preventDefault();
@@ -526,9 +525,6 @@ function App() {
       } else if (key === "p") {
         e.preventDefault();
         useUiStore.getState().openFileFinder();
-      } else if (key === "b") {
-        e.preventDefault();
-        useUiStore.getState().toggleSidebar();
       } else if (key === ",") {
         e.preventDefault();
         useUiStore.getState().openSettings();
@@ -599,12 +595,12 @@ function App() {
         useUiStore.getState().openFileFinder();
       }),
       listenWebview("menu:toggle-sidebar", () => {
-        useUiStore.getState().toggleSidebar();
+        useUiStore.getState().toggleSide("left");
       }),
       listenWebview("menu:sidebar-panel", (event) => {
-        const view = event.payload as SidebarView;
-        if (useUiStore.getState().sidebarOrder.includes(view)) {
-          useUiStore.getState().selectSidebar(view);
+        const id = event.payload as PanelId;
+        if ((PANEL_IDS as readonly string[]).includes(id)) {
+          useUiStore.getState().activatePanel(id);
         }
       }),
       listenWebview("menu:preview-back", () => {
@@ -686,23 +682,7 @@ function App() {
       <TitleBar />
       <TabBar />
 
-      <div className="flex min-h-0 flex-1">
-        {sidebarVisible && (
-          <>
-            <div style={{ width: sidebarWidth }} className="h-full shrink-0">
-              <Sidebar />
-            </div>
-            <Resizer
-              orientation="vertical"
-              onResize={(d) => setSidebarWidth((w) => clamp(w + d, MIN_SIDEBAR, MAX_SIDEBAR))}
-            />
-          </>
-        )}
-
-        <main className="min-w-0 flex-1 overflow-hidden">
-          <TabsArea />
-        </main>
-      </div>
+      <DockShell />
 
       <StatusBar />
       {settingsOpen && <SettingsModal />}

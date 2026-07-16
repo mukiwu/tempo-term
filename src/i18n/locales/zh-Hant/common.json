@@ -52,7 +52,8 @@
     "gitGraph": "Git 線圖",
     "settings": "設定",
     "connections": "SSH 連線",
-    "sessions": "AI 對話"
+    "sessions": "AI 對話",
+    "ports": "連接埠"
   },
   "statusBar": {
     "ready": "就緒",

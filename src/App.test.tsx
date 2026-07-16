@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import "./i18n";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useUiStore } from "@/stores/uiStore";
+import { useUiStore, DEFAULT_DOCK } from "@/stores/uiStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { leaf, splitLeaf, type LayoutNode } from "@/modules/terminal/lib/terminalLayout";
@@ -41,6 +41,14 @@ describe("App shell", () => {
       settingsOpen: true,
       sidebarView: "explorer",
       fileFinderOpen: false,
+      panelDock: { ...DEFAULT_DOCK.panelDock },
+      panelOrder: {
+        left: [...DEFAULT_DOCK.panelOrder.left],
+        right: [...DEFAULT_DOCK.panelOrder.right],
+      },
+      activePanel: { ...DEFAULT_DOCK.activePanel },
+      width: { ...DEFAULT_DOCK.width },
+      visible: { ...DEFAULT_DOCK.visible },
     });
     useWorkspaceStore.setState({ rootPath: null });
     // Start every test with no tabs so the default render mounts no terminal
@@ -161,14 +169,18 @@ describe("App shell", () => {
     expect(paneCount(tab!.paneTree)).toBe(1);
   });
 
-  it("selects the Nth sidebar panel with Option+digit", () => {
+  it("selects the Nth dock panel with Option+digit", () => {
     render(<App />);
-    // Order is workspaces, explorer, sourceControl, notes, ai, connections.
+    // Concatenated left→right order:
+    // 1 workspaces, 2 connections, 3 notes, 4 sessions | 5 explorer, 6 sourceControl, 7 ai, 8 ports.
     fireEvent.keyDown(window, { code: "Digit3", key: "£", altKey: true });
-    expect(useUiStore.getState().sidebarView).toBe("sourceControl");
+    expect(useUiStore.getState().activePanel.left).toBe("notes");
+
+    fireEvent.keyDown(window, { code: "Digit6", key: "§", altKey: true });
+    expect(useUiStore.getState().activePanel.right).toBe("sourceControl");
 
     fireEvent.keyDown(window, { code: "Digit1", key: "¡", altKey: true });
-    expect(useUiStore.getState().sidebarView).toBe("workspaces");
+    expect(useUiStore.getState().activePanel.left).toBe("workspaces");
   });
 
   it("ignores navigation shortcuts while typing in a non-terminal text field", () => {
@@ -197,10 +209,11 @@ describe("App shell", () => {
     fireEvent.keyDown(input, { code: "Digit2", key: "2", metaKey: true });
     expect(useTabsStore.getState().activeId).toBe("a");
 
-    // ⌥1 must not hijack the sidebar either — ⌥+number is normal text entry on
+    // ⌥1 must not hijack the dock either — ⌥+number is normal text entry on
     // macOS (it types ¡), so the keystroke belongs to the input.
+    useUiStore.setState({ activePanel: { left: "sessions", right: "explorer" } });
     fireEvent.keyDown(input, { code: "Digit1", key: "¡", altKey: true });
-    expect(useUiStore.getState().sidebarView).toBe("explorer");
+    expect(useUiStore.getState().activePanel.left).toBe("sessions");
 
     input.remove();
   });

@@ -55,7 +55,7 @@ vi.mock("@/modules/preview/PreviewTabContent", () => ({
 import App from "./App";
 import "./i18n";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useUiStore } from "@/stores/uiStore";
+import { useUiStore, DEFAULT_DOCK } from "@/stores/uiStore";
 import { useUpdaterStore } from "@/stores/updaterStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -94,6 +94,14 @@ describe("App menu event wiring", () => {
       settingsSection: null,
       sidebarView: "explorer",
       fileFinderOpen: false,
+      panelDock: { ...DEFAULT_DOCK.panelDock },
+      panelOrder: {
+        left: [...DEFAULT_DOCK.panelOrder.left],
+        right: [...DEFAULT_DOCK.panelOrder.right],
+      },
+      activePanel: { ...DEFAULT_DOCK.activePanel },
+      width: { ...DEFAULT_DOCK.width },
+      visible: { ...DEFAULT_DOCK.visible },
     });
     useWorkspaceStore.setState({ rootPath: null });
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
@@ -224,25 +232,28 @@ describe("App menu event wiring", () => {
     expect(useUiStore.getState().fileFinderOpen).toBe(true);
   });
 
-  it("menu:toggle-sidebar toggles sidebar visibility", async () => {
+  it("menu:toggle-sidebar toggles the left dock column", async () => {
     render(<App />);
-    expect(useUiStore.getState().sidebarVisible).toBe(true);
+    expect(useUiStore.getState().visible.left).toBe(true);
     await fireMenuEvent("menu:toggle-sidebar");
-    expect(useUiStore.getState().sidebarVisible).toBe(false);
+    expect(useUiStore.getState().visible.left).toBe(false);
   });
 
-  it("menu:sidebar-panel selects the payload view", async () => {
+  it("menu:sidebar-panel activates the payload panel and reveals its column", async () => {
     render(<App />);
+    // Explorer docks on the right; collapse that column first, then the menu
+    // event should re-reveal it with Explorer active.
+    act(() => useUiStore.setState({ visible: { left: true, right: false } }));
     await fireMenuEvent("menu:sidebar-panel", "explorer");
-    expect(useUiStore.getState().sidebarView).toBe("explorer");
-    expect(useUiStore.getState().sidebarVisible).toBe(true);
+    expect(useUiStore.getState().activePanel.right).toBe("explorer");
+    expect(useUiStore.getState().visible.right).toBe(true);
   });
 
   it("menu:sidebar-panel ignores an unknown panel id", async () => {
     render(<App />);
-    act(() => useUiStore.setState({ sidebarView: "workspaces" }));
+    act(() => useUiStore.setState({ activePanel: { left: "workspaces", right: "explorer" } }));
     await fireMenuEvent("menu:sidebar-panel", "not-a-real-panel");
-    expect(useUiStore.getState().sidebarView).toBe("workspaces");
+    expect(useUiStore.getState().activePanel).toEqual({ left: "workspaces", right: "explorer" });
   });
 
   it("menu:preview-back / menu:preview-forward reach the focused preview pane", async () => {
