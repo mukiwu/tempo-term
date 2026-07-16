@@ -60,7 +60,7 @@ describe("DiffTabContent", () => {
     expect(screen.queryByText("diffLoadError")).not.toBeInTheDocument();
   });
 
-  it("folds the pane close button into the toolbar row", async () => {
+  it("folds the pane close button into the header row", async () => {
     vi.mocked(gitFileAtRev).mockResolvedValue("x\n");
     vi.mocked(fsReadFile).mockResolvedValue("y\n");
     const onClose = vi.fn();

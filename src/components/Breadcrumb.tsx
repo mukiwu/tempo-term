@@ -1,5 +1,6 @@
-import { useState, type MouseEvent } from "react";
+import { useState, type ComponentType, type MouseEvent } from "react";
 import { Check, Folder } from "lucide-react";
+import type { LucideProps } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import type { Crumb } from "@/lib/breadcrumb";
 
@@ -15,6 +16,8 @@ interface BreadcrumbProps {
   onSelect: (path: string) => void;
   /** Which segments open a menu. An editor only offers its filename segment. */
   clickable?: "all" | "last";
+  /** Menu-item icon for non-current siblings: folders by default, files for an editor. */
+  siblingIcon?: ComponentType<LucideProps>;
 }
 
 /**
@@ -22,7 +25,13 @@ interface BreadcrumbProps {
  * "Breadcrumb"). Aligned to the trail's end so a narrow pane clips the head,
  * keeping the segments closest to the cwd/file visible.
  */
-export function Breadcrumb({ crumbs, loadSiblings, onSelect, clickable = "all" }: BreadcrumbProps) {
+export function Breadcrumb({
+  crumbs,
+  loadSiblings,
+  onSelect,
+  clickable = "all",
+  siblingIcon = Folder,
+}: BreadcrumbProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
     null,
   );
@@ -45,7 +54,7 @@ export function Breadcrumb({ crumbs, loadSiblings, onSelect, clickable = "all" }
       items: siblings.map((sibling) => ({
         id: sibling.path,
         label: sibling.label,
-        icon: sibling.path === crumb.path ? Check : Folder,
+        icon: sibling.path === crumb.path ? Check : siblingIcon,
         onSelect: () => onSelect(sibling.path),
       })),
     });

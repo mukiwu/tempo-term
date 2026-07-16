@@ -17,7 +17,7 @@ import { registerEditorSaver, unregisterEditorSaver } from "./lib/editorBus";
 import { fsReadFile, fsWriteFile } from "@/modules/explorer/lib/fsBridge";
 import { MarkdownView } from "@/components/MarkdownView";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { EditorToolbar, type EditorMode } from "./EditorToolbar";
+import { EditorPaneHeader, type EditorMode } from "./EditorPaneHeader";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -268,7 +268,7 @@ export function EditorTabContent({
         }
       }}
     >
-      <EditorToolbar
+      <EditorPaneHeader
         path={path}
         wordWrap={wordWrap}
         onToggleWordWrap={toggleWordWrap}

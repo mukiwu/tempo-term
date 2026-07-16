@@ -14,11 +14,11 @@ const { fsHomeDir, fsReadDir } = vi.hoisted(() => ({
 
 vi.mock("@/modules/explorer/lib/fsBridge", () => ({ fsHomeDir, fsReadDir }));
 
-import { EditorToolbar } from "./EditorToolbar";
+import { EditorPaneHeader } from "./EditorPaneHeader";
 
-function renderToolbar(overrides: Partial<Parameters<typeof EditorToolbar>[0]> = {}) {
+function renderToolbar(overrides: Partial<Parameters<typeof EditorPaneHeader>[0]> = {}) {
   return render(
-    <EditorToolbar
+    <EditorPaneHeader
       path="/Users/muki/w/tempo-term/src/App.tsx"
       wordWrap={false}
       onToggleWordWrap={vi.fn()}
@@ -33,7 +33,7 @@ function renderToolbar(overrides: Partial<Parameters<typeof EditorToolbar>[0]> =
   );
 }
 
-describe("EditorToolbar breadcrumb", () => {
+describe("EditorPaneHeader breadcrumb", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fsHomeDir.mockResolvedValue("/Users/muki");

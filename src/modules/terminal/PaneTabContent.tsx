@@ -63,6 +63,17 @@ import { useOsc7FallbackHint } from "@/modules/ssh/lib/useOsc7FallbackHint";
 const MIN_FRACTION = 0.1;
 const MAX_FRACTION = 0.9;
 
+// Pane kinds whose content brings no header of its own. They get the minimal
+// close-only PaneHeader instead, and only while the tab is split — a single
+// pane would show an empty strip. Every other kind renders a full header
+// (with the close button folded in) from inside its own content component.
+const HEADERLESS_KINDS = new Set<PaneContent["kind"]>([
+  "note",
+  "git-graph",
+  "sessions",
+  "launcher",
+]);
+
 /**
  * Renders one tab as a recursive split of panes. Each leaf shows a terminal,
  * editor, note, preview, or git graph, and the toolbar splits the active pane
@@ -118,6 +129,13 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const panes = computeLayout(tab.paneTree);
   const splitters = computeSplitters(tab.paneTree);
   const multiple = panes.length > 1;
+
+  // Closing a pane also drops its terminal scrollback history (a no-op for
+  // panes that never held a terminal).
+  function closePaneAndHistory(paneId: string) {
+    void deleteTerminalHistory(paneId);
+    closePane(tab.id, paneId);
+  }
 
   const hoverZone: DropZone | null =
     hoverLeaf && hoverPointerPct
@@ -417,29 +435,12 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   sshConnectionId={pane.content.ssh?.connectionId}
                   leafId={pane.id}
                   showClose={multiple}
-                  onClose={() => {
-                    void deleteTerminalHistory(pane.id);
-                    closePane(tab.id, pane.id);
-                  }}
+                  onClose={() => closePaneAndHistory(pane.id)}
                 />
               )}
-              {pane.content?.kind !== "terminal" &&
-                pane.content?.kind !== "editor" &&
-                pane.content?.kind !== "preview" &&
-                pane.content?.kind !== "diff" &&
-                multiple && (
-                  // Kinds with no header of their own (launcher, git-graph,
-                  // note, sessions) get the minimal one — close only — and
-                  // only while the tab is split, so a single pane never shows
-                  // an empty strip.
-                  <PaneHeader
-                    showClose
-                    onClose={() => {
-                      void deleteTerminalHistory(pane.id);
-                      closePane(tab.id, pane.id);
-                    }}
-                  />
-                )}
+              {pane.content && HEADERLESS_KINDS.has(pane.content.kind) && multiple && (
+                <PaneHeader showClose onClose={() => closePaneAndHistory(pane.id)} />
+              )}
               {/* The header is shrink-0, so the content takes what is left —
                   panes are absolutely sized, and h-full inside would overflow
                   by exactly the header's height. */}
@@ -465,10 +466,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                           setPaneContent(tab.id, pane.id, { kind: "editor", path: next })
                         }
                         showClose={multiple}
-                        onClose={() => {
-                          void deleteTerminalHistory(pane.id);
-                          closePane(tab.id, pane.id);
-                        }}
+                        onClose={() => closePaneAndHistory(pane.id)}
                       />
                     );
                   })()
@@ -490,10 +488,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     onNavigate={(url) => navigatePreview(tab.id, pane.id, url)}
                     onTitle={(title) => setPreviewTabTitle(tab.id, pane.id, title)}
                     showClose={multiple}
-                    onClose={() => {
-                      void deleteTerminalHistory(pane.id);
-                      closePane(tab.id, pane.id);
-                    }}
+                    onClose={() => closePaneAndHistory(pane.id)}
                   />
                 ) : pane.content.kind === "git-graph" ? (
                   <GitGraphTabContent />
@@ -502,10 +497,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     path={pane.content.path}
                     staged={pane.content.staged}
                     showClose={multiple}
-                    onClose={() => {
-                      void deleteTerminalHistory(pane.id);
-                      closePane(tab.id, pane.id);
-                    }}
+                    onClose={() => closePaneAndHistory(pane.id)}
                   />
                 ) : pane.content.kind === "sessions" ? (
                   <SessionsTabContent />

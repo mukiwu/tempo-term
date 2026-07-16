@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import {
   Columns2,
   Eye,
+  FileText,
   Globe,
   RefreshCw,
   SquarePen,
@@ -25,7 +26,7 @@ const MODES: { key: EditorMode; icon: LucideIcon }[] = [
   { key: "preview", icon: Eye },
 ];
 
-interface EditorToolbarProps {
+interface EditorPaneHeaderProps {
   path: string;
   wordWrap: boolean;
   onToggleWordWrap: () => void;
@@ -46,7 +47,7 @@ interface EditorToolbarProps {
  * Directory segments are display-only — an editor has nothing to do with a
  * directory.
  */
-export function EditorToolbar({
+export function EditorPaneHeader({
   path,
   wordWrap,
   onToggleWordWrap,
@@ -57,7 +58,7 @@ export function EditorToolbar({
   onSwitchFile,
   showClose,
   onClose,
-}: EditorToolbarProps) {
+}: EditorPaneHeaderProps) {
   const { t } = useTranslation("editor");
   const isMarkdown = isMarkdownPath(path);
   const isHtml = isHtmlPath(path);
@@ -80,6 +81,7 @@ export function EditorToolbar({
               crumbs={crumbs}
               loadSiblings={loadSiblings}
               clickable="last"
+              siblingIcon={FileText}
               onSelect={(picked) =>
                 onSwitchFile(remote ? buildRemoteUri(remote.connectionId, picked) : picked)
               }
