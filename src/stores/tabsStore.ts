@@ -313,6 +313,14 @@ export function sshAlreadyOpen(tabs: Tab[], spaceId: string, connectionId: strin
 
 export const TABS_STORAGE_KEY = "tempoterm-tabs";
 
+/**
+ * How many panes one tab will hold. Past this they are too small to work in, and
+ * each one is a live shell. Exported because callers that split through
+ * `splitPaneWith` — which takes an explicit target rather than the active pane —
+ * have to enforce it themselves.
+ */
+export const MAX_PANES = 8;
+
 /** Shape of a tab as persisted before the unified paneTree model (v0). */
 interface PersistedV0Tab {
   id: string;
@@ -714,7 +722,7 @@ export const useTabsStore = create<TabsState>()(
       return { status: "opened" };
     }
 
-    if (activeTab.paneOrder.length >= 8) {
+    if (activeTab.paneOrder.length >= MAX_PANES) {
       return { status: "at-capacity" };
     }
 
@@ -924,7 +932,7 @@ export const useTabsStore = create<TabsState>()(
   splitActivePane: (direction) =>
     set((state) => {
       const tab = state.tabs.find((t) => t.id === state.activeId);
-      if (!tab || tab.paneOrder.length >= 8) {
+      if (!tab || tab.paneOrder.length >= MAX_PANES) {
         return state;
       }
       const newId = nextPaneId();

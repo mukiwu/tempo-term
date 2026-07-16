@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, HardDrive, Lock } from "lucide-react";
+import { AlertTriangle, Columns2, FolderOpen, HardDrive, Lock } from "lucide-react";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { formatBytes } from "@/modules/sysmon/lib/format";
-import { useTabsStore } from "@/stores/tabsStore";
+import { MAX_PANES, useTabsStore } from "@/stores/tabsStore";
+import { useUiStore } from "@/stores/uiStore";
 import type { WorktreeDetail } from "./types";
 import { gitWorktreeDirtyCount } from "./lib/worktreesBridge";
+import { findWorktreePane } from "./lib/openWorktree";
 import { useWorktreesStore } from "./lib/worktreesStore";
 import { worktreeSessionStatus } from "./lib/worktreeStatus";
 import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus";
@@ -19,22 +21,57 @@ const STATUS_DOT: Record<SessionStatus, string> = {
 };
 
 /**
- * One worktree: what branch it holds, whether it has uncommitted work, and
- * whether an agent is busy in it right now.
+ * One worktree: what branch it holds, whether it has uncommitted work, whether
+ * an agent is busy in it right now, and the two ways in — a tab of its own, or
+ * a split beside whatever you are already looking at.
  *
- * Read-only for now — open / split / remove arrive with their own slices.
+ * Removal arrives with its own slice.
  */
 export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
   const { t } = useTranslation("worktrees");
   const [dirty, setDirty] = useState<number | null>(null);
   const tabs = useTabsStore((s) => s.tabs);
+  const activeId = useTabsStore((s) => s.activeId);
   const statuses = useSessionStatusStore((s) => s.statuses);
   const agents = useSessionStatusStore((s) => s.agents);
   const size = useWorktreesStore((s) => s.sizes[detail.path]);
   const loadSize = useWorktreesStore((s) => s.loadSize);
+  const closeWorktrees = useUiStore((s) => s.closeWorktrees);
   const [measuring, setMeasuring] = useState(false);
 
   const activity = worktreeSessionStatus(tabs, statuses, agents, detail.path);
+  const alreadyOpen = findWorktreePane(tabs, detail.path);
+  // A worktree whose directory git can no longer find has nothing to spawn a
+  // shell in, and a bare one has no working tree at all.
+  const unopenable = detail.prunable || detail.bare;
+  const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
+
+  const open = () => {
+    const tabsApi = useTabsStore.getState();
+    if (alreadyOpen) {
+      // Take them to the shell that is already there rather than starting a
+      // second one in the same directory — two terminals in one worktree is
+      // something to ask for, not something to get by accident.
+      tabsApi.setActive(alreadyOpen.tabId);
+      tabsApi.setActiveLeaf(alreadyOpen.tabId, alreadyOpen.leafId);
+    } else {
+      // Seeds the cwd onto the pane, not just the tab: `resolveTerminalCwd`
+      // ranks the explorer's root above the tab's own dir, so a tab carrying
+      // only `cwd` would spawn its shell wherever the explorer happens to be.
+      tabsApi.newTerminalTab(detail.path);
+    }
+    closeWorktrees();
+  };
+
+  const split = () => {
+    if (!activeTab) {
+      return;
+    }
+    useTabsStore
+      .getState()
+      .splitPaneWith(activeTab.id, activeTab.activeLeafId, { kind: "terminal", cwd: detail.path }, "row");
+    closeWorktrees();
+  };
 
   useEffect(() => {
     // A gone directory has nothing to count, and git2 would just error. Clear
@@ -63,30 +100,44 @@ export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
   };
 
   return (
-    <div className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0">
-      <span className="flex w-3 shrink-0 justify-center">
-        {activity.status && (
-          <span
-            aria-label={t(`agent.${activity.status}`)}
-            title={`${t(`agent.${activity.status}`)}${activity.agent ? ` · ${activity.agent}` : ""}`}
-            className={`h-2 w-2 rounded-full ${STATUS_DOT[activity.status]}`}
-          />
-        )}
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm text-fg">
-            {detail.branch ?? t("row.detached")}
-          </span>
-          {detail.isMain && (
-            <span className="shrink-0 rounded border border-border px-1 text-[10px] uppercase text-fg-subtle">
-              {t("row.main")}
-            </span>
+    <div className="group flex items-center gap-3 border-b border-border px-3 py-2 transition-colors last:border-b-0 hover:bg-bg-inset">
+      {/* The row's own body is the way in, so the target is the whole line
+          rather than a control the eye has to find first. */}
+      <button
+        type="button"
+        onClick={open}
+        disabled={unopenable}
+        title={unopenable ? t("row.openStale") : alreadyOpen ? t("row.focusHint") : t("row.openHint")}
+        aria-label={`${t("row.open")}: ${detail.branch ?? t("row.detached")}`}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
+      >
+        <span className="flex w-3 shrink-0 justify-center">
+          {activity.status && (
+            <span
+              aria-label={t(`agent.${activity.status}`)}
+              title={`${t(`agent.${activity.status}`)}${activity.agent ? ` · ${activity.agent}` : ""}`}
+              className={`h-2 w-2 rounded-full ${STATUS_DOT[activity.status]}`}
+            />
           )}
-        </div>
-        <div className="truncate font-mono text-[11px] text-fg-subtle">{detail.path}</div>
-      </div>
+        </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className={`truncate text-sm ${unopenable ? "text-fg-subtle" : "text-fg"}`}>
+              {detail.branch ?? t("row.detached")}
+            </span>
+            {detail.isMain && (
+              <span className="shrink-0 rounded border border-border px-1 text-[10px] uppercase text-fg-subtle">
+                {t("row.main")}
+              </span>
+            )}
+            {alreadyOpen && (
+              <FolderOpen size={11} className="shrink-0 text-fg-subtle" aria-hidden />
+            )}
+          </span>
+          <span className="block truncate font-mono text-[11px] text-fg-subtle">{detail.path}</span>
+        </span>
+      </button>
 
       <div className="flex shrink-0 items-center gap-3 text-[11px] text-fg-muted">
         {detail.locked && (
@@ -125,6 +176,24 @@ export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
               {measuring ? t("row.measuring") : t("row.measure")}
             </button>
           )
+        )}
+
+        {/* Only offered when there is something to sit beside. Splitting is for
+            comparing this worktree against what you already have open. */}
+        {activeTab && !unopenable && (
+          <button
+            type="button"
+            onClick={split}
+            disabled={activeTab.paneOrder.length >= MAX_PANES}
+            title={
+              activeTab.paneOrder.length >= MAX_PANES ? t("row.splitFull") : t("row.splitHint")
+            }
+            aria-label={`${t("row.split")}: ${detail.branch ?? t("row.detached")}`}
+            className="flex items-center gap-1 rounded px-1 text-fg-subtle transition-colors hover:text-fg disabled:opacity-40"
+          >
+            <Columns2 size={12} />
+            {t("row.split")}
+          </button>
         )}
       </div>
     </div>

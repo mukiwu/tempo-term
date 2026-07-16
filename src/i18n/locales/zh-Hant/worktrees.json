@@ -10,14 +10,20 @@
   "row": {
     "main": "主要",
     "detached": "分離 HEAD",
-    "open": "已在這個視窗開著",
+    "open": "開啟",
     "dirty": "{{count}} 個未提交變更",
     "dirty_other": "{{count}} 個未提交變更",
     "locked": "已鎖定",
     "lockedReason": "已鎖定：{{reason}}",
     "stale": "目錄已不存在",
     "measure": "計算佔用",
-    "measuring": "計算中…"
+    "measuring": "計算中…",
+    "openHint": "在這個 worktree 開一個終端機",
+    "focusHint": "跳到已經在這個 worktree 的終端機",
+    "split": "分割",
+    "splitHint": "開在你正在做的事情旁邊",
+    "splitFull": "這個分頁已經滿了",
+    "openStale": "目錄不見了,沒東西可開"
   },
   "agent": {
     "active": "執行中",

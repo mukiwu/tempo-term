@@ -10,14 +10,20 @@
   "row": {
     "main": "main",
     "detached": "detached",
-    "open": "Open in this window",
+    "open": "Open",
     "dirty": "{{count}} uncommitted change",
     "dirty_other": "{{count}} uncommitted changes",
     "locked": "Locked",
     "lockedReason": "Locked: {{reason}}",
     "stale": "Directory is gone",
     "measure": "Measure size",
-    "measuring": "Measuring…"
+    "measuring": "Measuring…",
+    "openHint": "Open a terminal in this worktree",
+    "focusHint": "Go to the terminal already in this worktree",
+    "split": "Split",
+    "splitHint": "Open it beside what you are working in",
+    "splitFull": "This tab is full",
+    "openStale": "The directory is gone — nothing to open"
   },
   "agent": {
     "active": "Working",
