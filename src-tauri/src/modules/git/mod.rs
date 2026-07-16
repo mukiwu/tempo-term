@@ -425,19 +425,25 @@ pub struct WorktreeAddResult {
     pub branch: String,
 }
 
-/// Drop the `\\?\` extended-length prefix that `fs::canonicalize` adds on
-/// Windows; no other path in the app carries it, so leaving it on would make
-/// comparisons against a pty's or git's cwd fail.
+/// Drop the extended-length prefix that `fs::canonicalize` adds on Windows; no
+/// other path in the app carries it, so leaving it on would make comparisons
+/// against a pty's or git's cwd fail.
+///
+/// A canonicalized UNC share comes back as `\\?\UNC\server\share`, where the
+/// prefix stands in for the leading `\\` — dropping it alone would yield the
+/// invalid `UNC\server\share`, so that form is rewritten rather than stripped.
 ///
 /// Takes `windows` as a parameter rather than hiding behind `#[cfg(windows)]` so
 /// the Windows behavior is exercised by a real test on the macOS dev box, where
 /// cfg-gated code would never run until a user hit it.
-fn strip_extended_length_prefix(path: &str, windows: bool) -> &str {
-    if windows {
-        path.strip_prefix(r"\\?\").unwrap_or(path)
-    } else {
-        path
+fn strip_extended_length_prefix(path: &str, windows: bool) -> std::borrow::Cow<'_, str> {
+    if !windows {
+        return std::borrow::Cow::Borrowed(path);
     }
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        return std::borrow::Cow::Owned(format!(r"\\{rest}"));
+    }
+    std::borrow::Cow::Borrowed(path.strip_prefix(r"\\?\").unwrap_or(path))
 }
 
 /// An absolute path with symlinks resolved, so it compares equal to the cwds git
@@ -448,7 +454,7 @@ fn canonical_string(path: &Path) -> String {
         return path.to_string_lossy().to_string();
     };
     let text = resolved.to_string_lossy().to_string();
-    strip_extended_length_prefix(&text, cfg!(windows)).to_string()
+    strip_extended_length_prefix(&text, cfg!(windows)).into_owned()
 }
 
 /// Add a worktree at `path`. With `create_branch` the branch is created from
@@ -471,9 +477,18 @@ pub fn worktree_add(
         ensure_not_flag(base)?;
     }
 
+    // git resolves a relative path against its `-C repo_path`, while our own
+    // pre-flight below and `canonical_string` resolve it against the app's cwd —
+    // so a relative path would inspect one directory and create another, and
+    // report back a path that points nowhere. The caller always computes an
+    // absolute path; make that a contract instead of a silent mismatch.
+    let target = Path::new(path);
+    if !target.is_absolute() {
+        return Err(format!("worktree path must be absolute: {path}"));
+    }
+
     // Reject a non-empty target before git touches it, so a user's existing
     // files are never at risk from a slug collision.
-    let target = Path::new(path);
     if target.exists() {
         let occupied = std::fs::read_dir(target)
             .map(|mut entries| entries.next().is_some())
@@ -1990,6 +2005,40 @@ mod tests {
     }
 
     #[test]
+    fn worktree_add_requires_an_absolute_path() {
+        // git resolves a relative path against `-C repo_path`; our pre-flight and
+        // canonicalize resolve it against the app's cwd. Rejecting it outright is
+        // the only way those two can never disagree.
+        let (root, main_path) = init_main_repo("wta-relative");
+
+        assert!(worktree_add(&main_path, "wt", "feature", true, None).is_err());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn worktree_disk_size_neither_follows_nor_counts_symlinks() {
+        // `DirEntry::metadata` is lstat-equivalent ("will not traverse symlinks",
+        // per std), which is what stops a symlink cycle hanging this walk and
+        // stops it counting bytes that live outside the worktree. Pinned by a
+        // test because it reads like an oversight and invites being "fixed" into
+        // `fs::metadata`, which would traverse.
+        let dir = temp_repo_dir("wtsize-symlink");
+        std::fs::create_dir_all(dir.join("real")).unwrap();
+        std::fs::write(dir.join("real/f.txt"), "12345").unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link_to_dir")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real/f.txt"), dir.join("link_to_file")).unwrap();
+        // A cycle back to the root: following it would never terminate.
+        std::os::unix::fs::symlink(&dir, dir.join("real/loop")).unwrap();
+
+        // Only real/f.txt is counted, exactly once.
+        assert_eq!(worktree_disk_size(&dir.to_string_lossy()).unwrap(), 5);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn worktree_add_rejects_flag_like_values() {
         let (root, main_path) = init_main_repo("wta-flag");
         let wt_path = root.join("wt").to_string_lossy().to_string();
@@ -2089,7 +2138,14 @@ mod tests {
             strip_extended_length_prefix(r"C:\src\repo", true),
             r"C:\src\repo"
         );
-        // A UNC share keeps its \\ — only the \\?\ prefix goes.
+        // A canonicalized UNC share is \\?\UNC\server\share, where the prefix
+        // stands in for the leading \\; stripping it alone would leave the
+        // invalid "UNC\server\share".
+        assert_eq!(
+            strip_extended_length_prefix(r"\\?\UNC\server\share", true),
+            r"\\server\share"
+        );
+        // A plain UNC path never had the prefix, so it is untouched.
         assert_eq!(
             strip_extended_length_prefix(r"\\server\share", true),
             r"\\server\share"
