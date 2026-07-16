@@ -41,9 +41,8 @@ const SessionsTabContent = lazy(() =>
 import { LauncherPanel } from "@/components/LauncherPanel";
 import { dropOverlayClassName, outerBandOverlayClassName } from "@/components/EntryDropOverlay";
 import { InfoDialog } from "@/components/InfoDialog";
-import { X } from "lucide-react";
-import { Tooltip } from "@/components/Tooltip";
-import { PaneHeader } from "./PaneHeader";
+import { PaneHeader } from "@/components/PaneHeader";
+import { TerminalPaneHeader } from "./TerminalPaneHeader";
 import {
   fileUrl,
   shellQuotePath,
@@ -413,11 +412,10 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
               }`}
             >
               {pane.content?.kind === "terminal" && (
-                // Terminals get the header an editor pane already had, rather
-                // than controls floating over their own output.
-                <PaneHeader
+                <TerminalPaneHeader
                   cwd={pane.content.cwd}
-                  isTerminal={!pane.content.ssh}
+                  sshConnectionId={pane.content.ssh?.connectionId}
+                  leafId={pane.id}
                   showClose={multiple}
                   onClose={() => {
                     void deleteTerminalHistory(pane.id);
@@ -425,24 +423,23 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   }}
                 />
               )}
-              {pane.content?.kind !== "terminal" && multiple && (
-                // Every other pane kind still floats its close button. Folding
-                // those into their own toolbars is its own change.
-                <Tooltip label={t("workspace.closePane")} className="absolute right-1.5 top-1.5 z-10">
-                  <button
-                    type="button"
-                    aria-label={t("workspace.closePane")}
-                    onClick={(e) => {
-                      e.stopPropagation();
+              {pane.content?.kind !== "terminal" &&
+                pane.content?.kind !== "editor" &&
+                pane.content?.kind !== "preview" &&
+                pane.content?.kind !== "diff" &&
+                multiple && (
+                  // Kinds with no header of their own (launcher, git-graph,
+                  // note, sessions) get the minimal one — close only — and
+                  // only while the tab is split, so a single pane never shows
+                  // an empty strip.
+                  <PaneHeader
+                    showClose
+                    onClose={() => {
                       void deleteTerminalHistory(pane.id);
                       closePane(tab.id, pane.id);
                     }}
-                    className="rounded bg-bg-inset/80 p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
-                  >
-                    <X size={12} />
-                  </button>
-                </Tooltip>
-              )}
+                  />
+                )}
               {/* The header is shrink-0, so the content takes what is left —
                   panes are absolutely sized, and h-full inside would overflow
                   by exactly the header's height. */}
@@ -464,6 +461,14 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                         onOpenWebPreview={() =>
                           openHtmlPreview(tab.id, pane.id, editorPath)
                         }
+                        onSwitchFile={(next) =>
+                          setPaneContent(tab.id, pane.id, { kind: "editor", path: next })
+                        }
+                        showClose={multiple}
+                        onClose={() => {
+                          void deleteTerminalHistory(pane.id);
+                          closePane(tab.id, pane.id);
+                        }}
                       />
                     );
                   })()
@@ -484,11 +489,24 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     })}
                     onNavigate={(url) => navigatePreview(tab.id, pane.id, url)}
                     onTitle={(title) => setPreviewTabTitle(tab.id, pane.id, title)}
+                    showClose={multiple}
+                    onClose={() => {
+                      void deleteTerminalHistory(pane.id);
+                      closePane(tab.id, pane.id);
+                    }}
                   />
                 ) : pane.content.kind === "git-graph" ? (
                   <GitGraphTabContent />
                 ) : pane.content.kind === "diff" ? (
-                  <DiffTabContent path={pane.content.path} staged={pane.content.staged} />
+                  <DiffTabContent
+                    path={pane.content.path}
+                    staged={pane.content.staged}
+                    showClose={multiple}
+                    onClose={() => {
+                      void deleteTerminalHistory(pane.id);
+                      closePane(tab.id, pane.id);
+                    }}
+                  />
                 ) : pane.content.kind === "sessions" ? (
                   <SessionsTabContent />
                 ) : pane.content.kind === "launcher" ? (

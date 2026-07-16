@@ -291,3 +291,38 @@ describe("PaneTabContent SSH-drop dispatch", () => {
     expect(updated.paneTree).toEqual(untouchedTree);
   });
 });
+
+// Characterization of the close affordance around the minimal-header change:
+// a header-less pane kind (launcher here) must offer close exactly when the
+// tab is split, and closing it must collapse the split.
+describe("PaneTabContent pane close affordance", () => {
+  beforeEach(() => {
+    useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+  });
+
+  it("a split launcher pane offers close, and closing collapses the split", () => {
+    const { tabId, leafId } = makeSinglePaneTab();
+    useTabsStore.getState().splitPaneWith(tabId, leafId, { kind: "launcher" }, "row");
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    render(<PaneTabContent tab={tab} />);
+
+    // One per pane: the terminal's header close and the launcher pane's close.
+    const closes = screen.getAllByRole("button", { name: "workspace.closePane" });
+    expect(closes).toHaveLength(2);
+
+    act(() => {
+      closes[1].click();
+    });
+    const updated = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    expect(updated.paneOrder).toHaveLength(1);
+  });
+
+  it("a single launcher pane offers no close button at all", () => {
+    const { tabId, leafId } = makeSinglePaneTab();
+    useTabsStore.getState().setPaneContent(tabId, leafId, { kind: "launcher" });
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    render(<PaneTabContent tab={tab} />);
+
+    expect(screen.queryByRole("button", { name: "workspace.closePane" })).toBeNull();
+  });
+});

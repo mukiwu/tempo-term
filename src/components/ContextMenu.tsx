@@ -74,15 +74,22 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       }
     }
     // Scroll/resize would leave the menu floating away from its anchor, so just
-    // close it. Capture phase catches scrolls on inner containers too.
+    // close it. Capture phase catches scrolls on inner containers too — except
+    // the menu's own list, which scrolls when it holds more items than fit.
+    function onScroll(event: Event) {
+      if (menuRef.current && event.target instanceof Node && menuRef.current.contains(event.target)) {
+        return;
+      }
+      onClose();
+    }
     document.addEventListener("mousedown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onClose, true);
     return () => {
       document.removeEventListener("mousedown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onClose, true);
     };
   }, [onClose]);
@@ -100,7 +107,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         e.preventDefault();
         e.stopPropagation();
       }}
-      className="z-[200] min-w-[200px] overflow-hidden rounded-md border border-border-strong bg-bg-elevated py-1 text-[13px] shadow-lg"
+      className="z-[200] max-h-[60vh] min-w-[200px] overflow-y-auto rounded-md border border-border-strong bg-bg-elevated py-1 text-[13px] shadow-lg"
     >
       {items.map((item, index) => {
         const previous = items[index - 1];

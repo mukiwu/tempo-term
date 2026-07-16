@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DiffTabContent } from "./DiffTabContent";
 
@@ -58,5 +58,15 @@ describe("DiffTabContent", () => {
     await waitFor(() => expect(fsReadFile).toHaveBeenCalled());
     // No error surface — the diff simply renders against an empty right side.
     expect(screen.queryByText("diffLoadError")).not.toBeInTheDocument();
+  });
+
+  it("folds the pane close button into the toolbar row", async () => {
+    vi.mocked(gitFileAtRev).mockResolvedValue("x\n");
+    vi.mocked(fsReadFile).mockResolvedValue("y\n");
+    const onClose = vi.fn();
+    render(<DiffTabContent path="/repo/a.ts" staged={false} showClose onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "workspace.closePane" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

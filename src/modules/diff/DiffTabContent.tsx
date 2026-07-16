@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, WrapText } from "lucide-react";
 import { getChunks, MergeView, type Chunk } from "@codemirror/merge";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
+import { PaneHeader } from "@/components/PaneHeader";
 import { Tooltip } from "@/components/Tooltip";
 import { gitFileAtRev, gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
@@ -18,6 +19,9 @@ interface DiffTabContentProps {
   path: string;
   /** true = HEAD vs index (staged tab); false = index vs working tree. */
   staged: boolean;
+  /** Show the shared pane close button (the tab is split). */
+  showClose?: boolean;
+  onClose?: () => void;
 }
 
 interface DiffDocs {
@@ -32,7 +36,7 @@ interface DiffDocs {
  * documents; contents reload when the window regains focus so the tab stays
  * roughly current without a file watcher.
  */
-export function DiffTabContent({ path, staged }: DiffTabContentProps) {
+export function DiffTabContent({ path, staged, showClose = false, onClose }: DiffTabContentProps) {
   const { t } = useTranslation("sourceControl");
   const { t: tEditor } = useTranslation("editor");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -183,9 +187,10 @@ export function DiffTabContent({ path, staged }: DiffTabContentProps) {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-3">
-        {/* The controls sit at the end of the left half — the visual middle of
-            the two panes — where they are easy to spot. */}
+      <PaneHeader
+        left={
+        /* The controls sit at the end of the left half — the visual middle of
+            the two panes — where they are easy to spot. */
         <div className="flex w-1/2 items-center gap-2">
         <span className="min-w-0 truncate text-xs text-fg-muted">{name}</span>
         <span className="shrink-0 rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] font-medium uppercase text-fg-subtle">
@@ -234,7 +239,10 @@ export function DiffTabContent({ path, staged }: DiffTabContentProps) {
           </Tooltip>
         </div>
         </div>
-      </div>
+        }
+        showClose={showClose}
+        onClose={() => onClose?.()}
+      />
       {error ? (
         <p className="px-3 py-2 text-xs text-danger">{t("diffLoadError")}</p>
       ) : (

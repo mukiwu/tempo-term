@@ -95,3 +95,27 @@ describe("PreviewTabContent navigation", () => {
     expect(input.value).toBe("https://google.com.tw");
   });
 });
+
+describe("PreviewTabContent pane close", () => {
+  it("folds the pane close button into the address row", () => {
+    const onClose = vi.fn();
+    const { getByRole } = render(
+      <PreviewTabContent
+        url="http://localhost:3000"
+        leafId="pane-1"
+        visible
+        showClose
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(getByRole("button", { name: "Close pane" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the close button on a single-pane tab", () => {
+    const { queryByRole } = render(
+      <PreviewTabContent url="http://localhost:3000" leafId="pane-1" visible />,
+    );
+    expect(queryByRole("button", { name: "Close pane" })).toBeNull();
+  });
+});

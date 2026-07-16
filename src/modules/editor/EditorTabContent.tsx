@@ -53,10 +53,17 @@ export function EditorTabContent({
   path,
   onOpenWebPreview,
   leafId,
+  onSwitchFile,
+  showClose = false,
+  onClose,
 }: {
   path: string;
   onOpenWebPreview?: () => void;
   leafId: string;
+  /** Breadcrumb pick: show a sibling file in this same pane (docs/adr 0001). */
+  onSwitchFile?: (path: string) => void;
+  showClose?: boolean;
+  onClose?: () => void;
 }) {
   const { t } = useTranslation("editor");
   const setBaseline = useEditorStore((s) => s.setBaseline);
@@ -269,6 +276,9 @@ export function EditorTabContent({
         onOpenWebPreview={onOpenWebPreview}
         mode={mode}
         onSetMode={setMode}
+        onSwitchFile={(next) => onSwitchFile?.(next)}
+        showClose={showClose}
+        onClose={() => onClose?.()}
       />
 
       {externalChanged && (

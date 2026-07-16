@@ -8,8 +8,13 @@ import {
   WrapText,
   type LucideIcon,
 } from "lucide-react";
+import { PaneHeader } from "@/components/PaneHeader";
+import { Breadcrumb } from "@/components/Breadcrumb";
 import { Tooltip } from "@/components/Tooltip";
-import { basename } from "@/modules/explorer/lib/paths";
+import { buildCrumbs, type Crumb } from "@/lib/breadcrumb";
+import { loadCrumbSiblings, useHomeDir } from "@/components/paneCrumbs";
+import { buildRemoteUri, parseRemoteUri } from "@/modules/ssh/lib/remotePath";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { isHtmlPath, isMarkdownPath } from "./lib/language";
 
 export type EditorMode = "edit" | "split" | "preview";
@@ -28,9 +33,19 @@ interface EditorToolbarProps {
   onOpenWebPreview?: () => void;
   mode: EditorMode;
   onSetMode: (mode: EditorMode) => void;
+  /** Switch this pane to another file (breadcrumb pick) — never a new tab. */
+  onSwitchFile: (path: string) => void;
+  showClose: boolean;
+  onClose: () => void;
 }
 
-/** Toolbar row shown at the top of every editor pane. Fully presentational. */
+/**
+ * The toolbar row at the top of every editor pane, built on the shared
+ * PaneHeader. The breadcrumb's filename segment lists the files sharing the
+ * folder; picking one swaps the file this pane shows (docs/adr 0001).
+ * Directory segments are display-only — an editor has nothing to do with a
+ * directory.
+ */
 export function EditorToolbar({
   path,
   wordWrap,
@@ -39,78 +54,104 @@ export function EditorToolbar({
   onOpenWebPreview,
   mode,
   onSetMode,
+  onSwitchFile,
+  showClose,
+  onClose,
 }: EditorToolbarProps) {
   const { t } = useTranslation("editor");
   const isMarkdown = isMarkdownPath(path);
   const isHtml = isHtmlPath(path);
 
+  // A remote file's crumbs come from its plain remote path, relative to the
+  // remote home; the workspace root only ever applies to local files.
+  const remote = parseRemoteUri(path);
+  const workspaceRoot = useWorkspaceStore((s) => (remote ? null : s.rootPath));
+  const homeDir = useHomeDir(remote?.connectionId);
+  const crumbs = buildCrumbs(remote?.path ?? path, { workspaceRoot, homeDir });
+
+  const loadSiblings = (crumb: Crumb) => loadCrumbSiblings(crumb, "files", remote?.connectionId);
+
   return (
-    /* pr-8 leaves room for the pane's close button (absolute, top-right). */
-    <div className="flex h-7 shrink-0 items-center justify-between gap-2 border-b border-border pl-2 pr-8">
-      <Tooltip label={path} className="min-w-0">
-        <span className="min-w-0 truncate text-xs text-fg-muted">{basename(path)}</span>
-      </Tooltip>
-      <div className="flex shrink-0 items-center gap-0.5">
-        <Tooltip label={t("refresh")}>
-          <button
-            type="button"
-            aria-label={t("refresh")}
-            onClick={onRefresh}
-            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-          >
-            <RefreshCw size={14} />
-          </button>
-        </Tooltip>
-        <Tooltip label={t("wrap")}>
-          <button
-            type="button"
-            aria-label={t("wrap")}
-            aria-pressed={wordWrap}
-            onClick={onToggleWordWrap}
-            className={`rounded p-1 ${
-              wordWrap
-                ? "bg-bg-elevated text-fg"
-                : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
-            }`}
-          >
-            <WrapText size={14} />
-          </button>
-        </Tooltip>
-        {isHtml && onOpenWebPreview && (
-          <Tooltip label={t("webPreview")}>
+    <PaneHeader
+      left={
+        crumbs.length > 0 ? (
+          <Tooltip label={path} className="min-w-0">
+            <Breadcrumb
+              crumbs={crumbs}
+              loadSiblings={loadSiblings}
+              clickable="last"
+              onSelect={(picked) =>
+                onSwitchFile(remote ? buildRemoteUri(remote.connectionId, picked) : picked)
+              }
+            />
+          </Tooltip>
+        ) : undefined
+      }
+      actions={
+        <>
+          <Tooltip label={t("refresh")}>
             <button
               type="button"
-              aria-label={t("webPreview")}
-              onClick={onOpenWebPreview}
+              aria-label={t("refresh")}
+              onClick={onRefresh}
               className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
             >
-              <Globe size={14} />
+              <RefreshCw size={14} />
             </button>
           </Tooltip>
-        )}
-        {isMarkdown &&
-          MODES.map((m) => {
-            const Icon = m.icon;
-            const active = mode === m.key;
-            return (
-              <Tooltip key={m.key} label={t(`mode.${m.key}`)}>
-                <button
-                  type="button"
-                  aria-label={t(`mode.${m.key}`)}
-                  aria-pressed={active}
-                  onClick={() => onSetMode(m.key)}
-                  className={`rounded p-1 ${
-                    active
-                      ? "bg-bg-elevated text-fg"
-                      : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
-                  }`}
-                >
-                  <Icon size={14} />
-                </button>
-              </Tooltip>
-            );
-          })}
-      </div>
-    </div>
+          <Tooltip label={t("wrap")}>
+            <button
+              type="button"
+              aria-label={t("wrap")}
+              aria-pressed={wordWrap}
+              onClick={onToggleWordWrap}
+              className={`rounded p-1 ${
+                wordWrap
+                  ? "bg-bg-elevated text-fg"
+                  : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              }`}
+            >
+              <WrapText size={14} />
+            </button>
+          </Tooltip>
+          {isHtml && onOpenWebPreview && (
+            <Tooltip label={t("webPreview")}>
+              <button
+                type="button"
+                aria-label={t("webPreview")}
+                onClick={onOpenWebPreview}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              >
+                <Globe size={14} />
+              </button>
+            </Tooltip>
+          )}
+          {isMarkdown &&
+            MODES.map((m) => {
+              const Icon = m.icon;
+              const active = mode === m.key;
+              return (
+                <Tooltip key={m.key} label={t(`mode.${m.key}`)}>
+                  <button
+                    type="button"
+                    aria-label={t(`mode.${m.key}`)}
+                    aria-pressed={active}
+                    onClick={() => onSetMode(m.key)}
+                    className={`rounded p-1 ${
+                      active
+                        ? "bg-bg-elevated text-fg"
+                        : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
+                    }`}
+                  >
+                    <Icon size={14} />
+                  </button>
+                </Tooltip>
+              );
+            })}
+        </>
+      }
+      showClose={showClose}
+      onClose={onClose}
+    />
   );
 }

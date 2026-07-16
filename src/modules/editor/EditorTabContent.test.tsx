@@ -14,6 +14,9 @@ const base = {
   onRefresh: vi.fn(),
   mode: "edit" as const,
   onSetMode: vi.fn(),
+  onSwitchFile: vi.fn(),
+  showClose: false,
+  onClose: vi.fn(),
 };
 
 describe("EditorToolbar web preview button", () => {

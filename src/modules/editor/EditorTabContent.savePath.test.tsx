@@ -20,6 +20,9 @@ const { mockFsWriteFile } = vi.hoisted(() => ({
 vi.mock("@/modules/explorer/lib/fsBridge", () => ({
   fsReadFile: vi.fn().mockResolvedValue(""),
   fsWriteFile: mockFsWriteFile,
+  // The toolbar's breadcrumb (paneCrumbs) resolves home + siblings on mount.
+  fsHomeDir: vi.fn().mockResolvedValue("/home/user"),
+  fsReadDir: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({

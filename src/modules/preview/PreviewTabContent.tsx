@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, RotateCw } from "lucide-react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { PaneHeader } from "@/components/PaneHeader";
 import { Tooltip } from "@/components/Tooltip";
 import { onEditorFileChanged } from "@/modules/editor/lib/editorWatch";
 import { normalizeAddressInput } from "@/lib/url";
@@ -27,6 +28,9 @@ interface PreviewTabContentProps {
   onNavigate?: (url: string) => void;
   /** Called when the page's `<title>` changes, so the owning tab can retitle. */
   onTitle?: (title: string) => void;
+  /** Show the shared pane close button (the tab is split). */
+  showClose?: boolean;
+  onClose?: () => void;
 }
 
 export function PreviewTabContent({
@@ -35,6 +39,8 @@ export function PreviewTabContent({
   visible,
   onNavigate,
   onTitle,
+  showClose = false,
+  onClose,
 }: PreviewTabContentProps) {
   const { t } = useTranslation("preview");
   const [input, setInput] = useState(url);
@@ -103,54 +109,62 @@ export function PreviewTabContent({
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      <form
-        className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const next = normalizeAddressInput(input);
-          setInput(next);
-          onNavigate?.(next);
-        }}
-      >
-        <Tooltip label={t("back")}>
-          <button
-            type="button"
-            aria-label={t("back")}
-            onClick={back}
-            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+      {/* The address row is this pane's header: nav + url on the left, the
+          shared close button on the right, all on the unified h-7 strip. */}
+      <PaneHeader
+        left={
+          <form
+            className="flex min-w-0 flex-1 items-center gap-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const next = normalizeAddressInput(input);
+              setInput(next);
+              onNavigate?.(next);
+            }}
           >
-            <ArrowLeft size={14} />
-          </button>
-        </Tooltip>
-        <Tooltip label={t("forward")}>
-          <button
-            type="button"
-            aria-label={t("forward")}
-            onClick={forward}
-            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-          >
-            <ArrowRight size={14} />
-          </button>
-        </Tooltip>
-        <input
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={t("urlPlaceholder")}
-          aria-label={t("urlPlaceholder")}
-          className="min-w-0 flex-1 rounded-md border border-border bg-bg-inset px-3 py-1 text-xs text-fg outline-none focus:border-accent"
-        />
-        <Tooltip label={t("reload")}>
-          <button
-            type="button"
-            aria-label={t("reload")}
-            onClick={reload}
-            className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-          >
-            <RotateCw size={14} />
-          </button>
-        </Tooltip>
-      </form>
+            <Tooltip label={t("back")}>
+              <button
+                type="button"
+                aria-label={t("back")}
+                onClick={back}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              >
+                <ArrowLeft size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip label={t("forward")}>
+              <button
+                type="button"
+                aria-label={t("forward")}
+                onClick={forward}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              >
+                <ArrowRight size={14} />
+              </button>
+            </Tooltip>
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={t("urlPlaceholder")}
+              aria-label={t("urlPlaceholder")}
+              className="min-w-0 flex-1 rounded-md border border-border bg-bg-inset px-3 py-0.5 text-xs text-fg outline-none focus:border-accent"
+            />
+            <Tooltip label={t("reload")}>
+              <button
+                type="button"
+                aria-label={t("reload")}
+                onClick={reload}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              >
+                <RotateCw size={14} />
+              </button>
+            </Tooltip>
+          </form>
+        }
+        showClose={showClose}
+        onClose={() => onClose?.()}
+      />
       {/* The native preview webview is composited over this host element; it is
           positioned to match the host's rect. bg-white shows while the webview
           loads or when it is hidden. */}
