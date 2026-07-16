@@ -1,6 +1,6 @@
 //! Git integration backed by libgit2 (git2 crate): status, staging and commit.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use git2::{Repository, Signature, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
@@ -306,42 +306,310 @@ pub struct WorktreeListItem {
     pub branch: Option<String>,
 }
 
-/// Lists every worktree of the repository via `git worktree list --porcelain`:
-/// blank-line-separated blocks of `worktree <path>`, `HEAD <sha>`, then
-/// `branch refs/heads/<name>` or `detached`. A `bare` block has no working
-/// tree to switch to and a `prunable` one no longer exists on disk, so both
-/// are dropped — offering either as a switch target would strand the app's
-/// workspace root somewhere unusable.
-pub fn worktree_list(repo_path: &str) -> Result<Vec<WorktreeListItem>, String> {
-    let stdout = run_git(repo_path, &["worktree", "list", "--porcelain"])?;
-    let mut items = Vec::new();
-    let mut path: Option<String> = None;
-    let mut branch: Option<String> = None;
-    let mut skip = false;
+/// Every field `git worktree list --porcelain` reports about one worktree.
+/// Unlike `WorktreeListItem` this keeps the bare/locked/prunable entries: the
+/// worktrees manager has to be able to show a stale entry in order to prune it,
+/// and a locked one in order to explain why removal is refused.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorktreeDetail {
+    pub path: String,
+    pub branch: Option<String>,
+    pub head: Option<String>,
+    #[serde(rename = "isMain")]
+    pub is_main: bool,
+    pub bare: bool,
+    pub locked: bool,
+    #[serde(rename = "lockReason")]
+    pub lock_reason: Option<String>,
+    pub prunable: bool,
+}
+
+/// One parsed porcelain block, before either caller filters it.
+struct WorktreeBlock {
+    path: String,
+    branch: Option<String>,
+    head: Option<String>,
+    bare: bool,
+    locked: bool,
+    lock_reason: Option<String>,
+    prunable: bool,
+}
+
+/// Parse `git worktree list --porcelain`: blank-line-separated blocks of
+/// `worktree <path>`, `HEAD <sha>`, then `branch refs/heads/<name>` or
+/// `detached`, plus optional `bare` / `locked [reason]` / `prunable [reason]`
+/// markers. Git always emits the main worktree first, which is the only thing
+/// that distinguishes it from the linked ones.
+fn parse_worktree_porcelain(stdout: &str) -> Vec<WorktreeBlock> {
+    let mut blocks = Vec::new();
+    let mut current: Option<WorktreeBlock> = None;
 
     for line in stdout.lines().chain(std::iter::once("")) {
         if line.is_empty() {
-            if let Some(p) = path.take() {
-                if !skip {
-                    items.push(WorktreeListItem {
-                        path: p,
-                        branch: branch.take(),
-                    });
-                }
-            }
-            branch = None;
-            skip = false;
+            blocks.extend(current.take());
         } else if let Some(rest) = line.strip_prefix("worktree ") {
-            path = Some(rest.to_string());
-        } else if let Some(rest) = line.strip_prefix("branch ") {
-            branch = Some(rest.strip_prefix("refs/heads/").unwrap_or(rest).to_string());
-        } else if line == "bare" || line == "prunable" || line.starts_with("prunable ") {
-            skip = true;
+            // Flush defensively: porcelain separates blocks with a blank line,
+            // but a missing one must not merge two worktrees into one entry.
+            blocks.extend(current.take());
+            current = Some(WorktreeBlock {
+                path: rest.to_string(),
+                branch: None,
+                head: None,
+                bare: false,
+                locked: false,
+                lock_reason: None,
+                prunable: false,
+            });
+        } else if let Some(block) = current.as_mut() {
+            if let Some(rest) = line.strip_prefix("branch ") {
+                block.branch = Some(rest.strip_prefix("refs/heads/").unwrap_or(rest).to_string());
+            } else if let Some(rest) = line.strip_prefix("HEAD ") {
+                block.head = Some(rest.to_string());
+            } else if line == "bare" {
+                block.bare = true;
+            } else if line == "locked" {
+                block.locked = true;
+            } else if let Some(rest) = line.strip_prefix("locked ") {
+                block.locked = true;
+                block.lock_reason = Some(rest.to_string());
+            } else if line == "prunable" || line.starts_with("prunable ") {
+                block.prunable = true;
+            }
+            // `detached` is ignored: branch simply stays None for it.
         }
-        // `HEAD <sha>` and `detached` lines are ignored: branch simply stays
-        // None for a detached worktree.
     }
-    Ok(items)
+    blocks
+}
+
+/// Lists the worktrees of the repository that can actually be switched to. A
+/// `bare` block has no working tree and a `prunable` one no longer exists on
+/// disk, so both are dropped — offering either as a switch target would strand
+/// the app's workspace root somewhere unusable. The worktrees manager wants
+/// those entries and calls `worktree_list_detailed` instead.
+pub fn worktree_list(repo_path: &str) -> Result<Vec<WorktreeListItem>, String> {
+    let stdout = run_git(repo_path, &["worktree", "list", "--porcelain"])?;
+    Ok(parse_worktree_porcelain(&stdout)
+        .into_iter()
+        .filter(|block| !block.bare && !block.prunable)
+        .map(|block| WorktreeListItem {
+            path: block.path,
+            branch: block.branch,
+        })
+        .collect())
+}
+
+/// Every worktree of the repository, including the bare/locked/prunable entries
+/// `worktree_list` filters out.
+pub fn worktree_list_detailed(repo_path: &str) -> Result<Vec<WorktreeDetail>, String> {
+    let stdout = run_git(repo_path, &["worktree", "list", "--porcelain"])?;
+    Ok(parse_worktree_porcelain(&stdout)
+        .into_iter()
+        .enumerate()
+        .map(|(index, block)| WorktreeDetail {
+            path: block.path,
+            branch: block.branch,
+            head: block.head,
+            is_main: index == 0,
+            bare: block.bare,
+            locked: block.locked,
+            lock_reason: block.lock_reason,
+            prunable: block.prunable,
+        })
+        .collect())
+}
+
+/// The worktree a successful `worktree_add` produced.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorktreeAddResult {
+    pub path: String,
+    pub branch: String,
+}
+
+/// Drop the `\\?\` extended-length prefix that `fs::canonicalize` adds on
+/// Windows; no other path in the app carries it, so leaving it on would make
+/// comparisons against a pty's or git's cwd fail.
+///
+/// Takes `windows` as a parameter rather than hiding behind `#[cfg(windows)]` so
+/// the Windows behavior is exercised by a real test on the macOS dev box, where
+/// cfg-gated code would never run until a user hit it.
+fn strip_extended_length_prefix(path: &str, windows: bool) -> &str {
+    if windows {
+        path.strip_prefix(r"\\?\").unwrap_or(path)
+    } else {
+        path
+    }
+}
+
+/// An absolute path with symlinks resolved, so it compares equal to the cwds git
+/// and the pty report (a macOS temp dir is /var, which resolves to /private/var).
+/// Falls back to the input when the path cannot be canonicalized.
+fn canonical_string(path: &Path) -> String {
+    let Ok(resolved) = std::fs::canonicalize(path) else {
+        return path.to_string_lossy().to_string();
+    };
+    let text = resolved.to_string_lossy().to_string();
+    strip_extended_length_prefix(&text, cfg!(windows)).to_string()
+}
+
+/// Add a worktree at `path`. With `create_branch` the branch is created from
+/// `base` (or HEAD when None); otherwise an existing branch is checked out there.
+///
+/// Never passes `--force`. Git's refusal on a collision, or on a branch already
+/// checked out elsewhere, is a safety net worth keeping rather than routing
+/// around — the pre-flight below only exists to turn those into our own
+/// actionable errors instead of raw stderr.
+pub fn worktree_add(
+    repo_path: &str,
+    path: &str,
+    branch: &str,
+    create_branch: bool,
+    base: Option<&str>,
+) -> Result<WorktreeAddResult, String> {
+    ensure_not_flag(path)?;
+    ensure_not_flag(branch)?;
+    if let Some(base) = base {
+        ensure_not_flag(base)?;
+    }
+
+    // Reject a non-empty target before git touches it, so a user's existing
+    // files are never at risk from a slug collision.
+    let target = Path::new(path);
+    if target.exists() {
+        let occupied = std::fs::read_dir(target)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(true);
+        if occupied {
+            return Err(format!("path already exists and is not empty: {path}"));
+        }
+    }
+
+    if create_branch {
+        let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+        if repo.find_branch(branch, git2::BranchType::Local).is_ok() {
+            return Err(format!("branch already exists: {branch}"));
+        }
+    }
+
+    // git does not create the container directory (`<repo>-worktrees/`).
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let mut args: Vec<&str> = vec!["worktree", "add"];
+    if create_branch {
+        args.extend(["-b", branch, path]);
+        if let Some(base) = base {
+            args.push(base);
+        }
+    } else {
+        args.extend([path, branch]);
+    }
+    run_git(repo_path, &args)?;
+
+    Ok(WorktreeAddResult {
+        path: canonical_string(target),
+        branch: branch.to_string(),
+    })
+}
+
+/// Remove a worktree, and optionally the branch it had checked out.
+///
+/// Never passes `--force`: git's refusal on a dirty worktree is the last safety
+/// net behind the UI's uncommitted-changes block. The branch is deleted only
+/// when asked, and only after the worktree is gone — git refuses to delete a
+/// branch that is still checked out somewhere.
+pub fn worktree_remove(
+    repo_path: &str,
+    path: &str,
+    delete_branch: Option<&str>,
+    force_delete_branch: bool,
+) -> Result<(), String> {
+    ensure_not_flag(path)?;
+    if let Some(branch) = delete_branch {
+        ensure_not_flag(branch)?;
+    }
+
+    run_git(repo_path, &["worktree", "remove", path])?;
+
+    if let Some(branch) = delete_branch {
+        let flag = if force_delete_branch { "-D" } else { "-d" };
+        run_git(repo_path, &["branch", flag, branch])?;
+    }
+    Ok(())
+}
+
+/// Drop the metadata of worktrees whose directory is gone, returning git's own
+/// report of what it removed so the UI can say more than "done".
+///
+/// `prune -v` prints that report on **stderr**, not stdout (verified against git
+/// 2.54), which is why this reaches for `run_git_streams`.
+pub fn worktree_prune(repo_path: &str) -> Result<Vec<String>, String> {
+    let (_, stderr) = run_git_streams(repo_path, &["worktree", "prune", "-v"])?;
+    Ok(stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
+/// How many files in a worktree are modified or untracked. The manager renders
+/// one dot per row, so this returns the count rather than `status`'s full file
+/// list — shipping N complete status payloads to draw N booleans is waste.
+pub fn worktree_dirty_count(path: &str) -> Result<usize, String> {
+    let repo = Repository::open(path).map_err(|e| e.message().to_string())?;
+    let mut options = StatusOptions::new();
+    options
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false);
+    let statuses = repo
+        .statuses(Some(&mut options))
+        .map_err(|e| e.message().to_string())?;
+    Ok(statuses.len())
+}
+
+/// Total bytes of the files under `path`, walked iteratively, never following
+/// symlinks (`DirEntry::metadata` does not traverse them). A worktree that has
+/// had `pnpm install` run in it is tens of thousands of files, which is why the
+/// manager only ever asks for this lazily, one row at a time.
+pub fn worktree_disk_size(path: &str) -> Result<u64, String> {
+    let root = PathBuf::from(path);
+    if !root.exists() {
+        return Err(format!("path does not exist: {path}"));
+    }
+
+    let mut total: u64 = 0;
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        // A directory that vanished or is unreadable mid-walk is not worth
+        // failing the whole measurement over.
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let at_root = dir == root;
+        for entry in entries.flatten() {
+            // `.git` at the root is git's own storage, not the checkout. In the
+            // main worktree that is the whole object database — tens of
+            // thousands of loose objects to stat, and not bytes that removing a
+            // worktree would reclaim; in a linked one it is just a pointer file.
+            // Skipping it keeps the number comparable across rows and keeps the
+            // most-clicked row off the expensive path.
+            if at_root && entry.file_name() == ".git" {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if meta.is_file() {
+                total += meta.len();
+            }
+            // Symlinks are neither followed nor counted.
+        }
+    }
+    Ok(total)
 }
 
 pub fn stage(repo_path: &str, path: &str) -> Result<(), String> {
@@ -537,6 +805,70 @@ pub async fn git_worktree_list(path: String) -> Result<Vec<WorktreeListItem>, St
 }
 
 #[tauri::command]
+pub async fn git_worktree_list_detailed(path: String) -> Result<Vec<WorktreeDetail>, String> {
+    tauri::async_runtime::spawn_blocking(move || worktree_list_detailed(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_worktree_add(
+    repo_path: String,
+    path: String,
+    branch: String,
+    create_branch: bool,
+    base: Option<String>,
+) -> Result<WorktreeAddResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        worktree_add(&repo_path, &path, &branch, create_branch, base.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_worktree_remove(
+    repo_path: String,
+    path: String,
+    delete_branch: Option<String>,
+    force_delete_branch: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        worktree_remove(
+            &repo_path,
+            &path,
+            delete_branch.as_deref(),
+            force_delete_branch,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_worktree_prune(path: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || worktree_prune(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_worktree_dirty_count(path: String) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || worktree_dirty_count(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Deliberately not called for every row on open: a full walk of a worktree that
+/// has node_modules is tens of thousands of files. The manager asks lazily.
+#[tauri::command]
+pub async fn git_worktree_disk_size(path: String) -> Result<u64, String> {
+    tauri::async_runtime::spawn_blocking(move || worktree_disk_size(&path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn git_stage(repo_path: String, path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || stage(&repo_path, &path))
         .await
@@ -557,9 +889,8 @@ pub async fn git_commit(repo_path: String, message: String) -> Result<String, St
         .map_err(|e| e.to_string())?
 }
 
-/// Run a git subcommand against `repo_path` using the system git binary. This
-/// reuses the user's configured credentials/helpers, which matters for push.
-fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
+/// A `git -C <repo_path> <args...>` command with the Windows console suppressed.
+fn git_command(repo_path: &str, args: &[&str]) -> std::process::Command {
     let mut command = std::process::Command::new("git");
     command.arg("-C").arg(repo_path).args(args);
     // A release build runs without a console (windows_subsystem = "windows" in
@@ -574,9 +905,34 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let output = command.output().map_err(|e| e.to_string())?;
+    command
+}
+
+/// Run a git subcommand against `repo_path` using the system git binary. This
+/// reuses the user's configured credentials/helpers, which matters for push.
+fn run_git(repo_path: &str, args: &[&str]) -> Result<String, String> {
+    let output = git_command(repo_path, args)
+        .output()
+        .map_err(|e| e.to_string())?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+/// Like `run_git`, but also yields stderr on success. Needed because some git
+/// subcommands report their result there rather than on stdout — `worktree
+/// prune -v` is the one this exists for.
+fn run_git_streams(repo_path: &str, args: &[&str]) -> Result<(String, String), String> {
+    let output = git_command(repo_path, args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok((
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        ))
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
@@ -1504,6 +1860,273 @@ mod tests {
         let items = worktree_list(&main_path).unwrap();
         assert_eq!(items.len(), 1);
         assert!(items[0].path.ends_with("/main"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A temp repo with one commit on `main`, as (root, main worktree path).
+    /// The linked worktrees the tests create live as siblings under `root`.
+    fn init_main_repo(tag: &str) -> (std::path::PathBuf, String) {
+        let root = temp_repo_dir(tag);
+        let main = root.join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        let main_path = main.to_string_lossy().to_string();
+        run_git(&main_path, &["init", "-b", "main"]).unwrap();
+        run_git(&main_path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&main_path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(main.join("a.txt"), "hi").unwrap();
+        run_git(&main_path, &["add", "."]).unwrap();
+        run_git(&main_path, &["commit", "-m", "init"]).unwrap();
+        (root, main_path)
+    }
+
+    #[test]
+    fn worktree_list_detailed_flags_the_main_worktree() {
+        let (root, main_path) = init_main_repo("wtd-main");
+        let wt_path = root.join("wt").to_string_lossy().to_string();
+        run_git(&main_path, &["worktree", "add", &wt_path, "-b", "feature"]).unwrap();
+
+        let items = worktree_list_detailed(&main_path).unwrap();
+        assert_eq!(items.len(), 2);
+        assert!(items[0].is_main);
+        assert_eq!(items[0].branch.as_deref(), Some("main"));
+        assert!(items[0].head.is_some());
+        assert!(!items[1].is_main);
+        assert_eq!(items[1].branch.as_deref(), Some("feature"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_list_detailed_keeps_the_prunable_entry_plain_list_drops() {
+        // This is the whole reason the detailed command exists: the modal has to
+        // be able to show (and prune) an entry whose directory is gone, which
+        // worktree_list deliberately hides.
+        let (root, main_path) = init_main_repo("wtd-prunable");
+        let wt = root.join("wt");
+        let wt_path = wt.to_string_lossy().to_string();
+        run_git(&main_path, &["worktree", "add", &wt_path, "-b", "feature"]).unwrap();
+        std::fs::remove_dir_all(&wt).unwrap();
+
+        assert_eq!(worktree_list(&main_path).unwrap().len(), 1);
+
+        let items = worktree_list_detailed(&main_path).unwrap();
+        assert_eq!(items.len(), 2);
+        assert!(items[1].prunable);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_list_detailed_reports_a_locked_worktree() {
+        let (root, main_path) = init_main_repo("wtd-locked");
+        let wt_path = root.join("wt").to_string_lossy().to_string();
+        run_git(&main_path, &["worktree", "add", &wt_path, "-b", "feature"]).unwrap();
+        run_git(&main_path, &["worktree", "lock", &wt_path, "--reason", "testing"]).unwrap();
+
+        let items = worktree_list_detailed(&main_path).unwrap();
+        // The reason's presence in porcelain varies by git version; the flag does not.
+        assert!(items[1].locked);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_add_creates_a_new_branch_and_returns_the_canonical_path() {
+        let (root, main_path) = init_main_repo("wta-new");
+        let wt_path = root.join("box").join("feature-x").to_string_lossy().to_string();
+
+        let result = worktree_add(&main_path, &wt_path, "feature-x", true, None).unwrap();
+
+        assert_eq!(result.branch, "feature-x");
+        // The container dir did not exist; worktree_add must create it (git will not).
+        assert!(std::path::Path::new(&result.path).join("a.txt").exists());
+        let items = worktree_list_detailed(&main_path).unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[1].branch.as_deref(), Some("feature-x"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_add_checks_out_an_existing_branch_when_not_creating() {
+        let (root, main_path) = init_main_repo("wta-existing");
+        run_git(&main_path, &["branch", "existing"]).unwrap();
+        let wt_path = root.join("wt").to_string_lossy().to_string();
+
+        let result = worktree_add(&main_path, &wt_path, "existing", false, None).unwrap();
+
+        assert_eq!(result.branch, "existing");
+        let items = worktree_list_detailed(&main_path).unwrap();
+        assert_eq!(items[1].branch.as_deref(), Some("existing"));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_add_rejects_a_non_empty_existing_path() {
+        let (root, main_path) = init_main_repo("wta-collide");
+        let wt = root.join("wt");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(wt.join("keep.txt"), "mine").unwrap();
+        let wt_path = wt.to_string_lossy().to_string();
+
+        assert!(worktree_add(&main_path, &wt_path, "feature", true, None).is_err());
+        // The pre-existing file must survive the rejected add.
+        assert!(wt.join("keep.txt").exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_add_rejects_a_branch_that_already_exists() {
+        let (root, main_path) = init_main_repo("wta-dupbranch");
+        run_git(&main_path, &["branch", "taken"]).unwrap();
+        let wt_path = root.join("wt").to_string_lossy().to_string();
+
+        assert!(worktree_add(&main_path, &wt_path, "taken", true, None).is_err());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_add_rejects_flag_like_values() {
+        let (root, main_path) = init_main_repo("wta-flag");
+        let wt_path = root.join("wt").to_string_lossy().to_string();
+
+        assert!(worktree_add(&main_path, &wt_path, "--force", true, None).is_err());
+        assert!(worktree_add(&main_path, "--bad", "feature", true, None).is_err());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_remove_drops_the_worktree_but_keeps_the_branch() {
+        let (root, main_path) = init_main_repo("wtr-keep");
+        let wt = root.join("wt");
+        let wt_path = wt.to_string_lossy().to_string();
+        worktree_add(&main_path, &wt_path, "feature", true, None).unwrap();
+
+        worktree_remove(&main_path, &wt_path, None, false).unwrap();
+
+        assert!(!wt.exists());
+        assert_eq!(worktree_list_detailed(&main_path).unwrap().len(), 1);
+        // The branch is the user's work; removing a checkout must not delete it.
+        assert!(run_git(&main_path, &["rev-parse", "--verify", "feature"]).is_ok());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_remove_deletes_the_branch_when_asked() {
+        let (root, main_path) = init_main_repo("wtr-branch");
+        let wt_path = root.join("wt").to_string_lossy().to_string();
+        worktree_add(&main_path, &wt_path, "feature", true, None).unwrap();
+
+        worktree_remove(&main_path, &wt_path, Some("feature"), true).unwrap();
+
+        assert!(run_git(&main_path, &["rev-parse", "--verify", "feature"]).is_err());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_remove_refuses_a_dirty_worktree() {
+        // We never pass --force, so git's own refusal is the last safety net
+        // behind the UI's uncommitted-changes block.
+        let (root, main_path) = init_main_repo("wtr-dirty");
+        let wt = root.join("wt");
+        let wt_path = wt.to_string_lossy().to_string();
+        worktree_add(&main_path, &wt_path, "feature", true, None).unwrap();
+        std::fs::write(wt.join("a.txt"), "modified").unwrap();
+
+        assert!(worktree_remove(&main_path, &wt_path, None, false).is_err());
+        assert!(wt.exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_prune_clears_the_stale_entry_and_reports_it() {
+        let (root, main_path) = init_main_repo("wtp");
+        let wt = root.join("wt");
+        let wt_path = wt.to_string_lossy().to_string();
+        worktree_add(&main_path, &wt_path, "feature", true, None).unwrap();
+        std::fs::remove_dir_all(&wt).unwrap();
+
+        let removed = worktree_prune(&main_path).unwrap();
+
+        assert!(!removed.is_empty(), "prune -v should report what it removed");
+        assert_eq!(worktree_list_detailed(&main_path).unwrap().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktree_dirty_count_counts_modified_and_untracked_files() {
+        let (root, main_path) = init_main_repo("wtdc");
+        let main = root.join("main");
+        assert_eq!(worktree_dirty_count(&main_path).unwrap(), 0);
+
+        std::fs::write(main.join("a.txt"), "changed").unwrap();
+        std::fs::write(main.join("new.txt"), "fresh").unwrap();
+
+        assert_eq!(worktree_dirty_count(&main_path).unwrap(), 2);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn strip_extended_length_prefix_only_applies_on_windows() {
+        // Runs on the mac, which is the point: the Windows arm would otherwise
+        // never execute until a Windows user hit it.
+        assert_eq!(
+            strip_extended_length_prefix(r"\\?\C:\src\repo", true),
+            r"C:\src\repo"
+        );
+        // A Windows path without the prefix is untouched.
+        assert_eq!(
+            strip_extended_length_prefix(r"C:\src\repo", true),
+            r"C:\src\repo"
+        );
+        // A UNC share keeps its \\ — only the \\?\ prefix goes.
+        assert_eq!(
+            strip_extended_length_prefix(r"\\server\share", true),
+            r"\\server\share"
+        );
+        // Off Windows the string is returned as-is, prefix-shaped or not.
+        assert_eq!(
+            strip_extended_length_prefix(r"\\?\C:\src\repo", false),
+            r"\\?\C:\src\repo"
+        );
+        assert_eq!(
+            strip_extended_length_prefix("/private/var/repo", false),
+            "/private/var/repo"
+        );
+    }
+
+    #[test]
+    fn worktree_disk_size_sums_file_bytes_recursively() {
+        let dir = temp_repo_dir("wtsize");
+        std::fs::write(dir.join("a.txt"), "12345").unwrap();
+        let sub = dir.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("b.txt"), "1234567890").unwrap();
+
+        assert_eq!(worktree_disk_size(&dir.to_string_lossy()).unwrap(), 15);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn worktree_disk_size_excludes_gits_own_object_store() {
+        // The main worktree's .git holds the whole object database. Counting it
+        // would both mislead (it is not what removing a worktree reclaims) and
+        // make the most-clicked row the most expensive one to measure.
+        let (root, main_path) = init_main_repo("wtsize-git");
+
+        // The checkout is a single 2-byte file; .git is orders of magnitude more.
+        assert_eq!(worktree_disk_size(&main_path).unwrap(), 2);
 
         let _ = std::fs::remove_dir_all(&root);
     }
