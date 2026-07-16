@@ -17,6 +17,7 @@ import { DockIcon } from "./DockIcon";
 export function DockColumn({ side }: { side: DockSide }) {
   const order = useUiStore((s) => s.panelOrder[side]);
   const active = useUiStore((s) => s.activePanel[side]);
+  const visible = useUiStore((s) => s.visible[side]);
   const activatePanel = useUiStore((s) => s.activatePanel);
   const { setNodeRef, isOver } = useDroppable({ id: side });
 
@@ -73,14 +74,17 @@ export function DockColumn({ side }: { side: DockSide }) {
         {order.map((id) => {
           const { Component, mountAlways } = PANEL_REGISTRY[id];
           if (mountAlways) {
-            // Stays mounted, just hidden, to preserve its cached state.
+            // Stays mounted, just hidden, to preserve its cached state even when
+            // the column is collapsed.
             return (
-              <div key={id} className="h-full w-full" hidden={active !== id}>
+              <div key={id} className="h-full w-full" hidden={active !== id || !visible}>
                 <Component />
               </div>
             );
           }
-          return active === id ? (
+          // Others unmount when inactive or when the column is collapsed, so a
+          // background poller (e.g. Ports) stops while hidden.
+          return active === id && visible ? (
             <div key={id} className="h-full w-full">
               <Component />
             </div>

@@ -503,9 +503,10 @@ function App() {
         }
       }
 
-      // ⌘B toggles the left dock column, ⌘⌥B the right. Read `code` (not `key`)
-      // because ⌥ rewrites `e.key` on macOS (⌥B → "∫").
-      if (e.code === "KeyB") {
+      // ⌘B toggles the left dock column, ⌘⌥B the right. Gated on primaryMod so a
+      // bare Ctrl+B on macOS still reaches the terminal (readline/tmux). Read
+      // `code` (not `key`) because ⌥ rewrites `e.key` on macOS (⌥B → "∫").
+      if (e.code === "KeyB" && primaryMod) {
         e.preventDefault();
         useUiStore.getState().toggleSide(e.altKey ? "right" : "left");
         return;

@@ -52,6 +52,9 @@ export function DockIcon({
       className="shrink-0"
       {...attributes}
       {...listeners}
+      // Only the inner button is a tab stop; useSortable's attributes would
+      // otherwise add a redundant tabIndex=0 here (no keyboard sensor is used).
+      tabIndex={-1}
     >
       <Tooltip label={t(labelKey)} side="bottom">
         <button
