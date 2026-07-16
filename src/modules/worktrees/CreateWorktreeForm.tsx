@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Combobox } from "@/components/Combobox";
 import type { AgentKind } from "@/modules/claude-progress/lib/codexNormalize";
 import { writeToTerminal } from "@/modules/terminal/lib/terminalBus";
+import { useNotifyStore } from "@/stores/notifyStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { DEFAULT_COPY_GLOBS, useWorktreeSettingsStore } from "@/stores/worktreeSettingsStore";
 import { gitWorktreeCopyLocalFiles } from "./lib/worktreesBridge";
@@ -105,9 +106,12 @@ export function CreateWorktreeForm({
       }
 
       if (copyFailure) {
-        setFailure(t("create.copyFailed", { error: copyFailure }));
-        setBusy(false);
-        return;
+        // Said out loud, then out of the way. The worktree is on disk and its
+        // terminal is open, so holding the form up with an error leaves the
+        // only clickable thing being Create — which now dies on "branch already
+        // exists". Reporting a completed thing as failed is the same trap as a
+        // failed rescan, wearing a different hat.
+        useNotifyStore.getState().notify(t("create.copyFailed", { error: copyFailure }));
       }
       onDone();
     } catch (error) {

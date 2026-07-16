@@ -23,6 +23,7 @@ vi.mock("./lib/worktreesBridge", () => ({
 import "@/i18n";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useTabsStore } from "@/stores/tabsStore";
+import { useNotifyStore } from "@/stores/notifyStore";
 import { useWorktreeSettingsStore } from "@/stores/worktreeSettingsStore";
 import { useWorktreesStore } from "./lib/worktreesStore";
 import { CreateWorktreeForm } from "./CreateWorktreeForm";
@@ -179,9 +180,10 @@ describe("CreateWorktreeForm", () => {
     );
   });
 
-  it("says the worktree was made when only the copy failed, rather than that it was not", async () => {
-    // The worktree is on disk and usable. Reporting a failure would send the
-    // user to retry a branch name that now exists.
+  it("does not hold the user in a dialog they cannot get out of when only the copy failed", async () => {
+    // The worktree is on disk and its terminal is open. Keeping the form up with
+    // an error means the only thing left to click is Create, which now dies on
+    // "branch already exists" — the same trap as reporting a failed rescan.
     gitWorktreeAdd.mockResolvedValue({ path: "/code/app-worktrees/feat-x", branch: "feat/x" });
     gitWorktreeCopyLocalFiles.mockRejectedValue("permission denied");
     const onDone = vi.fn();
@@ -190,8 +192,10 @@ describe("CreateWorktreeForm", () => {
     fireEvent.change(nameInput(), { target: { value: "feat/x" } });
     fireEvent.click(createButton());
 
-    expect(await screen.findByText(/was created, but/i)).toBeInTheDocument();
-    // The terminal still opened — the worktree is real.
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    // Said out loud rather than swallowed: an agent that needs .env will fail
+    // without it, and the user has to know why.
+    expect(useNotifyStore.getState().notice?.text).toMatch(/permission denied/);
     expect(terminalCwds()).toContain("/code/app-worktrees/feat-x");
   });
 
