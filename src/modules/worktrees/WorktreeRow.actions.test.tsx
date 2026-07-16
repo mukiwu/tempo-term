@@ -72,7 +72,7 @@ const splitButton = () => screen.getByRole("button", { name: /split/i });
 
 describe("WorktreeRow — opening", () => {
   it("spawns a terminal in the worktree when nothing is there yet", () => {
-    render(<WorktreeRow detail={detail()} />);
+    render(<WorktreeRow detail={detail()} repoPath="/repo" />);
 
     fireEvent.click(openButton());
 
@@ -89,7 +89,7 @@ describe("WorktreeRow — opening", () => {
       "t1",
     );
 
-    render(<WorktreeRow detail={detail()} />);
+    render(<WorktreeRow detail={detail()} repoPath="/repo" />);
     fireEvent.click(openButton());
 
     expect(useTabsStore.getState().activeId).toBe("t2");
@@ -97,7 +97,7 @@ describe("WorktreeRow — opening", () => {
   });
 
   it("closes the manager once it has taken you somewhere", () => {
-    render(<WorktreeRow detail={detail()} />);
+    render(<WorktreeRow detail={detail()} repoPath="/repo" />);
 
     fireEvent.click(openButton());
 
@@ -105,7 +105,7 @@ describe("WorktreeRow — opening", () => {
   });
 
   it("will not open a worktree whose directory is gone", () => {
-    render(<WorktreeRow detail={detail({ prunable: true })} />);
+    render(<WorktreeRow detail={detail({ prunable: true })} repoPath="/repo" />);
 
     expect(openButton()).toBeDisabled();
   });
@@ -113,7 +113,7 @@ describe("WorktreeRow — opening", () => {
 
 describe("WorktreeRow — splitting", () => {
   it("puts the worktree beside the pane you were in", () => {
-    render(<WorktreeRow detail={detail()} />);
+    render(<WorktreeRow detail={detail()} repoPath="/repo" />);
 
     fireEvent.click(splitButton());
 
@@ -128,7 +128,7 @@ describe("WorktreeRow — splitting", () => {
     const panes = Array.from({ length: MAX_PANES }, (_, i) => `p${i}`);
     seedTabs([tab("t1", leaf("p0", { kind: "terminal", cwd: "/elsewhere" }), panes)], "t1");
 
-    render(<WorktreeRow detail={detail()} />);
+    render(<WorktreeRow detail={detail()} repoPath="/repo" />);
 
     expect(splitButton()).toBeDisabled();
   });
@@ -136,7 +136,7 @@ describe("WorktreeRow — splitting", () => {
   it("offers no split when there is nothing to split", () => {
     seedTabs([], null);
 
-    render(<WorktreeRow detail={detail()} />);
+    render(<WorktreeRow detail={detail()} repoPath="/repo" />);
 
     expect(screen.queryByRole("button", { name: /split/i })).not.toBeInTheDocument();
   });
@@ -145,7 +145,7 @@ describe("WorktreeRow — splitting", () => {
     const launcher = tab("t1", leaf("p1", { kind: "launcher" }), ["p1"]);
     seedTabs([{ ...launcher, kind: "launcher" }], "t1");
 
-    render(<WorktreeRow detail={detail()} />);
+    render(<WorktreeRow detail={detail()} repoPath="/repo" />);
 
     expect(screen.queryByRole("button", { name: /split/i })).not.toBeInTheDocument();
   });
@@ -154,7 +154,7 @@ describe("WorktreeRow — splitting", () => {
     const launcher = tab("t1", leaf("p1", { kind: "launcher" }), ["p1"]);
     seedTabs([{ ...launcher, kind: "launcher" }], "t1");
 
-    render(<WorktreeRow detail={detail()} />);
+    render(<WorktreeRow detail={detail()} repoPath="/repo" />);
     fireEvent.click(openButton());
 
     expect(terminalCwds()).toContain(WT);

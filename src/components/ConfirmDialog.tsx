@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useOverlayGuard } from "@/lib/overlayGuard";
 
 interface ConfirmDialogProps {
@@ -12,6 +12,12 @@ interface ConfirmDialogProps {
    *  dialog can stay open and report the error in place rather than the caller
    *  surfacing it elsewhere. */
   error?: string;
+  /** Extra content between the message and the buttons — the checkboxes a
+   *  destructive action needs the user to tick before it will go through. */
+  children?: ReactNode;
+  /** Holds the confirm button shut. For an action that needs something ticked
+   *  first, so the button says "not yet" rather than the click doing nothing. */
+  confirmDisabled?: boolean;
 }
 
 export function ConfirmDialog({
@@ -22,6 +28,8 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   error,
+  children,
+  confirmDisabled,
 }: ConfirmDialogProps) {
   // Mounted only while open, so guard unconditionally to hide the preview webview.
   useOverlayGuard(true);
@@ -45,7 +53,8 @@ export function ConfirmDialog({
         </div>
         <div className="px-4 py-4 text-sm text-fg-muted">
           {message}
-          {error && <p className="mt-2 text-danger/90">{error}</p>}
+          {children}
+          {error && <p className="mt-2 whitespace-pre-wrap break-words text-danger/90">{error}</p>}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
           <button
@@ -58,7 +67,8 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-md bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-700"
+            disabled={confirmDisabled}
+            className="rounded-md bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-red-600"
           >
             {confirmLabel}
           </button>

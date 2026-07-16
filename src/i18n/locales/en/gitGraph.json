@@ -26,8 +26,7 @@
     "orderDate": "Date order",
     "orderTopo": "Topological order",
     "worktree": "Worktree",
-    "switchBranch": "Switch Branch",
-    "worktreeSwitched": "File explorer updated"
+    "switchBranch": "Switch Branch"
   },
   "details": {
     "author": "Author",
@@ -69,7 +68,8 @@
     "checkoutRemote": "Checkout branch… (git checkout --track)",
     "pull": "Pull into current branch (git pull)",
     "deleteRemote": "Delete remote branch… (git push --delete)",
-    "copyBranchName": "Copy branch name"
+    "copyBranchName": "Copy branch name",
+    "openWorktree": "Open worktree for this branch"
   },
   "modal": {
     "cancel": "Cancel",

@@ -31,7 +31,8 @@ use modules::git::{
     git_push_delete, git_rebase, git_reset, git_resolve_repo, git_restore_file, git_revert,
     git_stage, git_status, git_tag_create, git_tag_delete, git_unstage, git_worktree_add,
     git_worktree_dirty_count, git_worktree_disk_size, git_worktree_info, git_worktree_list,
-    git_worktree_list_detailed, git_worktree_prune, git_worktree_remove,
+    git_worktree_copy_local_files, git_worktree_list_detailed, git_worktree_prune,
+    git_worktree_remove,
 };
 use modules::pr::{gh_available, pr_via_api, pr_via_gh};
 use modules::preview::{
@@ -246,6 +247,7 @@ pub fn run() {
             git_worktree_prune,
             git_worktree_dirty_count,
             git_worktree_disk_size,
+            git_worktree_copy_local_files,
             git_stage,
             git_unstage,
             git_commit,

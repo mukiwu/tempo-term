@@ -78,7 +78,7 @@ describe("WorktreesModal", () => {
     render(<WorktreesModal state={{ scope: "repo", repoPath: "/repo/a" }} />);
     fireEvent.click(await screen.findByRole("button", { name: /new/i }));
 
-    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(screen.getByLabelText(/branch name/i)).toBeInTheDocument();
   });
 
   it("names the repo on each group's New button, since global scope has several", async () => {

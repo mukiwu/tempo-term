@@ -42,6 +42,7 @@ import { LauncherPanel } from "@/components/LauncherPanel";
 import { dropOverlayClassName, outerBandOverlayClassName } from "@/components/EntryDropOverlay";
 import { InfoDialog } from "@/components/InfoDialog";
 import { Tooltip } from "@/components/Tooltip";
+import { PaneWorktreeMenu } from "@/modules/worktrees/PaneWorktreeMenu";
 import {
   fileUrl,
   shellQuotePath,
@@ -410,6 +411,11 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                 multiple ? (active ? "border border-accent/40" : "border border-border") : ""
               }`}
             >
+              {pane.content?.kind === "terminal" && !pane.content.ssh && (
+                // Local terminals only: a worktree is a directory on this
+                // machine, and an SSH pane's shell is on another one.
+                <PaneWorktreeMenu cwd={pane.content.cwd} />
+              )}
               {multiple && (
                 <Tooltip label={t("workspace.closePane")} className="absolute right-1.5 top-1.5 z-10">
                   <button

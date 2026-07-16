@@ -5,7 +5,9 @@ import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { Resizer } from "@/components/Resizer";
 import { gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useNotifyStore } from "@/stores/notifyStore";
+import { useTabsStore } from "@/stores/tabsStore";
+import { useUiStore } from "@/stores/uiStore";
+import { findWorktreePane } from "@/modules/worktrees/lib/openWorktree";
 import { GitGraph, type GitGraphLabels } from "./GitGraph";
 import { CommitInputModal, type InputField } from "./CommitInputModal";
 import { CommitDetailsPanel, type CommitDetailsLabels } from "./CommitDetailsPanel";
@@ -172,17 +174,27 @@ export function GitGraphTabContent() {
     };
   }, [rootPath]);
 
-  const handleSelectWorktree = useCallback(
-    (path: string) => {
-      // Switching worktree = switching the app's workspace root; the rootPath
-      // effect above re-resolves the repo and reloads everything, and the
-      // sidebar / file explorer follow the same store. The toast makes that
-      // side effect visible from inside the Git Graph tab.
-      useWorkspaceStore.getState().setRoot(path);
-      useNotifyStore.getState().notify(t("toolbar.worktreeSwitched"));
-    },
-    [t],
-  );
+  const handleSelectWorktree = useCallback((path: string) => {
+    // Open the worktree; do not point the explorer at it.
+    //
+    // `setRoot` looks like the tidy way to "switch to" a directory, but the
+    // explorer root drives cwd sync, which types `cd <path>` into whatever
+    // shell has focus. That shell is quite often a running agent, and the `cd`
+    // lands in its prompt. Opening a terminal in the worktree gets the explorer
+    // there anyway — a fresh pane points the root at itself — without typing
+    // into anyone's session.
+    //
+    // Reuses the tab already in that worktree rather than starting a second
+    // shell in it, same as the manager's rows.
+    const tabs = useTabsStore.getState();
+    const existing = findWorktreePane(tabs.tabs, path);
+    if (existing) {
+      tabs.setActive(existing.tabId);
+      tabs.setActiveLeaf(existing.tabId, existing.leafId);
+    } else {
+      tabs.newTerminalTab(path);
+    }
+  }, []);
 
   // Initial load, and reload whenever a display option changes.
   useEffect(() => {
@@ -545,6 +557,7 @@ export function GitGraphTabContent() {
         pull: t("menu.pull"),
         deleteRemote: t("menu.deleteRemote"),
         copyBranchName: t("menu.copyBranchName"),
+        openWorktree: t("menu.openWorktree"),
       },
       {
         onCheckout: () => void runAction(() => gitBranchCheckout(repo!, ref.name)),
@@ -569,6 +582,14 @@ export function GitGraphTabContent() {
           });
         },
         onCopyBranchName: () => void navigator.clipboard.writeText(ref.name),
+        // The branch already exists, so this checks it out into a worktree of
+        // its own rather than cutting a new one — unlike checkout, it leaves
+        // the current working tree and whatever is running in it alone.
+        onOpenWorktree: () => {
+          if (repo) {
+            useUiStore.getState().openWorktrees("repo", repo, { creating: true, branch: ref.name });
+          }
+        },
       },
     );
 

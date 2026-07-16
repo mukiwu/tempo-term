@@ -34,18 +34,31 @@ export function gitWorktreeAdd(
 }
 
 /**
- * Remove a worktree, and optionally the branch it had checked out. Never forces:
- * git refuses a dirty worktree, which is the last safety net behind the UI's own
- * block. Close the worktree's tab and kill its ptys first — on Windows a live
- * pty holds a handle on its cwd and the directory cannot be deleted.
+ * Remove a worktree, and optionally the branch it had checked out.
+ *
+ * `force` defaults to false, and git then refuses a worktree holding
+ * uncommitted work — the last safety net behind the UI's own block. Pass true
+ * only for a user who has read the count and said in so many words that they
+ * want the work discarded; it is the one place this feature can destroy
+ * something nobody can get back.
+ *
+ * Close the worktree's tab and kill its ptys first — on Windows a live pty holds
+ * a handle on its cwd and the directory cannot be deleted.
  */
 export function gitWorktreeRemove(
   repoPath: string,
   path: string,
   deleteBranch?: string,
   forceDeleteBranch = false,
+  force = false,
 ): Promise<void> {
-  return invoke("git_worktree_remove", { repoPath, path, deleteBranch, forceDeleteBranch });
+  return invoke("git_worktree_remove", {
+    repoPath,
+    path,
+    deleteBranch,
+    forceDeleteBranch,
+    force,
+  });
 }
 
 /** Drop metadata for worktrees whose directory is gone; returns what git removed. */
@@ -65,4 +78,20 @@ export function gitWorktreeDirtyCount(path: string): Promise<number> {
  */
 export function gitWorktreeDiskSize(path: string): Promise<number> {
   return invoke<number>("git_worktree_disk_size", { path });
+}
+
+/**
+ * Copy the repo's gitignored local files matching `globs` into a fresh
+ * worktree. `git worktree add` checks out tracked source only, so without this
+ * a new worktree has no `.env` and an agent's first command dies on it.
+ *
+ * Returns the repo-relative paths actually copied — files the worktree already
+ * had are left alone and are not reported.
+ */
+export function gitWorktreeCopyLocalFiles(
+  repoPath: string,
+  worktreePath: string,
+  globs: string[],
+): Promise<string[]> {
+  return invoke<string[]>("git_worktree_copy_local_files", { repoPath, worktreePath, globs });
 }

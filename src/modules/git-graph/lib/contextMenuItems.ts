@@ -1,6 +1,7 @@
 import {
   Copy,
   DownloadCloud,
+  FolderGit2,
   GitBranch,
   GitCommit,
   GitMerge,
@@ -127,6 +128,7 @@ export interface RefMenuLabels {
   pull: string;
   deleteRemote: string;
   copyBranchName: string;
+  openWorktree: string;
 }
 
 export interface RefMenuActions {
@@ -139,6 +141,7 @@ export interface RefMenuActions {
   onPull: () => void;
   onDeleteRemote: () => void;
   onCopyBranchName: () => void;
+  onOpenWorktree: () => void;
 }
 
 export function buildRefMenu(
@@ -169,6 +172,15 @@ export function buildRefMenu(
         onSelect: actions.onCheckout,
       },
       { id: "merge", label: labels.merge, icon: GitMerge, group: 0, onSelect: actions.onMerge },
+      {
+        // Branch off without leaving what you are doing: unlike checkout, this
+        // touches neither the current working tree nor whatever is running in it.
+        id: "openWorktree",
+        label: labels.openWorktree,
+        icon: FolderGit2,
+        group: 0,
+        onSelect: actions.onOpenWorktree,
+      },
       {
         id: "deleteBranch",
         label: labels.deleteBranch,

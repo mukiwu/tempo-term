@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Columns2, FolderOpen, HardDrive, Lock } from "lucide-react";
+import { AlertTriangle, Columns2, FolderOpen, HardDrive, Lock, Trash2 } from "lucide-react";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { formatBytes } from "@/modules/sysmon/lib/format";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -8,6 +8,7 @@ import { useUiStore } from "@/stores/uiStore";
 import type { WorktreeDetail } from "./types";
 import { gitWorktreeDirtyCount } from "./lib/worktreesBridge";
 import { canSplitInto, findWorktreePane, hasPaneRoom } from "./lib/openWorktree";
+import { RemoveWorktreeDialog } from "./RemoveWorktreeDialog";
 import { useWorktreesStore } from "./lib/worktreesStore";
 import { worktreeSessionStatus } from "./lib/worktreeStatus";
 import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus";
@@ -27,7 +28,7 @@ const STATUS_DOT: Record<SessionStatus, string> = {
  *
  * Removal arrives with its own slice.
  */
-export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
+export function WorktreeRow({ detail, repoPath }: { detail: WorktreeDetail; repoPath: string }) {
   const { t } = useTranslation("worktrees");
   const [dirty, setDirty] = useState<number | null>(null);
   const tabs = useTabsStore((s) => s.tabs);
@@ -38,6 +39,7 @@ export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
   const loadSize = useWorktreesStore((s) => s.loadSize);
   const closeWorktrees = useUiStore((s) => s.closeWorktrees);
   const [measuring, setMeasuring] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const activity = worktreeSessionStatus(tabs, statuses, agents, detail.path);
   const alreadyOpen = findWorktreePane(tabs, detail.path);
@@ -201,7 +203,29 @@ export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
             {t("row.split")}
           </button>
         )}
+
+        {/* The repo's own working tree is not a worktree anyone added, so there
+            is nothing here to remove. */}
+        {!detail.isMain && (
+          <button
+            type="button"
+            onClick={() => setRemoving(true)}
+            aria-label={`${t("row.remove")}: ${detail.branch ?? t("row.detached")}`}
+            className="flex items-center gap-1 rounded px-1 text-fg-subtle transition-colors hover:text-danger"
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
       </div>
+
+      {removing && (
+        <RemoveWorktreeDialog
+          repoPath={repoPath}
+          detail={detail}
+          dirty={dirty}
+          onDone={() => setRemoving(false)}
+        />
+      )}
     </div>
   );
 }

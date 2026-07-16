@@ -19,6 +19,7 @@ const refLabels: RefMenuLabels = {
   pull: "Pull into current branch",
   deleteRemote: "Delete remote branch",
   copyBranchName: "Copy branch name",
+  openWorktree: "Open worktree for this branch",
 };
 
 function refActions(): RefMenuActions {
@@ -32,6 +33,7 @@ function refActions(): RefMenuActions {
     onPull: vi.fn(),
     onDeleteRemote: vi.fn(),
     onCopyBranchName: vi.fn(),
+    onOpenWorktree: vi.fn(),
   };
 }
 
@@ -92,7 +94,7 @@ describe("buildRefMenu", () => {
   it("offers checkout, merge and delete for a local branch", () => {
     const ref: CommitRef = { name: "feature", kind: "branch" };
     const items = buildRefMenu(ref, refLabels, refActions());
-    expect(ids(items)).toEqual(["checkout", "merge", "deleteBranch"]);
+    expect(ids(items)).toEqual(["checkout", "merge", "openWorktree", "deleteBranch"]);
     expect(items.find((i) => i.id === "deleteBranch")?.danger).toBe(true);
   });
 

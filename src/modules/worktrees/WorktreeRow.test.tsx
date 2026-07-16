@@ -29,18 +29,18 @@ beforeEach(() => {
 
 describe("WorktreeRow", () => {
   it("drops a dirty count once the directory turns out to be gone", async () => {
-    const { rerender } = render(<WorktreeRow detail={detail()} />);
+    const { rerender } = render(<WorktreeRow detail={detail()} repoPath="/repo" />);
     expect(await screen.findByText(/3/)).toBeInTheDocument();
 
     // Same path, so React keeps this row's component instance — and with it the
     // count it already loaded. Nothing is left to be dirty once the directory is.
-    rerender(<WorktreeRow detail={detail({ prunable: true })} />);
+    rerender(<WorktreeRow detail={detail({ prunable: true })} repoPath="/repo" />);
 
     expect(screen.queryByText(/3/)).not.toBeInTheDocument();
   });
 
   it("does not count a directory that is already gone", () => {
-    render(<WorktreeRow detail={detail({ prunable: true })} />);
+    render(<WorktreeRow detail={detail({ prunable: true })} repoPath="/repo" />);
     expect(gitWorktreeDirtyCount).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { gitWorktreeListDetailed, gitWorktreeDiskSize, gitWorktreeAdd } = vi.hoisted(() => ({
-  gitWorktreeListDetailed: vi.fn(),
-  gitWorktreeDiskSize: vi.fn(),
-  gitWorktreeAdd: vi.fn(),
+const { gitWorktreeListDetailed, gitWorktreeDiskSize, gitWorktreeAdd, gitWorktreeRemove, gitWorktreePrune } =
+  vi.hoisted(() => ({
+    gitWorktreeListDetailed: vi.fn(),
+    gitWorktreeDiskSize: vi.fn(),
+    gitWorktreeAdd: vi.fn(),
+    gitWorktreeRemove: vi.fn(),
+    gitWorktreePrune: vi.fn(),
+  }));
+vi.mock("./worktreesBridge", () => ({
+  gitWorktreeListDetailed,
+  gitWorktreeDiskSize,
+  gitWorktreeAdd,
+  gitWorktreeRemove,
+  gitWorktreePrune,
 }));
-vi.mock("./worktreesBridge", () => ({ gitWorktreeListDetailed, gitWorktreeDiskSize, gitWorktreeAdd }));
 
 const { gitResolveRepo } = vi.hoisted(() => ({ gitResolveRepo: vi.fn() }));
 vi.mock("@/modules/source-control/lib/gitBridge", () => ({ gitResolveRepo }));
@@ -13,6 +22,8 @@ vi.mock("@/modules/source-control/lib/gitBridge", () => ({ gitResolveRepo }));
 import { useWorktreeRegistryStore } from "@/stores/worktreeRegistryStore";
 import type { WorktreeDetail } from "../types";
 import { useWorktreesStore } from "./worktreesStore";
+import { useTabsStore } from "@/stores/tabsStore";
+import { leaf } from "@/modules/terminal/lib/terminalLayout";
 
 function detail(path: string, isMain = false): WorktreeDetail {
   return {
@@ -190,5 +201,93 @@ describe("create", () => {
       "branch already exists: feat/x",
     );
     expect(gitWorktreeListDetailed).not.toHaveBeenCalled();
+  });
+});
+
+describe("remove", () => {
+  it("closes the terminals sitting in the worktree before git touches it", async () => {
+    // Order is the point: on Windows a live pty holds its cwd open, and the
+    // removal fails halfway, leaving git pointing at a half-gone directory.
+    const order: string[] = [];
+    useTabsStore.setState({
+      tabs: [
+        {
+          id: "t1",
+          spaceId: "s1",
+          title: "t1",
+          kind: "terminal",
+          paneTree: leaf("p1", { kind: "terminal", cwd: "/repo-worktrees/feat-x" }),
+          activeLeafId: "p1",
+          paneOrder: ["p1", "p2"],
+        },
+      ],
+      activeId: "t1",
+      spaces: [{ id: "s1", name: "S" }],
+      activeSpaceId: "s1",
+    });
+    const closePane = vi.fn(() => order.push("closePane"));
+    useTabsStore.setState({ closePane });
+    gitWorktreeRemove.mockImplementation(() => {
+      order.push("gitWorktreeRemove");
+      return Promise.resolve();
+    });
+    gitWorktreeListDetailed.mockResolvedValue([]);
+
+    await store().remove("/repo", "/repo-worktrees/feat-x");
+
+    expect(order).toEqual(["closePane", "gitWorktreeRemove"]);
+    expect(closePane).toHaveBeenCalledWith("t1", "p1");
+  });
+
+  it("never forces unless asked", async () => {
+    gitWorktreeRemove.mockResolvedValue(undefined);
+    gitWorktreeListDetailed.mockResolvedValue([]);
+
+    await store().remove("/repo", "/repo-worktrees/feat-x");
+
+    expect(gitWorktreeRemove).toHaveBeenCalledWith("/repo", "/repo-worktrees/feat-x", undefined, false, false);
+  });
+
+  it("passes force and the branch through when they were asked for", async () => {
+    gitWorktreeRemove.mockResolvedValue(undefined);
+    gitWorktreeListDetailed.mockResolvedValue([]);
+
+    await store().remove("/repo", "/repo-worktrees/feat-x", {
+      deleteBranch: "feat/x",
+      forceDeleteBranch: true,
+      force: true,
+    });
+
+    expect(gitWorktreeRemove).toHaveBeenCalledWith("/repo", "/repo-worktrees/feat-x", "feat/x", true, true);
+  });
+
+  it("still reports success when only the rescan failed — gone is gone", async () => {
+    gitWorktreeRemove.mockResolvedValue(undefined);
+    gitWorktreeListDetailed.mockRejectedValue("fatal: could not lock index");
+    gitResolveRepo.mockResolvedValue("/repo");
+
+    await expect(store().remove("/repo", "/repo-worktrees/feat-x")).resolves.toBeUndefined();
+  });
+
+  it("forgets a removed worktree's measured size", async () => {
+    gitWorktreeRemove.mockResolvedValue(undefined);
+    gitWorktreeListDetailed.mockResolvedValue([]);
+    useWorktreesStore.setState({ sizes: { "/repo-worktrees/feat-x": 4096 } });
+
+    await store().remove("/repo", "/repo-worktrees/feat-x");
+
+    expect(useWorktreesStore.getState().sizes["/repo-worktrees/feat-x"]).toBeUndefined();
+  });
+});
+
+describe("prune", () => {
+  it("reports what git dropped and rescans", async () => {
+    gitWorktreePrune.mockResolvedValue(["Removing worktrees/feat-x: gitdir file points to non-existent location"]);
+    gitWorktreeListDetailed.mockResolvedValue([]);
+
+    const pruned = await store().prune("/repo");
+
+    expect(pruned).toHaveLength(1);
+    expect(gitWorktreeListDetailed).toHaveBeenCalledWith("/repo");
   });
 });

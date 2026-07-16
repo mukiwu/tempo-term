@@ -538,19 +538,155 @@ pub fn worktree_remove(
     path: &str,
     delete_branch: Option<&str>,
     force_delete_branch: bool,
+    force: bool,
 ) -> Result<(), String> {
     ensure_not_flag(path)?;
     if let Some(branch) = delete_branch {
         ensure_not_flag(branch)?;
     }
 
-    run_git(repo_path, &["worktree", "remove", path])?;
+    // Without `force`, git refuses a worktree holding uncommitted work. That
+    // refusal is the last safety net behind the UI's own block, and it stays the
+    // default: `force` exists only so a user who has read the count and said in
+    // so many words that they want the work discarded is not sent to a terminal
+    // to do it. It is never passed on their behalf.
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    args.push(path);
+    run_git(repo_path, &args)?;
 
     if let Some(branch) = delete_branch {
         let flag = if force_delete_branch { "-D" } else { "-d" };
         run_git(repo_path, &["branch", flag, branch])?;
     }
     Ok(())
+}
+
+
+/// Carry a repo's gitignored local files into a fresh worktree.
+///
+/// `git worktree add` gives you tracked source only, so a new worktree has no
+/// `.env` — and an agent's first command dies on it. This copies the files a
+/// user names (default `**/.env*`) from the repo into the worktree, and returns
+/// the repo-relative paths actually copied so the UI can say what it did.
+///
+/// **Which files exist is git's answer, not ours.** `git status --porcelain -z
+/// --ignored` lists ignored *files* one by one but collapses an ignored
+/// *directory* to a single entry it never descends into — which is exactly the
+/// rule this needs, because `node_modules/foo/.env` is not the user's file and
+/// copying it would conjure a dependency tree in a worktree that has none. Doing
+/// that walk by hand means reimplementing git's ignore resolution, and a
+/// hand-rolled matcher that reads only the root `.gitignore` silently disagrees
+/// with git the moment a repo declares `node_modules/` in `packages/app/`.
+/// Nested ignores, `core.excludesFile` and `.git/info/exclude` all come along
+/// for free this way.
+///
+/// `globs` come from a text field the user edits, so they are input rather than
+/// configuration:
+///
+/// - An empty list means **copy nothing**. An override set with no patterns
+///   matches everything, so failing open here would turn a cleared settings
+///   field into "copy my entire working tree".
+/// - `.git` is never copied whatever the glob says: a worktree's `.git` is a
+///   file pointing back at the repo, and overwriting it with the repo's own
+///   `.git` directory would detach the worktree from git.
+pub fn copy_local_files(
+    repo_path: &str,
+    worktree_path: &str,
+    globs: &[String],
+) -> Result<Vec<String>, String> {
+    use ignore::overrides::OverrideBuilder;
+
+    let repo = Path::new(repo_path);
+    let dest_root = Path::new(worktree_path);
+    if !repo.is_absolute() || !dest_root.is_absolute() {
+        return Err("repo and worktree paths must be absolute".to_string());
+    }
+    // A worktree inside the repo (or the reverse) makes the copy find its own
+    // output: git would report the destination's files as ignored too, and each
+    // pass would copy the last one's work.
+    let repo_real = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
+    let dest_real = dest_root
+        .canonicalize()
+        .unwrap_or_else(|_| dest_root.to_path_buf());
+    if dest_real.starts_with(&repo_real) || repo_real.starts_with(&dest_real) {
+        return Err(format!(
+            "worktree must not be inside the repo, or the repo inside it: {worktree_path}"
+        ));
+    }
+
+    let mut builder = OverrideBuilder::new(repo);
+    let mut patterns = 0;
+    for glob in globs {
+        let pattern = glob.trim();
+        if pattern.is_empty() {
+            continue;
+        }
+        if pattern.starts_with('!') {
+            return Err(format!("glob cannot be a negation: {pattern}"));
+        }
+        builder
+            .add(pattern)
+            .map_err(|e| format!("bad glob {pattern}: {e}"))?;
+        patterns += 1;
+    }
+    // Nothing asked for, nothing done. `Override::matched` short-circuits on an
+    // empty set and reports every path as unfiltered, which the copy would read
+    // as a match — so this early return is load-bearing, not tidiness.
+    if patterns == 0 {
+        return Ok(Vec::new());
+    }
+    let overrides = builder.build().map_err(|e| e.to_string())?;
+
+    // NUL-separated so paths keep their own bytes: the default format quotes
+    // anything with a space or a non-ASCII character.
+    let (stdout, _) = run_git_streams(repo_path, &["status", "--porcelain", "-z", "--ignored"])?;
+    let mut copied = Vec::new();
+
+    for entry in stdout.split('\0') {
+        // `XY path`: only the ignored ones, and only the files. git marks an
+        // ignored directory with a trailing slash and never looks inside it —
+        // neither should we.
+        let Some(relative) = entry.strip_prefix("!! ") else {
+            continue;
+        };
+        if relative.is_empty() || relative.ends_with('/') {
+            continue;
+        }
+        let relative = Path::new(relative);
+        if relative.components().any(|c| {
+            c.as_os_str()
+                .to_str()
+                .is_some_and(|name| name.eq_ignore_ascii_case(".git"))
+        }) {
+            continue;
+        }
+        if !overrides.matched(relative, false).is_whitelist() {
+            continue;
+        }
+
+        let source = repo.join(relative);
+        // git reports what it saw; between then and now it could be anything.
+        if !source.is_file() {
+            continue;
+        }
+        let dest = dest_root.join(relative);
+        // A worktree that already has the file has a reason to; the user's own
+        // edit is not ours to overwrite.
+        if dest.exists() {
+            continue;
+        }
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::copy(&source, &dest).map_err(|e| e.to_string())?;
+        copied.push(relative.to_string_lossy().replace('\\', "/"));
+    }
+
+    copied.sort();
+    Ok(copied)
 }
 
 /// Drop the metadata of worktrees whose directory is gone, returning git's own
@@ -847,6 +983,7 @@ pub async fn git_worktree_remove(
     path: String,
     delete_branch: Option<String>,
     force_delete_branch: bool,
+    force: bool,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         worktree_remove(
@@ -854,7 +991,23 @@ pub async fn git_worktree_remove(
             &path,
             delete_branch.as_deref(),
             force_delete_branch,
+            force,
         )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Carry a repo's gitignored local files (default `**/.env*`) into a fresh
+/// worktree, which `git worktree add` leaves without them.
+#[tauri::command]
+pub async fn git_worktree_copy_local_files(
+    repo_path: String,
+    worktree_path: String,
+    globs: Vec<String>,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        copy_local_files(&repo_path, &worktree_path, &globs)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2056,7 +2209,7 @@ mod tests {
         let wt_path = wt.to_string_lossy().to_string();
         worktree_add(&main_path, &wt_path, "feature", true, None).unwrap();
 
-        worktree_remove(&main_path, &wt_path, None, false).unwrap();
+        worktree_remove(&main_path, &wt_path, None, false, false).unwrap();
 
         assert!(!wt.exists());
         assert_eq!(worktree_list_detailed(&main_path).unwrap().len(), 1);
@@ -2072,7 +2225,7 @@ mod tests {
         let wt_path = root.join("wt").to_string_lossy().to_string();
         worktree_add(&main_path, &wt_path, "feature", true, None).unwrap();
 
-        worktree_remove(&main_path, &wt_path, Some("feature"), true).unwrap();
+        worktree_remove(&main_path, &wt_path, Some("feature"), true, false).unwrap();
 
         assert!(run_git(&main_path, &["rev-parse", "--verify", "feature"]).is_err());
 
@@ -2089,8 +2242,14 @@ mod tests {
         worktree_add(&main_path, &wt_path, "feature", true, None).unwrap();
         std::fs::write(wt.join("a.txt"), "modified").unwrap();
 
-        assert!(worktree_remove(&main_path, &wt_path, None, false).is_err());
+        assert!(worktree_remove(&main_path, &wt_path, None, false, false).is_err());
         assert!(wt.exists());
+
+        // Forcing is possible, but only because someone read the count and said
+        // in so many words that they want the work discarded. Without this the
+        // worktree could never be removed from the app at all.
+        worktree_remove(&main_path, &wt_path, None, false, true).unwrap();
+        assert!(!wt.exists());
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -2829,4 +2988,184 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// A repo with one commit, plus a gitignored `.env` and a heavy ignored
+    /// directory — the shape `copy_local_files` exists for.
+    fn repo_with_ignored_files(tag: &str) -> (std::path::PathBuf, String) {
+        let dir = temp_repo_dir(tag);
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join(".gitignore"), "node_modules/\n.env*\n").unwrap();
+        // Declared a level down, not at the root: a repo is entitled to do this,
+        // and a matcher that only reads the root .gitignore cannot see it.
+        std::fs::create_dir_all(dir.join("packages/app")).unwrap();
+        std::fs::write(dir.join("packages/app/.gitignore"), "vendor/\n").unwrap();
+        std::fs::write(dir.join("a.txt"), "hi").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+
+        std::fs::write(dir.join(".env"), "SECRET=1").unwrap();
+        std::fs::write(dir.join(".env.local"), "LOCAL=1").unwrap();
+        // A monorepo keeps them a level down too.
+        std::fs::create_dir_all(dir.join("packages/app")).unwrap();
+        std::fs::write(dir.join("packages/app/.env"), "PKG=1").unwrap();
+        // The trap: ignored directories full of other people's files. One is
+        // ignored by the root .gitignore, one only by a nested one.
+        std::fs::create_dir_all(dir.join("node_modules/foo")).unwrap();
+        std::fs::write(dir.join("node_modules/foo/.env"), "NOT_MINE=1").unwrap();
+        std::fs::create_dir_all(dir.join("packages/app/vendor/dep")).unwrap();
+        std::fs::write(dir.join("packages/app/vendor/dep/.env"), "NOT_MINE=2").unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn copy_local_files_carries_gitignored_env_files_into_the_worktree() {
+        let (dir, path) = repo_with_ignored_files("wt-copy");
+        let dest = dir.join("..").join(format!("{}-dest", dir.file_name().unwrap().to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dest);
+        std::fs::create_dir_all(&dest).unwrap();
+
+        let copied = copy_local_files(&path, &dest.to_string_lossy(), &["**/.env*".to_string()]).unwrap();
+
+        // The whole point: `git worktree add` gives tracked source only, so
+        // these would not be there and the first command would die on them.
+        assert!(dest.join(".env").exists());
+        assert_eq!(std::fs::read_to_string(dest.join(".env")).unwrap(), "SECRET=1");
+        assert!(dest.join(".env.local").exists());
+        assert!(dest.join("packages/app/.env").exists(), "a monorepo keeps them a level down");
+        assert_eq!(copied.len(), 3);
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn copy_local_files_does_not_reach_into_an_ignored_directory() {
+        let (dir, path) = repo_with_ignored_files("wt-copy-nm");
+        let dest = dir.join("..").join(format!("{}-dest", dir.file_name().unwrap().to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dest);
+        std::fs::create_dir_all(&dest).unwrap();
+
+        copy_local_files(&path, &dest.to_string_lossy(), &["**/.env*".to_string()]).unwrap();
+
+        // Neither of these is the user's file, and copying either would conjure
+        // a dependency tree in a worktree that has none.
+        assert!(!dest.join("node_modules").exists());
+        // The one the old root-only matcher could not see. `git check-ignore`
+        // agrees this is ignored; a hand-rolled matcher reading only the root
+        // .gitignore does not.
+        assert!(!dest.join("packages/app/vendor").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn copy_local_files_never_clobbers_a_file_the_worktree_already_has() {
+        let (dir, path) = repo_with_ignored_files("wt-copy-keep");
+        let dest = dir.join("..").join(format!("{}-dest", dir.file_name().unwrap().to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dest);
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join(".env"), "ALREADY_MINE=1").unwrap();
+
+        let copied = copy_local_files(&path, &dest.to_string_lossy(), &["**/.env*".to_string()]).unwrap();
+
+        assert_eq!(std::fs::read_to_string(dest.join(".env")).unwrap(), "ALREADY_MINE=1");
+        assert!(!copied.iter().any(|c| c == ".env"), "an untouched file is not a copied one");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn copy_local_files_copies_nothing_when_asked_for_nothing() {
+        let (dir, path) = repo_with_ignored_files("wt-copy-empty");
+        let dest = dir.join("..").join(format!("{}-dest", dir.file_name().unwrap().to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dest);
+        std::fs::create_dir_all(&dest).unwrap();
+
+        // An empty glob list is a user who cleared the field. It must mean "copy
+        // nothing", never "match everything" — the difference between doing what
+        // was asked and copying the entire working tree.
+        assert_eq!(copy_local_files(&path, &dest.to_string_lossy(), &[]).unwrap(), Vec::<String>::new());
+        assert_eq!(
+            copy_local_files(&path, &dest.to_string_lossy(), &["".to_string(), "  ".to_string()]).unwrap(),
+            Vec::<String>::new()
+        );
+        assert!(!dest.join("a.txt").exists());
+        assert!(!dest.join(".env").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn copy_local_files_refuses_a_worktree_nested_in_the_repo() {
+        let (dir, path) = repo_with_ignored_files("wt-copy-nested");
+        // The walk is rooted at the repo, so a destination inside it is a
+        // destination the walk will find and copy from — its own output.
+        let inside = dir.join("worktrees/feature");
+        std::fs::create_dir_all(&inside).unwrap();
+
+        assert!(copy_local_files(&path, &inside.to_string_lossy(), &["**/.env*".to_string()]).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copy_local_files_never_leaves_the_repo() {
+        let (dir, path) = repo_with_ignored_files("wt-copy-escape");
+        let dest = dir.join("..").join(format!("{}-dest", dir.file_name().unwrap().to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dest);
+        std::fs::create_dir_all(&dest).unwrap();
+
+        // Assert the property, not the guard. git only ever reports paths inside
+        // the repo, so a glob reaching outward matches nothing — whether or not
+        // any hand-written check rejects it first.
+        assert!(copy_local_files(&path, &dest.to_string_lossy(), &["../**".to_string()]).unwrap().is_empty());
+        assert!(copy_local_files(&path, &dest.to_string_lossy(), &["/etc/passwd".to_string()]).unwrap().is_empty());
+        assert!(!dest.join("etc").exists());
+        assert!(std::fs::read_dir(&dest).unwrap().next().is_none(), "nothing landed at all");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn copy_local_files_takes_a_glob_with_dots_in_a_real_filename() {
+        let (dir, path) = repo_with_ignored_files("wt-copy-dots");
+        let dest = dir.join("..").join(format!("{}-dest", dir.file_name().unwrap().to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dest);
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dir.join(".env..bak"), "ODD=1").unwrap();
+
+        // A ".." substring rule would reject this legitimate name. The escape it
+        // was guarding against is not reachable in the first place.
+        let copied = copy_local_files(&path, &dest.to_string_lossy(), &["**/.env..bak".to_string()]).unwrap();
+
+        assert_eq!(copied, vec![".env..bak".to_string()]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn copy_local_files_ignores_the_git_directory_whatever_the_glob_says() {
+        let (dir, path) = repo_with_ignored_files("wt-copy-git");
+        let dest = dir.join("..").join(format!("{}-dest", dir.file_name().unwrap().to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dest);
+        std::fs::create_dir_all(&dest).unwrap();
+
+        copy_local_files(&path, &dest.to_string_lossy(), &["**/*".to_string()]).unwrap();
+
+        // A worktree's .git is a file pointing at the repo. Overwriting it with
+        // the repo's own .git directory would detach the worktree from git.
+        assert!(!dest.join(".git").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
 }

@@ -2,7 +2,15 @@ import { create } from "zustand";
 import { gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
 import { useWorktreeRegistryStore } from "@/stores/worktreeRegistryStore";
 import type { WorktreeAddResult, WorktreeDetail } from "../types";
-import { gitWorktreeAdd, gitWorktreeDiskSize, gitWorktreeListDetailed } from "./worktreesBridge";
+import {
+  gitWorktreeAdd,
+  gitWorktreeDiskSize,
+  gitWorktreeListDetailed,
+  gitWorktreePrune,
+  gitWorktreeRemove,
+} from "./worktreesBridge";
+import { panesInWorktree } from "./removeWorktree";
+import { useTabsStore } from "@/stores/tabsStore";
 
 /**
  * Whether `repoPath` is still a git repository — the non-brittle signal for
@@ -43,8 +51,23 @@ interface WorktreesState {
     repoPath: string,
     branch: string,
     path: string,
-    base?: string,
+    options?: { base?: string; createBranch?: boolean },
   ) => Promise<WorktreeAddResult>;
+  /**
+   * Remove a worktree, and optionally the branch it held.
+   *
+   * `force` discards uncommitted work and is only ever passed for a user who
+   * read the count and said so. Every terminal sitting in the worktree is closed
+   * first: on Windows a live pty holds a handle on its cwd and the directory
+   * cannot be deleted.
+   */
+  remove: (
+    repoPath: string,
+    path: string,
+    options?: { deleteBranch?: string; forceDeleteBranch?: boolean; force?: boolean },
+  ) => Promise<void>;
+  /** Drop metadata for worktrees whose directory is gone; returns git's report. */
+  prune: (repoPath: string) => Promise<string[]>;
   loadSize: (path: string) => Promise<number>;
   reset: () => void;
 }
@@ -94,10 +117,12 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
     return scan;
   },
 
-  create: async (repoPath, branch, path, base) => {
-    // Always a new branch: naming it is the whole point of the dialog, and
-    // checking out an existing one somewhere else is a different request.
-    const result = await gitWorktreeAdd(repoPath, path, branch, true, base);
+  create: async (repoPath, branch, path, options = {}) => {
+    // A new branch by default — naming one is the point of the dialog. The
+    // git-graph entry point arrives with a branch that already exists and asks
+    // for it to be checked out here instead.
+    const createBranch = options.createBranch ?? true;
+    const result = await gitWorktreeAdd(repoPath, path, branch, createBranch, options.base);
     // Only after it worked. A failed add leaves nothing new to find, and the
     // rescan would just cost a subprocess to learn that.
     try {
@@ -109,6 +134,50 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
       // exists". The list catches up on the next scan; the lie would not.
     }
     return result;
+  },
+
+  remove: async (repoPath, path, options = {}) => {
+    // Before git touches the directory, not after. A pty rooted in it holds the
+    // directory open on Windows, and the removal would fail halfway — leaving
+    // git's metadata pointing at a directory that is half gone.
+    const tabs = useTabsStore.getState();
+    for (const pane of panesInWorktree(tabs.tabs, path)) {
+      tabs.closePane(pane.tabId, pane.leafId);
+    }
+
+    await gitWorktreeRemove(
+      repoPath,
+      path,
+      options.deleteBranch,
+      options.forceDeleteBranch ?? false,
+      options.force ?? false,
+    );
+
+    set((state) => {
+      if (!(path in state.sizes)) {
+        return state;
+      }
+      const sizes = { ...state.sizes };
+      delete sizes[path];
+      return { sizes };
+    });
+
+    try {
+      await get().refresh(repoPath);
+    } catch {
+      // Gone is gone. A scan that lost a race with a git lock must not report a
+      // completed removal as failed — the same trap as create.
+    }
+  },
+
+  prune: async (repoPath) => {
+    const pruned = await gitWorktreePrune(repoPath);
+    try {
+      await get().refresh(repoPath);
+    } catch {
+      // As above: the prune happened whatever the rescan says.
+    }
+    return pruned;
   },
 
   loadSize: (path) => {

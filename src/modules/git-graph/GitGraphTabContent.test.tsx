@@ -3,8 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { GitGraphTabContent } from "./GitGraphTabContent";
 import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore";
+import { useTabsStore } from "@/stores/tabsStore";
+import { leaf } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useNotifyStore } from "@/stores/notifyStore";
 
 vi.mock("@/modules/source-control/lib/gitBridge", () => ({
   gitResolveRepo: vi.fn().mockResolvedValue("/repo"),
@@ -197,55 +198,62 @@ describe("GitGraphTabContent worktree selector wiring", () => {
     useWorkspaceStore.getState().setRoot("/repo");
   });
 
-  it("switches the workspace root when another worktree is picked", async () => {
+  it("opens a terminal in the picked worktree instead of pointing the explorer at it", async () => {
+    // `setRoot` reads as the tidy way to "switch to" a directory, but the
+    // explorer root drives cwd sync, which types `cd <path>` into whatever
+    // shell has focus — quite often a running agent, whose prompt then eats it.
+    // Opening a terminal there gets the explorer to follow anyway.
     vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111"], false));
     vi.mocked(gitWorktreeList).mockResolvedValue([
       { path: "/repo", branch: "master" },
       { path: "/repo-dev", branch: "feature" },
     ]);
+    useTabsStore.setState({
+      tabs: [],
+      activeId: null,
+      spaces: [{ id: "s1", name: "S" }],
+      activeSpaceId: "s1",
+    });
 
     render(<GitGraphTabContent />);
-
     fireEvent.click((await screen.findAllByLabelText("Worktree"))[0]);
     fireEvent.click(screen.getByText("repo-dev (feature)"));
 
-    await waitFor(() => expect(useWorkspaceStore.getState().rootPath).toBe("/repo-dev"));
+    await waitFor(() => expect(useTabsStore.getState().tabs).toHaveLength(1));
+    expect(useTabsStore.getState().tabs[0].cwd).toBe("/repo-dev");
+    // The explorer is not repointed from here; the new pane does that itself.
+    expect(useWorkspaceStore.getState().rootPath).toBe("/repo");
   });
 
-  it("posts a file-explorer-updated notice after switching worktree", async () => {
-    useNotifyStore.setState({ notice: null });
+  it("goes to the terminal already in that worktree rather than starting a second", async () => {
     vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111"], false));
     vi.mocked(gitWorktreeList).mockResolvedValue([
       { path: "/repo", branch: "master" },
       { path: "/repo-dev", branch: "feature" },
     ]);
+    useTabsStore.setState({
+      tabs: [
+        {
+          id: "t9",
+          spaceId: "s1",
+          title: "t9",
+          kind: "terminal",
+          paneTree: leaf("p9", { kind: "terminal", cwd: "/repo-dev" }),
+          activeLeafId: "p9",
+          paneOrder: ["p9"],
+        },
+      ],
+      activeId: null,
+      spaces: [{ id: "s1", name: "S" }],
+      activeSpaceId: "s1",
+    });
 
     render(<GitGraphTabContent />);
-
     fireEvent.click((await screen.findAllByLabelText("Worktree"))[0]);
     fireEvent.click(screen.getByText("repo-dev (feature)"));
 
-    await waitFor(() =>
-      expect(useNotifyStore.getState().notice?.text).toBe("File explorer updated"),
-    );
-  });
-
-  it("refetches the worktree list whenever the graph reloads, so labels track checkouts", async () => {
-    vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111"], false));
-    vi.mocked(gitWorktreeList).mockResolvedValue([
-      { path: "/repo", branch: "master" },
-      { path: "/repo-dev", branch: "feature" },
-    ]);
-
-    render(<GitGraphTabContent />);
-    await screen.findAllByLabelText("Worktree");
-    const callsBefore = vi.mocked(gitWorktreeList).mock.calls.length;
-
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-
-    await waitFor(() =>
-      expect(vi.mocked(gitWorktreeList).mock.calls.length).toBeGreaterThan(callsBefore),
-    );
+    await waitFor(() => expect(useTabsStore.getState().activeId).toBe("t9"));
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
   });
 
   it("hides the selector when listing worktrees fails", async () => {

@@ -1,15 +1,23 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { gitWorktreeAdd, gitWorktreeListDetailed, gitWorktreeDiskSize } = vi.hoisted(() => ({
-  gitWorktreeAdd: vi.fn(),
-  gitWorktreeListDetailed: vi.fn(),
-  gitWorktreeDiskSize: vi.fn(),
-}));
+const { gitWorktreeAdd, gitWorktreeListDetailed, gitWorktreeDiskSize, gitWorktreeCopyLocalFiles } =
+  vi.hoisted(() => ({
+    gitWorktreeAdd: vi.fn(),
+    gitWorktreeListDetailed: vi.fn(),
+    gitWorktreeDiskSize: vi.fn(),
+    gitWorktreeCopyLocalFiles: vi.fn(),
+  }));
+
+const { writeToTerminal } = vi.hoisted(() => ({ writeToTerminal: vi.fn() }));
+vi.mock("@/modules/terminal/lib/terminalBus", () => ({ writeToTerminal }));
 vi.mock("./lib/worktreesBridge", () => ({
   gitWorktreeAdd,
   gitWorktreeListDetailed,
   gitWorktreeDiskSize,
+  gitWorktreeCopyLocalFiles,
+  gitWorktreeRemove: vi.fn(),
+  gitWorktreePrune: vi.fn(),
 }));
 
 import "@/i18n";
@@ -24,6 +32,7 @@ const REPO = "/code/app";
 beforeEach(() => {
   vi.clearAllMocks();
   gitWorktreeListDetailed.mockResolvedValue([]);
+  gitWorktreeCopyLocalFiles.mockResolvedValue([]);
   useWorktreesStore.setState({ byRepo: {}, sizes: {} });
   useWorktreeSettingsStore.setState({ byRepo: {} });
   useTabsStore.setState({
@@ -34,7 +43,7 @@ beforeEach(() => {
   });
 });
 
-const nameInput = () => screen.getByRole("textbox");
+const nameInput = () => screen.getByLabelText(/branch name/i);
 const createButton = () => screen.getByRole("button", { name: /create/i });
 
 function terminalCwds(): string[] {
@@ -111,6 +120,79 @@ describe("CreateWorktreeForm", () => {
     expect(await screen.findByText(/branch already exists/)).toBeInTheDocument();
     expect(onDone).not.toHaveBeenCalled();
     expect(useTabsStore.getState().tabs).toHaveLength(0);
+  });
+
+  it("copies the local files before the shell that will read them starts", async () => {
+    // A setup command like `pnpm install` reads .env. A shell that started
+    // first would race the copy, and lose in a way that only shows up
+    // sometimes.
+    const order: string[] = [];
+    gitWorktreeAdd.mockResolvedValue({ path: "/code/app-worktrees/feat-x", branch: "feat/x" });
+    gitWorktreeCopyLocalFiles.mockImplementation(() => {
+      order.push("copy");
+      return Promise.resolve([".env"]);
+    });
+    writeToTerminal.mockImplementation(() => order.push("write"));
+
+    render(<CreateWorktreeForm repoPath={REPO} onDone={vi.fn()} />);
+    fireEvent.change(nameInput(), { target: { value: "feat/x" } });
+    fireEvent.change(screen.getByLabelText(/run after creating/i), {
+      target: { value: "pnpm install" },
+    });
+    fireEvent.click(createButton());
+
+    await waitFor(() => expect(writeToTerminal).toHaveBeenCalled());
+    expect(order).toEqual(["copy", "write"]);
+    expect(gitWorktreeCopyLocalFiles).toHaveBeenCalledWith(REPO, "/code/app-worktrees/feat-x", [
+      "**/.env*",
+    ]);
+  });
+
+  it("runs setup and the agent as one line, so the agent waits for setup to work", async () => {
+    gitWorktreeAdd.mockResolvedValue({ path: "/code/app-worktrees/feat-x", branch: "feat/x" });
+
+    render(<CreateWorktreeForm repoPath={REPO} onDone={vi.fn()} />);
+    fireEvent.change(nameInput(), { target: { value: "feat/x" } });
+    fireEvent.change(screen.getByLabelText(/run after creating/i), {
+      target: { value: "pnpm install" },
+    });
+    fireEvent.click(createButton());
+
+    await waitFor(() => expect(writeToTerminal).toHaveBeenCalled());
+    // CR, not LF: Windows' PSReadLine reads LF as a continuation that never
+    // submits, so an LF here would leave the command sitting at a `>>` prompt.
+    expect(writeToTerminal).toHaveBeenCalledWith(expect.any(String), "pnpm install\r");
+  });
+
+  it("remembers this repo's setup command for the next worktree", async () => {
+    gitWorktreeAdd.mockResolvedValue({ path: "/code/app-worktrees/feat-x", branch: "feat/x" });
+
+    render(<CreateWorktreeForm repoPath={REPO} onDone={vi.fn()} />);
+    fireEvent.change(nameInput(), { target: { value: "feat/x" } });
+    fireEvent.change(screen.getByLabelText(/run after creating/i), {
+      target: { value: "pnpm install" },
+    });
+    fireEvent.click(createButton());
+
+    await waitFor(() =>
+      expect(useWorktreeSettingsStore.getState().byRepo[REPO]?.setupCommand).toBe("pnpm install"),
+    );
+  });
+
+  it("says the worktree was made when only the copy failed, rather than that it was not", async () => {
+    // The worktree is on disk and usable. Reporting a failure would send the
+    // user to retry a branch name that now exists.
+    gitWorktreeAdd.mockResolvedValue({ path: "/code/app-worktrees/feat-x", branch: "feat/x" });
+    gitWorktreeCopyLocalFiles.mockRejectedValue("permission denied");
+    const onDone = vi.fn();
+
+    render(<CreateWorktreeForm repoPath={REPO} onDone={onDone} />);
+    fireEvent.change(nameInput(), { target: { value: "feat/x" } });
+    fireEvent.click(createButton());
+
+    expect(await screen.findByText(/was created, but/i)).toBeInTheDocument();
+    // The terminal still opened — the worktree is real.
+    expect(terminalCwds()).toContain("/code/app-worktrees/feat-x");
   });
 
   it("cannot be submitted twice while git is still working", async () => {

@@ -42,6 +42,12 @@ export interface WorktreesModalState {
   scope: WorktreeScope;
   /** The repo to scope to; null in global scope. */
   repoPath: string | null;
+  /** Open straight into the create form. An entry point that says "new
+   *  worktree" should not land on a list the user then has to find New on. */
+  creating?: boolean;
+  /** An existing branch to check out into the new worktree, rather than cutting
+   *  a new one. Set by the git-graph entry, which starts from a branch. */
+  branch?: string;
 }
 
 export interface DockLayout {
@@ -239,7 +245,11 @@ interface UiState {
   setFileFinderOpen: (open: boolean) => void;
   /** Show the worktrees manager. The entry point picks the scope: the status-bar
    *  badge means "everything", a terminal means "the repo I am in". */
-  openWorktrees: (scope: WorktreeScope, repoPath?: string | null) => void;
+  openWorktrees: (
+    scope: WorktreeScope,
+    repoPath?: string | null,
+    options?: { creating?: boolean; branch?: string },
+  ) => void;
   closeWorktrees: () => void;
   /** Open the global fuzzy file search palette (Cmd/Ctrl+P). Independent of
    *  the sidebar — it renders as a top-anchored overlay regardless of which

@@ -23,7 +23,13 @@
     "split": "Split",
     "splitHint": "Open it beside what you are working in",
     "splitFull": "This tab is full",
-    "openStale": "The directory is gone — nothing to open"
+    "openStale": "The directory is gone — nothing to open",
+    "remove": "Remove",
+    "prune": "Prune",
+    "pruneHint": "Drop git's record of worktrees whose directory is gone",
+    "pruneNone": "Nothing to prune",
+    "pruned": "Pruned {{count}} worktree",
+    "pruned_other": "Pruned {{count}} worktrees"
   },
   "agent": {
     "active": "Working",
@@ -53,6 +59,42 @@
       "empty": "Give the branch a name",
       "flag": "A name cannot start with a dash — git would read it as an option",
       "invalid": "Git will not take this as a branch name"
-    }
+    },
+    "setup": "Run after creating",
+    "setupPlaceholder": "pnpm install",
+    "setupHint": "Remembered for this repo. A fresh worktree has no node_modules.",
+    "copy": "Copy local files",
+    "copyHint": "Gitignored files git does not bring along. Comma-separated globs.",
+    "agent": "Start an agent",
+    "agentNone": "No agent",
+    "copied": "Copied {{count}} file",
+    "copied_other": "Copied {{count}} files",
+    "copyFailed": "The worktree was created, but the local files could not be copied: {{error}}"
+  },
+  "remove": {
+    "title": "Remove worktree",
+    "message": "Removes the directory {{path}}. The commits on this branch stay in the repo.",
+    "confirm": "Remove",
+    "cancel": "Cancel",
+    "dirty": "{{count}} uncommitted change will be destroyed. Nothing else has a copy.",
+    "dirty_other": "{{count}} uncommitted changes will be destroyed. Nothing else has a copy.",
+    "dirtyUnknown": "Its uncommitted changes could not be counted, so anything there would be destroyed.",
+    "discard": "I understand this work will be discarded",
+    "deleteBranch": "Also delete the branch {{branch}}",
+    "deleteBranchHint": "Kept by default. Git refuses to delete a branch that is not merged.",
+    "forceDeleteBranch": "Delete the branch even if it is not merged",
+    "main": "This is the repo's own working tree, not a worktree you added. It cannot be removed here.",
+    "locked": "This worktree is locked, so git will not remove it. Unlock it first.",
+    "lockedReason": "Locked: {{reason}}",
+    "stale": "The directory is already gone. This just drops git's record of it.",
+    "removing": "Removing…"
+  },
+  "pane": {
+    "paneMenu": "Worktree actions",
+    "newFromPane": "New worktree…",
+    "manageFromPane": "Worktrees in this repo…",
+    "hintTitle": "Worktrees live here",
+    "hintBody": "This terminal is in a git repo, so you can branch off into a worktree of its own — a separate directory with its own agent — without touching what you have open.",
+    "hintDismiss": "Got it"
   }
 }

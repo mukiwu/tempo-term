@@ -26,8 +26,7 @@
     "orderDate": "日期順序",
     "orderTopo": "拓樸順序",
     "worktree": "Worktree",
-    "switchBranch": "切換分支",
-    "worktreeSwitched": "檔案總管已更新"
+    "switchBranch": "切換分支"
   },
   "details": {
     "author": "作者",
@@ -69,7 +68,8 @@
     "checkoutRemote": "建立本地分支並切換… (git checkout --track)",
     "pull": "拉取到目前分支 (git pull)",
     "deleteRemote": "刪除遠端分支… (git push --delete)",
-    "copyBranchName": "複製分支名稱"
+    "copyBranchName": "複製分支名稱",
+    "openWorktree": "為這個分支開 worktree"
   },
   "modal": {
     "cancel": "取消",

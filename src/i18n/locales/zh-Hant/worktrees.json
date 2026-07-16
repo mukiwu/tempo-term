@@ -23,7 +23,13 @@
     "split": "分割",
     "splitHint": "開在你正在做的事情旁邊",
     "splitFull": "這個分頁已經滿了",
-    "openStale": "目錄不見了,沒東西可開"
+    "openStale": "目錄不見了,沒東西可開",
+    "remove": "移除",
+    "prune": "清理",
+    "pruneHint": "把目錄已經不見的 worktree 從 git 紀錄裡清掉",
+    "pruneNone": "沒有東西要清",
+    "pruned": "清掉了 {{count}} 個 worktree",
+    "pruned_other": "清掉了 {{count}} 個 worktree"
   },
   "agent": {
     "active": "執行中",
@@ -53,6 +59,42 @@
       "empty": "幫這個分支取個名字",
       "flag": "名稱不能用減號開頭,git 會把它當成參數",
       "invalid": "git 不接受這個分支名稱"
-    }
+    },
+    "setup": "建立後執行",
+    "setupPlaceholder": "pnpm install",
+    "setupHint": "會記住這個 repo 的設定。新的 worktree 沒有 node_modules",
+    "copy": "複製本機檔案",
+    "copyHint": "git 不會帶過去的 gitignored 檔案。用逗號分隔的 glob",
+    "agent": "順便叫起 agent",
+    "agentNone": "不要",
+    "copied": "複製了 {{count}} 個檔案",
+    "copied_other": "複製了 {{count}} 個檔案",
+    "copyFailed": "worktree 建好了,但本機檔案複製失敗:{{error}}"
+  },
+  "remove": {
+    "title": "移除 worktree",
+    "message": "會刪掉 {{path}} 這個目錄。這個分支上已經提交的東西都還留在 repo 裡",
+    "confirm": "移除",
+    "cancel": "取消",
+    "dirty": "有 {{count}} 個還沒提交的改動會被銷毀,沒有別的地方有副本",
+    "dirty_other": "有 {{count}} 個還沒提交的改動會被銷毀,沒有別的地方有副本",
+    "dirtyUnknown": "數不出還沒提交的改動有多少,所以那裡的東西都會被銷毀",
+    "discard": "我知道這些還沒提交的東西會被丟掉",
+    "deleteBranch": "順便刪掉 {{branch}} 這個分支",
+    "deleteBranchHint": "預設不刪。分支還沒合併的話,git 會拒絕",
+    "forceDeleteBranch": "就算分支還沒合併也刪掉",
+    "main": "這是 repo 自己的工作目錄,不是你另外加的 worktree,不能在這裡移除",
+    "locked": "這個 worktree 被鎖住了,git 不會移除它。先解鎖",
+    "lockedReason": "鎖定原因:{{reason}}",
+    "stale": "目錄本來就不見了,這只是把 git 的紀錄清掉",
+    "removing": "移除中…"
+  },
+  "pane": {
+    "paneMenu": "worktree 功能",
+    "newFromPane": "新增 worktree…",
+    "manageFromPane": "這個 repo 的 worktree…",
+    "hintTitle": "worktree 的入口在這",
+    "hintBody": "這個終端機在一個 git repo 裡,所以你可以另外開一個 worktree,那是一個獨立的目錄、可以跑自己的 agent,不會動到你現在開著的東西",
+    "hintDismiss": "知道了"
   }
 }

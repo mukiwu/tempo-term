@@ -78,6 +78,13 @@ interface SettingsState {
    * Persisted so the wizard only auto-opens on the very first launch.
    */
   onboardingCompleted: boolean;
+  /**
+   * The worktrees hint was shown once and dismissed. Persisted like
+   * `onboardingCompleted` — a thing the user has now been told, not a thing
+   * about this window.
+   */
+  worktreeHintSeen: boolean;
+  setWorktreeHintSeen: (value: boolean) => void;
   setOnboardingCompleted: (value: boolean) => void;
   setShowAllPorts: (value: boolean) => void;
   setLanguage: (language: SupportedLanguage) => void;
@@ -145,6 +152,8 @@ export const useSettingsStore = create<SettingsState>()(
       uiZoom: DEFAULT_UI_ZOOM,
       showAllPorts: false,
       onboardingCompleted: false,
+      worktreeHintSeen: false,
+      setWorktreeHintSeen: (value) => set({ worktreeHintSeen: value }),
       setOnboardingCompleted: (value) => set({ onboardingCompleted: value }),
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
