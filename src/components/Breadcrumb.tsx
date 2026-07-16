@@ -284,7 +284,7 @@ function BreadcrumbPopover({
           type="button"
           role="menuitem"
           onClick={() => pick(path)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-fg-muted transition-colors hover:bg-bg hover:text-fg"
+          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-0.5 text-left text-fg-muted transition-colors hover:bg-bg hover:text-fg"
         >
           <Icon size={14} className="shrink-0" />
           <span className="truncate">{label}</span>
