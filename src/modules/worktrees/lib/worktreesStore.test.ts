@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { gitWorktreeListDetailed, gitWorktreeDiskSize } = vi.hoisted(() => ({
+const { gitWorktreeListDetailed, gitWorktreeDiskSize, gitWorktreeAdd } = vi.hoisted(() => ({
   gitWorktreeListDetailed: vi.fn(),
   gitWorktreeDiskSize: vi.fn(),
+  gitWorktreeAdd: vi.fn(),
 }));
-vi.mock("./worktreesBridge", () => ({ gitWorktreeListDetailed, gitWorktreeDiskSize }));
+vi.mock("./worktreesBridge", () => ({ gitWorktreeListDetailed, gitWorktreeDiskSize, gitWorktreeAdd }));
 
 const { gitResolveRepo } = vi.hoisted(() => ({ gitResolveRepo: vi.fn() }));
 vi.mock("@/modules/source-control/lib/gitBridge", () => ({ gitResolveRepo }));
@@ -145,5 +146,36 @@ describe("worktreesStore.loadSize", () => {
     await Promise.all([store().loadSize("/wt"), store().loadSize("/wt")]);
 
     expect(gitWorktreeDiskSize).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("create", () => {
+  it("adds the worktree and reports back where it landed", async () => {
+    gitWorktreeAdd.mockResolvedValue({ path: "/repo-worktrees/feat-x", branch: "feat/x" });
+    gitWorktreeListDetailed.mockResolvedValue([detail("/repo", true), detail("/repo-worktrees/feat-x")]);
+
+    const result = await store().create("/repo", "feat/x", "/repo-worktrees/feat-x");
+
+    expect(gitWorktreeAdd).toHaveBeenCalledWith("/repo", "/repo-worktrees/feat-x", "feat/x", true, undefined);
+    expect(result.path).toBe("/repo-worktrees/feat-x");
+  });
+
+  it("rescans the repo, so the new worktree is listed and counted without asking", async () => {
+    gitWorktreeAdd.mockResolvedValue({ path: "/repo-worktrees/feat-x", branch: "feat/x" });
+    gitWorktreeListDetailed.mockResolvedValue([detail("/repo", true), detail("/repo-worktrees/feat-x")]);
+
+    await store().create("/repo", "feat/x", "/repo-worktrees/feat-x");
+
+    expect(useWorktreesStore.getState().byRepo["/repo"]).toHaveLength(2);
+    expect(useWorktreeRegistryStore.getState().byRepo["/repo"].worktreeCount).toBe(1);
+  });
+
+  it("does not rescan when the add failed — there is nothing new to find", async () => {
+    gitWorktreeAdd.mockRejectedValue("branch already exists: feat/x");
+
+    await expect(store().create("/repo", "feat/x", "/repo-worktrees/feat-x")).rejects.toBe(
+      "branch already exists: feat/x",
+    );
+    expect(gitWorktreeListDetailed).not.toHaveBeenCalled();
   });
 });

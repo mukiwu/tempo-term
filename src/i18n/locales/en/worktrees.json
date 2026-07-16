@@ -37,5 +37,22 @@
     "global": "No worktrees anywhere yet",
     "globalHint": "Repos show up here once they have a worktree"
   },
-  "close": "Close"
+  "close": "Close",
+  "create": {
+    "title": "New worktree",
+    "in": "in {{name}}",
+    "branch": "Branch name",
+    "branchPlaceholder": "feat/my-change",
+    "branchHint": "Cut from the current HEAD",
+    "path": "Goes in",
+    "create": "Create",
+    "creating": "Creating…",
+    "cancel": "Cancel",
+    "new": "New",
+    "error": {
+      "empty": "Give the branch a name",
+      "flag": "A name cannot start with a dash — git would read it as an option",
+      "invalid": "Git will not take this as a branch name"
+    }
+  }
 }

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { gitWorktreeListDetailed, gitWorktreeDiskSize, gitWorktreeDirtyCount } = vi.hoisted(() => ({
@@ -10,6 +10,7 @@ vi.mock("./lib/worktreesBridge", () => ({
   gitWorktreeListDetailed,
   gitWorktreeDiskSize,
   gitWorktreeDirtyCount,
+  gitWorktreeAdd: vi.fn(),
 }));
 
 const { gitResolveRepo } = vi.hoisted(() => ({ gitResolveRepo: vi.fn() }));
@@ -69,6 +70,30 @@ describe("WorktreesModal", () => {
 
     expect(await screen.findByText("feat/x")).toBeInTheDocument();
     expect(gitWorktreeListDetailed).toHaveBeenCalledWith("/repo/a");
+  });
+
+  it("can start a new worktree from the repo it is scoped to", async () => {
+    gitWorktreeListDetailed.mockResolvedValue([detail("/repo/a-worktrees/x", "feat/x")]);
+
+    render(<WorktreesModal state={{ scope: "repo", repoPath: "/repo/a" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: /new/i }));
+
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("names the repo on each group's New button, since global scope has several", async () => {
+    // The badge is the only way in today, and it always opens global scope — so
+    // without this, creating a worktree would be unreachable.
+    register("/repo/a");
+    register("/repo/b");
+    gitWorktreeListDetailed.mockImplementation((repo: string) =>
+      Promise.resolve([detail(`${repo}-worktrees/x`, "feat/x")]),
+    );
+
+    render(<WorktreesModal state={{ scope: "global", repoPath: null }} />);
+
+    expect(await screen.findByRole("button", { name: /new: a/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new: b/i })).toBeInTheDocument();
   });
 
   it("scans a repo once per open, not once per render", async () => {

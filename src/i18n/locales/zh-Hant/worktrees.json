@@ -37,5 +37,22 @@
     "global": "還沒有任何 worktree",
     "globalHint": "repo 一旦有了 worktree 就會出現在這裡"
   },
-  "close": "關閉"
+  "close": "關閉",
+  "create": {
+    "title": "新增 worktree",
+    "in": "在 {{name}}",
+    "branch": "分支名稱",
+    "branchPlaceholder": "feat/my-change",
+    "branchHint": "從目前的 HEAD 切出來",
+    "path": "會建在",
+    "create": "建立",
+    "creating": "建立中…",
+    "cancel": "取消",
+    "new": "新增",
+    "error": {
+      "empty": "幫這個分支取個名字",
+      "flag": "名稱不能用減號開頭,git 會把它當成參數",
+      "invalid": "git 不接受這個分支名稱"
+    }
+  }
 }

@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
 import { useWorktreeRegistryStore } from "@/stores/worktreeRegistryStore";
-import type { WorktreeDetail } from "../types";
-import { gitWorktreeDiskSize, gitWorktreeListDetailed } from "./worktreesBridge";
+import type { WorktreeAddResult, WorktreeDetail } from "../types";
+import { gitWorktreeAdd, gitWorktreeDiskSize, gitWorktreeListDetailed } from "./worktreesBridge";
 
 /**
  * Whether `repoPath` is still a git repository — the non-brittle signal for
@@ -34,11 +34,22 @@ interface WorktreesState {
   /** Lazily measured bytes per worktree path; absent until asked for. */
   sizes: Record<string, number>;
   refresh: (repoPath: string) => Promise<WorktreeDetail[]>;
+  /**
+   * Add a worktree for a new branch cut from `base` (HEAD when omitted), then
+   * rescan so it is listed and counted without anyone asking. Rejects with
+   * git's own message — the caller shows it.
+   */
+  create: (
+    repoPath: string,
+    branch: string,
+    path: string,
+    base?: string,
+  ) => Promise<WorktreeAddResult>;
   loadSize: (path: string) => Promise<number>;
   reset: () => void;
 }
 
-export const useWorktreesStore = create<WorktreesState>((set) => ({
+export const useWorktreesStore = create<WorktreesState>((set, get) => ({
   byRepo: {},
   sizes: {},
 
@@ -81,6 +92,16 @@ export const useWorktreesStore = create<WorktreesState>((set) => ({
       });
     scansInFlight.set(repoPath, scan);
     return scan;
+  },
+
+  create: async (repoPath, branch, path, base) => {
+    // Always a new branch: naming it is the whole point of the dialog, and
+    // checking out an existing one somewhere else is a different request.
+    const result = await gitWorktreeAdd(repoPath, path, branch, true, base);
+    // Only after it worked. A failed add leaves nothing new to find, and the
+    // rescan would just cost a subprocess to learn that.
+    await get().refresh(repoPath);
+    return result;
   },
 
   loadSize: (path) => {
