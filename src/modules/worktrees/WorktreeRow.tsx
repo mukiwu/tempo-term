@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, HardDrive, Lock } from "lucide-react";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
+import { formatBytes } from "@/modules/sysmon/lib/format";
 import { useTabsStore } from "@/stores/tabsStore";
 import type { WorktreeDetail } from "./types";
 import { gitWorktreeDirtyCount } from "./lib/worktreesBridge";
@@ -16,18 +17,6 @@ const STATUS_DOT: Record<SessionStatus, string> = {
   "waiting-approval": "bg-danger",
   idle: "bg-warning",
 };
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
-}
 
 /**
  * One worktree: what branch it holds, whether it has uncommitted work, and
@@ -48,8 +37,11 @@ export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
   const activity = worktreeSessionStatus(tabs, statuses, agents, detail.path);
 
   useEffect(() => {
-    // A gone directory has nothing to count, and git2 would just error.
+    // A gone directory has nothing to count, and git2 would just error. Clear
+    // rather than just skip: a row that goes stale keeps its component instance,
+    // and with it whatever count it had already loaded.
     if (detail.prunable || detail.bare) {
+      setDirty(null);
       return;
     }
     let cancelled = false;
@@ -115,20 +107,24 @@ export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
         {dirty !== null && dirty > 0 && (
           <span className="text-warning">{t("row.dirty", { count: dirty })}</span>
         )}
-        {size === undefined ? (
-          // Measuring walks the whole checkout (node_modules and all), so it
-          // only ever happens because someone asked for this row.
-          <button
-            type="button"
-            onClick={measure}
-            disabled={measuring || detail.prunable}
-            className="flex items-center gap-1 rounded px-1 text-fg-subtle transition-colors hover:text-fg disabled:opacity-40"
-          >
-            <HardDrive size={12} />
-            {measuring ? t("row.measuring") : t("row.measure")}
-          </button>
-        ) : (
+        {size !== undefined ? (
           <span className="font-mono">{formatBytes(size)}</span>
+        ) : (
+          // Nothing to measure once the directory is gone, and offering a dead
+          // button next to the warning saying so is just noise.
+          !detail.prunable && (
+            // Measuring walks the whole checkout (node_modules and all), so it
+            // only ever happens because someone asked for this row.
+            <button
+              type="button"
+              onClick={measure}
+              disabled={measuring}
+              className="flex items-center gap-1 rounded px-1 text-fg-subtle transition-colors hover:text-fg disabled:opacity-40"
+            >
+              <HardDrive size={12} />
+              {measuring ? t("row.measuring") : t("row.measure")}
+            </button>
+          )
         )}
       </div>
     </div>
