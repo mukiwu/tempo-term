@@ -2,7 +2,12 @@ import { useTranslation } from "react-i18next";
 import { useSortable } from "@dnd-kit/sortable";
 import { Tooltip } from "@/components/Tooltip";
 import type { PanelId } from "@/stores/uiStore";
+import {
+  useSessionStatusStore,
+  selectSessionStatus,
+} from "@/modules/claude-progress/lib/sessionStatusStore";
 import { PANEL_REGISTRY } from "./panelRegistry";
+import { StatusStripDot } from "./StatusStripDot";
 
 /** Common classes for a dock-strip icon button, active or not. */
 function iconButtonClass(active: boolean, dragging: boolean): string {
@@ -31,7 +36,10 @@ export function DockIcon({
   onSelect: (id: PanelId) => void;
 }) {
   const { t } = useTranslation();
-  const { icon: Icon, labelKey } = PANEL_REGISTRY[id];
+  const { icon: Icon, labelKey, showSessionStatus } = PANEL_REGISTRY[id];
+  // Only status-bearing icons subscribe to the aggregate; the rest read a stable
+  // null and never re-render when a session's status ticks.
+  const status = useSessionStatusStore((s) => (showSessionStatus ? selectSessionStatus(s) : null));
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   return (
@@ -51,9 +59,10 @@ export function DockIcon({
           aria-label={t(labelKey)}
           aria-pressed={active}
           onClick={() => onSelect(id)}
-          className={iconButtonClass(active, isDragging)}
+          className={`relative ${iconButtonClass(active, isDragging)}`}
         >
           <Icon size={15} />
+          {status && <StatusStripDot status={status} />}
         </button>
       </Tooltip>
     </div>

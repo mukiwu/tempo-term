@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useSessionStatusStore } from "./sessionStatusStore";
+import { useSessionStatusStore, aggregateSessionStatus } from "./sessionStatusStore";
 
 beforeEach(() => useSessionStatusStore.setState({ statuses: {}, agents: {} }));
 
@@ -15,6 +15,19 @@ describe("sessionStatusStore", () => {
     useSessionStatusStore.getState().setStatus("leaf-1", "active");
     useSessionStatusStore.getState().clear("leaf-1");
     expect(useSessionStatusStore.getState().statuses["leaf-1"]).toBeUndefined();
+  });
+
+  describe("aggregateSessionStatus", () => {
+    it("returns null when nothing is tracked", () => {
+      expect(aggregateSessionStatus({})).toBeNull();
+    });
+
+    it("picks the most urgent status across leaves", () => {
+      expect(aggregateSessionStatus({ a: "active", b: "waiting-approval" })).toBe("waiting-approval");
+      expect(aggregateSessionStatus({ a: "thinking", b: "active" })).toBe("active");
+      expect(aggregateSessionStatus({ a: "idle", b: "thinking" })).toBe("thinking");
+      expect(aggregateSessionStatus({ a: "idle" })).toBe("idle");
+    });
   });
 
   it("clearing an unknown leaf is a no-op", () => {
