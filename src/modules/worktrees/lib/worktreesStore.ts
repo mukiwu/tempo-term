@@ -100,7 +100,14 @@ export const useWorktreesStore = create<WorktreesState>((set, get) => ({
     const result = await gitWorktreeAdd(repoPath, path, branch, true, base);
     // Only after it worked. A failed add leaves nothing new to find, and the
     // rescan would just cost a subprocess to learn that.
-    await get().refresh(repoPath);
+    try {
+      await get().refresh(repoPath);
+    } catch {
+      // The worktree is on disk either way. A scan that lost a race with a git
+      // lock must not report the creation as failed: the user would be told it
+      // did not happen, and their retry would then die on "branch already
+      // exists". The list catches up on the next scan; the lie would not.
+    }
     return result;
   },
 

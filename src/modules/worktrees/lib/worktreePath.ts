@@ -14,9 +14,17 @@ function separatorOf(path: string): "/" | "\\" {
 
 function trimTrailingSeparators(path: string): string {
   const trimmed = path.replace(/[/\\]+$/, "");
-  // A bare root ("/" or "C:\") trims away to nothing or to a drive letter, and
-  // it is a real directory rather than an empty path.
-  return trimmed === "" ? path.slice(0, 1) : trimmed;
+  // A bare root is a real directory, and trimming its separator changes which
+  // directory it names. "/" would trim to nothing; "C:\" would trim to "C:",
+  // which is drive-*relative* — the Rust side refuses it for not being
+  // absolute, and it would not mean the drive root anyway.
+  if (trimmed === "") {
+    return path.slice(0, 1);
+  }
+  if (/^[A-Za-z]:$/.test(trimmed)) {
+    return path.slice(0, 3);
+  }
+  return trimmed;
 }
 
 /**

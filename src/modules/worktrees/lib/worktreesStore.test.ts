@@ -170,6 +170,19 @@ describe("create", () => {
     expect(useWorktreeRegistryStore.getState().byRepo["/repo"].worktreeCount).toBe(1);
   });
 
+  it("still reports success when only the rescan failed — the worktree is on disk", async () => {
+    // The worktree exists. Saying otherwise leaves the form open on a lie, and
+    // the retry then fails with "branch already exists".
+    gitWorktreeAdd.mockResolvedValue({ path: "/repo-worktrees/feat-x", branch: "feat/x" });
+    gitWorktreeListDetailed.mockRejectedValue("fatal: could not lock index");
+    gitResolveRepo.mockResolvedValue("/repo");
+
+    await expect(store().create("/repo", "feat/x", "/repo-worktrees/feat-x")).resolves.toEqual({
+      path: "/repo-worktrees/feat-x",
+      branch: "feat/x",
+    });
+  });
+
   it("does not rescan when the add failed — there is nothing new to find", async () => {
     gitWorktreeAdd.mockRejectedValue("branch already exists: feat/x");
 

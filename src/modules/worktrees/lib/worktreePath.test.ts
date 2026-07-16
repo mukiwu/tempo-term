@@ -13,6 +13,16 @@ describe("defaultContainer", () => {
   it("keeps the repo's own spelling of a separator on Windows", () => {
     expect(defaultContainer("C:\\code\\tempo-term")).toBe("C:\\code\\tempo-term-worktrees");
   });
+
+  it("keeps a Windows drive root absolute", () => {
+    // "C:\" trimmed to "C:" is drive-*relative* — a different directory from
+    // the drive root, and one the Rust side refuses outright.
+    expect(defaultContainer("C:\\")).toBe("C:\\-worktrees");
+  });
+
+  it("keeps the unix root absolute too", () => {
+    expect(defaultContainer("/")).toBe("/-worktrees");
+  });
 });
 
 describe("branchSlug", () => {
