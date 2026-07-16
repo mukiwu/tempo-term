@@ -4,6 +4,7 @@ import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus"
 import { AGGREGATE_PRIORITY } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import type { Tab } from "@/stores/tabsStore";
+import { localTerminalCwd } from "./panes";
 import { isUnder } from "./paths";
 
 /** What a worktree row shows: the most urgent agent state in it, and whose. */
@@ -35,13 +36,7 @@ export function worktreeSessionStatus(
 
   for (const tab of tabs) {
     for (const pane of computeLayout(tab.paneTree)) {
-      if (pane.content?.kind !== "terminal") {
-        continue;
-      }
-      // A pane's live cwd wins; a freshly spawned one that has not reported yet
-      // falls back to the tab's starting dir, or a just-launched agent would
-      // show nothing.
-      const cwd = pane.content.cwd || tab.cwd;
+      const cwd = localTerminalCwd(pane.content, tab.cwd);
       if (!cwd || !isUnder(cwd, worktreePath, windows)) {
         continue;
       }

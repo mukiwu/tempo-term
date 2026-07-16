@@ -68,6 +68,17 @@ describe("findWorktreePane", () => {
     expect(findWorktreePane(tabs, WT, false)).toBeNull();
   });
 
+  it("never offers an SSH shell as the way into a local worktree", () => {
+    // `ssh` is a flag on ordinary terminal content, and an SSH pane split into a
+    // tab that sits in a worktree inherits that tab's cwd. Focusing it would put
+    // the user on a remote host and call it their worktree.
+    const tabs = [
+      tab("t1", leaf("p1", { kind: "terminal", ssh: { connectionId: "c1" } }), WT),
+      tab("t2", leaf("p2", { kind: "terminal", cwd: WT, ssh: { connectionId: "c2" } })),
+    ];
+    expect(findWorktreePane(tabs, WT, false)).toBeNull();
+  });
+
   it("matches case-insensitively on Windows, where the pty's spelling need not match git's", () => {
     const tabs = [tab("t1", terminalLeaf("p1", "C:/Code/Repo-Worktrees/Feat-A"))];
     expect(findWorktreePane(tabs, "c:\\code\\repo-worktrees\\feat-a", true)).toEqual({

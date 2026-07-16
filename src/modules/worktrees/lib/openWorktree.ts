@@ -1,6 +1,7 @@
 import { IS_WINDOWS } from "@/lib/platform";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
-import type { Tab } from "@/stores/tabsStore";
+import { MAX_PANES, type Tab } from "@/stores/tabsStore";
+import { localTerminalCwd } from "./panes";
 import { isUnder } from "./paths";
 
 /** Where a worktree is already open. */
@@ -29,16 +30,29 @@ export function findWorktreePane(
 ): OpenWorktreePane | null {
   for (const tab of tabs) {
     for (const pane of computeLayout(tab.paneTree)) {
-      if (pane.content?.kind !== "terminal") {
-        continue;
-      }
-      // A pane's live cwd wins; one spawned moments ago has not reported yet and
-      // only the tab's starting dir says where it is.
-      const cwd = pane.content.cwd || tab.cwd;
+      const cwd = localTerminalCwd(pane.content, tab.cwd);
       if (cwd && isUnder(cwd, worktreePath, windows)) {
         return { tabId: tab.id, leafId: pane.id };
       }
     }
   }
   return null;
+}
+
+/**
+ * Whether a tab can take a split.
+ *
+ * A launcher tab is not a candidate: `TabsArea` renders `LauncherPanel` for it
+ * and never looks at its pane tree, so a pane split into one silently vanishes.
+ * And `splitPaneWith` takes an explicit target rather than the active pane, so
+ * unlike `splitActivePane` it does not hold the pane cap for its callers.
+ */
+export function canSplitInto(tab: Tab | null | undefined): tab is Tab {
+  return !!tab && tab.kind !== "launcher";
+}
+
+/** Whether that tab still has room. Separate from `canSplitInto`: a full tab is
+ * a "not right now", which the UI says by disabling rather than hiding. */
+export function hasPaneRoom(tab: Tab): boolean {
+  return tab.paneOrder.length < MAX_PANES;
 }

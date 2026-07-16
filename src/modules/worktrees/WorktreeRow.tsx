@@ -3,11 +3,11 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, Columns2, FolderOpen, HardDrive, Lock } from "lucide-react";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { formatBytes } from "@/modules/sysmon/lib/format";
-import { MAX_PANES, useTabsStore } from "@/stores/tabsStore";
+import { useTabsStore } from "@/stores/tabsStore";
 import { useUiStore } from "@/stores/uiStore";
 import type { WorktreeDetail } from "./types";
 import { gitWorktreeDirtyCount } from "./lib/worktreesBridge";
-import { findWorktreePane } from "./lib/openWorktree";
+import { canSplitInto, findWorktreePane, hasPaneRoom } from "./lib/openWorktree";
 import { useWorktreesStore } from "./lib/worktreesStore";
 import { worktreeSessionStatus } from "./lib/worktreeStatus";
 import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus";
@@ -45,6 +45,7 @@ export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
   // shell in, and a bare one has no working tree at all.
   const unopenable = detail.prunable || detail.bare;
   const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
+  const splitTarget = canSplitInto(activeTab) ? activeTab : null;
 
   const open = () => {
     const tabsApi = useTabsStore.getState();
@@ -64,12 +65,19 @@ export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
   };
 
   const split = () => {
-    if (!activeTab) {
+    // Re-read rather than trust this render's snapshot: which tab is active, and
+    // how many panes it holds, can both move between paint and click.
+    const tabsApi = useTabsStore.getState();
+    const target = tabsApi.tabs.find((tab) => tab.id === tabsApi.activeId);
+    if (!canSplitInto(target) || !hasPaneRoom(target)) {
       return;
     }
-    useTabsStore
-      .getState()
-      .splitPaneWith(activeTab.id, activeTab.activeLeafId, { kind: "terminal", cwd: detail.path }, "row");
+    tabsApi.splitPaneWith(
+      target.id,
+      target.activeLeafId,
+      { kind: "terminal", cwd: detail.path },
+      "row",
+    );
     closeWorktrees();
   };
 
@@ -180,14 +188,12 @@ export function WorktreeRow({ detail }: { detail: WorktreeDetail }) {
 
         {/* Only offered when there is something to sit beside. Splitting is for
             comparing this worktree against what you already have open. */}
-        {activeTab && !unopenable && (
+        {splitTarget && !unopenable && (
           <button
             type="button"
             onClick={split}
-            disabled={activeTab.paneOrder.length >= MAX_PANES}
-            title={
-              activeTab.paneOrder.length >= MAX_PANES ? t("row.splitFull") : t("row.splitHint")
-            }
+            disabled={!hasPaneRoom(splitTarget)}
+            title={hasPaneRoom(splitTarget) ? t("row.splitHint") : t("row.splitFull")}
             aria-label={`${t("row.split")}: ${detail.branch ?? t("row.detached")}`}
             className="flex items-center gap-1 rounded px-1 text-fg-subtle transition-colors hover:text-fg disabled:opacity-40"
           >

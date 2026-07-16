@@ -140,4 +140,23 @@ describe("WorktreeRow — splitting", () => {
 
     expect(screen.queryByRole("button", { name: /split/i })).not.toBeInTheDocument();
   });
+
+  it("offers no split into a launcher tab, whose panes are never rendered", () => {
+    const launcher = tab("t1", leaf("p1", { kind: "launcher" }), ["p1"]);
+    seedTabs([{ ...launcher, kind: "launcher" }], "t1");
+
+    render(<WorktreeRow detail={detail()} />);
+
+    expect(screen.queryByRole("button", { name: /split/i })).not.toBeInTheDocument();
+  });
+
+  it("still opens into a tab of its own from a launcher tab", () => {
+    const launcher = tab("t1", leaf("p1", { kind: "launcher" }), ["p1"]);
+    seedTabs([{ ...launcher, kind: "launcher" }], "t1");
+
+    render(<WorktreeRow detail={detail()} />);
+    fireEvent.click(openButton());
+
+    expect(terminalCwds()).toContain(WT);
+  });
 });

@@ -20,6 +20,28 @@ function tabAt(id: string, leafId: string, cwd: string | undefined, tabCwd?: str
 }
 
 describe("worktreeSessionStatus", () => {
+  it("does not lend an SSH pane's agent to a local worktree", () => {
+    // `ssh` is a flag on ordinary terminal content, so an SSH pane split into a
+    // tab sitting in a worktree inherits that tab's cwd — and would report a
+    // remote host's agent as this worktree's.
+    const tabs: Tab[] = [
+      {
+        id: "a",
+        spaceId: "s1",
+        title: "a",
+        kind: "terminal",
+        paneTree: leaf("p1", { kind: "terminal", ssh: { connectionId: "c1" } }),
+        activeLeafId: "p1",
+        paneOrder: ["p1"],
+        cwd: WT,
+      },
+    ];
+    expect(worktreeSessionStatus(tabs, { p1: "active" }, { p1: "claude" }, WT, false)).toEqual({
+      status: null,
+      agent: null,
+    });
+  });
+
   it("reports nothing when no pane sits in the worktree", () => {
     const tabs = [tabAt("a", "p1", "/somewhere/else")];
     expect(worktreeSessionStatus(tabs, { p1: "active" }, {}, WT, false)).toEqual({
