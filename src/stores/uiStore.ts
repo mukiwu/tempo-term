@@ -258,7 +258,6 @@ interface UiState {
   setupWizardOpen: boolean;
   terminalOpen: boolean;
   fileFinderOpen: boolean;
-  portsPanelOpen: boolean;
   /**
    * Number of full-screen overlays (modals, dialogs, context menus) currently
    * mounted. The native preview webview floats above all DOM, so it must hide
@@ -289,8 +288,6 @@ interface UiState {
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
   setFileFinderOpen: (open: boolean) => void;
-  setPortsPanelOpen: (open: boolean) => void;
-  togglePortsPanel: () => void;
   /** Open the global fuzzy file search palette (Cmd/Ctrl+P). Independent of
    *  the sidebar — it renders as a top-anchored overlay regardless of which
    *  sidebar panel (if any) is currently showing. */
@@ -315,7 +312,6 @@ export const useUiStore = create<UiState>((set) => {
     setupWizardOpen: false,
     terminalOpen: true,
     fileFinderOpen: false,
-    portsPanelOpen: false,
     overlayCount: 0,
 
     selectSidebar: (view) => set({ sidebarView: view, sidebarVisible: true }),
@@ -394,8 +390,6 @@ export const useUiStore = create<UiState>((set) => {
     setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
     toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
     setFileFinderOpen: (fileFinderOpen) => set({ fileFinderOpen }),
-    setPortsPanelOpen: (portsPanelOpen) => set({ portsPanelOpen }),
-    togglePortsPanel: () => set((state) => ({ portsPanelOpen: !state.portsPanelOpen })),
 
     openFileFinder: () => set({ fileFinderOpen: true }),
 

@@ -4,17 +4,9 @@ import "@/i18n";
 
 const { usePorts } = vi.hoisted(() => ({ usePorts: vi.fn() }));
 vi.mock("./lib/usePorts", () => ({ usePorts }));
-const { killPortProcess } = vi.hoisted(() => ({ killPortProcess: vi.fn() }));
-vi.mock("./lib/portsBridge", () => ({ killPortProcess }));
-const { newTerminalTab } = vi.hoisted(() => ({ newTerminalTab: vi.fn() }));
-vi.mock("@/stores/tabsStore", () => ({
-  useTabsStore: Object.assign(() => {}, { getState: () => ({ newTerminalTab }) }),
-}));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn() }));
 
 import { PortsIndicator } from "./PortsIndicator";
-import { useUiStore } from "@/stores/uiStore";
+import { useUiStore, DEFAULT_DOCK } from "@/stores/uiStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 const sample = [
@@ -34,23 +26,35 @@ const sample = [
 ];
 
 beforeEach(() => {
-  useUiStore.getState().setPortsPanelOpen(false);
+  useUiStore.setState({
+    panelDock: { ...DEFAULT_DOCK.panelDock },
+    panelOrder: {
+      left: [...DEFAULT_DOCK.panelOrder.left],
+      right: [...DEFAULT_DOCK.panelOrder.right],
+    },
+    activePanel: { ...DEFAULT_DOCK.activePanel },
+    width: { ...DEFAULT_DOCK.width },
+    visible: { left: true, right: false },
+  });
   useSettingsStore.getState().setShowAllPorts(false);
   usePorts.mockReset();
   usePorts.mockReturnValue(sample);
-  killPortProcess.mockReset();
-  killPortProcess.mockResolvedValue(undefined);
 });
 
 describe("PortsIndicator", () => {
-  it("shows the port count and opens the panel on click", () => {
+  it("shows the port count and activates the Ports panel on click", () => {
     render(<PortsIndicator />);
     expect(screen.getByText("1")).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: /ports/i }));
-    expect(screen.getByText(":3000")).toBeInTheDocument();
+
+    // Ports docks on the right by default; clicking reveals + activates it there.
+    const s = useUiStore.getState();
+    expect(s.activePanel.right).toBe("ports");
+    expect(s.visible.right).toBe(true);
   });
 
-  it("renders no button when there are no ports and the panel is closed", () => {
+  it("renders no button when there are no ports", () => {
     usePorts.mockReturnValue([]);
     render(<PortsIndicator />);
     expect(screen.queryByRole("button", { name: /ports/i })).toBeNull();
