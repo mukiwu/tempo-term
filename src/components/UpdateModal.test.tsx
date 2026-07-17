@@ -40,4 +40,42 @@ describe("UpdateModal release notes", () => {
 
     expect(screen.getByText("disk full")).toBeInTheDocument();
   });
+
+  it("shows byte progress and a progress bar while downloading", () => {
+    useUpdaterStore.setState({
+      installing: true,
+      installPhase: "downloading",
+      progress: { downloaded: 5_242_880, total: 10_485_760 },
+    });
+
+    render(<UpdateModal />);
+
+    expect(screen.getByText("5.0 / 10.0 MB (50%)")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  it("shows downloaded bytes alone when the total size is unknown", () => {
+    useUpdaterStore.setState({
+      installing: true,
+      installPhase: "downloading",
+      progress: { downloaded: 5_242_880, total: null },
+    });
+
+    render(<UpdateModal />);
+
+    expect(screen.getByText("5.0 MB")).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("switches to the installing label once the download finishes", () => {
+    useUpdaterStore.setState({
+      installing: true,
+      installPhase: "installing",
+      progress: { downloaded: 10_485_760, total: 10_485_760 },
+    });
+
+    render(<UpdateModal />);
+
+    expect(screen.getByText("Installing…")).toBeInTheDocument();
+  });
 });

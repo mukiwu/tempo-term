@@ -18,6 +18,8 @@ function resetStore() {
     notifiedVersions: [],
     installing: false,
     errorMessage: "",
+    progress: null,
+    installPhase: null,
   });
 }
 
@@ -177,6 +179,97 @@ describe("updaterStore", () => {
 
     expect(downloadAndInstall).toHaveBeenCalledOnce();
     expect(relaunch).toHaveBeenCalledOnce();
+  });
+
+  it("installUpdate reports download progress from updater events", async () => {
+    const snapshots: Array<{
+      progress: { downloaded: number; total: number | null } | null;
+      installPhase: "downloading" | "installing" | null;
+    }> = [];
+    const snap = () => {
+      const s = useUpdaterStore.getState();
+      snapshots.push({ progress: s.progress, installPhase: s.installPhase });
+    };
+    const downloadAndInstall = vi
+      .fn()
+      .mockImplementation(async (onEvent: (e: unknown) => void) => {
+        onEvent({ event: "Started", data: { contentLength: 100 } });
+        snap();
+        onEvent({ event: "Progress", data: { chunkLength: 40 } });
+        snap();
+        onEvent({ event: "Progress", data: { chunkLength: 60 } });
+        snap();
+        onEvent({ event: "Finished" });
+        snap();
+      });
+    relaunch.mockResolvedValue(undefined);
+    useUpdaterStore.setState({
+      available: {
+        version: "0.0.2",
+        notes: "",
+        releaseUrl: "",
+        update: { downloadAndInstall } as never,
+      },
+    });
+
+    await useUpdaterStore.getState().installUpdate();
+
+    expect(snapshots).toEqual([
+      { progress: { downloaded: 0, total: 100 }, installPhase: "downloading" },
+      { progress: { downloaded: 40, total: 100 }, installPhase: "downloading" },
+      { progress: { downloaded: 100, total: 100 }, installPhase: "downloading" },
+      { progress: { downloaded: 100, total: 100 }, installPhase: "installing" },
+    ]);
+    expect(relaunch).toHaveBeenCalledOnce();
+  });
+
+  it("installUpdate tracks bytes even when the server omits the total size", async () => {
+    const downloadAndInstall = vi
+      .fn()
+      .mockImplementation(async (onEvent: (e: unknown) => void) => {
+        onEvent({ event: "Started", data: {} });
+        onEvent({ event: "Progress", data: { chunkLength: 25 } });
+      });
+    relaunch.mockResolvedValue(undefined);
+    useUpdaterStore.setState({
+      available: {
+        version: "0.0.2",
+        notes: "",
+        releaseUrl: "",
+        update: { downloadAndInstall } as never,
+      },
+    });
+
+    await useUpdaterStore.getState().installUpdate();
+
+    expect(useUpdaterStore.getState().progress).toEqual({ downloaded: 25, total: null });
+  });
+
+  it("installUpdate clears progress state when the install fails", async () => {
+    const downloadAndInstall = vi
+      .fn()
+      .mockImplementation(async (onEvent: (e: unknown) => void) => {
+        onEvent({ event: "Started", data: { contentLength: 100 } });
+        onEvent({ event: "Progress", data: { chunkLength: 40 } });
+        throw new Error("connection reset");
+      });
+    useUpdaterStore.setState({
+      available: {
+        version: "0.0.2",
+        notes: "",
+        releaseUrl: "",
+        update: { downloadAndInstall } as never,
+      },
+    });
+
+    await useUpdaterStore.getState().installUpdate();
+
+    const s = useUpdaterStore.getState();
+    expect(s.installing).toBe(false);
+    expect(s.progress).toBeNull();
+    expect(s.installPhase).toBeNull();
+    expect(s.errorMessage).toBe("connection reset");
+    expect(relaunch).not.toHaveBeenCalled();
   });
 
   it("installUpdate is a no-op when no update is available", async () => {

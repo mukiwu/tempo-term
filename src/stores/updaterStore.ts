@@ -7,6 +7,14 @@ const RELEASE_TAG_BASE = "https://github.com/mukiwu/tempo-term/releases/tag/v";
 
 export type UpdaterStatus = "idle" | "checking" | "upToDate" | "error";
 
+/** Bytes fetched so far; total is null when the server sends no Content-Length. */
+export interface DownloadProgress {
+  downloaded: number;
+  total: number | null;
+}
+
+export type InstallPhase = "downloading" | "installing";
+
 export interface AvailableUpdate {
   version: string;
   notes: string;
@@ -26,6 +34,10 @@ interface UpdaterState {
   /** Versions already surfaced this session (modal or toast); resets on relaunch. */
   notifiedVersions: string[];
   installing: boolean;
+  /** Live byte counts for the running download, or null outside an install. */
+  progress: DownloadProgress | null;
+  /** Which leg of the install is running, so the modal can label the wait. */
+  installPhase: InstallPhase | null;
   errorMessage: string;
   /** Launch-time silent check: opens the modal directly on a hit. */
   runLaunchCheck: () => Promise<void>;
@@ -86,6 +98,8 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
   toast: null,
   notifiedVersions: [],
   installing: false,
+  progress: null,
+  installPhase: null,
   errorMessage: "",
 
   runLaunchCheck: async () => {
@@ -138,12 +152,35 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
     if (!a) {
       return;
     }
-    set({ installing: true, errorMessage: "" });
+    set({ installing: true, installPhase: "downloading", progress: null, errorMessage: "" });
     try {
-      await a.update.downloadAndInstall();
+      await a.update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            set({ progress: { downloaded: 0, total: event.data.contentLength ?? null } });
+            break;
+          case "Progress":
+            set((s) => ({
+              progress: {
+                downloaded: (s.progress?.downloaded ?? 0) + event.data.chunkLength,
+                total: s.progress?.total ?? null,
+              },
+            }));
+            break;
+          case "Finished":
+            set({ installPhase: "installing" });
+            break;
+        }
+      });
       await relaunch();
     } catch (err: unknown) {
-      set({ installing: false, status: "error", errorMessage: messageOf(err) });
+      set({
+        installing: false,
+        installPhase: null,
+        progress: null,
+        status: "error",
+        errorMessage: messageOf(err),
+      });
     }
   },
 }));

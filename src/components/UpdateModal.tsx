@@ -17,6 +17,8 @@ export function UpdateModal() {
   const available = useUpdaterStore((s) => s.available);
   const modalOpen = useUpdaterStore((s) => s.modalOpen);
   const installing = useUpdaterStore((s) => s.installing);
+  const progress = useUpdaterStore((s) => s.progress);
+  const installPhase = useUpdaterStore((s) => s.installPhase);
   const errorMessage = useUpdaterStore((s) => s.errorMessage);
   const installUpdate = useUpdaterStore((s) => s.installUpdate);
   const dismiss = useUpdaterStore((s) => s.dismissModal);
@@ -34,6 +36,14 @@ export function UpdateModal() {
   const divided = separateLanguageSections(notes);
   const truncated = divided.length > NOTES_PREVIEW_CHARS;
   const preview = truncated ? `${divided.slice(0, NOTES_PREVIEW_CHARS).trimEnd()}…` : divided;
+
+  const mb = (bytes: number) => (bytes / 1048576).toFixed(1);
+  const percent =
+    progress && progress.total !== null
+      ? Math.min(100, Math.round((progress.downloaded / progress.total) * 100))
+      : null;
+  // The bar fills from download percent, then pins at 100% while extracting.
+  const barValue = installPhase === "installing" ? 100 : percent;
 
   return (
     <>
@@ -67,6 +77,43 @@ export function UpdateModal() {
             <MarkdownView content={preview || "—"} />
           </div>
         </div>
+
+        {installing && (
+          <div className="px-4 pb-4">
+            <div className="mb-1.5 flex items-center justify-between text-xs text-fg-muted">
+              <span>
+                {installPhase === "installing"
+                  ? t("update.finalizing")
+                  : t("update.downloading")}
+              </span>
+              {installPhase === "downloading" && progress && (
+                <span>
+                  {progress.total !== null
+                    ? t("update.progressOfTotal", {
+                        done: mb(progress.downloaded),
+                        total: mb(progress.total),
+                        percent,
+                      })
+                    : t("update.progressNoTotal", { done: mb(progress.downloaded) })}
+                </span>
+              )}
+            </div>
+            {barValue !== null && (
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={barValue}
+                className="h-1.5 overflow-hidden rounded-full bg-bg-inset"
+              >
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-300"
+                  style={{ width: `${barValue}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
           {errorMessage && (
