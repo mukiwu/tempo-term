@@ -61,9 +61,11 @@ function crumbsBelow(root: string, target: string, sep: string): Crumb[] {
   let current = root;
   for (const segment of rest.length > 0 ? rest.split(SEPARATORS) : []) {
     if (current.length === 0) {
-      // Trail starting from nothing: a POSIX absolute path keeps its leading
-      // slash ("/opt"), a Windows drive letter opens bare ("C:").
-      current = target.startsWith(sep) ? `${sep}${segment}` : segment;
+      // Trail starting from nothing keeps the target's exact leading
+      // separators: "/opt" stays rooted, a UNC path keeps its "\\\\" prefix,
+      // and a Windows drive letter opens bare ("C:").
+      const leading = target.match(/^[\\/]+/)?.[0] ?? "";
+      current = `${leading}${segment}`;
     } else {
       current = `${current}${sep}${segment}`;
     }

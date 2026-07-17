@@ -53,6 +53,29 @@ describe("buildCrumbs", () => {
     ]);
   });
 
+  it("treats a bare-root home (/) as absolute display, never producing // paths", () => {
+    const crumbs = buildCrumbs("/opt/homebrew", {
+      homeDir: "/",
+    });
+
+    expect(crumbs).toEqual([
+      { label: "opt", path: "/opt" },
+      { label: "homebrew", path: "/opt/homebrew" },
+    ]);
+  });
+
+  it("preserves the double-backslash prefix of a UNC path", () => {
+    const crumbs = buildCrumbs("\\\\wsl$\\Ubuntu\\home", {
+      homeDir: "C:\\Users\\muki",
+    });
+
+    expect(crumbs).toEqual([
+      { label: "wsl$", path: "\\\\wsl$" },
+      { label: "Ubuntu", path: "\\\\wsl$\\Ubuntu" },
+      { label: "home", path: "\\\\wsl$\\Ubuntu\\home" },
+    ]);
+  });
+
   it("keeps the drive letter as the first crumb for Windows paths outside home", () => {
     const crumbs = buildCrumbs("C:\\Windows\\System32", {
       homeDir: "C:\\Users\\muki",
