@@ -245,6 +245,28 @@ describe("updaterStore", () => {
     expect(useUpdaterStore.getState().progress).toEqual({ downloaded: 25, total: null });
   });
 
+  it("installUpdate treats a zero content length as unknown", async () => {
+    const downloadAndInstall = vi
+      .fn()
+      .mockImplementation(async (onEvent: (e: unknown) => void) => {
+        onEvent({ event: "Started", data: { contentLength: 0 } });
+        onEvent({ event: "Progress", data: { chunkLength: 25 } });
+      });
+    relaunch.mockResolvedValue(undefined);
+    useUpdaterStore.setState({
+      available: {
+        version: "0.0.2",
+        notes: "",
+        releaseUrl: "",
+        update: { downloadAndInstall } as never,
+      },
+    });
+
+    await useUpdaterStore.getState().installUpdate();
+
+    expect(useUpdaterStore.getState().progress).toEqual({ downloaded: 25, total: null });
+  });
+
   it("installUpdate clears progress state when the install fails", async () => {
     const downloadAndInstall = vi
       .fn()

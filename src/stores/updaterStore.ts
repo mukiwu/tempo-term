@@ -157,7 +157,9 @@ export const useUpdaterStore = create<UpdaterState>((set, get) => ({
       await a.update.downloadAndInstall((event) => {
         switch (event.event) {
           case "Started":
-            set({ progress: { downloaded: 0, total: event.data.contentLength ?? null } });
+            // A zero Content-Length carries no information; treat it as unknown
+            // so the modal never divides by it.
+            set({ progress: { downloaded: 0, total: event.data.contentLength || null } });
             break;
           case "Progress":
             set((s) => ({
