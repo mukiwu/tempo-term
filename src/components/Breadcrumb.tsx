@@ -9,7 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Check, FileText, Folder, Minus, Plus } from "lucide-react";
+import { Check, FileText, Folder, FolderOpen, Minus, Plus } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 import { useOverlayGuard } from "@/lib/overlayGuard";
 import type { Crumb } from "@/lib/breadcrumb";
@@ -254,54 +254,57 @@ function BreadcrumbPopover({
     onSelect(path);
   }
 
-  function row(
-    key: string,
-    depth: number,
-    icon: ComponentType<LucideProps>,
-    label: string,
-    path: string,
-    toggleNode?: TreeNode,
-  ) {
-    const Icon = icon;
+  /**
+   * One directory and, when expanded, its children nested inside a guided
+   * block. The indent unit equals the 16px icon column, so each level's
+   * toggle sits exactly under its parent's name — and the vertical guide
+   * hanging from the parent's icon column says "everything right of this
+   * line is inside me".
+   */
+  function treeRow(node: TreeNode, isHead: boolean): ReactNode {
     return (
-      <div key={key} className="flex items-center" style={{ paddingLeft: depth * 14 }}>
-        {/* Only expandable rows get the toggle column; the head row (the
-            segment itself) sits flush left so the hierarchy reads at a glance. */}
-        {menu.kind === "tree" && toggleNode && (
+      <div key={node.crumb.path}>
+        <div className="flex items-center">
+          {isHead ? (
+            // The current location heads the menu; picking it cds back here.
+            <span className="grid h-5 w-4 shrink-0 place-items-center text-accent">
+              <Check size={13} />
+            </span>
+          ) : (
+            <button
+              type="button"
+              aria-label={t(node.expanded ? "breadcrumb.collapse" : "breadcrumb.expand", {
+                name: node.crumb.label,
+              })}
+              onClick={() => toggle(node)}
+              className="grid h-5 w-4 shrink-0 place-items-center rounded-sm text-fg-subtle hover:bg-bg hover:text-fg"
+            >
+              {node.expanded ? <Minus size={12} /> : <Plus size={12} />}
+            </button>
+          )}
           <button
             type="button"
-            aria-label={t(toggleNode.expanded ? "breadcrumb.collapse" : "breadcrumb.expand", {
-              name: label,
-            })}
-            onClick={() => toggle(toggleNode)}
-            className="ml-1 rounded p-0.5 text-fg-subtle hover:bg-bg hover:text-fg"
+            role="menuitem"
+            onClick={() => pick(node.crumb.path)}
+            className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-left transition-colors hover:bg-bg hover:text-fg ${
+              isHead ? "text-fg" : "text-fg-muted"
+            }`}
           >
-            {toggleNode.expanded ? <Minus size={12} /> : <Plus size={12} />}
+            {isHead || node.expanded ? (
+              <FolderOpen size={14} className="shrink-0 text-fg-subtle" />
+            ) : (
+              <Folder size={14} className="shrink-0 text-fg-subtle" />
+            )}
+            <span className="truncate">{node.crumb.label}</span>
           </button>
+        </div>
+        {node.expanded && node.children && node.children.length > 0 && (
+          <div className="ml-[7px] border-l border-border pl-2">
+            {node.children.map((child) => treeRow(child, false))}
+          </div>
         )}
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => pick(path)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-0.5 text-left text-fg-muted transition-colors hover:bg-bg hover:text-fg"
-        >
-          <Icon size={14} className="shrink-0" />
-          <span className="truncate">{label}</span>
-        </button>
       </div>
     );
-  }
-
-  function renderTree(node: TreeNode, depth: number): ReactNode[] {
-    const rows: ReactNode[] = [
-      row(node.crumb.path, depth, Folder, node.crumb.label, node.crumb.path, node),
-    ];
-    if (node.expanded && node.children) {
-      for (const child of node.children) {
-        rows.push(...renderTree(child, depth + 1));
-      }
-    }
-    return rows;
   }
 
   const listIcon = menu.kind === "list" ? (menu.icon ?? FileText) : FileText;
@@ -312,27 +315,28 @@ function BreadcrumbPopover({
       role="menu"
       style={{ position: "fixed", left: pos.left, top: pos.top }}
       onClick={(e) => e.stopPropagation()}
-      className="z-[200] max-h-[60vh] min-w-[200px] overflow-y-auto rounded-md border border-border-strong bg-bg-elevated py-1 text-[13px] shadow-lg"
+      className="z-[200] max-h-[60vh] min-w-[220px] overflow-y-auto rounded-md border border-border-strong bg-bg-elevated px-1 py-1 text-[13px] shadow-lg"
     >
-      {menu.kind === "tree" && root && (
-        <>
-          {/* The segment itself heads the menu: picking it cds back to an
-              ancestor without any extra affordance. Its children are always
-              shown, so it carries no toggle. */}
-          {row(root.crumb.path, 0, Check, root.crumb.label, root.crumb.path)}
-          {root.children?.map((child) => renderTree(child, 1)).flat()}
-        </>
-      )}
+      {menu.kind === "tree" && root && treeRow(root, true)}
       {menu.kind === "list" &&
-        items?.map((item) =>
-          row(
-            item.path,
-            0,
-            item.path === crumb.path ? Check : listIcon,
-            item.label,
-            item.path,
-          ),
-        )}
+        items?.map((item) => {
+          const isCurrent = item.path === crumb.path;
+          const Icon = isCurrent ? Check : listIcon;
+          return (
+            <button
+              key={item.path}
+              type="button"
+              role="menuitem"
+              onClick={() => pick(item.path)}
+              className={`flex w-full items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-left transition-colors hover:bg-bg hover:text-fg ${
+                isCurrent ? "text-fg" : "text-fg-muted"
+              }`}
+            >
+              <Icon size={14} className={`shrink-0 ${isCurrent ? "text-accent" : "text-fg-subtle"}`} />
+              <span className="truncate">{item.label}</span>
+            </button>
+          );
+        })}
     </div>,
     document.body,
   );
