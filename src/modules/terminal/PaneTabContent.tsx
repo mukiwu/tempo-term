@@ -133,7 +133,10 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   // Closing a pane also drops its terminal scrollback history (a no-op for
   // panes that never held a terminal).
   function closePaneAndHistory(paneId: string) {
-    void deleteTerminalHistory(paneId);
+    // `void` starts the promise but does not catch it, so a failed delete
+    // became an unhandled rejection. The pane closes either way — leftover
+    // scrollback for a pane that no longer exists is not worth a word.
+    deleteTerminalHistory(paneId).catch(() => {});
     closePane(tab.id, paneId);
   }
 

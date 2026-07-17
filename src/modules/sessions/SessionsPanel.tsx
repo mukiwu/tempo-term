@@ -403,7 +403,12 @@ export function SessionsPanel() {
       } else {
         unlisten = fn;
       }
-    });
+    })
+      .catch(() => {
+        // No listener, so the panel stops live-updating and shows what it
+        // loaded. `void` on the chain started it without catching, which turned
+        // a failed subscribe into an unhandled rejection.
+      });
 
     return () => {
       disposed = true;

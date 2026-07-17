@@ -15,6 +15,33 @@ if (testDom) {
   });
 }
 
+// The Tauri IPC bridge is injected by the webview at runtime, so in jsdom
+// `window.__TAURI_INTERNALS__` is simply absent and every `invoke`/`listen`
+// reaching it throws. A component that fires one on mount then rejects *after*
+// its test has finished, which vitest reports as an unhandled error and fails
+// the whole run on — with every test still passing, so the summary reads green
+// while the exit code says otherwise. That is why `pnpm test` has never exited
+// 0, and why nothing could gate on it.
+//
+// Tests that care about a command mock `@tauri-apps/api` themselves; this is the
+// floor for the ones that only need a component to mount without exploding, so
+// it rejects rather than resolving — an unmocked command has no answer to give,
+// and a silent `undefined` would be a worse lie than a caught rejection.
+if (!("__TAURI_INTERNALS__" in globalThis)) {
+  Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
+    configurable: true,
+    value: {
+      invoke: (cmd: string) => Promise.reject(new Error(`no Tauri backend in tests: ${cmd}`)),
+      transformCallback: (callback: unknown) => {
+        void callback;
+        return 0;
+      },
+      unregisterCallback: () => {},
+      convertFileSrc: (path: string) => path,
+    },
+  });
+}
+
 // jsdom ships without a canvas implementation, a ResizeObserver or matchMedia.
 // xterm.js touches all three at import/render time, so provide light stubs to
 // keep the test console clean and let terminal-adjacent components mount.
