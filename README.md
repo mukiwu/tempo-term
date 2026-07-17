@@ -101,7 +101,7 @@ Any pane in any tab can be split four ways: click a sidebar item to auto-split, 
 - Create a worktree from the terminal's ⋯ menu or from a branch's right-click menu in the commit graph
 - Creation can copy local files such as `.env`, run a setup command (remembered per repo) and launch Claude Code or Codex CLI right away
 - A status bar badge counts your worktrees and opens the manager, which lists each one's branch, uncommitted changes, agent activity and disk usage, and removes ones you're done with
-- Open a worktree from the manager in a new tab or split beside the current pane; one that's already open is jumped to instead
+- Open a worktree from the manager in a new tab or split beside the current pane; if it's already open, TempoTerm jumps to it instead
 
 ### Web preview
 
