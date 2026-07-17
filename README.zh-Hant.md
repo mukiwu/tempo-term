@@ -12,7 +12,7 @@
 
 </div>
 
-TempoTerm 是一個用 Tauri 2 加 Rust 與 React 19 打造的桌面 app，把原生 PTY 終端機、程式碼編輯器、檔案總管、版本控制、網頁預覽、筆記、SSH／SFTP 遠端連線與自帶金鑰的 AI 助手放在一起，並提供完整的正體中文介面與對正體中文友善的終端機字體；也把工作整理成具名的群組，每個分頁的卡片即時追蹤對應 Claude 或 Codex CLI 工作階段的狀態，以及 Git 分支、worktree 與對應的 PR
+TempoTerm 是一個用 Tauri 2 加 Rust 與 React 19 打造的桌面 app，把原生 PTY 終端機、程式碼編輯器、檔案總管、版本控制、網頁預覽、筆記、SSH／SFTP 遠端連線與自帶金鑰的 AI 助手放在一起，並提供完整的正體中文介面與對正體中文友善的終端機字體；也把工作整理成具名的群組，每個分頁的卡片即時追蹤對應 Claude 或 Codex CLI 工作階段的狀態，以及 Git 分支、worktree 與對應的 PR；還能把同一個 repo 的多個 worktree 並排跑，各自有獨立目錄與自己的 agent
 
 <div align="center">
 
@@ -34,6 +34,12 @@ TempoTerm 是一個用 Tauri 2 加 Rust 與 React 19 打造的桌面 app，把�
 - 啟動器可以直接開啟 Claude Code 或 Codex CLI，並可設定預設帶入的參數
 
 ![群組側邊欄與即時 Claude 工作階段卡片](screenshots/workspaces.png)
+
+### 版面配置
+
+- 側欄面板（檔案總管、版本控制、筆記、AI 助手、SSH 連線、連接埠）以圖示欄停靠在視窗左右兩側，把圖示拖到另一邊就能搬過去
+- 分頁裡的每個面板共用同一條標題列，關閉鈕不再浮在內容上
+- 終端機與編輯器的標題列以麵包屑顯示路徑，點任一段可瀏覽該層資料夾，終端機直接 cd、編輯器直接換檔，SSH 面板也適用
 
 ### 終端機
 
@@ -89,6 +95,14 @@ TempoTerm 是一個用 Tauri 2 加 Rust 與 React 19 打造的桌面 app，把�
 
 ![Git 提交圖](screenshots/git-graph.png)
 
+### 並行 Worktree
+
+- 同一個 repo 可同時開多個 worktree，各自獨立目錄、各自跑 agent
+- 從終端機的 ⋯ 選單，或 git 提交圖裡分支的右鍵選單建立 worktree
+- 建立時可順便複製 `.env` 這類本機檔案、跑設定指令（每個 repo 各自記住），並直接叫起 Claude Code 或 Codex CLI
+- 狀態列徽章統計 worktree 數量，點開管理器可看每個 worktree 的分支、未提交改動、agent 狀態與磁碟用量，用完也能從這裡移除
+- 從管理器開啟 worktree：開新分頁或分割在目前面板旁；已開啟的直接跳轉
+
 ### 網頁預覽
 
 - 用原生子 webview（不是 iframe）預覽一個網址或拖進來的本機檔案，不會被 X-Frame-Options 這類反嵌入規則擋下來
@@ -125,7 +139,8 @@ TempoTerm 是一個用 Tauri 2 加 Rust 與 React 19 打造的桌面 app，把�
 ### 狀態列
 
 - 即時顯示 CPU、記憶體與網路上下行流量
-- Port 監看：列出監聽中的 port、佔用的程式與資源用量，可直接開瀏覽器、開一個終端機到該程式，或結束程式
+- 連接埠：徽章統計監聽中的 port，點開連接埠面板列出每個 port 佔用的程式與資源用量，可直接開瀏覽器、開一個終端機到該程式，或結束程式
+- Worktree：徽章統計數量，點開就是 worktree 管理器（見上方並行 Worktree）
 
 ### 主題與語系
 

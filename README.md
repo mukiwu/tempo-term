@@ -12,7 +12,7 @@ An AI-native terminal workspace that brings the terminal, code editor, file expl
 
 </div>
 
-TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a native PTY terminal with a code editor, file explorer, source control, web preview, notes, SSH/SFTP remote access and a bring-your-own-key AI assistant, and ships a full Traditional Chinese interface with CJK-friendly terminal fonts. It organizes your work into named groups, and each tab's card tracks its Claude Code or Codex CLI session status live, alongside the Git branch, worktree and matching pull request.
+TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a native PTY terminal with a code editor, file explorer, source control, web preview, notes, SSH/SFTP remote access and a bring-your-own-key AI assistant, and ships a full Traditional Chinese interface with CJK-friendly terminal fonts. It organizes your work into named groups, and each tab's card tracks its Claude Code or Codex CLI session status live, alongside the Git branch, worktree and matching pull request. It can also run several worktrees of one repo in parallel, each in its own directory with its own agent.
 
 <div align="center">
 
@@ -34,6 +34,12 @@ TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a nati
 - The launcher can start Claude Code or Codex CLI directly, with a configurable default set of arguments
 
 ![Groups sidebar with live Claude session cards](screenshots/workspaces.png)
+
+### Layout
+
+- Sidebar panels (file explorer, source control, notes, AI assistant, SSH connections, ports) dock as icon strips on either side of the window; drag an icon across to move a panel to the other side
+- Every pane in a tab shares the same slim header strip, so close buttons no longer float over content
+- Terminal and editor headers show the path as a breadcrumb; click a segment to browse that folder and cd the terminal or swap the file in place, SSH panes included
 
 ### Terminal
 
@@ -89,6 +95,14 @@ Any pane in any tab can be split four ways: click a sidebar item to auto-split, 
 
 ![Git commit graph](screenshots/git-graph.png)
 
+### Parallel worktrees
+
+- Run several worktrees of one repo side by side, each in its own directory with its own agent
+- Create a worktree from the terminal's ⋯ menu or from a branch's right-click menu in the commit graph
+- Creation can copy local files such as `.env`, run a setup command (remembered per repo) and launch Claude Code or Codex CLI right away
+- A status bar badge counts your worktrees and opens the manager, which lists each one's branch, uncommitted changes, agent activity and disk usage, and removes ones you're done with
+- Open a worktree from the manager in a new tab or split beside the current pane; one that's already open is jumped to instead
+
 ### Web preview
 
 - Native child webview (not an iframe) for a URL or a dropped local file, so it isn't blocked by embedding restrictions like X-Frame-Options
@@ -125,7 +139,8 @@ Any pane in any tab can be split four ways: click a sidebar item to auto-split, 
 ### Status bar
 
 - Live CPU, memory and network throughput
-- Port monitor: lists listening ports with their owning process and resource usage; open one in the browser, open a terminal at its process, or end the process
+- Ports: a badge counts listening ports and opens the Ports panel, which lists each port's owning process and resource usage; open one in the browser, open a terminal at its process, or end the process
+- Worktrees: a badge counts your worktrees and opens the manager (see Parallel worktrees above)
 
 ### Themes and languages
 
