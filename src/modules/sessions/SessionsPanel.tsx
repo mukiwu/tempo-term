@@ -8,7 +8,7 @@ import { Combobox } from "@/components/Combobox";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { onSessionsUpdated, type SessionAgent, type SessionSummary } from "./lib/sessionsBridge";
-import { useSessionsStore, visibleSessions } from "./lib/sessionsStore";
+import { projectOptions, useSessionsStore, visibleSessions } from "./lib/sessionsStore";
 import { sessionsDelete } from "./lib/statsBridge";
 import { formatRelativeTime } from "./lib/relativeTime";
 import { deriveLiveSessions, type LiveSession } from "./lib/liveSessions";
@@ -342,10 +342,12 @@ export function SessionsPanel() {
   const query = useSessionsStore((s) => s.query);
   const agentFilter = useSessionsStore((s) => s.agentFilter);
   const modelFilter = useSessionsStore((s) => s.modelFilter);
+  const projectFilter = useSessionsStore((s) => s.projectFilter);
   const selectedId = useSessionsStore((s) => s.selectedId);
   const setQuery = useSessionsStore((s) => s.setQuery);
   const setAgentFilter = useSessionsStore((s) => s.setAgentFilter);
   const setModelFilter = useSessionsStore((s) => s.setModelFilter);
+  const setProjectFilter = useSessionsStore((s) => s.setProjectFilter);
   const select = useSessionsStore((s) => s.select);
   const openSessionsTab = useTabsStore((s) => s.openSessionsTab);
   // The virtualized history list reads its viewport from this scroll
@@ -443,7 +445,26 @@ export function SessionsPanel() {
   const modelComboboxOptions = modelOptions.map((m) => (m === "all" ? modelFilterAllLabel : m));
   const modelComboboxValue = modelFilter === "all" ? modelFilterAllLabel : modelFilter;
 
-  const { pinned, history } = visibleSessions(sessions, query, agentFilter, modelFilter);
+  // Distinct projects, each labelled short but unambiguously (basename, plus
+  // parent segments on a collision). Same worth-showing gate as the models.
+  const projects = useMemo(() => projectOptions(sessions), [sessions]);
+
+  // Same stranding reset as the model filter above: a filtered project whose
+  // sessions were all deleted would hide the dropdown and leave no way back.
+  useEffect(() => {
+    if (projectFilter !== "all" && !projects.some((p) => p.cwd === projectFilter)) {
+      setProjectFilter("all");
+    }
+  }, [projects, projectFilter, setProjectFilter]);
+
+  // The filter's value is a cwd but the Combobox trades in display labels, so
+  // map label → cwd on change; an unknown label (the "all" entry) resets.
+  const projectFilterAllLabel = t("sessions.projectFilterAll");
+  const projectComboboxOptions = [projectFilterAllLabel, ...projects.map((p) => p.label)];
+  const projectComboboxValue =
+    projects.find((p) => p.cwd === projectFilter)?.label ?? projectFilterAllLabel;
+
+  const { pinned, history } = visibleSessions(sessions, query, agentFilter, modelFilter, projectFilter);
   const isEmpty = pinned.length === 0 && history.length === 0;
 
   return (
@@ -496,15 +517,31 @@ export function SessionsPanel() {
               {key === "all" ? t("sessions.all") : t(`sessions.agents.${key}`)}
             </button>
           ))}
-          {modelOptions.length > 1 && (
-            <Combobox
-              value={modelComboboxValue}
-              options={modelComboboxOptions}
-              onChange={(v) => setModelFilter(v === modelFilterAllLabel ? "all" : v)}
-              ariaLabel={t("sessions.modelFilterLabel")}
-              size="sm"
-              className="ml-auto w-32"
-            />
+          {(projects.length > 1 || modelOptions.length > 1) && (
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+              {projects.length > 1 && (
+                <Combobox
+                  value={projectComboboxValue}
+                  options={projectComboboxOptions}
+                  onChange={(v) =>
+                    setProjectFilter(projects.find((p) => p.label === v)?.cwd ?? "all")
+                  }
+                  ariaLabel={t("sessions.projectFilterLabel")}
+                  size="sm"
+                  className="w-32"
+                />
+              )}
+              {modelOptions.length > 1 && (
+                <Combobox
+                  value={modelComboboxValue}
+                  options={modelComboboxOptions}
+                  onChange={(v) => setModelFilter(v === modelFilterAllLabel ? "all" : v)}
+                  ariaLabel={t("sessions.modelFilterLabel")}
+                  size="sm"
+                  className="w-32"
+                />
+              )}
+            </div>
           )}
         </div>
       </div>

@@ -100,6 +100,7 @@ describe("SessionsPanel", () => {
       query: "",
       agentFilter: "all",
       modelFilter: "all",
+      projectFilter: "all",
       selectedId: null,
     });
     useTabsStore.setState({ spaces: [], activeSpaceId: null, tabs: [], activeId: null });
@@ -182,6 +183,54 @@ describe("SessionsPanel", () => {
 
     expect(screen.getByText("Codex session")).toBeInTheDocument();
     expect(screen.queryByText("Claude session")).not.toBeInTheDocument();
+  });
+
+  it("filters the list by project via the project dropdown", async () => {
+    seedSessions([
+      session({ id: "a", title: "Tempo session", project_cwd: "/Users/muki/tempo-term" }),
+      session({ id: "b", title: "Blog session", project_cwd: "/Users/muki/blog" }),
+    ]);
+    await renderSettled();
+
+    // Open the dropdown (trigger and chevron share the aria-label), then pick
+    // the option inside the popup list — the row meta line renders the same
+    // basename text, so the click must be scoped to the combobox.
+    fireEvent.click(screen.getAllByLabelText("sessions.projectFilterLabel")[0]);
+    const listbox = document.querySelector("[data-combobox]") as HTMLElement;
+    fireEvent.click(within(listbox).getByRole("button", { name: "blog" }));
+
+    expect(screen.getByText("Blog session")).toBeInTheDocument();
+    expect(screen.queryByText("Tempo session")).not.toBeInTheDocument();
+  });
+
+  it("hides the project dropdown when every session shares one project", async () => {
+    seedSessions([
+      session({ id: "a", title: "One", project_cwd: "/Users/muki/tempo-term" }),
+      session({ id: "b", title: "Two", project_cwd: "/Users/muki/tempo-term" }),
+    ]);
+    await renderSettled();
+
+    expect(screen.queryByLabelText("sessions.projectFilterLabel")).not.toBeInTheDocument();
+  });
+
+  it("resets a stale project filter to \"all\" once its project drops out of the option list", async () => {
+    seedSessions([
+      session({ id: "a", title: "Tempo session", project_cwd: "/Users/muki/tempo-term" }),
+      session({ id: "b", title: "Blog session", project_cwd: "/Users/muki/blog" }),
+    ]);
+    await renderSettled();
+    act(() => {
+      useSessionsStore.setState({ projectFilter: "/Users/muki/tempo-term" });
+    });
+
+    // Simulate a refresh that drops the filtered project's only session.
+    act(() => {
+      useSessionsStore.setState({
+        sessions: [session({ id: "b", title: "Blog session", project_cwd: "/Users/muki/blog" })],
+      });
+    });
+
+    expect(useSessionsStore.getState().projectFilter).toBe("all");
   });
 
   it("resets a stale model filter to \"all\" once its model drops out of the option list", async () => {

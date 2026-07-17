@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { useSessionsStore, visibleSessions } from "./sessionsStore";
+import { projectOptions, useSessionsStore, visibleSessions } from "./sessionsStore";
 import type { SessionSummary } from "./sessionsBridge";
 
 function session(overrides: Partial<SessionSummary>): SessionSummary {
@@ -131,6 +131,50 @@ describe("visibleSessions", () => {
     expect(visibleSessions(sessions, "", "all", "claude-opus-4-8").history.map((s) => s.id)).toEqual(["a"]);
   });
 
+  it("filters by exact project_cwd, with 'all' passing everything", () => {
+    const a = session({ id: "a", project_cwd: "/Users/muki/tempo-term" });
+    const b = session({ id: "b", project_cwd: "/Users/muki/other" });
+    const c = session({ id: "c", project_cwd: "" });
+
+    expect(visibleSessions([a, b, c], "", "all", "all", "all").history.map((s) => s.id)).toEqual([
+      "a", "b", "c",
+    ]);
+    expect(
+      visibleSessions([a, b, c], "", "all", "all", "/Users/muki/tempo-term").history.map((s) => s.id),
+    ).toEqual(["a"]);
+  });
+
+  it("combines the project filter with query and agent filters", () => {
+    const match = session({ id: "m", agent: "claude", title: "deploy", project_cwd: "/p/one" });
+    const wrongProject = session({ id: "wp", agent: "claude", title: "deploy", project_cwd: "/p/two" });
+    const wrongAgent = session({ id: "wa", agent: "codex", title: "deploy", project_cwd: "/p/one" });
+
+    const { history } = visibleSessions(
+      [match, wrongProject, wrongAgent],
+      "deploy",
+      "claude",
+      "all",
+      "/p/one",
+    );
+
+    expect(history).toEqual([match]);
+  });
+
+  it("ignores a project filter for a project absent from the dataset (self-heals stranding)", () => {
+    const a = session({ id: "a", project_cwd: "/p/one" });
+    const b = session({ id: "b", project_cwd: "/p/two" });
+
+    // The selected project no longer exists in any session (its sessions were
+    // deleted). Rather than strand an empty list, the filter is ignored.
+    expect(visibleSessions([a, b], "", "all", "all", "/p/gone").history.map((s) => s.id)).toEqual([
+      "a", "b",
+    ]);
+
+    // But a project that DOES exist is still honored even when other filters
+    // narrow it to zero.
+    expect(visibleSessions([a, b], "nomatch-query", "all", "all", "/p/one").history).toEqual([]);
+  });
+
   it("ignores a model filter for a model absent from the dataset (self-heals stranding)", () => {
     const mk = (id: string, model: string | null) =>
       ({ id, agent: "claude", project_cwd: "/p", title: id, started_at: 0, ended_at: 0,
@@ -146,6 +190,50 @@ describe("visibleSessions", () => {
     // post-filter result.
     const present = [mk("x", "claude-opus-4-8")];
     expect(visibleSessions(present, "nomatch-query", "all", "claude-opus-4-8").history).toEqual([]);
+  });
+});
+
+describe("projectOptions", () => {
+  it("dedupes cwds, labels them by basename, and sorts by label", () => {
+    const sessions = [
+      session({ id: "a", project_cwd: "/Users/muki/tempo-term" }),
+      session({ id: "b", project_cwd: "/Users/muki/tempo-term" }),
+      session({ id: "c", project_cwd: "/Users/muki/blog" }),
+    ];
+
+    expect(projectOptions(sessions)).toEqual([
+      { cwd: "/Users/muki/blog", label: "blog" },
+      { cwd: "/Users/muki/tempo-term", label: "tempo-term" },
+    ]);
+  });
+
+  it("skips sessions with an empty cwd", () => {
+    const sessions = [
+      session({ id: "a", project_cwd: "" }),
+      session({ id: "b", project_cwd: "/p/one" }),
+    ];
+
+    expect(projectOptions(sessions)).toEqual([{ cwd: "/p/one", label: "one" }]);
+  });
+
+  it("disambiguates duplicate basenames with parent segments", () => {
+    const sessions = [
+      session({ id: "a", project_cwd: "/Users/muki/work/app" }),
+      session({ id: "b", project_cwd: "/Users/muki/side/app" }),
+      session({ id: "c", project_cwd: "/Users/muki/blog" }),
+    ];
+
+    expect(projectOptions(sessions)).toEqual([
+      { cwd: "/Users/muki/blog", label: "blog" },
+      { cwd: "/Users/muki/side/app", label: "side/app" },
+      { cwd: "/Users/muki/work/app", label: "work/app" },
+    ]);
+  });
+
+  it("labels a Windows path by its last segment", () => {
+    const sessions = [session({ id: "a", project_cwd: "C:\\Users\\muki\\proj" })];
+
+    expect(projectOptions(sessions)).toEqual([{ cwd: "C:\\Users\\muki\\proj", label: "proj" }]);
   });
 });
 

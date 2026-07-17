@@ -215,6 +215,7 @@ export function DashboardView() {
   const query = useSessionsStore((s) => s.query);
   const agentFilter = useSessionsStore((s) => s.agentFilter);
   const modelFilter = useSessionsStore((s) => s.modelFilter);
+  const projectFilter = useSessionsStore((s) => s.projectFilter);
   const [range, setRange] = useState<RangeDays>(365);
   const [stats, setStats] = useState<SessionsStats>(EMPTY_STATS);
   const [topTab, setTopTab] = useState<"messages" | "tokens">("messages");
@@ -298,10 +299,16 @@ export function DashboardView() {
   }, [locale]);
 
   // Exports exactly the sessions currently visible under the active
-  // search/agent/model filters (not the full unfiltered index), mirroring
-  // what the sessions panel itself shows.
+  // search/agent/model/project filters (not the full unfiltered index),
+  // mirroring what the sessions panel itself shows.
   async function handleExportCsv() {
-    const { pinned, history } = visibleSessions(sessions, query, agentFilter, modelFilter);
+    const { pinned, history } = visibleSessions(
+      sessions,
+      query,
+      agentFilter,
+      modelFilter,
+      projectFilter,
+    );
     const csv = toSessionsCsv([...pinned, ...history]);
     const path = await saveFile("ai-sessions.csv", [{ name: "CSV", extensions: ["csv"] }]);
     if (path === null) {

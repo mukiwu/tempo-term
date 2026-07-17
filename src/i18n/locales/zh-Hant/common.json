@@ -321,6 +321,8 @@
     "all": "全部",
     "modelFilterAll": "所有 model",
     "modelFilterLabel": "以 model 篩選",
+    "projectFilterAll": "所有專案",
+    "projectFilterLabel": "以專案篩選",
     "empty": "沒有符合的對話",
     "messages": "{{count}} 則訊息",
     "resume": "接續對話",

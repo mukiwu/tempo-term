@@ -321,6 +321,8 @@
     "all": "All",
     "modelFilterAll": "All models",
     "modelFilterLabel": "Filter by model",
+    "projectFilterAll": "All projects",
+    "projectFilterLabel": "Filter by project",
     "empty": "No sessions found",
     "messages": "{{count}} msgs",
     "resume": "Resume",
