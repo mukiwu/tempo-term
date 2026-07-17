@@ -1,0 +1,57 @@
+name: Frontend Check
+
+# Per-PR type-check and unit tests for the frontend.
+#
+# Until now nothing ran them in CI: windows-check.yml type-checks the Rust and
+# windows-build.yml bundles the installer, so the ~1700 vitest tests only ran
+# when someone remembered to run them locally. That is how two TitleBar tests
+# came to sit red on master for a whole milestone — #219 renamed the "Toggle
+# Sidebar" menu row to "Toggle Left Sidebar", the tests looking for the old name
+# went red, and the PR merged without a word, because no gate was watching.
+#
+# The Rust half of this repo has been gated since #191. This is the other half.
+# It deliberately does not build the bundle — that stays in windows-build.yml.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight check.
+concurrency:
+  group: frontend-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-and-test:
+    # Ubuntu, not windows-latest: this half is platform-independent — the
+    # Windows-specific logic is written as pure functions taking a `windows`
+    # flag precisely so both arms are covered from any runner. Cheaper and
+    # faster than the Windows image for the same coverage.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test

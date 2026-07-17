@@ -256,7 +256,7 @@ describe("TitleBar", () => {
 
   describe("submenu hover-close delay", () => {
     // Diagonal mouse travel from the "Sidebar Panel" row toward its flyout
-    // crosses a sibling row first ("Toggle Sidebar" or "Preview Back"). An
+    // crosses a sibling row first ("Toggle Left Sidebar" or "Preview Back"). An
     // instant close on that sibling-enter kills the flyout before the
     // cursor arrives — this delay is what lets diagonal travel succeed.
     afterEach(() => {
@@ -271,7 +271,7 @@ describe("TitleBar", () => {
       const flyout = screen.getByRole("menuitem", { name: /Explorer/ }).closest('[role="menu"]');
       expect(flyout).not.toBeNull();
 
-      fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Toggle Sidebar/ }));
+      fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Toggle Left Sidebar/ }));
       act(() => {
         vi.advanceTimersByTime(100);
       });
@@ -291,7 +291,7 @@ describe("TitleBar", () => {
       fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Sidebar Panel/ }));
       expect(screen.getByRole("menuitem", { name: /Explorer/ })).toBeInTheDocument();
 
-      fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Toggle Sidebar/ }));
+      fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Toggle Left Sidebar/ }));
       act(() => {
         vi.advanceTimersByTime(1000);
       });
