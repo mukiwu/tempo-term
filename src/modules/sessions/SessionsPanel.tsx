@@ -464,7 +464,13 @@ export function SessionsPanel() {
   const projectComboboxValue =
     projects.find((p) => p.cwd === projectFilter)?.label ?? projectFilterAllLabel;
 
-  const { pinned, history } = visibleSessions(sessions, query, agentFilter, modelFilter, projectFilter);
+  // Memoized because the panel re-renders on plenty of unrelated state
+  // (selection, scroll containers, the delete dialog) and the index can hold
+  // tens of thousands of sessions — no reason to re-filter on each of those.
+  const { pinned, history } = useMemo(
+    () => visibleSessions(sessions, query, agentFilter, modelFilter, projectFilter),
+    [sessions, query, agentFilter, modelFilter, projectFilter],
+  );
   const isEmpty = pinned.length === 0 && history.length === 0;
 
   return (
