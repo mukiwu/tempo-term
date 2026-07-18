@@ -22,6 +22,7 @@
     "checking": "Checking…",
     "missing": "Not installed",
     "outdated": "Version too old",
+    "unknownVersion": "Installed, version unknown",
     "ready": "Installed",
     "installing": "Installing…",
     "failed": "Install failed"

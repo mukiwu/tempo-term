@@ -197,7 +197,7 @@ export function SetupWizard() {
             {status?.version ? (
               <span className="text-xs text-fg-subtle">v{status.version}</span>
             ) : null}
-            <StatusPill phase={phase} t={t} />
+            <StatusPill phase={phase} versionUnknown={status?.version == null} t={t} />
           </div>
           <p className="mt-2 text-sm leading-relaxed text-fg-muted">{t(`desc.${meta.name}`)}</p>
 
@@ -310,7 +310,19 @@ function Stepper({
   );
 }
 
-function StatusPill({ phase, t }: { phase: RowPhase; t: (k: string) => string }) {
+function StatusPill({
+  phase,
+  versionUnknown = false,
+  t,
+}: {
+  phase: RowPhase;
+  /** True when the tool's version could not be read (backend reports
+   *  installed with a null version). Only affects the "outdated" phase: the
+   *  fail-closed verdict is right, but "Version too old" would be a lie —
+   *  the version is unknown, not old. */
+  versionUnknown?: boolean;
+  t: (k: string) => string;
+}) {
   const map: Record<RowPhase, { key: string; cls: string }> = {
     checking: { key: "status.checking", cls: "text-fg-subtle" },
     missing: { key: "status.missing", cls: "border border-border text-fg-muted" },
@@ -320,7 +332,8 @@ function StatusPill({ phase, t }: { phase: RowPhase; t: (k: string) => string })
     failed: { key: "status.failed", cls: "border border-danger/40 text-danger" },
   };
   const { key, cls } = map[phase];
-  return <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] ${cls}`}>{t(key)}</span>;
+  const labelKey = phase === "outdated" && versionUnknown ? "status.unknownVersion" : key;
+  return <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] ${cls}`}>{t(labelKey)}</span>;
 }
 
 function ActionButton({

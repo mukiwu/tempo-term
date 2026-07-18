@@ -191,8 +191,10 @@ const STDIN_TIMEOUT: Duration = Duration::from_millis(200);
 /// The thread drains any remainder as a courtesy, but only for as long as the
 /// shim process lives — a writer still going when the shim exits gets EPIPE,
 /// which hook runners already tolerated (pre-session-id shims never read stdin
-/// on most events at all).
-fn read_bounded_with_deadline<R>(reader: R, limit: u64, deadline: Duration) -> Option<String>
+/// on most events at all). On timeout the helper thread stays blocked on the
+/// read and is leaked; callers in long-lived processes (setup's shell probe)
+/// accept that as the cost of never stalling on a pipe held open.
+pub(crate) fn read_bounded_with_deadline<R>(reader: R, limit: u64, deadline: Duration) -> Option<String>
 where
     R: Read + Send + 'static,
 {

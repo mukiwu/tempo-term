@@ -22,6 +22,7 @@
     "checking": "偵測中…",
     "missing": "尚未安裝",
     "outdated": "版本過舊",
+    "unknownVersion": "已安裝，版本未知",
     "ready": "已安裝",
     "installing": "安裝中…",
     "failed": "安裝失敗"

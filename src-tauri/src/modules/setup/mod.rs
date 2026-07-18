@@ -4,6 +4,7 @@
 //! wizard. The tool registry is data-driven so adding or tweaking a tool is a
 //! one-line change; version comparison is a pure function for easy testing.
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -467,13 +468,13 @@ fn tool_command(exe: &std::path::Path) -> Command {
     command
 }
 
-/// Resolve and run `<tool> --version`, returning the parsed version or None if
-/// the tool is absent, errors, or outruns PROBE_TIMEOUT (killed so a hung binary
-/// never lingers). Reads output only after the process exits — `--version` is a
-/// few bytes, well under the pipe buffer, so this cannot deadlock.
-fn probe_version(stem: &str) -> Option<String> {
-    let exe = find_tool(stem)?;
-    let mut child = tool_command(&exe)
+/// Run `<exe> --version`, returning the parsed version or None if it errors
+/// or outruns PROBE_TIMEOUT (killed so a hung binary never lingers). Takes the
+/// already-resolved exe so callers sharing a detection run resolve each tool
+/// once. Reads output only after the process exits — `--version` is a few
+/// bytes, well under the pipe buffer, so this cannot deadlock.
+fn probe_version(exe: &Path) -> Option<String> {
+    let mut child = tool_command(exe)
         .arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -498,6 +499,134 @@ fn probe_version(stem: &str) -> Option<String> {
     parse_version(&text)
 }
 
+/// The (installed, meets_min) verdict for one tool. `version` is the probe
+/// result, `resolved` is whether an executable file was found on disk, and
+/// `min_version` is the spec's minimum. Encodes the exists-but-unprobeable
+/// fallback: a resolved-but-unversioned tool counts as installed — the
+/// wizard's job is deciding whether to run the installer, and a present
+/// binary must not be reinstalled — but it satisfies meets_min only when the
+/// spec has no minimum (fail closed: an unknown version must never be
+/// assumed new enough). Pure.
+fn tool_verdict(version: Option<&str>, resolved: bool, min_version: Option<&str>) -> (bool, bool) {
+    match (version, resolved) {
+        (Some(v), _) => (true, min_version.is_none_or(|min| meets_min(v, min))),
+        (None, true) => (true, min_version.is_none()),
+        (None, false) => (false, false),
+    }
+}
+
+/// Marks a tool's block inside the login-shell batch probe output, followed by
+/// the tool id and a newline; the block body runs to [`TOOL_SENTINEL_END`].
+/// Sentinels let the parser ignore whatever rc files print around the blocks.
+const TOOL_SENTINEL_START: &str = "__TEMPO_TOOL_START__";
+const TOOL_SENTINEL_END: &str = "__TEMPO_TOOL_END__";
+
+/// Ceiling on the whole login-shell batch probe: one shell startup (rc files,
+/// lazy nvm hooks) plus every tool's `--version`, so it gets more room than a
+/// single PROBE_TIMEOUT; killed on overrun, falling back to the dir scan.
+const SHELL_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The shell to spawn for the batch probe: `$SHELL` when set, else the per-OS
+/// fallback (`/bin/zsh` on macOS, `/bin/sh` elsewhere). Pure.
+fn shell_binary(shell_env: Option<&str>, macos: bool) -> String {
+    match shell_env {
+        Some(shell) if !shell.is_empty() => shell.to_string(),
+        _ => if macos { "/bin/zsh" } else { "/bin/sh" }.to_string(),
+    }
+}
+
+/// The batch probe script: for each (id, bin), print the start sentinel plus
+/// the id, run `<bin> --version` with stderr dropped (an absent tool's
+/// command-not-found noise must leave its block empty, not corrupt it), then
+/// print the end sentinel. Ids and bins come from the static TOOLS registry
+/// only — never user input — so quoting is not a concern. Pure.
+fn shell_probe_script(tools: &[(&str, &str)]) -> String {
+    tools
+        .iter()
+        .map(|(id, bin)| {
+            // The bin is quoted so a future registry entry containing a space
+            // or metacharacter can never silently become shell-parsed.
+            format!(
+                "printf '{TOOL_SENTINEL_START}%s\\n' '{id}'; \
+                 '{bin}' --version 2>/dev/null; \
+                 printf '{TOOL_SENTINEL_END}'"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// Per-tool versions parsed out of the batch probe's stdout: for each sentinel
+/// block, the id keys the first dotted numeric token of the body (None when
+/// the body is empty or garbage — the tool answered nothing usable). Text
+/// outside the blocks (rc banners) is ignored, and a block missing its end
+/// sentinel (the shell was killed mid-write) contributes nothing rather than
+/// garbage. Pure.
+fn parse_shell_probe_output(output: &str) -> HashMap<String, Option<String>> {
+    let mut versions = HashMap::new();
+    let mut rest = output;
+    while let Some(start) = rest.find(TOOL_SENTINEL_START) {
+        rest = &rest[start + TOOL_SENTINEL_START.len()..];
+        let Some(id_end) = rest.find('\n') else { break };
+        let id = rest[..id_end].to_string();
+        rest = &rest[id_end + 1..];
+        let Some(body_end) = rest.find(TOOL_SENTINEL_END) else { break };
+        versions.insert(id, parse_version(&rest[..body_end]));
+        rest = &rest[body_end + TOOL_SENTINEL_END.len()..];
+    }
+    versions
+}
+
+/// Run the batch probe in the user's login shell and return per-tool versions,
+/// or None on Windows (no login shell) or any failure — detection then falls
+/// back per tool to the directory scan. `-ilc` loads the rc files, so the
+/// shell's PATH matches the user's terminal and every install method (nvm,
+/// custom npm prefix, bun, pnpm, standalone installers) is covered without
+/// enumeration. Bounded by SHELL_PROBE_TIMEOUT and killed on overrun; an
+/// output with no sentinel blocks (a shell that choked on -i or -l) also
+/// falls back. Called once per detect_tools run.
+fn run_shell_probe(windows: bool) -> Option<HashMap<String, Option<String>>> {
+    if windows {
+        return None;
+    }
+    let shell = shell_binary(
+        std::env::var("SHELL").ok().as_deref(),
+        cfg!(target_os = "macos"),
+    );
+    let tools: Vec<(&str, &str)> = TOOLS.iter().map(|spec| (spec.id, spec.bin)).collect();
+    let script = shell_probe_script(&tools);
+    let mut child = tool_command(Path::new(&shell))
+        .arg("-ilc")
+        .arg(&script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        // Never read, so a pipe would only add a way for a noisy rc to block
+        // the shell on a full buffer before the probes even run.
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // Bounded read, same 512 KiB ceiling as the status_ipc stdin path: the
+    // shell exiting does not mean stdout hit EOF — an rc-backgrounded writer
+    // inheriting the pipe would stall an unbounded `wait_with_output` forever
+    // and let a hostile rc grow the buffer without limit. The deadline doubles
+    // as the probe's whole clock.
+    let stdout = child.stdout.take()?;
+    let text = crate::modules::status_ipc::read_bounded_with_deadline(
+        stdout,
+        512 * 1024,
+        SHELL_PROBE_TIMEOUT,
+    );
+    // Whatever the read produced, never leave the shell running.
+    let _ = child.kill();
+    let _ = child.wait();
+    let versions = parse_shell_probe_output(&text?);
+    if versions.is_empty() {
+        None
+    } else {
+        Some(versions)
+    }
+}
+
 /// The install command string for `spec` on the current OS ("" when none).
 fn install_command(spec: &ToolSpec) -> &'static str {
     if cfg!(target_os = "windows") {
@@ -517,16 +646,26 @@ pub async fn detect_tools() -> Result<DetectResult, String> {
 }
 
 fn detect_tools_blocking() -> DetectResult {
+    // One login-shell batch probe answers every tool the user's terminal can
+    // see; each miss falls back per tool to the directory scan below (which is
+    // the only path on Windows).
+    let shell_versions = run_shell_probe(cfg!(windows));
     let tools = TOOLS
         .iter()
         .map(|spec| {
-            let version = probe_version(spec.bin);
-            let installed = version.is_some();
-            let meets_min = match (&version, spec.min_version) {
-                (Some(v), Some(min)) => meets_min(v, min),
-                (Some(_), None) => true,
-                (None, _) => false,
-            };
+            let shell_version = shell_versions
+                .as_ref()
+                .and_then(|versions| versions.get(spec.id).cloned())
+                .flatten();
+            // The scan still runs even when the shell answered: it supplies
+            // the disk evidence for the verdict (a present-but-unprobeable
+            // binary counts as installed, never "not installed") and the exe
+            // for the fallback probe.
+            let resolved = find_tool(spec.bin);
+            let version =
+                shell_version.or_else(|| resolved.as_deref().and_then(probe_version));
+            let (installed, meets_min) =
+                tool_verdict(version.as_deref(), resolved.is_some(), spec.min_version);
             ToolStatus {
                 id: spec.id.to_string(),
                 installed,
@@ -702,6 +841,85 @@ mod tests {
         assert!(dirs.contains(&PathBuf::from("/home/me/.asdf/shims")));
         assert!(dirs.contains(&PathBuf::from("/home/me/.nvm/versions/node/v22.14.0/bin")));
         assert!(dirs.contains(&PathBuf::from("/home/me/.nvm/versions/node/v20.11.0/bin")));
+    }
+
+    #[test]
+    fn tool_verdict_absent_tool_is_not_installed() {
+        assert_eq!(tool_verdict(None, false, Some("18")), (false, false));
+        assert_eq!(tool_verdict(None, false, None), (false, false));
+    }
+
+    #[test]
+    fn tool_verdict_probed_version_applies_min() {
+        assert_eq!(tool_verdict(Some("22.14.0"), true, Some("18")), (true, true));
+        assert_eq!(tool_verdict(Some("16.0.0"), true, Some("18")), (true, false));
+        assert_eq!(tool_verdict(Some("0.144.5"), true, None), (true, true));
+    }
+
+    #[test]
+    fn tool_verdict_exists_but_unprobeable_no_min_is_ready() {
+        // The #232 outcome: a codex/claude shim found on disk whose probe
+        // failed (its node interpreter unreachable) is installed, not missing.
+        assert_eq!(tool_verdict(None, true, None), (true, true));
+    }
+
+    #[test]
+    fn tool_verdict_exists_but_unprobeable_with_min_fails_closed() {
+        // An unknown version must never be assumed to satisfy a minimum.
+        assert_eq!(tool_verdict(None, true, Some("18")), (true, false));
+    }
+
+    #[test]
+    fn shell_binary_prefers_shell_env_then_os_fallback() {
+        assert_eq!(shell_binary(Some("/bin/fish"), true), "/bin/fish");
+        assert_eq!(shell_binary(Some("/bin/fish"), false), "/bin/fish");
+        assert_eq!(shell_binary(None, true), "/bin/zsh");
+        assert_eq!(shell_binary(None, false), "/bin/sh");
+        // An empty SHELL is as good as unset.
+        assert_eq!(shell_binary(Some(""), true), "/bin/zsh");
+    }
+
+    #[test]
+    fn shell_probe_script_wraps_every_tool_in_sentinels() {
+        let script = shell_probe_script(&[("claude", "claude"), ("antigravity", "agy")]);
+        // One start marker per id, the probed bin between the markers, and
+        // command-not-found noise dropped so an absent tool yields an empty block.
+        assert_eq!(script.matches(TOOL_SENTINEL_START).count(), 2);
+        assert_eq!(script.matches(TOOL_SENTINEL_END).count(), 2);
+        assert!(script.contains("'claude'"));
+        assert!(script.contains("'antigravity'"));
+        assert!(script.contains("'claude' --version 2>/dev/null"));
+        assert!(script.contains("'agy' --version 2>/dev/null"));
+    }
+
+    #[test]
+    fn parse_shell_probe_output_reads_versions_per_tool() {
+        let output = format!(
+            "{TOOL_SENTINEL_START}claude\n2.1.195 (Claude Code)\n{TOOL_SENTINEL_END}\
+             {TOOL_SENTINEL_START}codex\ncodex-cli 0.144.5\n{TOOL_SENTINEL_END}\
+             {TOOL_SENTINEL_START}antigravity\n{TOOL_SENTINEL_END}"
+        );
+        let versions = parse_shell_probe_output(&output);
+        assert_eq!(versions.get("claude"), Some(&Some("2.1.195".to_string())));
+        assert_eq!(versions.get("codex"), Some(&Some("0.144.5".to_string())));
+        // An absent tool leaves its block empty: reported as seen-but-no-version.
+        assert_eq!(versions.get("antigravity"), Some(&None));
+    }
+
+    #[test]
+    fn parse_shell_probe_output_survives_rc_noise_and_truncation() {
+        // rc banners print outside the sentinel blocks; a timeout kill can
+        // truncate the final block. Neither may corrupt the parsed results.
+        let output = format!(
+            "welcome to zsh!\n\
+             {TOOL_SENTINEL_START}git\ngit version 2.50.1 (Apple Git-155)\n{TOOL_SENTINEL_END}\
+             {TOOL_SENTINEL_START}node\nv22.14"
+        );
+        let versions = parse_shell_probe_output(&output);
+        assert_eq!(versions.get("git"), Some(&Some("2.50.1".to_string())));
+        // The truncated node block contributes nothing rather than garbage.
+        assert!(!versions.contains_key("node"));
+        assert_eq!(versions.len(), 1);
     }
 
     #[test]
@@ -926,6 +1144,17 @@ mod tests {
             .ends_with(PathBuf::from("installation").join("claude.cmd")));
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    #[ignore = "env-dependent: run manually on a machine with a real login shell"]
+    fn real_shell_probe_reports_installed_tools() {
+        // Proof on the real machine: the login-shell batch probe returns a
+        // non-empty map and sees at least one real tool. Run with:
+        //   cargo test -p tempo-term real_shell_probe -- --ignored --nocapture
+        let versions = run_shell_probe(false);
+        println!("shell probe versions: {versions:?}");
+        assert!(versions.is_some(), "expected the login shell probe to produce blocks");
     }
 
     #[test]
