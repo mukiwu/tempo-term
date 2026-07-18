@@ -50,7 +50,6 @@
     "todo": "To-do list",
     "quote": "Quote",
     "code": "Code block",
-    "divider": "Divider",
-    "empty": "No matching block"
+    "divider": "Divider"
   }
 }

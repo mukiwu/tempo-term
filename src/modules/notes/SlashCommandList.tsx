@@ -22,11 +22,10 @@ export interface SlashListHandle {
 interface SlashCommandListProps {
   items: SlashItem[];
   command: (item: SlashItem) => void;
-  emptyLabel: string;
 }
 
 export const SlashCommandList = forwardRef<SlashListHandle, SlashCommandListProps>(
-  function SlashCommandList({ items, command, emptyLabel }, ref) {
+  function SlashCommandList({ items, command }, ref) {
     const [selected, setSelected] = useState(0);
 
     useEffect(() => {
@@ -53,11 +52,7 @@ export const SlashCommandList = forwardRef<SlashListHandle, SlashCommandListProp
     }));
 
     if (items.length === 0) {
-      return (
-        <div className="w-64 rounded-lg border border-border-strong bg-bg-elevated px-3 py-2 text-xs text-fg-subtle shadow-xl">
-          {emptyLabel}
-        </div>
-      );
+      return null;
     }
 
     return (

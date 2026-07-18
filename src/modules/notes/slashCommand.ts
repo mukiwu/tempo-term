@@ -151,7 +151,7 @@ export function createSlashCommand(t: TFunction<"notes">): Extension {
             return {
               onStart: (props) => {
                 component = new ReactRenderer(SlashCommandList, {
-                  props: { items: props.items, command: props.command, emptyLabel: t("slash.empty") },
+                  props: { items: props.items, command: props.command },
                   editor: props.editor,
                 });
                 el = document.createElement("div");
@@ -165,7 +165,6 @@ export function createSlashCommand(t: TFunction<"notes">): Extension {
                 component?.updateProps({
                   items: props.items,
                   command: props.command,
-                  emptyLabel: t("slash.empty"),
                 });
                 position(props);
               },
