@@ -5,6 +5,17 @@ import type { Editor } from "@tiptap/react";
 import { Tooltip } from "@/components/Tooltip";
 import { extractHeadings, type NoteHeading } from "./lib/noteToc";
 
+/** Nearest ancestor that actually scrolls vertically, or null. */
+function scrollableAncestor(el: HTMLElement): HTMLElement | null {
+  for (let cur = el.parentElement; cur; cur = cur.parentElement) {
+    const { overflowY } = window.getComputedStyle(cur);
+    if ((overflowY === "auto" || overflowY === "scroll") && cur.scrollHeight > cur.clientHeight) {
+      return cur;
+    }
+  }
+  return null;
+}
+
 /**
  * The note's table-of-contents control: a title-row button that pops a
  * floating panel of the note's headings. Headings are read from the editor doc
@@ -52,13 +63,23 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
       .run();
     const dom = editor.view.nodeDOM(heading.pos);
     if (dom instanceof HTMLElement) {
-      // ProseMirror's focus() restores the ancestors' scroll positions on a
-      // setTimeout(0) (its preventScroll fallback), which stomps any scroll
-      // applied synchronously here — a smooth one dies mid-animation on the
-      // wrong section, an instant one is reverted outright. Queue the jump
-      // behind that restore; instant, since WKWebView's smooth scrollIntoView
-      // also miscomputes targets inside nested scroll containers.
-      window.setTimeout(() => dom.scrollIntoView?.({ block: "start" }), 0);
+      // WKWebView's scrollIntoView is unreliable inside nested scroll
+      // containers (smooth miscomputes the target, instant silently no-ops),
+      // so the scroll container is positioned by hand from rect geometry.
+      // Deferred a tick so the webview's own reveal-the-caret scroll (async,
+      // minimal) runs first and finds the caret already visible at the top
+      // instead of fighting this jump. scrollIntoView stays as the fallback
+      // when no scrollable ancestor is found.
+      window.setTimeout(() => {
+        const container = scrollableAncestor(dom);
+        if (container) {
+          const offset =
+            dom.getBoundingClientRect().top - container.getBoundingClientRect().top - 12;
+          container.scrollTop += offset;
+        } else {
+          dom.scrollIntoView?.({ block: "start" });
+        }
+      }, 0);
     }
     setOpen(false);
   };
