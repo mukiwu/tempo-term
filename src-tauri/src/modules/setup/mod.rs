@@ -568,7 +568,9 @@ fn parse_shell_probe_output(output: &str) -> HashMap<String, Option<String>> {
     while let Some(start) = rest.find(TOOL_SENTINEL_START) {
         rest = &rest[start + TOOL_SENTINEL_START.len()..];
         let Some(id_end) = rest.find('\n') else { break };
-        let id = rest[..id_end].to_string();
+        // Trimmed so a shell that sneaks in a \r or padding can't make the
+        // id miss its registry lookup.
+        let id = rest[..id_end].trim().to_string();
         rest = &rest[id_end + 1..];
         let Some(body_end) = rest.find(TOOL_SENTINEL_END) else { break };
         versions.insert(id, parse_version(&rest[..body_end]));
@@ -657,15 +659,21 @@ fn detect_tools_blocking() -> DetectResult {
                 .as_ref()
                 .and_then(|versions| versions.get(spec.id).cloned())
                 .flatten();
-            // The scan still runs even when the shell answered: it supplies
-            // the disk evidence for the verdict (a present-but-unprobeable
-            // binary counts as installed, never "not installed") and the exe
-            // for the fallback probe.
-            let resolved = find_tool(spec.bin);
-            let version =
-                shell_version.or_else(|| resolved.as_deref().and_then(probe_version));
+            // A shell answer settles the tool outright, so the disk scan (a
+            // stack of directory reads) only runs as the fallback: it supplies
+            // the exe for the direct probe and the disk evidence for the
+            // verdict (a present-but-unprobeable binary counts as installed,
+            // never "not installed").
+            let (version, resolved) = match shell_version {
+                Some(version) => (Some(version), true),
+                None => {
+                    let exe = find_tool(spec.bin);
+                    let version = exe.as_deref().and_then(probe_version);
+                    (version, exe.is_some())
+                }
+            };
             let (installed, meets_min) =
-                tool_verdict(version.as_deref(), resolved.is_some(), spec.min_version);
+                tool_verdict(version.as_deref(), resolved, spec.min_version);
             ToolStatus {
                 id: spec.id.to_string(),
                 installed,
@@ -894,9 +902,11 @@ mod tests {
 
     #[test]
     fn parse_shell_probe_output_reads_versions_per_tool() {
+        // The codex id carries a \r: a CRLF-minded shell must not break the
+        // registry lookup (the parser trims the id).
         let output = format!(
             "{TOOL_SENTINEL_START}claude\n2.1.195 (Claude Code)\n{TOOL_SENTINEL_END}\
-             {TOOL_SENTINEL_START}codex\ncodex-cli 0.144.5\n{TOOL_SENTINEL_END}\
+             {TOOL_SENTINEL_START}codex\r\ncodex-cli 0.144.5\n{TOOL_SENTINEL_END}\
              {TOOL_SENTINEL_START}antigravity\n{TOOL_SENTINEL_END}"
         );
         let versions = parse_shell_probe_output(&output);
