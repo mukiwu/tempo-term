@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { TableOfContents } from "lucide-react";
 import type { Editor } from "@tiptap/react";
@@ -16,6 +16,19 @@ function scrollableAncestor(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
+/** Resolve the heading element through the rendered DOM position. In WebKit,
+ * `nodeDOM(pos)` can return a detached ProseMirror node whose rect is all zero. */
+function renderedHeadingAt(editor: Editor, pos: number): HTMLElement | null {
+  const atPos = editor.view.domAtPos(pos + 1).node;
+  const element = atPos instanceof Element ? atPos : atPos.parentElement;
+  const rendered = element?.closest("h1, h2, h3, h4, h5, h6");
+  if (rendered instanceof HTMLElement) {
+    return rendered;
+  }
+  const fallback = editor.view.nodeDOM(pos);
+  return fallback instanceof HTMLElement ? fallback : null;
+}
+
 /**
  * The note's table-of-contents control: a title-row button that pops a
  * floating panel of the note's headings. Headings are read from the editor doc
@@ -23,7 +36,14 @@ function scrollableAncestor(el: HTMLElement): HTMLElement | null {
  * is when it matters). Clicking one places the cursor on that heading and
  * smooth-scrolls it into view; clicking outside closes the panel.
  */
-export function NoteToc({ editor }: { editor: Editor | null }) {
+interface NoteTocProps {
+  editor: Editor | null;
+  /** The note body owns scrolling; passing it explicitly avoids relying on
+   *  WKWebView's inconsistent computed overflow metrics. */
+  scrollContainerRef?: RefObject<HTMLElement | null>;
+}
+
+export function NoteToc({ editor, scrollContainerRef }: NoteTocProps) {
   const { t } = useTranslation("notes");
   const [open, setOpen] = useState(false);
   const [headings, setHeadings] = useState<NoteHeading[]>([]);
@@ -61,8 +81,8 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
       .setTextSelection(heading.pos + 1)
       .focus(undefined, { scrollIntoView: false })
       .run();
-    const dom = editor.view.nodeDOM(heading.pos);
-    if (dom instanceof HTMLElement) {
+    const dom = renderedHeadingAt(editor, heading.pos);
+    if (dom) {
       // WKWebView's scrollIntoView is unreliable inside nested scroll
       // containers (smooth miscomputes the target, instant silently no-ops),
       // so the scroll container is positioned by hand from rect geometry.
@@ -71,45 +91,50 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
       // instead of fighting this jump. scrollIntoView stays as the fallback
       // when no scrollable ancestor is found.
       window.setTimeout(() => {
-        const container = scrollableAncestor(dom);
+        const container = scrollContainerRef?.current ?? scrollableAncestor(dom);
         if (container) {
-          // Absolute target, clamped to the scroll range, re-asserted across
-          // two frames: measuring and applying together is idempotent when
-          // nothing moved, and overrides any late native caret-reveal scroll
-          // that would otherwise stomp the jump.
+          // Absolute target, clamped to the scroll range and re-asserted while
+          // layout settles. Measuring and applying together is idempotent when
+          // nothing moved, and overrides any late native caret-reveal scroll.
+          const previousScrollBehavior = container.style.scrollBehavior;
           container.style.scrollBehavior = "auto";
           const apply = () => {
+            const coordsTop = editor.view.coordsAtPos(heading.pos + 1).top;
+            const domTop = dom.getBoundingClientRect().top;
+            // jsdom and some transient WebKit layouts report 0 from one of
+            // these APIs. Prefer ProseMirror's position geometry in the real
+            // editor, falling back to the element rect when it has the only
+            // usable measurement.
+            const headingTop = coordsTop === 0 && domTop !== 0 ? domTop : coordsTop;
             const delta =
-              dom.getBoundingClientRect().top - container.getBoundingClientRect().top - 12;
+              headingTop - container.getBoundingClientRect().top - 12;
             const max = container.scrollHeight - container.clientHeight;
             const target = Math.max(0, Math.min(container.scrollTop + delta, max));
             container.scrollTop = target;
-            return { target, max };
+            return target;
           };
           // The document's layout can still be settling when the jump runs
           // (measured positions shifted by thousands of px one frame later on
           // a real note), so a fixed number of corrections isn't enough:
           // keep re-measuring and re-asserting every frame until the target
           // stops moving, with a hard cap as the safety valve.
-          const first = apply();
-          // TODO(remove): temporary diagnostics for the jump landing short.
-          console.log(
-            `[toc] jump "${heading.text}" scrollHeight=${container.scrollHeight} clientHeight=${container.clientHeight} max=${first.max} target=${first.target} landed=${container.scrollTop}`,
-          );
-          let last = first.target;
+          let last = apply();
           let frames = 0;
+          let stableFrames = 0;
           const settle = () => {
-            const { target } = apply();
+            const target = apply();
             frames += 1;
             const moved = Math.abs(target - last) >= 2;
-            if (frames <= 3 || moved) {
-              console.log(`[toc] frame ${frames} target=${target} landed=${container.scrollTop}`);
-            }
+            stableFrames = moved ? 0 : stableFrames + 1;
             last = target;
-            if (moved && frames < 30) {
+            // One stable frame does not mean layout is finished: React node
+            // views and WebKit can reflow the editor a frame or two later.
+            // Require a short stable window before releasing the scroll, while
+            // retaining the hard cap for continuously changing content.
+            if (stableFrames < 4 && frames < 30) {
               requestAnimationFrame(settle);
             } else {
-              console.log(`[toc] settled after ${frames} frame(s) at ${container.scrollTop}`);
+              container.style.scrollBehavior = previousScrollBehavior;
             }
           };
           requestAnimationFrame(settle);

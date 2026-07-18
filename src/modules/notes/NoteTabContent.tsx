@@ -41,6 +41,7 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
   const [externalChanged, setExternalChanged] = useState(false);
   // The live editor instance, surfaced by NoteEditor for the TOC button.
   const [editor, setEditor] = useState<Editor | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest editor content not yet flushed to disk; null once flushed.
@@ -221,7 +222,7 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
           }}
           className="w-full min-w-0 flex-1 bg-transparent text-2xl font-bold text-fg outline-none placeholder:text-fg-subtle"
         />
-        <NoteToc editor={editor} />
+        <NoteToc editor={editor} scrollContainerRef={scrollContainerRef} />
       </div>
       {externalChanged && (
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-warning/10 px-6 py-2 text-xs text-fg">
@@ -244,7 +245,7 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
           </div>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {content === null ? (
           <p className="text-sm text-fg-subtle">{t("loading")}</p>
         ) : (
