@@ -52,19 +52,29 @@ describe("NoteToc", () => {
     expect(screen.getByText("tocEmpty")).toBeInTheDocument();
   });
 
-  it("clicking a heading moves the selection onto it and closes the panel", () => {
+  it("clicking a heading moves the selection onto it, scrolls it, and closes the panel", () => {
     const editor = editorWith(DOC);
-    render(<NoteToc editor={editor} />);
+    // jsdom has no scrollIntoView; installing a spy both unblocks the call and
+    // locks in that nodeDOM(pos) really resolves a heading's DOM element (the
+    // scroll can only fire when it did).
+    const scrollSpy = vi.fn();
+    const proto = Element.prototype as Element & { scrollIntoView?: typeof scrollSpy };
+    const original = proto.scrollIntoView;
+    proto.scrollIntoView = scrollSpy;
+    try {
+      render(<NoteToc editor={editor} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "toc" }));
-    fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+      fireEvent.click(screen.getByRole("button", { name: "toc" }));
+      fireEvent.click(screen.getByRole("button", { name: "Usage" }));
 
-    // The "Usage" heading starts after Intro (h1) and the paragraph.
-    const { from } = editor.state.selection;
-    const node = editor.state.doc.nodeAt(from - 1) ?? editor.state.doc.resolve(from).parent;
-    expect(editor.state.doc.resolve(from).parent.textContent).toBe("Usage");
-    expect(node).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Usage" })).not.toBeInTheDocument();
+      // The "Usage" heading starts after Intro (h1) and the paragraph.
+      const { from } = editor.state.selection;
+      expect(editor.state.doc.resolve(from).parent.textContent).toBe("Usage");
+      expect(scrollSpy).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+      expect(screen.queryByRole("button", { name: "Usage" })).not.toBeInTheDocument();
+    } finally {
+      proto.scrollIntoView = original;
+    }
   });
 
   it("recomputes headings on each open", () => {
