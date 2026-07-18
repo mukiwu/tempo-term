@@ -14,6 +14,13 @@
   "toc": "Table of contents",
   "tocEmpty": "No headings in this note yet",
   "tocUntitled": "(untitled heading)",
+  "search": {
+    "open": "Find in note",
+    "placeholder": "Find in note",
+    "previous": "Previous match",
+    "next": "Next match",
+    "close": "Close search"
+  },
   "notFound": "This note no longer exists",
   "loading": "Loading…",
   "pickFolderCta": "Choose a notes folder",

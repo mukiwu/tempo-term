@@ -170,6 +170,14 @@ textarea:focus-visible,
 .note-md li { margin: 0.2em 0; }
 .note-md li > input[type="checkbox"] { margin-right: 0.4em; }
 .note-md a { color: var(--color-accent); text-decoration: underline; cursor: pointer; }
+.note-md .note-search-match {
+  background-color: color-mix(in srgb, var(--color-warning) 36%, transparent);
+  border-radius: 2px;
+}
+.note-md .note-search-match--active {
+  background-color: color-mix(in srgb, var(--color-warning) 70%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-warning) 80%, transparent);
+}
 /* Flash on the heading a TOC jump landed on, so the destination is obvious
    even when the scroll couldn't bring it to the top (end of the document). */
 @keyframes note-toc-flash {

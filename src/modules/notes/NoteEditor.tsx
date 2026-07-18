@@ -26,6 +26,7 @@ import { isWebUrl } from "@/lib/url";
 import { createSlashCommand } from "./slashCommand";
 import { registerNoteInserter, unregisterNoteInserter } from "./lib/noteBus";
 import { bashCommandHighlight } from "./lib/bashCommandHighlight";
+import { NoteSearchHighlight } from "./noteSearchHighlight";
 import { Combobox } from "@/components/Combobox";
 import { Tooltip } from "@/components/Tooltip";
 
@@ -158,6 +159,7 @@ export function NoteEditor({ content, onChange, noteId, onEditorReady }: NoteEdi
       TaskList,
       TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: t("contentPlaceholder") }),
+      NoteSearchHighlight,
       // tiptap-markdown's bundled types lag the installed TipTap core; the
       // runtime is fine, so cast past the version-skew type mismatch.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

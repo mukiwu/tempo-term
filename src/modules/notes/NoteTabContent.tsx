@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNotesStore } from "@/stores/notesStore";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -7,6 +7,9 @@ import { decideExternalChange } from "@/modules/notes/lib/notesExternalChange";
 import { onNotesChanged } from "@/modules/notes/lib/notesWatch";
 import { NoteEditor } from "./NoteEditor";
 import { NoteToc } from "./NoteToc";
+import { Search } from "lucide-react";
+import { Tooltip } from "@/components/Tooltip";
+import { createNoteSearchController, NoteSearchBar } from "./NoteSearchBar";
 import type { Editor } from "@tiptap/react";
 
 const WRITE_DEBOUNCE_MS = 400;
@@ -29,6 +32,11 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
   const { t } = useTranslation("notes");
   const setTabTitle = useTabsStore((s) => s.setTabTitle);
   const setPaneContent = useTabsStore((s) => s.setPaneContent);
+  const isActivePane = useTabsStore(
+    (s) =>
+      s.activeId === tabId &&
+      s.tabs.find((tab) => tab.id === tabId)?.activeLeafId === leafId,
+  );
 
   const [path, setPath] = useState(noteId);
   const [title, setTitle] = useState(() => titleFromFilename(basename(noteId)));
@@ -41,7 +49,43 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
   const [externalChanged, setExternalChanged] = useState(false);
   // The live editor instance, surfaced by NoteEditor for the TOC button.
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const searchController = useMemo(
+    () => (editor ? createNoteSearchController(editor) : null),
+    [editor],
+  );
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true);
+    requestAnimationFrame(() => {
+      const input = rootRef.current?.querySelector<HTMLInputElement>("[data-note-search-input]");
+      input?.focus();
+      input?.select();
+    });
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!isActivePane) {
+        return;
+      }
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault();
+        openSearch();
+      } else if (event.key === "Escape") {
+        setSearchOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isActivePane, openSearch]);
 
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest editor content not yet flushed to disk; null once flushed.
@@ -207,7 +251,7 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-bg">
+    <div ref={rootRef} className="relative flex h-full flex-col bg-bg">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-6 pt-5 pb-2">
         <input
           value={title}
@@ -222,8 +266,26 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
           }}
           className="w-full min-w-0 flex-1 bg-transparent text-2xl font-bold text-fg outline-none placeholder:text-fg-subtle"
         />
+        {editor && (
+          <Tooltip label={t("search.open")}>
+            <button
+              type="button"
+              aria-label={t("search.open")}
+              onClick={openSearch}
+              className="rounded p-1.5 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+            >
+              <Search size={16} />
+            </button>
+          </Tooltip>
+        )}
         <NoteToc editor={editor} scrollContainerRef={scrollContainerRef} />
       </div>
+      {searchOpen && searchController && (
+        <NoteSearchBar
+          search={searchController}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       {externalChanged && (
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-warning/10 px-6 py-2 text-xs text-fg">
           <span>{t("externalChanged")}</span>
