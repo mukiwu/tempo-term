@@ -36,6 +36,10 @@ export interface CreateTerminalOptions {
    * external URLs always go to the browser.
    */
   onOpenLocalUrl?: (url: string) => void;
+  /**
+   * Fired when an OSC 8 file link (e.g., file:///...) is modifier-clicked.
+   */
+  onOpenFileUrl?: (url: string) => void;
 }
 
 export function createTerminal(options: CreateTerminalOptions = {}): TerminalHandle {
@@ -51,6 +55,34 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
     // Otherwise xterm consumes Alt+click to move the cursor, which swallows the
     // Alt+click that opens file links.
     altClickMovesCursor: false,
+    linkHandler: {
+      activate: (event, uri) => {
+        if (!matchesOpenModifier(event, IS_MAC)) {
+          return;
+        }
+        if (isWebUrl(uri)) {
+          if (options.onOpenLocalUrl && isLocalUrl(uri)) {
+            options.onOpenLocalUrl(uri);
+          } else {
+            void openUrl(uri);
+          }
+        } else if (uri.startsWith("file://") && options.onOpenFileUrl) {
+          try {
+            const raw = decodeURIComponent(new URL(uri).pathname);
+            options.onOpenFileUrl(raw);
+          } catch {
+            const raw = uri.replace(/^file:\/\/(?:localhost)?/i, "");
+            options.onOpenFileUrl(raw);
+          }
+        }
+      },
+      hover: (event) => {
+        if (options.linkHint) {
+          showLinkTooltip(options.linkHint, event.clientX, event.clientY);
+        }
+      },
+      leave: () => hideLinkTooltip(),
+    },
   });
 
   const fit = new FitAddon();

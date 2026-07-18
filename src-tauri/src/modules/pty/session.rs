@@ -102,6 +102,10 @@ fn build_shell_command(
     // so Claude sessions in other terminals never touch our UI.
     cmd.env("TEMPOTERM", "1");
 
+    // Tell CLI tools like Claude Code (via supports-hyperlinks) that we support OSC 8 hyperlinks natively.
+    cmd.env("FORCE_HYPERLINK", "1");
+    cmd.env("COLORTERM", "truecolor"); // Added for robustness
+
     // Point this pane's status-hook shim back at the app's loopback listener
     // and tag it with the pane's pty id (see status_ipc). Empty when the
     // listener failed to start.

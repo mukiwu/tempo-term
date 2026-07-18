@@ -307,6 +307,9 @@ export function TerminalView({
       theme: getTheme(useSettingsStore.getState().themeId).terminal,
       linkHint: linkHintRef.current,
       onOpenLocalUrl: (url) => onOpenPreviewRef.current?.(url),
+      onOpenFileUrl: (url) => {
+        void openFromTerminal(url);
+      },
     });
     handleRef.current = handle;
     const { term, fit } = handle;
