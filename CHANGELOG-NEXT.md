@@ -10,6 +10,11 @@
 - 修正同一目錄同時跑多個 Claude session 時，工作區卡片標題互相覆蓋的問題：標題改以各 session 的 transcript 為準，ai-title 與 `/rename` 也會在 session 進行中即時更新 (#233)
 - 修正 GUI 啟動時 PATH 過小導致 CLI 偵測與安裝失敗的問題：偵測與安裝子行程改帶完整搜尋路徑，macOS 的 Codex 安裝改用官方獨立安裝器（不再依賴 npm），子行程 PATH 並加固為只收絕對路徑 (#236, #237)
 
+### 感謝
+
+- 感謝 @dca 貢獻同目錄多 Claude session 的標題修正 (#233)
+- 感謝 @Raymondhou0917 貢獻設定精靈的 PATH 修正與 Codex 官方安裝器 (#236)
+
 ## English
 
 ### feat
@@ -21,3 +26,8 @@
 
 - Fix workspace card titles overwriting each other when several Claude sessions run in one directory: titles now follow each session's own transcript, and ai-titles / `/rename` refresh mid-session (#233)
 - Fix CLI detection and installs failing under the GUI's minimal PATH: probe and install children now carry the full search path, Codex on macOS installs via OpenAI's standalone installer (no npm required), and child PATHs are hardened to absolute directories only (#236, #237)
+
+### Thanks
+
+- The per-session workspace titles fix (#233) was contributed by @dca
+- The setup PATH repair and the Codex standalone installer (#236) were contributed by @Raymondhou0917
