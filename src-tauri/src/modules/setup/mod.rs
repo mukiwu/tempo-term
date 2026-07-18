@@ -70,7 +70,7 @@ const TOOLS: &[ToolSpec] = &[
         min_version: None,
         // OpenAI's standalone installer needs neither Node nor npm and writes
         // `codex` to ~/.local/bin, which is one of our probe locations.
-        mac_install: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+        mac_install: "curl -fsSL https://chatgpt.com/codex/install.sh | bash",
         windows_install: "npm install -g @openai/codex",
     },
     ToolSpec {
@@ -403,13 +403,18 @@ fn tool_search_dirs() -> Vec<PathBuf> {
 /// PATH for a child process launched by the GUI. The app's inherited PATH is
 /// often minimal, so a resolved npm shim may still fail at its `env node`
 /// shebang unless we also expose the shim's sibling Node binary.
+///
+/// Empty entries are dropped everywhere: a bare exe name ("sh", "cmd") yields
+/// Some("") from `Path::parent()`, and an empty PATH entry means "search the
+/// CWD" — the planted-binary hijack that resolving to absolute paths exists to
+/// prevent.
 fn command_search_dirs(preferred: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Some(dir) = preferred {
+    if let Some(dir) = preferred.filter(|dir| !dir.as_os_str().is_empty()) {
         dirs.push(dir.to_path_buf());
     }
     for dir in tool_search_dirs() {
-        if !dirs.contains(&dir) {
+        if !dir.as_os_str().is_empty() && !dirs.contains(&dir) {
             dirs.push(dir);
         }
     }
@@ -679,6 +684,17 @@ mod tests {
         assert!(dirs.contains(&PathBuf::from("/home/me/.asdf/shims")));
         assert!(dirs.contains(&PathBuf::from("/home/me/.nvm/versions/node/v22.14.0/bin")));
         assert!(dirs.contains(&PathBuf::from("/home/me/.nvm/versions/node/v20.11.0/bin")));
+    }
+
+    #[test]
+    fn command_search_dirs_never_contain_an_empty_entry() {
+        // A bare exe name ("sh", "cmd") yields Some("") from Path::parent(),
+        // and an empty PATH entry means "search the CWD" on POSIX and Windows
+        // alike — the planted-binary hijack that resolving to absolute paths
+        // exists to prevent. Neither the preferred dir nor an entry inherited
+        // from a malformed PATH may land in the list empty.
+        let dirs = command_search_dirs(Some(Path::new("")));
+        assert!(dirs.iter().all(|dir| !dir.as_os_str().is_empty()));
     }
 
     #[test]
