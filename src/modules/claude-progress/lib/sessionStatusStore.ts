@@ -23,9 +23,9 @@ interface SessionStatusState {
 }
 
 /**
- * Most-to-least urgent. Exported as the single source of this order: a dock
- * strip icon, a workspace card, and a worktree row all reduce the same per-leaf
- * statuses, and a second copy of the list is exactly how they start disagreeing.
+ * Most-to-least urgent. Exported as the single source of this order: a
+ * workspace card and a worktree row both reduce the same per-leaf statuses,
+ * and a second copy of the list is exactly how they start disagreeing.
  */
 export const AGGREGATE_PRIORITY: SessionStatus[] = [
   "waiting-approval",
@@ -33,23 +33,6 @@ export const AGGREGATE_PRIORITY: SessionStatus[] = [
   "thinking",
   "idle",
 ];
-
-/**
- * The single most-urgent live status across every tracked terminal leaf, or null
- * when nothing is tracked. Used to badge a dock strip icon so a glance shows
- * whether an agent anywhere is working or waiting on the user.
- */
-export function aggregateSessionStatus(
-  statuses: Record<string, SessionStatus>,
-): SessionStatus | null {
-  const present = new Set(Object.values(statuses));
-  return AGGREGATE_PRIORITY.find((status) => present.has(status)) ?? null;
-}
-
-/** Selector form of {@link aggregateSessionStatus}; returns a stable primitive so
- *  a subscriber only re-renders when the aggregate status actually changes. */
-export const selectSessionStatus = (state: SessionStatusState): SessionStatus | null =>
-  aggregateSessionStatus(state.statuses);
 
 /** `map` without `key`; the same reference when the key is absent, so
  *  subscribers comparing slice references still short-circuit. */

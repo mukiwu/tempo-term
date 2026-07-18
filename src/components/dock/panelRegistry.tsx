@@ -31,9 +31,6 @@ export interface PanelDef {
    * N IPC calls per cwd on every switch back — the main sidebar-switch jank.
    */
   mountAlways?: boolean;
-  /** Badge the strip icon with the aggregate agent session status (working /
-   *  waiting / idle). Set on the panels that surface agent activity. */
-  showSessionStatus?: boolean;
 }
 
 /**
@@ -47,18 +44,12 @@ export const PANEL_REGISTRY: Record<PanelId, PanelDef> = {
     labelKey: "nav.workspaces",
     Component: WorkspacePanel,
     mountAlways: true,
-    showSessionStatus: true,
   },
   explorer: { icon: FolderTree, labelKey: "nav.explorer", Component: ExplorerView },
   sourceControl: { icon: GitBranch, labelKey: "nav.git", Component: SourceControlView },
   notes: { icon: NotebookPen, labelKey: "nav.notes", Component: NotesSidebar },
   ai: { icon: Bot, labelKey: "nav.ai", Component: AIView },
   connections: { icon: Server, labelKey: "nav.connections", Component: ConnectionsPanel },
-  sessions: {
-    icon: History,
-    labelKey: "nav.sessions",
-    Component: SessionsPanel,
-    showSessionStatus: true,
-  },
+  sessions: { icon: History, labelKey: "nav.sessions", Component: SessionsPanel },
   ports: { icon: EthernetPort, labelKey: "nav.ports", Component: PortsPanelView },
 };
