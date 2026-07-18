@@ -130,6 +130,41 @@ pub fn latest_session_title(dir: &Path) -> Option<String> {
     extract_session_title(&contents)
 }
 
+/// Whether a Claude session id is safe to use as a transcript filename.
+fn valid_session_id(session_id: &str) -> bool {
+    !session_id.is_empty()
+        && session_id.len() <= 128
+        && session_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+/// The title extracted from `<session_id>.jsonl` in `dir`, or None when the id
+/// is invalid, the transcript cannot be read, or it has no usable title.
+fn session_title_for(dir: &Path, session_id: &str) -> Option<String> {
+    if !valid_session_id(session_id) {
+        return None;
+    }
+    let path = dir.join(session_id).with_extension("jsonl");
+    let contents = std::fs::read_to_string(path).ok()?;
+    extract_session_title(&contents)
+}
+
+/// Resolve the title for a title request. Any requested session id answers for
+/// that exact transcript only — never the directory's newest: a just-started
+/// session with no title yet would otherwise wear a concurrent sibling's title,
+/// the very cross-session bleed the per-session lookup exists to prevent. An
+/// invalid id is treated the same (None, no guessing) so a future id-format
+/// change can never silently reopen that leak. The caller shows its own
+/// directory-name fallback on None; only a request with no id at all keeps the
+/// legacy newest-transcript behavior.
+fn resolve_session_title(dir: &Path, session_id: Option<&str>) -> Option<String> {
+    match session_id {
+        Some(id) => session_title_for(dir, id),
+        None => latest_session_title(dir),
+    }
+}
+
 /// Event name carrying a freshly appended batch of transcript lines to the
 /// frontend, tagged with the cwd they belong to.
 const PROGRESS_EVENT: &str = "claude-progress:lines";
@@ -423,10 +458,16 @@ pub fn claude_progress_unwatch(state: State<ClaudeProgressState>) {
     state.watchers.lock().unwrap().clear();
 }
 
-/// The title of the newest Claude session for `cwd`, derived from its
-/// transcript. Returns None when the project has no transcript yet.
+/// The title of the requested Claude session for `cwd`; only a request with no
+/// session id at all answers with the newest transcript (see
+/// `resolve_session_title` for why a provided id — valid or not — never falls
+/// back).
 #[tauri::command]
-pub async fn claude_session_title(app: AppHandle, cwd: String) -> Option<String> {
+pub async fn claude_session_title(
+    app: AppHandle,
+    cwd: String,
+    session_id: Option<String>,
+) -> Option<String> {
     // Reading and JSON-parsing the whole transcript scales with session length;
     // run it on a blocking thread so a long session never freezes the UI. This is
     // the main-thread work that grew with transcript size (see fonts_report).
@@ -438,7 +479,7 @@ pub async fn claude_session_title(app: AppHandle, cwd: String) -> Option<String>
         if !dir.is_dir() {
             return None;
         }
-        latest_session_title(&dir)
+        resolve_session_title(&dir, session_id.as_deref())
     })
     .await
     .ok()
@@ -610,6 +651,17 @@ mod tests {
     }
 
     #[test]
+    fn validates_safe_session_ids() {
+        assert!(valid_session_id("550e8400-e29b-41d4-a716-446655440000"));
+        assert!(valid_session_id("session_123"));
+        assert!(!valid_session_id("../x"));
+        assert!(!valid_session_id("a/b"));
+        assert!(!valid_session_id(r"a\b"));
+        assert!(!valid_session_id(""));
+        assert!(!valid_session_id(&"a".repeat(129)));
+    }
+
+    #[test]
     fn returns_complete_lines_and_leaves_a_partial_line_unconsumed() {
         let (lines, offset) = split_new_lines("a\nb\nc", 0);
         assert_eq!(lines, vec!["a", "b"]);
@@ -667,6 +719,86 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn session_title_for_returns_the_requested_session_not_the_latest() {
+        let dir = temp_progress_dir("requested-title");
+        let session_a = "session-a";
+        let session_b = "session-b";
+        let path_a = dir.join(session_a).with_extension("jsonl");
+        let path_b = dir.join(session_b).with_extension("jsonl");
+        std::fs::write(&path_a, r#"{"type":"ai-title","aiTitle":"Title A"}"#).unwrap();
+        std::fs::write(&path_b, r#"{"type":"ai-title","aiTitle":"Title B"}"#).unwrap();
+
+        let now = std::time::SystemTime::now();
+        let older = now.checked_sub(std::time::Duration::from_secs(60)).unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path_a)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(older))
+            .unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path_b)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(now))
+            .unwrap();
+
+        assert_eq!(latest_session_title(&dir).as_deref(), Some("Title B"));
+        assert_eq!(
+            session_title_for(&dir, session_a).as_deref(),
+            Some("Title A")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_title_for_returns_none_when_the_session_is_missing() {
+        let dir = temp_progress_dir("missing-title");
+        assert_eq!(session_title_for(&dir, "missing-session"), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_requested_titleless_session_never_borrows_the_newest_sibling_title() {
+        // Session A just started (transcript exists but has no title yet) while
+        // sibling B, written more recently, has one. Requesting A must yield
+        // None — falling back to "newest" would put B's title on A's card, the
+        // exact cross-session bleed this lookup exists to prevent.
+        let dir = temp_progress_dir("titleless-request");
+        let path_a = dir.join("session-a.jsonl");
+        let path_b = dir.join("session-b.jsonl");
+        std::fs::write(&path_a, "{\"type\":\"summary\"}\n").unwrap();
+        std::fs::write(&path_b, r#"{"type":"ai-title","aiTitle":"Title B"}"#).unwrap();
+        let now = std::time::SystemTime::now();
+        let older = now.checked_sub(std::time::Duration::from_secs(60)).unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path_a)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(older))
+            .unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path_b)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(now))
+            .unwrap();
+
+        assert_eq!(resolve_session_title(&dir, Some("session-a")), None);
+        // A request for a valid id whose transcript is missing entirely also
+        // stays None rather than guessing the newest.
+        assert_eq!(resolve_session_title(&dir, Some("session-c")), None);
+        // An invalid id answers None too — falling back to newest would let a
+        // malformed id reintroduce the sibling-title leak.
+        assert_eq!(resolve_session_title(&dir, Some("../evil")), None);
+        // Only a request with no id at all keeps the newest-transcript answer.
+        assert_eq!(resolve_session_title(&dir, None).as_deref(), Some("Title B"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

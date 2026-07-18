@@ -45,14 +45,16 @@ pub struct StatusMessage {
     pub pane_id: u32,
     pub kind: String,
     pub payload: String,
+    pub session_id: Option<String>,
 }
 
 /// Wire format sent by the shim, one message per connection:
-/// `<token>\t<paneId>\t<kind>\t<payload>`. Returns the message only when the
-/// token matches and the pane id parses, so a spoofed or malformed line is
-/// dropped. Pure so it can be unit-tested without a socket.
+/// `<token>\t<paneId>\t<kind>\t<payload>\t<sessionId>`. The final field is
+/// optional for compatibility with older four-field shims. Returns the message
+/// only when the token matches and the pane id parses, so a spoofed or malformed
+/// line is dropped. Pure so it can be unit-tested without a socket.
 pub fn parse_message(line: &str, expected_token: &str) -> Option<StatusMessage> {
-    let mut parts = line.trim_end_matches(['\n', '\r']).splitn(4, '\t');
+    let mut parts = line.trim_end_matches(['\n', '\r']).splitn(5, '\t');
     let token = parts.next()?;
     // Constant-time-ish token check is overkill for a cosmetic loopback badge;
     // a plain compare rejects spoofers well enough.
@@ -62,6 +64,10 @@ pub fn parse_message(line: &str, expected_token: &str) -> Option<StatusMessage> 
     let pane_id: u32 = parts.next()?.parse().ok()?;
     let kind = parts.next()?;
     let payload = parts.next().unwrap_or("");
+    let session_id = parts
+        .next()
+        .filter(|session_id| !session_id.is_empty())
+        .map(str::to_string);
     if kind != "status" && kind != "notify" {
         return None;
     }
@@ -72,13 +78,20 @@ pub fn parse_message(line: &str, expected_token: &str) -> Option<StatusMessage> 
         pane_id,
         kind: kind.to_string(),
         payload: payload.to_string(),
+        session_id,
     })
 }
 
 /// Build the wire line the shim sends. Kept next to `parse_message` so the two
 /// stay in sync.
-fn encode_message(token: &str, pane_id: &str, kind: &str, payload: &str) -> String {
-    format!("{token}\t{pane_id}\t{kind}\t{payload}")
+fn encode_message(
+    token: &str,
+    pane_id: &str,
+    kind: &str,
+    payload: &str,
+    session_id: &str,
+) -> String {
+    format!("{token}\t{pane_id}\t{kind}\t{payload}\t{session_id}")
 }
 
 /// Live listener details handed to each pane so its shim can phone home.
@@ -165,30 +178,65 @@ fn generate_token() -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
+/// How long the shim waits for its stdin payload before giving up on it. The
+/// hook runner writes the event JSON at spawn and closes the pipe, so a healthy
+/// read finishes in microseconds; the deadline only exists so a runner that
+/// keeps stdin open (inherited tty, a future runner change) can never hang the
+/// hook — the same "never stall the caller" contract the socket side bounds
+/// with [`SEND_TIMEOUT`].
+const STDIN_TIMEOUT: Duration = Duration::from_millis(200);
+
+/// Read up to `limit` bytes of `reader` into a String on a helper thread,
+/// giving up after `deadline`. None on timeout or a read error (non-UTF-8).
+/// The thread drains any remainder as a courtesy, but only for as long as the
+/// shim process lives — a writer still going when the shim exits gets EPIPE,
+/// which hook runners already tolerated (pre-session-id shims never read stdin
+/// on most events at all).
+fn read_bounded_with_deadline<R>(reader: R, limit: u64, deadline: Duration) -> Option<String>
+where
+    R: Read + Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut buf = String::new();
+        let ok = reader.by_ref().take(limit).read_to_string(&mut buf).is_ok();
+        let _ = tx.send(ok.then_some(buf));
+        let _ = std::io::copy(&mut reader, &mut std::io::sink());
+    });
+    rx.recv_timeout(deadline).ok().flatten()
+}
+
 /// The status-hook shim: `tempo-term --status-hook <state>`. Reads the pane env
 /// the app injected, then delivers one status message over loopback. Runs before
 /// Tauri starts (see `run()`), does nothing outside tempo-term, and is
 /// best-effort — a status ping must never fail or slow the hook that spawned it.
 ///
-/// For the `notification` catch-all state, Claude passes the event JSON on stdin;
-/// we read `notification_type` off it and forward that as the payload (kind
-/// `notify`), mirroring the Unix script. Every other state forwards directly
-/// (kind `status`).
+/// Claude passes every hook event's JSON on stdin. We retain at most 512 KiB in
+/// memory (bounded by [`STDIN_TIMEOUT`], remainder drained so a large payload
+/// does not receive EPIPE) and forward its `session_id` when present. For the
+/// `notification` catch-all state, `notification_type` becomes the payload
+/// (kind `notify`), mirroring the Unix script. Every other state forwards
+/// directly (kind `status`).
 pub fn run_hook_shim(state: &str) {
     if std::env::var(ENV_MARKER).ok().filter(|v| !v.is_empty()).is_none() {
         return;
     }
+    // Resolve the listener address before touching stdin: without one there is
+    // nobody to report to, so the payload read would be pure wasted latency.
     let addr = match std::env::var(ENV_ADDR) {
         Ok(a) if !a.is_empty() => a,
         _ => return,
     };
+
+    let stdin_json =
+        read_bounded_with_deadline(std::io::stdin(), 512 * 1024, STDIN_TIMEOUT).unwrap_or_default();
+
     let token = std::env::var(ENV_TOKEN).unwrap_or_default();
     let pane_id = std::env::var(ENV_PANE_ID).unwrap_or_default();
 
     let (kind, payload) = if state == "notification" {
-        let mut stdin = String::new();
-        let _ = std::io::stdin().read_to_string(&mut stdin);
-        match notification_type(&stdin) {
+        match notification_type(&stdin_json) {
             Some(t) => ("notify", t),
             None => return, // unknown/missing type: emit nothing, like the .sh
         }
@@ -196,7 +244,14 @@ pub fn run_hook_shim(state: &str) {
         ("status", state.to_string())
     };
 
-    let line = encode_message(&token, &pane_id, kind, &payload);
+    let session_id = extract_session_id(&stdin_json);
+    let line = encode_message(
+        &token,
+        &pane_id,
+        kind,
+        &payload,
+        session_id.as_deref().unwrap_or(""),
+    );
     send_status(&addr, &line);
 }
 
@@ -223,6 +278,17 @@ fn notification_type(stdin_json: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Pull a non-empty Claude session id out of a hook event's stdin JSON.
+/// Malformed or truncated input is ignored because the hook shim is best-effort.
+fn extract_session_id(stdin_json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(stdin_json).ok()?;
+    value
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .filter(|session_id| !session_id.is_empty())
+        .map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,62 +297,104 @@ mod tests {
 
     #[test]
     fn parses_a_valid_status_line() {
-        let line = encode_message(TOKEN, "7", "status", "active");
+        let line = encode_message(TOKEN, "7", "status", "active", "");
         assert_eq!(
             parse_message(&line, TOKEN),
-            Some(StatusMessage { pane_id: 7, kind: "status".into(), payload: "active".into() })
+            Some(StatusMessage {
+                pane_id: 7,
+                kind: "status".into(),
+                payload: "active".into(),
+                session_id: None,
+            })
         );
     }
 
     #[test]
     fn parses_a_notify_line() {
-        let line = encode_message(TOKEN, "3", "notify", "permission_prompt");
+        let line = encode_message(TOKEN, "3", "notify", "permission_prompt", "");
         assert_eq!(
             parse_message(&line, TOKEN),
-            Some(StatusMessage { pane_id: 3, kind: "notify".into(), payload: "permission_prompt".into() })
+            Some(StatusMessage {
+                pane_id: 3,
+                kind: "notify".into(),
+                payload: "permission_prompt".into(),
+                session_id: None,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_a_five_field_line_with_session_id() {
+        let message = parse_message("secret-token\t7\tstatus\tactive\tsession-123", TOKEN).unwrap();
+        assert_eq!(message.session_id.as_deref(), Some("session-123"));
+    }
+
+    #[test]
+    fn parses_a_legacy_four_field_line_without_session_id() {
+        let message = parse_message("secret-token\t7\tstatus\tactive", TOKEN).unwrap();
+        assert_eq!(message.session_id, None);
+    }
+
+    #[test]
+    fn parses_an_empty_session_id_as_none() {
+        let message = parse_message("secret-token\t7\tstatus\tactive\t", TOKEN).unwrap();
+        assert_eq!(message.session_id, None);
+    }
+
+    #[test]
+    fn roundtrips_a_session_id_through_encode_and_parse() {
+        let line = encode_message(TOKEN, "7", "status", "active", "session-123");
+        assert_eq!(
+            parse_message(&line, TOKEN),
+            Some(StatusMessage {
+                pane_id: 7,
+                kind: "status".into(),
+                payload: "active".into(),
+                session_id: Some("session-123".into()),
+            })
         );
     }
 
     #[test]
     fn tolerates_a_trailing_newline() {
-        let line = format!("{}\n", encode_message(TOKEN, "1", "status", "idle"));
+        let line = format!("{}\n", encode_message(TOKEN, "1", "status", "idle", ""));
         assert!(parse_message(&line, TOKEN).is_some());
     }
 
     #[test]
     fn rejects_a_wrong_token() {
-        let line = encode_message("attacker", "1", "status", "active");
+        let line = encode_message("attacker", "1", "status", "active", "");
         assert_eq!(parse_message(&line, TOKEN), None);
     }
 
     #[test]
     fn rejects_when_expected_token_is_empty() {
         // A blank expected token must never match (would let any sender through).
-        let line = encode_message("", "1", "status", "active");
+        let line = encode_message("", "1", "status", "active", "");
         assert_eq!(parse_message(&line, ""), None);
     }
 
     #[test]
     fn rejects_an_unknown_kind() {
-        let line = encode_message(TOKEN, "1", "bogus", "active");
+        let line = encode_message(TOKEN, "1", "bogus", "active", "");
         assert_eq!(parse_message(&line, TOKEN), None);
     }
 
     #[test]
     fn rejects_a_non_numeric_pane_id() {
-        let line = encode_message(TOKEN, "abc", "status", "active");
+        let line = encode_message(TOKEN, "abc", "status", "active", "");
         assert_eq!(parse_message(&line, TOKEN), None);
     }
 
     #[test]
     fn rejects_an_empty_payload() {
-        let line = encode_message(TOKEN, "1", "status", "");
+        let line = encode_message(TOKEN, "1", "status", "", "");
         assert_eq!(parse_message(&line, TOKEN), None);
     }
 
     #[test]
     fn payload_may_contain_hyphens_but_not_tabs() {
-        let line = encode_message(TOKEN, "9", "status", "waiting-approval");
+        let line = encode_message(TOKEN, "9", "status", "waiting-approval", "");
         assert_eq!(parse_message(&line, TOKEN).unwrap().payload, "waiting-approval");
     }
 
@@ -301,6 +409,53 @@ mod tests {
         assert_eq!(notification_type(r#"{"foo":"bar"}"#), None);
         assert_eq!(notification_type(r#"{"notification_type":""}"#), None);
         assert_eq!(notification_type("not json"), None);
+    }
+
+    #[test]
+    fn bounded_read_returns_the_payload_and_truncates_at_the_limit() {
+        let payload = std::io::Cursor::new(b"{\"session_id\":\"s\"}".to_vec());
+        assert_eq!(
+            read_bounded_with_deadline(payload, 512, Duration::from_secs(1)).as_deref(),
+            Some("{\"session_id\":\"s\"}")
+        );
+        let long = std::io::Cursor::new(vec![b'a'; 64]);
+        assert_eq!(
+            read_bounded_with_deadline(long, 8, Duration::from_secs(1)).as_deref(),
+            Some("aaaaaaaa")
+        );
+    }
+
+    #[test]
+    fn bounded_read_gives_up_when_the_reader_never_finishes() {
+        // A hook runner that keeps stdin open (inherited tty) must not hang the
+        // shim: the deadline path returns None well before the reader is done.
+        struct NeverDone;
+        impl Read for NeverDone {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                std::thread::sleep(Duration::from_secs(5));
+                Ok(0)
+            }
+        }
+        let start = std::time::Instant::now();
+        let result = read_bounded_with_deadline(NeverDone, 512, Duration::from_millis(50));
+        assert_eq!(result, None);
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "deadline must bound the wait, not the reader"
+        );
+    }
+
+    #[test]
+    fn extracts_session_id_from_stdin_json() {
+        let json = r#"{"session_id":"session-123","other":1}"#;
+        assert_eq!(extract_session_id(json).as_deref(), Some("session-123"));
+    }
+
+    #[test]
+    fn session_id_absent_blank_or_invalid_json_is_none() {
+        assert_eq!(extract_session_id(r#"{"foo":"bar"}"#), None);
+        assert_eq!(extract_session_id(r#"{"session_id":""}"#), None);
+        assert_eq!(extract_session_id("not json"), None);
     }
 
     #[test]
