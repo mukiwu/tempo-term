@@ -54,11 +54,12 @@ describe("NoteToc", () => {
 
   it("clicking a heading moves the selection onto it, scrolls it, and closes the panel", () => {
     const editor = editorWith(DOC);
-    // jsdom has no scrollIntoView; installing a spy both unblocks the call and
-    // locks in that nodeDOM(pos) really resolves a heading's DOM element (the
-    // scroll can only fire when it did).
+    // The spy replaces the no-op stub the test setup installs on
+    // HTMLElement.prototype (jsdom itself has no scrollIntoView), and locks in
+    // that nodeDOM(pos) really resolves a heading's DOM element — the scroll
+    // can only fire when it did.
     const scrollSpy = vi.fn();
-    const proto = Element.prototype as Element & { scrollIntoView?: typeof scrollSpy };
+    const proto = HTMLElement.prototype;
     const original = proto.scrollIntoView;
     proto.scrollIntoView = scrollSpy;
     try {
