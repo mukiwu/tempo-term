@@ -86,19 +86,33 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
             container.scrollTop = target;
             return { target, max };
           };
+          // The document's layout can still be settling when the jump runs
+          // (measured positions shifted by thousands of px one frame later on
+          // a real note), so a fixed number of corrections isn't enough:
+          // keep re-measuring and re-asserting every frame until the target
+          // stops moving, with a hard cap as the safety valve.
           const first = apply();
           // TODO(remove): temporary diagnostics for the jump landing short.
           console.log(
             `[toc] jump "${heading.text}" scrollHeight=${container.scrollHeight} clientHeight=${container.clientHeight} max=${first.max} target=${first.target} landed=${container.scrollTop}`,
           );
-          requestAnimationFrame(() => {
-            const second = apply();
-            console.log(`[toc] rAF1 target=${second.target} landed=${container.scrollTop}`);
-            requestAnimationFrame(() => {
-              const third = apply();
-              console.log(`[toc] rAF2 target=${third.target} landed=${container.scrollTop}`);
-            });
-          });
+          let last = first.target;
+          let frames = 0;
+          const settle = () => {
+            const { target } = apply();
+            frames += 1;
+            const moved = Math.abs(target - last) >= 2;
+            if (frames <= 3 || moved) {
+              console.log(`[toc] frame ${frames} target=${target} landed=${container.scrollTop}`);
+            }
+            last = target;
+            if (moved && frames < 30) {
+              requestAnimationFrame(settle);
+            } else {
+              console.log(`[toc] settled after ${frames} frame(s) at ${container.scrollTop}`);
+            }
+          };
+          requestAnimationFrame(settle);
         } else {
           dom.scrollIntoView?.({ block: "start" });
         }
