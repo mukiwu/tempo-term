@@ -73,9 +73,32 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
       window.setTimeout(() => {
         const container = scrollableAncestor(dom);
         if (container) {
-          const offset =
-            dom.getBoundingClientRect().top - container.getBoundingClientRect().top - 12;
-          container.scrollTop += offset;
+          // Absolute target, clamped to the scroll range, re-asserted across
+          // two frames: measuring and applying together is idempotent when
+          // nothing moved, and overrides any late native caret-reveal scroll
+          // that would otherwise stomp the jump.
+          container.style.scrollBehavior = "auto";
+          const apply = () => {
+            const delta =
+              dom.getBoundingClientRect().top - container.getBoundingClientRect().top - 12;
+            const max = container.scrollHeight - container.clientHeight;
+            const target = Math.max(0, Math.min(container.scrollTop + delta, max));
+            container.scrollTop = target;
+            return { target, max };
+          };
+          const first = apply();
+          // TODO(remove): temporary diagnostics for the jump landing short.
+          console.log(
+            `[toc] jump "${heading.text}" scrollHeight=${container.scrollHeight} clientHeight=${container.clientHeight} max=${first.max} target=${first.target} landed=${container.scrollTop}`,
+          );
+          requestAnimationFrame(() => {
+            const second = apply();
+            console.log(`[toc] rAF1 target=${second.target} landed=${container.scrollTop}`);
+            requestAnimationFrame(() => {
+              const third = apply();
+              console.log(`[toc] rAF2 target=${third.target} landed=${container.scrollTop}`);
+            });
+          });
         } else {
           dom.scrollIntoView?.({ block: "start" });
         }
