@@ -44,9 +44,7 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
 
   const jump = (heading: NoteHeading) => {
     // Cursor onto the heading without the focus scroll; the DOM node is
-    // positioned directly instead. `pos + 1` lands inside the node. The scroll
-    // is instant on purpose: WKWebView's smooth scrollIntoView miscalculates
-    // targets inside nested scroll containers and lands on the wrong section.
+    // positioned directly instead. `pos + 1` lands inside the node.
     editor
       .chain()
       .setTextSelection(heading.pos + 1)
@@ -54,7 +52,13 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
       .run();
     const dom = editor.view.nodeDOM(heading.pos);
     if (dom instanceof HTMLElement) {
-      dom.scrollIntoView?.({ block: "start" });
+      // ProseMirror's focus() restores the ancestors' scroll positions on a
+      // setTimeout(0) (its preventScroll fallback), which stomps any scroll
+      // applied synchronously here — a smooth one dies mid-animation on the
+      // wrong section, an instant one is reverted outright. Queue the jump
+      // behind that restore; instant, since WKWebView's smooth scrollIntoView
+      // also miscomputes targets inside nested scroll containers.
+      window.setTimeout(() => dom.scrollIntoView?.({ block: "start" }), 0);
     }
     setOpen(false);
   };

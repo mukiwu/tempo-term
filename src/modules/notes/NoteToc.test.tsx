@@ -62,6 +62,7 @@ describe("NoteToc", () => {
     const proto = HTMLElement.prototype;
     const original = proto.scrollIntoView;
     proto.scrollIntoView = scrollSpy;
+    vi.useFakeTimers();
     try {
       render(<NoteToc editor={editor} />);
 
@@ -71,9 +72,14 @@ describe("NoteToc", () => {
       // The "Usage" heading starts after Intro (h1) and the paragraph.
       const { from } = editor.state.selection;
       expect(editor.state.doc.resolve(from).parent.textContent).toBe("Usage");
+      // The scroll is deferred behind ProseMirror's focus scroll-restore tick;
+      // it must not have fired synchronously (that ordering is the bug fix).
+      expect(scrollSpy).not.toHaveBeenCalled();
+      vi.runAllTimers();
       expect(scrollSpy).toHaveBeenCalledWith({ block: "start" });
       expect(screen.queryByRole("button", { name: "Usage" })).not.toBeInTheDocument();
     } finally {
+      vi.useRealTimers();
       proto.scrollIntoView = original;
     }
   });
