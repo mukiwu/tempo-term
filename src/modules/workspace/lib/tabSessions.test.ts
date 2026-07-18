@@ -32,16 +32,29 @@ describe("collectTabSessions", () => {
       tabWith(splitTree),
       { L1: "thinking", L2: "active" },
       { L1: "claude", L2: "codex" },
+      {},
     );
 
     expect(rows).toEqual([
-      { leafId: "L1", cwd: "/p", agent: "claude", status: "thinking" },
-      { leafId: "L2", cwd: "/p", agent: "codex", status: "active" },
+      {
+        leafId: "L1",
+        cwd: "/p",
+        agent: "claude",
+        sessionId: undefined,
+        status: "thinking",
+      },
+      {
+        leafId: "L2",
+        cwd: "/p",
+        agent: "codex",
+        sessionId: undefined,
+        status: "active",
+      },
     ]);
   });
 
   it("skips panes that have no live status", () => {
-    const rows = collectTabSessions(tabWith(splitTree), { L2: "active" }, {});
+    const rows = collectTabSessions(tabWith(splitTree), { L2: "active" }, {}, {});
     expect(rows.map((r) => r.leafId)).toEqual(["L2"]);
   });
 
@@ -55,13 +68,29 @@ describe("collectTabSessions", () => {
         { kind: "leaf", id: "E1", pane: { kind: "editor", path: "/p/a.ts" } },
       ],
     };
-    const rows = collectTabSessions(tabWith(tree), { L1: "thinking", E1: "active" }, {});
+    const rows = collectTabSessions(tabWith(tree), { L1: "thinking", E1: "active" }, {}, {});
     expect(rows.map((r) => r.leafId)).toEqual(["L1"]);
   });
 
   it("falls back to the tab cwd when the pane has not reported one", () => {
     const tree: LayoutNode = { kind: "leaf", id: "L1", pane: { kind: "terminal" } };
-    const rows = collectTabSessions(tabWith(tree, "/tab-cwd"), { L1: "idle" }, { L1: "claude" });
+    const rows = collectTabSessions(
+      tabWith(tree, "/tab-cwd"),
+      { L1: "idle" },
+      { L1: "claude" },
+      {},
+    );
     expect(rows[0].cwd).toBe("/tab-cwd");
+  });
+
+  it("carries the pane's Claude session id from the per-leaf map", () => {
+    const rows = collectTabSessions(
+      tabWith(splitTree),
+      { L1: "active" },
+      { L1: "claude" },
+      { L1: "session-a" },
+    );
+
+    expect(rows[0].sessionId).toBe("session-a");
   });
 });

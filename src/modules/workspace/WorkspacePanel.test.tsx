@@ -7,16 +7,21 @@ import { leaf } from "@/modules/terminal/lib/terminalLayout";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { progressKey } from "@/modules/claude-progress/lib/progressStore";
 import { useWorktreeStore } from "./lib/worktreeStore";
-import { useTitlesStore } from "./lib/titlesStore";
+import { titleKey, useTitlesStore } from "./lib/titlesStore";
 import { usePrStore } from "./lib/prStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
 
 beforeEach(() => {
   useEditorStore.setState({ buffers: {} });
-  useSessionStatusStore.setState({ statuses: {}, agents: {} });
+  useSessionStatusStore.setState({
+    statuses: {},
+    agents: {},
+    sessionIds: {},
+    statusEpochs: {},
+  });
   useWorktreeStore.setState({ infos: {} });
-  useTitlesStore.setState({ titles: {} });
+  useTitlesStore.setState({ titles: {}, fetchedFingerprints: {}, inFlight: {} });
   usePrStore.setState({ prs: {}, fetchedAt: {} });
   useSettingsStore.setState({
     workspaceCard: { status: true, branch: true, cwd: true, pr: true },
@@ -151,6 +156,52 @@ describe("WorkspacePanel", () => {
     render(<WorkspacePanel />);
     expect(screen.getByText("Auto Alpha")).toBeInTheDocument();
     expect(screen.queryByText("alpha")).toBeNull();
+  });
+
+  it("shows each card's own Claude title when two sessions share one cwd", () => {
+    useTabsStore.setState({
+      ...useTabsStore.getState(),
+      tabs: [
+        {
+          id: "t1",
+          spaceId: "s1",
+          title: "alpha",
+          kind: "terminal",
+          paneTree: leaf("p1", { kind: "terminal", cwd: "/shared" }),
+          activeLeafId: "p1",
+          paneOrder: ["p1"],
+        },
+        {
+          id: "t2",
+          spaceId: "s1",
+          title: "beta",
+          kind: "terminal",
+          paneTree: leaf("p2", { kind: "terminal", cwd: "/shared" }),
+          activeLeafId: "p2",
+          paneOrder: ["p2"],
+        },
+      ],
+    });
+    useSessionStatusStore.setState({
+      statuses: { p1: "active", p2: "thinking" },
+      agents: { p1: "claude", p2: "claude" },
+      sessionIds: { p1: "session-a", p2: "session-b" },
+    });
+    useTitlesStore.setState({
+      titles: {
+        [titleKey({ cwd: "/shared", agent: "claude", sessionId: "session-a" })]:
+          "Session A title",
+        [titleKey({ cwd: "/shared", agent: "claude", sessionId: "session-b" })]:
+          "Session B title",
+      },
+    });
+
+    render(<WorkspacePanel />);
+
+    expect(screen.getByText("Session A title")).toBeInTheDocument();
+    expect(screen.getByText("Session B title")).toBeInTheDocument();
+    expect(screen.queryByText("alpha")).toBeNull();
+    expect(screen.queryByText("beta")).toBeNull();
   });
 
   it("lists every agent session when a tab is split across two panes", () => {

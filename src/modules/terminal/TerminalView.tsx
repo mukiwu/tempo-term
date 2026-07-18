@@ -352,7 +352,12 @@ export function TerminalView({
     // for SSH remote panes, which report in-band over the pty stream.
     let statusEventUnlisten: (() => void) | undefined;
     let statusEventDisposed = false;
-    void listen<{ paneId: number; kind: string; payload: string }>(
+    void listen<{
+      paneId: number;
+      kind: string;
+      payload: string;
+      sessionId?: string | null;
+    }>(
       "session-status",
       (event) => {
         if (event.payload.paneId !== ptyIdRef.current) return;
@@ -362,7 +367,13 @@ export function TerminalView({
           `tempoterm;${event.payload.kind};${event.payload.payload}`,
         );
         if (parsed?.kind === "status") {
-          useSessionStatusStore.getState().setStatus(leaf, parsed.status);
+          const store = useSessionStatusStore.getState();
+          // Store the id before the status transition so a notification raised
+          // by setStatus can resolve this exact session's title immediately.
+          if (event.payload.sessionId) {
+            store.setSessionId(leaf, event.payload.sessionId);
+          }
+          store.setStatus(leaf, parsed.status);
         } else if (parsed?.kind === "end") {
           useSessionStatusStore.getState().clear(leaf);
         }

@@ -32,13 +32,12 @@ import { selectCardTitle } from "./lib/cardTitle";
 import { collectTabSessions, type TabSession } from "./lib/tabSessions";
 import { useWorktreeStore } from "./lib/worktreeStore";
 import { useWorktreeInfos } from "./lib/useWorktreeInfos";
-import { useTitlesStore } from "./lib/titlesStore";
+import { titleKey, useTitlesStore } from "./lib/titlesStore";
 import { useWorkspaceTitles } from "./lib/useWorkspaceTitles";
 import { usePrStore } from "./lib/prStore";
 import { useWorkspacePrs } from "./lib/useWorkspacePrs";
 import type { WorktreeInfo } from "./lib/worktreeBridge";
 import type { PrInfo } from "./lib/prBridge";
-import { progressKey } from "@/modules/claude-progress/lib/progressStore";
 import { agentLabel } from "./lib/agentLabel";
 import { probeCardRender } from "@/lib/perfProbe";
 
@@ -193,7 +192,9 @@ function basename(path: string): string {
 /** A session's display title: its transcript title, else its directory name. */
 function sessionTitle(session: TabSession, titles: Record<string, string>): string {
   if (session.agent && session.cwd) {
-    const auto = titles[progressKey(session.cwd, session.agent)];
+    const auto = titles[
+      titleKey({ cwd: session.cwd, agent: session.agent, sessionId: session.sessionId })
+    ];
     if (auto) {
       return auto;
     }
@@ -235,6 +236,7 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
   const { requestClose, confirmCloseDialog } = useTabCloseRequest(tab);
   const statuses = useSessionStatusStore((s) => s.statuses);
   const leafAgents = useSessionStatusStore((s) => s.agents);
+  const sessionIds = useSessionStatusStore((s) => s.sessionIds);
   const infos = useWorktreeStore((s) => s.infos);
   const titles = useTitlesStore((s) => s.titles);
   const prs = usePrStore((s) => s.prs);
@@ -247,14 +249,20 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
   const cwd = deriveTabCwd(tab);
   // Each pane running an agent is its own session. With two or more, the header
   // becomes the tab's identity and every session gets its own line below.
-  const sessions = collectTabSessions(tab, statuses, leafAgents);
+  const sessions = collectTabSessions(tab, statuses, leafAgents, sessionIds);
   const multi = sessions.length >= 2;
   const primary = sessions[0];
   const status = tabSessionStatus(tab, statuses);
   const info = cwd ? infos[cwd] : undefined;
   const autoTitle =
     !multi && primary?.cwd && primary?.agent
-      ? titles[progressKey(primary.cwd, primary.agent)]
+      ? titles[
+          titleKey({
+            cwd: primary.cwd,
+            agent: primary.agent,
+            sessionId: primary.sessionId,
+          })
+        ]
       : undefined;
   const title = selectCardTitle(tab, autoTitle);
   const pr = cwd ? prs[cwd] : undefined;
@@ -501,6 +509,7 @@ export function WorkspacePanel() {
   const prSource = useSettingsStore((s) => s.prSource);
   const statuses = useSessionStatusStore((s) => s.statuses);
   const leafAgents = useSessionStatusStore((s) => s.agents);
+  const sessionIds = useSessionStatusStore((s) => s.sessionIds);
   // Dedupe so multiple tabs in the same directory don't trigger redundant IPC
   // and network lookups for that directory.
   const cwds = useMemo(
@@ -513,16 +522,25 @@ export function WorkspacePanel() {
     [tabs],
   );
   useWorktreeInfos(cwds);
-  // Titles are per session (cwd + agent), so a directory running both Claude and
-  // Codex gets each one's own title fetched.
+  // Titles use the exact Claude session id when known, and retain the legacy
+  // cwd + agent key otherwise (including Codex).
   const titleTargets = useMemo(
     () =>
       tabs.flatMap((tab) =>
-        collectTabSessions(tab, statuses, leafAgents).flatMap((session) =>
-          session.cwd && session.agent ? [{ cwd: session.cwd, agent: session.agent }] : [],
+        collectTabSessions(tab, statuses, leafAgents, sessionIds).flatMap((session) =>
+          session.cwd && session.agent
+            ? [
+                {
+                  cwd: session.cwd,
+                  agent: session.agent,
+                  sessionId: session.sessionId,
+                  leafId: session.leafId,
+                },
+              ]
+            : [],
         ),
       ),
-    [tabs, statuses, leafAgents],
+    [tabs, statuses, leafAgents, sessionIds],
   );
   useWorkspaceTitles(titleTargets);
 

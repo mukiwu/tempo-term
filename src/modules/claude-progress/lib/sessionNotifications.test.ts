@@ -1,5 +1,39 @@
-import { describe, it, expect } from "vitest";
-import { notificationForTransition, resolvePaneLabel } from "./sessionNotifications";
+import { waitFor } from "@testing-library/react";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+
+const { isFocused, notifyDesktop } = vi.hoisted(() => ({
+  isFocused: vi.fn(),
+  notifyDesktop: vi.fn(),
+}));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ isFocused }),
+}));
+vi.mock("./notify", () => ({ notifyDesktop }));
+
+import {
+  installSessionNotifications,
+  notificationForTransition,
+  resolvePaneLabel,
+} from "./sessionNotifications";
+import { useSessionStatusStore } from "./sessionStatusStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useTabsStore } from "@/stores/tabsStore";
+import { leaf } from "@/modules/terminal/lib/terminalLayout";
+import { titleKey, useTitlesStore } from "@/modules/workspace/lib/titlesStore";
+
+beforeEach(() => {
+  isFocused.mockReset();
+  isFocused.mockResolvedValue(false);
+  notifyDesktop.mockReset();
+  notifyDesktop.mockResolvedValue(undefined);
+  useSessionStatusStore.setState({
+    statuses: {},
+    agents: {},
+    sessionIds: {},
+    statusEpochs: {},
+  });
+  useTitlesStore.setState({ titles: {}, fetchedFingerprints: {}, inFlight: {} });
+});
 
 describe("resolvePaneLabel", () => {
   it("uses the tab's own title when the user renamed it, even with a cwd", () => {
@@ -66,5 +100,45 @@ describe("notificationForTransition", () => {
   it("treats a cleared status (next undefined) as no notification", () => {
     expect(notificationForTransition("active", undefined)).toBeNull();
     expect(notificationForTransition("waiting-approval", undefined)).toBeNull();
+  });
+});
+
+describe("session notification labels", () => {
+  it("uses the exact session title when the leaf has a Claude session id", async () => {
+    useSettingsStore.setState({ claudeNotifications: true });
+    useTabsStore.setState({
+      tabs: [
+        {
+          id: "tab-1",
+          spaceId: "space-1",
+          title: "shared",
+          kind: "terminal",
+          paneTree: leaf("leaf-1", { kind: "terminal", cwd: "/shared" }),
+          activeLeafId: "leaf-1",
+          paneOrder: ["leaf-1"],
+        },
+      ],
+    });
+    const store = useSessionStatusStore.getState();
+    store.setAgent("leaf-1", "claude");
+    store.setSessionId("leaf-1", "session-a");
+    useTitlesStore.setState({
+      titles: {
+        [titleKey({ cwd: "/shared", agent: "claude", sessionId: "session-a" })]:
+          "Session A title",
+        [titleKey({ cwd: "/shared", agent: "claude", sessionId: "session-b" })]:
+          "Session B title",
+      },
+    });
+
+    const uninstall = installSessionNotifications();
+    try {
+      store.setStatus("leaf-1", "waiting-approval");
+      await waitFor(() =>
+        expect(notifyDesktop).toHaveBeenCalledWith(expect.any(String), "Session A title"),
+      );
+    } finally {
+      uninstall();
+    }
   });
 });

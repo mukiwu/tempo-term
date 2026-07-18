@@ -7,8 +7,7 @@ import { findPaneContent } from "@/modules/terminal/lib/terminalLayout";
 import { basename } from "@/modules/explorer/lib/paths";
 import { agentLabel } from "@/modules/workspace/lib/agentLabel";
 import { selectCardTitle } from "@/modules/workspace/lib/cardTitle";
-import { progressKey } from "./progressStore";
-import { useTitlesStore } from "@/modules/workspace/lib/titlesStore";
+import { titleKey, useTitlesStore } from "@/modules/workspace/lib/titlesStore";
 import type { AgentKind } from "./codexNormalize";
 import { useSessionStatusStore } from "./sessionStatusStore";
 import type { SessionStatus } from "./sessionStatus";
@@ -68,8 +67,11 @@ function leafContextName(leafId: string, agent: AgentKind | undefined): string {
       continue;
     }
     const cwd = content.cwd ?? tab.cwd ?? null;
+    const sessionId = useSessionStatusStore.getState().sessionIds[leafId];
     const transcriptTitle =
-      cwd && agent ? useTitlesStore.getState().titles[progressKey(cwd, agent)] : undefined;
+      cwd && agent
+        ? useTitlesStore.getState().titles[titleKey({ cwd, agent, sessionId })]
+        : undefined;
     return resolvePaneLabel(tab, cwd, transcriptTitle);
   }
   return "";
