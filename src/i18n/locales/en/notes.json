@@ -40,6 +40,16 @@
   "language": "Language",
   "exitHint": "Cmd + Enter to exit",
   "linkHint": "Cmd / Ctrl-click to open",
+  "format": {
+    "bold": "Bold",
+    "italic": "Italic",
+    "strike": "Strikethrough",
+    "code": "Inline code",
+    "link": "Link",
+    "linkUrl": "Link URL",
+    "linkPlaceholder": "Paste a URL",
+    "removeLink": "Remove link"
+  },
   "slash": {
     "text": "Text",
     "h1": "Heading 1",

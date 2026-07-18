@@ -40,6 +40,16 @@
   "language": "語言",
   "exitHint": "Cmd + Enter 跳脫",
   "linkHint": "Cmd / Ctrl + 點擊開啟連結",
+  "format": {
+    "bold": "粗體",
+    "italic": "斜體",
+    "strike": "刪除線",
+    "code": "行內程式碼",
+    "link": "連結",
+    "linkUrl": "連結網址",
+    "linkPlaceholder": "貼上網址",
+    "removeLink": "移除連結"
+  },
   "slash": {
     "text": "文字",
     "h1": "標題 1",

@@ -20,7 +20,7 @@ interface SlashCommandSpec {
   key: string;
   keywords: string;
   icon: LucideIcon;
-  run: (editor: Editor, range: Range) => void;
+  run: (chain: BlockChain) => boolean;
 }
 
 /**
@@ -31,6 +31,7 @@ interface SlashCommandSpec {
 interface BlockChain {
   focus(): BlockChain;
   deleteRange(range: Range): BlockChain;
+  setTextSelection(position: number): BlockChain;
   setParagraph(): BlockChain;
   toggleHeading(attrs: { level: 1 | 2 | 3 | 4 | 5 | 6 }): BlockChain;
   toggleBulletList(): BlockChain;
@@ -42,8 +43,9 @@ interface BlockChain {
   run(): boolean;
 }
 
-function blockChain(editor: Editor, range: Range): BlockChain {
-  return (editor.chain() as unknown as BlockChain).focus().deleteRange(range);
+function blockChain(editor: Editor, range?: Range): BlockChain {
+  const chain = (editor.chain() as unknown as BlockChain).focus();
+  return range ? chain.deleteRange(range) : chain;
 }
 
 const SPECS: SlashCommandSpec[] = [
@@ -51,63 +53,87 @@ const SPECS: SlashCommandSpec[] = [
     key: "text",
     keywords: "text paragraph 文字 段落",
     icon: Type,
-    run: (editor, range) => blockChain(editor, range).setParagraph().run(),
+    run: (chain) => chain.setParagraph().run(),
   },
   {
     key: "h1",
     keywords: "h1 heading title 標題",
     icon: Heading1,
-    run: (editor, range) => blockChain(editor, range).toggleHeading({ level: 1 }).run(),
+    run: (chain) => chain.toggleHeading({ level: 1 }).run(),
   },
   {
     key: "h2",
     keywords: "h2 heading subtitle 標題",
     icon: Heading2,
-    run: (editor, range) => blockChain(editor, range).toggleHeading({ level: 2 }).run(),
+    run: (chain) => chain.toggleHeading({ level: 2 }).run(),
   },
   {
     key: "h3",
     keywords: "h3 heading 標題",
     icon: Heading3,
-    run: (editor, range) => blockChain(editor, range).toggleHeading({ level: 3 }).run(),
+    run: (chain) => chain.toggleHeading({ level: 3 }).run(),
   },
   {
     key: "bullet",
     keywords: "bullet unordered list 項目 清單",
     icon: List,
-    run: (editor, range) => blockChain(editor, range).toggleBulletList().run(),
+    run: (chain) => chain.toggleBulletList().run(),
   },
   {
     key: "ordered",
     keywords: "ordered numbered list 編號 清單",
     icon: ListOrdered,
-    run: (editor, range) => blockChain(editor, range).toggleOrderedList().run(),
+    run: (chain) => chain.toggleOrderedList().run(),
   },
   {
     key: "todo",
     keywords: "todo task checkbox 待辦 清單",
     icon: ListChecks,
-    run: (editor, range) => blockChain(editor, range).toggleTaskList().run(),
+    run: (chain) => chain.toggleTaskList().run(),
   },
   {
     key: "quote",
     keywords: "quote blockquote 引用",
     icon: Quote,
-    run: (editor, range) => blockChain(editor, range).toggleBlockquote().run(),
+    run: (chain) => chain.toggleBlockquote().run(),
   },
   {
     key: "code",
     keywords: "code codeblock snippet 程式碼",
     icon: Code2,
-    run: (editor, range) => blockChain(editor, range).toggleCodeBlock().run(),
+    run: (chain) => chain.toggleCodeBlock().run(),
   },
   {
     key: "divider",
     keywords: "divider hr rule separator 分隔線",
     icon: Minus,
-    run: (editor, range) => blockChain(editor, range).setHorizontalRule().run(),
+    run: (chain) => chain.setHorizontalRule().run(),
   },
 ];
+
+/** The same command set can delete a typed slash trigger or transform the
+ * current selection in place. */
+export function createBlockCommandItems(
+  t: TFunction<"notes">,
+  deleteSlashTrigger: boolean,
+): SlashItem[] {
+  return SPECS.map((spec) => ({
+    title: t(`slash.${spec.key}`),
+    keywords: spec.keywords,
+    icon: spec.icon,
+    run: (editor, range) => {
+      let chain = blockChain(editor, deleteSlashTrigger ? range : undefined);
+      // A divider inserts content rather than transforming the current block.
+      // Collapse to the end of the selected textblock first so its text is
+      // neither replaced nor split around the new horizontal rule.
+      if (!deleteSlashTrigger && spec.key === "divider") {
+        const blockEnd = editor.state.doc.resolve(range.to).end();
+        chain = chain.setTextSelection(blockEnd);
+      }
+      return spec.run(chain);
+    },
+  }));
+}
 
 /** Builds the `/` slash command extension with localized labels. */
 export function createSlashCommand(t: TFunction<"notes">): Extension {
@@ -123,16 +149,10 @@ export function createSlashCommand(t: TFunction<"notes">): Extension {
           startOfLine: false,
           items: ({ query }) => {
             const q = query.toLowerCase().trim();
-            return SPECS.filter((spec) => {
+            return createBlockCommandItems(t, true).filter((item) => {
               if (!q) return true;
-              const title = t(`slash.${spec.key}`).toLowerCase();
-              return title.includes(q) || spec.keywords.toLowerCase().includes(q);
-            }).map((spec) => ({
-              title: t(`slash.${spec.key}`),
-              keywords: spec.keywords,
-              icon: spec.icon,
-              run: spec.run,
-            }));
+              return item.title.toLowerCase().includes(q) || item.keywords.toLowerCase().includes(q);
+            });
           },
           command: ({ editor, range, props }) => {
             props.run(editor, range);

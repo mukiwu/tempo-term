@@ -4,6 +4,7 @@ import {
   useImperativeHandle,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import type { Editor, Range } from "@tiptap/react";
 import type { LucideIcon } from "lucide-react";
@@ -22,10 +23,11 @@ export interface SlashListHandle {
 interface SlashCommandListProps {
   items: SlashItem[];
   command: (item: SlashItem) => void;
+  header?: ReactNode;
 }
 
 export const SlashCommandList = forwardRef<SlashListHandle, SlashCommandListProps>(
-  function SlashCommandList({ items, command }, ref) {
+  function SlashCommandList({ items, command, header }, ref) {
     const [selected, setSelected] = useState(0);
 
     useEffect(() => {
@@ -57,12 +59,14 @@ export const SlashCommandList = forwardRef<SlashListHandle, SlashCommandListProp
 
     return (
       <div className="max-h-72 w-64 overflow-y-auto rounded-lg border border-border-strong bg-bg-elevated py-1 shadow-xl">
+        {header}
         {items.map((item, index) => {
           const Icon = item.icon;
           return (
             <button
               key={item.title}
               type="button"
+              onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => setSelected(index)}
               onClick={() => command(item)}
               className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm ${

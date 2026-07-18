@@ -29,6 +29,7 @@ import { bashCommandHighlight } from "./lib/bashCommandHighlight";
 import { NoteSearchHighlight } from "./noteSearchHighlight";
 import { Combobox } from "@/components/Combobox";
 import { Tooltip } from "@/components/Tooltip";
+import { SelectionCommandMenu } from "./SelectionCommandMenu";
 
 const lowlight = createLowlight(common);
 // Override the stock bash grammar so leading command names (ssh, git, custom
@@ -227,5 +228,10 @@ export function NoteEditor({ content, onChange, noteId, onEditorReady }: NoteEdi
     return () => unregisterNoteInserter(noteId);
   }, [editor, noteId]);
 
-  return <EditorContent editor={editor} className="h-full" />;
+  return (
+    <>
+      {editor && <SelectionCommandMenu editor={editor} />}
+      <EditorContent editor={editor} className="h-full" />
+    </>
+  );
 }
