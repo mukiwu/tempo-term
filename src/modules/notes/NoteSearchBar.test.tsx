@@ -75,6 +75,20 @@ describe("NoteSearchBar", () => {
     expect(search.findPrevious).toHaveBeenCalledWith("needle");
     expect(search.findNext).toHaveBeenCalledWith("needle");
   });
+
+  it("re-applies the current query when the search controller is replaced", () => {
+    const firstSearch = makeController();
+    const { rerender } = render(
+      <NoteSearchBar search={firstSearch} onClose={() => {}} />,
+    );
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "needle" } });
+
+    const replacementSearch = makeController();
+    rerender(<NoteSearchBar search={replacementSearch} onClose={() => {}} />);
+
+    expect(firstSearch.clear).toHaveBeenCalledOnce();
+    expect(replacementSearch.setQuery).toHaveBeenCalledWith("needle");
+  });
 });
 
 describe("createNoteSearchController", () => {
@@ -117,6 +131,16 @@ describe("createNoteSearchController", () => {
     const search = createNoteSearchController(editor);
 
     expect(search.setQuery("needle across")).toEqual({ current: 1, total: 1 });
+
+    editor.destroy();
+  });
+
+  it("starts from the first match at or after the editor cursor", () => {
+    const editor = editorWithText("needle hay needle");
+    editor.commands.setTextSelection(8);
+    const search = createNoteSearchController(editor);
+
+    expect(search.setQuery("needle")).toEqual({ current: 2, total: 2 });
 
     editor.destroy();
   });

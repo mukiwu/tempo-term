@@ -73,7 +73,13 @@ export function createNoteSearchController(editor: Editor): NoteSearchController
     query = nextQuery;
     doc = editor.state.doc;
     matches = findMatches(editor, nextQuery);
-    active = matches.length > 0 ? 0 : -1;
+    if (matches.length > 0) {
+      const selection = editor.state.selection.from;
+      const nextMatch = matches.findIndex((match) => match.from >= selection);
+      active = nextMatch >= 0 ? nextMatch : 0;
+    } else {
+      active = -1;
+    }
   };
 
   const ensureFresh = (nextQuery: string) => {
@@ -122,12 +128,17 @@ export function NoteSearchBar({ search, onClose }: NoteSearchBarProps) {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<NoteSearchResult>({ current: 0, total: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
+  const queryRef = useRef(query);
+  queryRef.current = query;
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  useEffect(() => () => search.clear(), [search]);
+  useEffect(() => {
+    setResult(search.setQuery(queryRef.current));
+    return () => search.clear();
+  }, [search]);
 
   const buttonClass = "rounded p-0.5 text-fg-muted hover:bg-border hover:text-fg";
 
