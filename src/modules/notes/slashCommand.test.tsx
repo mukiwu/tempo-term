@@ -119,6 +119,21 @@ describe("note slash command", () => {
     expect(editor.getText()).toBe("plain text");
   });
 
+  it("cancels link editing with Escape without closing the command panel", async () => {
+    const editor = await renderEditorAtEnd("plain text");
+    act(() => {
+      editor.commands.setTextSelection({ from: 1, to: 6 });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "format.link" }));
+    const input = await screen.findByRole("textbox", { name: "format.linkUrl" });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(screen.queryByRole("textbox", { name: "format.linkUrl" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "slash.text" })).toBeInTheDocument();
+    expect(editor.state.selection.empty).toBe(false);
+  });
+
   it("removes a link from selected text without deleting the text", async () => {
     const editor = await renderEditorAtEnd("plain text");
     act(() => {

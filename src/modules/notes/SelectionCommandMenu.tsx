@@ -62,9 +62,14 @@ export function SelectionCommandMenu({ editor }: SelectionCommandMenuProps) {
   const dismissedSelection = useRef<string | null>(null);
   const listRef = useRef<SlashListHandle>(null);
   const linkInputRef = useRef<HTMLInputElement>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
   const hide = useCallback(() => setAnchor(null), []);
   const handleEditorBlur = useCallback(() => {
-    window.setTimeout(() => {
+    if (blurTimeoutRef.current !== null) {
+      window.clearTimeout(blurTimeoutRef.current);
+    }
+    blurTimeoutRef.current = window.setTimeout(() => {
+      blurTimeoutRef.current = null;
       const activeElement = document.activeElement as HTMLElement | null;
       if (!activeElement?.closest("[data-selection-command-menu]")) {
         hide();
@@ -111,20 +116,38 @@ export function SelectionCommandMenu({ editor }: SelectionCommandMenuProps) {
   }, [editor]);
 
   useEffect(() => {
+    let animationFrameId: number | null = null;
+    const scheduleUpdate = () => {
+      if (animationFrameId !== null) {
+        return;
+      }
+      animationFrameId = window.requestAnimationFrame(() => {
+        animationFrameId = null;
+        update();
+      });
+    };
+
     editor.on("selectionUpdate", update);
     editor.on("transaction", update);
     editor.on("focus", update);
     editor.on("blur", handleEditorBlur);
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
     update();
     return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      if (blurTimeoutRef.current !== null) {
+        window.clearTimeout(blurTimeoutRef.current);
+        blurTimeoutRef.current = null;
+      }
       editor.off("selectionUpdate", update);
       editor.off("transaction", update);
       editor.off("focus", update);
       editor.off("blur", handleEditorBlur);
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
     };
   }, [editor, handleEditorBlur, update]);
 
@@ -220,6 +243,9 @@ export function SelectionCommandMenu({ editor }: SelectionCommandMenuProps) {
                       } else {
                         chain.unsetLink().run();
                       }
+                      setLinkEditing(false);
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
                       setLinkEditing(false);
                     }
                   }}
