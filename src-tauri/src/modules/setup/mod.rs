@@ -404,17 +404,17 @@ fn tool_search_dirs() -> Vec<PathBuf> {
 /// often minimal, so a resolved npm shim may still fail at its `env node`
 /// shebang unless we also expose the shim's sibling Node binary.
 ///
-/// Empty entries are dropped everywhere: a bare exe name ("sh", "cmd") yields
-/// Some("") from `Path::parent()`, and an empty PATH entry means "search the
-/// CWD" — the planted-binary hijack that resolving to absolute paths exists to
-/// prevent.
+/// Only absolute dirs may enter the child PATH: a bare exe name ("sh", "cmd")
+/// yields Some("") from `Path::parent()`, and an empty, ".", or any other
+/// relative PATH entry resolves against the CWD — the planted-binary hijack
+/// that resolving to absolute paths exists to prevent.
 fn command_search_dirs(preferred: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Some(dir) = preferred.filter(|dir| !dir.as_os_str().is_empty()) {
+    if let Some(dir) = preferred.filter(|dir| dir.is_absolute()) {
         dirs.push(dir.to_path_buf());
     }
     for dir in tool_search_dirs() {
-        if !dir.as_os_str().is_empty() && !dirs.contains(&dir) {
+        if dir.is_absolute() && !dirs.contains(&dir) {
             dirs.push(dir);
         }
     }
@@ -687,14 +687,19 @@ mod tests {
     }
 
     #[test]
-    fn command_search_dirs_never_contain_an_empty_entry() {
+    fn command_search_dirs_only_contain_absolute_entries() {
         // A bare exe name ("sh", "cmd") yields Some("") from Path::parent(),
-        // and an empty PATH entry means "search the CWD" on POSIX and Windows
-        // alike — the planted-binary hijack that resolving to absolute paths
-        // exists to prevent. Neither the preferred dir nor an entry inherited
-        // from a malformed PATH may land in the list empty.
-        let dirs = command_search_dirs(Some(Path::new("")));
-        assert!(dirs.iter().all(|dir| !dir.as_os_str().is_empty()));
+        // and an empty, ".", or any relative PATH entry resolves against the
+        // CWD on POSIX and Windows alike — the planted-binary hijack that
+        // resolving to absolute paths exists to prevent. Only absolute dirs may
+        // reach the child PATH, whatever the preferred slot is handed.
+        for preferred in ["", ".", "./tools", "relative/bin"] {
+            let dirs = command_search_dirs(Some(Path::new(preferred)));
+            assert!(
+                dirs.iter().all(|dir| dir.is_absolute()),
+                "non-absolute entry leaked for preferred {preferred:?}"
+            );
+        }
     }
 
     #[test]
