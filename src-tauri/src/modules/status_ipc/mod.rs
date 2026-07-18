@@ -238,19 +238,19 @@ pub fn run_hook_shim(state: &str) {
     let event = parse_hook_event(&stdin_json);
 
     let (kind, payload) = if state == "notification" {
-        match event.notification_type {
-            Some(t) => ("notify", t),
+        match &event.notification_type {
+            Some(t) => ("notify", t.as_str()),
             None => return, // unknown/missing type: emit nothing, like the .sh
         }
     } else {
-        ("status", state.to_string())
+        ("status", state)
     };
 
     let line = encode_message(
         &token,
         &pane_id,
         kind,
-        &payload,
+        payload,
         event.session_id.as_deref().unwrap_or(""),
     );
     send_status(&addr, &line);
