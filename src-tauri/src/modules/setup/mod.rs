@@ -69,7 +69,8 @@ const TOOLS: &[ToolSpec] = &[
         bin: "codex",
         min_version: None,
         // OpenAI's standalone installer needs neither Node nor npm and writes
-        // `codex` to ~/.local/bin, which is one of our probe locations.
+        // `codex` to ~/.local/bin, which is one of our probe locations. Piped
+        // to bash (not sh) to tolerate bashisms, like the antigravity line.
         mac_install: "curl -fsSL https://chatgpt.com/codex/install.sh | bash",
         windows_install: "npm install -g @openai/codex",
     },
@@ -400,20 +401,20 @@ fn tool_search_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// PATH for a child process launched by the GUI. The app's inherited PATH is
-/// often minimal, so a resolved npm shim may still fail at its `env node`
-/// shebang unless we also expose the shim's sibling Node binary.
-///
-/// Only absolute dirs may enter the child PATH: a bare exe name ("sh", "cmd")
-/// yields Some("") from `Path::parent()`, and an empty, ".", or any other
-/// relative PATH entry resolves against the CWD — the planted-binary hijack
-/// that resolving to absolute paths exists to prevent.
-fn command_search_dirs(preferred: Option<&Path>) -> Vec<PathBuf> {
+/// Dirs a spawned child may resolve tools from and receive as PATH: the
+/// preferred dir (a resolved exe's own directory, so an npm shim's sibling
+/// node wins) first, then the candidates, deduped. This is the single
+/// chokepoint for the CWD-hijack filter: only absolute dirs pass, because an
+/// empty, ".", or any other relative entry (a bare exe name's `Path::parent()`
+/// is `Some("")`; an inherited PATH can carry `::`) resolves against the CWD —
+/// the planted-binary hijack that resolving to absolute paths exists to
+/// prevent. Pure so both filter branches are unit-tested.
+fn command_search_dirs(preferred: Option<&Path>, candidates: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(dir) = preferred.filter(|dir| dir.is_absolute()) {
         dirs.push(dir.to_path_buf());
     }
-    for dir in tool_search_dirs() {
+    for dir in candidates {
         if dir.is_absolute() && !dirs.contains(&dir) {
             dirs.push(dir);
         }
@@ -421,15 +422,32 @@ fn command_search_dirs(preferred: Option<&Path>) -> Vec<PathBuf> {
     dirs
 }
 
+/// PATH for a child process launched by the GUI. The app's inherited PATH is
+/// often minimal, so a resolved npm shim may still fail at its `env node`
+/// shebang unless we also expose the shim's sibling Node binary.
 fn command_path(preferred: Option<&Path>) -> std::ffi::OsString {
-    std::env::join_paths(command_search_dirs(preferred))
-        .unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+    std::env::join_paths(command_search_dirs(preferred, tool_search_dirs())).unwrap_or_else(|_| {
+        // A candidate dir containing the separator poisons the join. Falling
+        // back to the raw inherited PATH would resurrect the empty/relative
+        // entries the filter strips, so rebuild from its absolute entries
+        // instead — those came from a split on the separator, so they can't
+        // poison the re-join.
+        let inherited = std::env::var_os("PATH").unwrap_or_default();
+        let absolute: Vec<PathBuf> = std::env::split_paths(&inherited)
+            .filter(|dir| dir.is_absolute())
+            .collect();
+        std::env::join_paths(absolute).unwrap_or_default()
+    })
 }
 
 fn find_tool(stem: &str) -> Option<PathBuf> {
     let windows = cfg!(windows);
     let names = exe_names(stem, windows);
-    resolve_in_dirs(&names, &tool_search_dirs())
+    // Resolution flows through the same absolute-only chokepoint as the child
+    // PATH: an inherited-PATH empty entry would otherwise make
+    // `"".join(name).is_file()` probe the CWD and hand back a relative exe to
+    // spawn — the same planted-binary hijack, entered through the exe argument.
+    resolve_in_dirs(&names, &command_search_dirs(None, tool_search_dirs()))
 }
 
 /// Build a `Command` with the console suppressed on Windows. A release build has
@@ -688,27 +706,31 @@ mod tests {
 
     #[test]
     fn command_search_dirs_only_contain_absolute_entries() {
-        // A bare exe name ("sh", "cmd") yields Some("") from Path::parent(),
-        // and an empty, ".", or any relative PATH entry resolves against the
-        // CWD on POSIX and Windows alike — the planted-binary hijack that
-        // resolving to absolute paths exists to prevent. Only absolute dirs may
-        // reach the child PATH, whatever the preferred slot is handed.
+        // See command_search_dirs' doc: relative entries resolve against the
+        // CWD, so neither the preferred slot nor a candidate may pass one
+        // through. temp_dir() is absolute on every platform.
+        let abs = std::env::temp_dir();
+        let candidates = vec![
+            PathBuf::from(""),
+            PathBuf::from("."),
+            PathBuf::from("relative/bin"),
+            abs.clone(),
+        ];
         for preferred in ["", ".", "./tools", "relative/bin"] {
-            let dirs = command_search_dirs(Some(Path::new(preferred)));
-            assert!(
-                dirs.iter().all(|dir| dir.is_absolute()),
-                "non-absolute entry leaked for preferred {preferred:?}"
-            );
+            let dirs = command_search_dirs(Some(Path::new(preferred)), candidates.clone());
+            assert_eq!(dirs, vec![abs.clone()], "for preferred {preferred:?}");
         }
     }
 
     #[test]
     fn command_search_dirs_prefer_the_resolved_cli_sibling() {
         // npm-installed CLIs use `#!/usr/bin/env node`; when the app found an
-        // nvm shim outside its inherited PATH, its sibling Node must win.
-        let nvm_bin = PathBuf::from("/home/me/.nvm/versions/node/v22/bin");
-        let dirs = command_search_dirs(Some(&nvm_bin));
-        assert_eq!(dirs.first(), Some(&nvm_bin));
+        // nvm shim outside its inherited PATH, its sibling Node must win, and
+        // a candidate repeating it must not appear twice.
+        let nvm_bin = std::env::temp_dir().join("nvm-bin");
+        let other = std::env::temp_dir().join("other-bin");
+        let dirs = command_search_dirs(Some(&nvm_bin), vec![other.clone(), nvm_bin.clone()]);
+        assert_eq!(dirs, vec![nvm_bin, other]);
     }
 
     #[test]
