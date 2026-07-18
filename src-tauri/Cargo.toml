@@ -1,6 +1,6 @@
 [package]
 name = "tempo-term"
-version = "0.2.1"
+version = "0.2.2"
 description = "TempoTerm - AI-powered terminal, editor and file explorer"
 authors = ["TempoTerm"]
 edition = "2021"
