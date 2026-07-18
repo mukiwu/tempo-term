@@ -235,8 +235,10 @@ pub fn run_hook_shim(state: &str) {
     let token = std::env::var(ENV_TOKEN).unwrap_or_default();
     let pane_id = std::env::var(ENV_PANE_ID).unwrap_or_default();
 
+    let event = parse_hook_event(&stdin_json);
+
     let (kind, payload) = if state == "notification" {
-        match notification_type(&stdin_json) {
+        match event.notification_type {
             Some(t) => ("notify", t),
             None => return, // unknown/missing type: emit nothing, like the .sh
         }
@@ -244,13 +246,12 @@ pub fn run_hook_shim(state: &str) {
         ("status", state.to_string())
     };
 
-    let session_id = extract_session_id(&stdin_json);
     let line = encode_message(
         &token,
         &pane_id,
         kind,
         &payload,
-        session_id.as_deref().unwrap_or(""),
+        event.session_id.as_deref().unwrap_or(""),
     );
     send_status(&addr, &line);
 }
@@ -267,25 +268,33 @@ fn send_status(addr: &str, line: &str) {
     let _ = stream.write_all(line.as_bytes());
 }
 
-/// Pull `notification_type` out of the hook's stdin JSON. Tolerant of surrounding
-/// fields; returns `None` if absent so the shim stays quiet on unknown events.
-fn notification_type(stdin_json: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(stdin_json).ok()?;
-    value
-        .get("notification_type")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
+/// The fields the shim cares about from a hook event's stdin JSON.
+struct HookEvent {
+    notification_type: Option<String>,
+    session_id: Option<String>,
 }
 
-/// Pull a non-empty Claude session id out of a hook event's stdin JSON.
-/// Malformed or truncated input is ignored because the hook shim is best-effort.
-fn extract_session_id(stdin_json: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(stdin_json).ok()?;
-    value
-        .get("session_id")
+/// Extract every interesting field of the hook's stdin JSON in one parse —
+/// the shim runs on every hook event, so the payload is deserialized once,
+/// not once per field. Tolerant of surrounding fields; a field is None when
+/// absent, blank, or not a string, and both are None on malformed or
+/// truncated input because the shim is best-effort.
+fn parse_hook_event(stdin_json: &str) -> HookEvent {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(stdin_json) else {
+        return HookEvent { notification_type: None, session_id: None };
+    };
+    HookEvent {
+        notification_type: string_field(&value, "notification_type"),
+        session_id: string_field(&value, "session_id"),
+    }
+}
+
+/// A non-empty string field of `event`, or None.
+fn string_field(event: &serde_json::Value, name: &str) -> Option<String> {
+    event
+        .get(name)
         .and_then(|v| v.as_str())
-        .filter(|session_id| !session_id.is_empty())
+        .filter(|s| !s.is_empty())
         .map(str::to_string)
 }
 
@@ -401,14 +410,14 @@ mod tests {
     #[test]
     fn extracts_notification_type_from_stdin_json() {
         let json = r#"{"session_id":"x","notification_type":"idle_prompt","other":1}"#;
-        assert_eq!(notification_type(json).as_deref(), Some("idle_prompt"));
+        assert_eq!(parse_hook_event(json).notification_type.as_deref(), Some("idle_prompt"));
     }
 
     #[test]
     fn notification_type_absent_or_blank_is_none() {
-        assert_eq!(notification_type(r#"{"foo":"bar"}"#), None);
-        assert_eq!(notification_type(r#"{"notification_type":""}"#), None);
-        assert_eq!(notification_type("not json"), None);
+        assert_eq!(parse_hook_event(r#"{"foo":"bar"}"#).notification_type, None);
+        assert_eq!(parse_hook_event(r#"{"notification_type":""}"#).notification_type, None);
+        assert_eq!(parse_hook_event("not json").notification_type, None);
     }
 
     #[test]
@@ -448,14 +457,29 @@ mod tests {
     #[test]
     fn extracts_session_id_from_stdin_json() {
         let json = r#"{"session_id":"session-123","other":1}"#;
-        assert_eq!(extract_session_id(json).as_deref(), Some("session-123"));
+        assert_eq!(parse_hook_event(json).session_id.as_deref(), Some("session-123"));
     }
 
     #[test]
     fn session_id_absent_blank_or_invalid_json_is_none() {
-        assert_eq!(extract_session_id(r#"{"foo":"bar"}"#), None);
-        assert_eq!(extract_session_id(r#"{"session_id":""}"#), None);
-        assert_eq!(extract_session_id("not json"), None);
+        assert_eq!(parse_hook_event(r#"{"foo":"bar"}"#).session_id, None);
+        assert_eq!(parse_hook_event(r#"{"session_id":""}"#).session_id, None);
+        assert_eq!(parse_hook_event("not json").session_id, None);
+    }
+
+    #[test]
+    fn one_parse_yields_both_fields() {
+        let json = r#"{"session_id":"s1","notification_type":"idle_prompt"}"#;
+        let event = parse_hook_event(json);
+        assert_eq!(event.notification_type.as_deref(), Some("idle_prompt"));
+        assert_eq!(event.session_id.as_deref(), Some("s1"));
+    }
+
+    #[test]
+    fn non_string_fields_are_none_without_poisoning_the_event() {
+        let event = parse_hook_event(r#"{"session_id":7,"notification_type":"idle_prompt"}"#);
+        assert_eq!(event.session_id, None);
+        assert_eq!(event.notification_type.as_deref(), Some("idle_prompt"));
     }
 
     #[test]
