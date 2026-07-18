@@ -6,6 +6,8 @@ import { titleFromFilename } from "@/modules/notes/lib/notesPaths";
 import { decideExternalChange } from "@/modules/notes/lib/notesExternalChange";
 import { onNotesChanged } from "@/modules/notes/lib/notesWatch";
 import { NoteEditor } from "./NoteEditor";
+import { NoteToc } from "./NoteToc";
+import type { Editor } from "@tiptap/react";
 
 const WRITE_DEBOUNCE_MS = 400;
 // Ignore watcher events that arrive shortly after our own write (the echo of
@@ -37,6 +39,8 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
   const [reloadKey, setReloadKey] = useState(0);
   // True when the file changed on disk while we had unsaved edits.
   const [externalChanged, setExternalChanged] = useState(false);
+  // The live editor instance, surfaced by NoteEditor for the TOC button.
+  const [editor, setEditor] = useState<Editor | null>(null);
 
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest editor content not yet flushed to disk; null once flushed.
@@ -203,7 +207,7 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      <div className="shrink-0 border-b border-border px-6 pt-5 pb-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-6 pt-5 pb-2">
         <input
           value={title}
           placeholder={t("titlePlaceholder")}
@@ -215,8 +219,9 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
               e.currentTarget.blur();
             }
           }}
-          className="w-full bg-transparent text-2xl font-bold text-fg outline-none placeholder:text-fg-subtle"
+          className="w-full min-w-0 flex-1 bg-transparent text-2xl font-bold text-fg outline-none placeholder:text-fg-subtle"
         />
+        <NoteToc editor={editor} />
       </div>
       {externalChanged && (
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-warning/10 px-6 py-2 text-xs text-fg">
@@ -248,6 +253,7 @@ export function NoteTabContent({ noteId, tabId, leafId }: NoteTabContentProps) {
             noteId={path}
             content={content}
             onChange={scheduleWrite}
+            onEditorReady={setEditor}
           />
         )}
       </div>

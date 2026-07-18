@@ -6,6 +6,7 @@ import {
   NodeViewWrapper,
   ReactNodeViewRenderer,
   useEditor,
+  type Editor,
   type NodeViewProps,
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -135,9 +136,12 @@ interface NoteEditorProps {
   onChange: (markdown: string) => void;
   /** When set, dropped explorer entries can insert a link into this note. */
   noteId?: string;
+  /** Surfaces the live editor instance to the parent (the TOC button reads
+   *  headings from it); called with null when the editor goes away. */
+  onEditorReady?: (editor: Editor | null) => void;
 }
 
-export function NoteEditor({ content, onChange, noteId }: NoteEditorProps) {
+export function NoteEditor({ content, onChange, noteId, onEditorReady }: NoteEditorProps) {
   const { t } = useTranslation("notes");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slashCommand = useMemo(() => createSlashCommand(t), [t]);
@@ -197,6 +201,11 @@ export function NoteEditor({ content, onChange, noteId }: NoteEditorProps) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    onEditorReady?.(editor);
+    return () => onEditorReady?.(null);
+  }, [editor, onEditorReady]);
 
   // Let a dropped explorer entry insert a Markdown link at the cursor.
   useEffect(() => {
