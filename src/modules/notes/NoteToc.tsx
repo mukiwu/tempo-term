@@ -79,6 +79,17 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
         } else {
           dom.scrollIntoView?.({ block: "start" });
         }
+        // Flash the landing heading so the destination reads clearly even
+        // when the scroll hit the end of the document and couldn't bring it
+        // to the top. Re-added after a reflow so a repeated jump restarts
+        // the animation; the timeout removal covers reduced-motion users,
+        // whose static highlight never fires animationend.
+        dom.classList.remove("note-toc-flash");
+        void dom.offsetWidth;
+        dom.classList.add("note-toc-flash");
+        const clear = () => dom.classList.remove("note-toc-flash");
+        dom.addEventListener("animationend", clear, { once: true });
+        window.setTimeout(clear, 2000);
       }, 0);
     }
     setOpen(false);

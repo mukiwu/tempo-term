@@ -72,11 +72,17 @@ describe("NoteToc", () => {
       // The "Usage" heading starts after Intro (h1) and the paragraph.
       const { from } = editor.state.selection;
       expect(editor.state.doc.resolve(from).parent.textContent).toBe("Usage");
-      // The scroll is deferred behind ProseMirror's focus scroll-restore tick;
-      // it must not have fired synchronously (that ordering is the bug fix).
+      // The scroll is deferred a tick (behind the webview's caret-reveal);
+      // it must not have fired synchronously.
       expect(scrollSpy).not.toHaveBeenCalled();
-      vi.runAllTimers();
+      vi.advanceTimersByTime(0);
       expect(scrollSpy).toHaveBeenCalledWith({ block: "start" });
+      // The landing heading flashes so the destination is visible even when
+      // the scroll couldn't top-align it (end of document).
+      const flashed = document.querySelector(".note-toc-flash");
+      expect(flashed?.textContent).toBe("Usage");
+      vi.advanceTimersByTime(2000);
+      expect(document.querySelector(".note-toc-flash")).toBeNull();
       expect(screen.queryByRole("button", { name: "Usage" })).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();

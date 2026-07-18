@@ -170,6 +170,26 @@ textarea:focus-visible,
 .note-md li { margin: 0.2em 0; }
 .note-md li > input[type="checkbox"] { margin-right: 0.4em; }
 .note-md a { color: var(--color-accent); text-decoration: underline; cursor: pointer; }
+/* Flash on the heading a TOC jump landed on, so the destination is obvious
+   even when the scroll couldn't bring it to the top (end of the document). */
+@keyframes note-toc-flash {
+  0% { background-color: color-mix(in srgb, var(--color-accent) 28%, transparent); }
+  100% { background-color: transparent; }
+}
+.note-md .note-toc-flash {
+  border-radius: 4px;
+  box-decoration-break: clone;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .note-md .note-toc-flash { animation: note-toc-flash 1.6s ease-out; }
+}
+/* Motion-reduced users still get a (static, briefly held) highlight via the
+   class being present until animationend/timeout removal. */
+@media (prefers-reduced-motion: reduce) {
+  .note-md .note-toc-flash {
+    background-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  }
+}
 /* Shared hover tooltip for terminal links (xterm has no native tooltip).
    Metrics mirror components/Tooltip.tsx so every tooltip reads the same. */
 .terminal-link-tooltip {
