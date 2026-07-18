@@ -71,7 +71,7 @@ describe("NoteToc", () => {
       // The "Usage" heading starts after Intro (h1) and the paragraph.
       const { from } = editor.state.selection;
       expect(editor.state.doc.resolve(from).parent.textContent).toBe("Usage");
-      expect(scrollSpy).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+      expect(scrollSpy).toHaveBeenCalledWith({ block: "start" });
       expect(screen.queryByRole("button", { name: "Usage" })).not.toBeInTheDocument();
     } finally {
       proto.scrollIntoView = original;

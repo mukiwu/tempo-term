@@ -43,8 +43,10 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
   };
 
   const jump = (heading: NoteHeading) => {
-    // Cursor onto the heading without the focus scroll (which jumps hard);
-    // the DOM node scrolls smoothly instead. `pos + 1` lands inside the node.
+    // Cursor onto the heading without the focus scroll; the DOM node is
+    // positioned directly instead. `pos + 1` lands inside the node. The scroll
+    // is instant on purpose: WKWebView's smooth scrollIntoView miscalculates
+    // targets inside nested scroll containers and lands on the wrong section.
     editor
       .chain()
       .setTextSelection(heading.pos + 1)
@@ -52,7 +54,7 @@ export function NoteToc({ editor }: { editor: Editor | null }) {
       .run();
     const dom = editor.view.nodeDOM(heading.pos);
     if (dom instanceof HTMLElement) {
-      dom.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      dom.scrollIntoView?.({ block: "start" });
     }
     setOpen(false);
   };
