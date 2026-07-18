@@ -68,7 +68,9 @@ const TOOLS: &[ToolSpec] = &[
         id: "codex",
         bin: "codex",
         min_version: None,
-        mac_install: "npm install -g @openai/codex",
+        // OpenAI's standalone installer needs neither Node nor npm and writes
+        // `codex` to ~/.local/bin, which is one of our probe locations.
+        mac_install: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
         windows_install: "npm install -g @openai/codex",
     },
     ToolSpec {
@@ -355,7 +357,7 @@ fn resolve_in_dirs(names: &[String], dirs: &[PathBuf]) -> Option<PathBuf> {
 /// Resolving to an absolute path (never spawning a bare name) both finds the
 /// Windows `.exe`/`.cmd` forms and avoids the `CreateProcess` CWD-search hijack,
 /// where a planted same-named binary in a writable working dir would run instead.
-fn find_tool(stem: &str) -> Option<PathBuf> {
+fn tool_search_dirs() -> Vec<PathBuf> {
     let path_env = std::env::var("PATH").ok();
     let home = std::env::var("HOME")
         .ok()
@@ -363,7 +365,6 @@ fn find_tool(stem: &str) -> Option<PathBuf> {
     let appdata = std::env::var("APPDATA").ok();
     let localappdata = std::env::var("LOCALAPPDATA").ok();
     let windows = cfg!(windows);
-    let names = exe_names(stem, windows);
     let mut dirs = search_dirs(
         path_env.as_deref(),
         home.as_deref(),
@@ -396,7 +397,34 @@ fn find_tool(stem: &str) -> Option<PathBuf> {
         let fnm_versions = read_fnm_node_versions(&root);
         dirs.extend(fnm_dirs(&root, &fnm_versions, windows));
     }
-    resolve_in_dirs(&names, &dirs)
+    dirs
+}
+
+/// PATH for a child process launched by the GUI. The app's inherited PATH is
+/// often minimal, so a resolved npm shim may still fail at its `env node`
+/// shebang unless we also expose the shim's sibling Node binary.
+fn command_search_dirs(preferred: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(dir) = preferred {
+        dirs.push(dir.to_path_buf());
+    }
+    for dir in tool_search_dirs() {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    dirs
+}
+
+fn command_path(preferred: Option<&Path>) -> std::ffi::OsString {
+    std::env::join_paths(command_search_dirs(preferred))
+        .unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+}
+
+fn find_tool(stem: &str) -> Option<PathBuf> {
+    let windows = cfg!(windows);
+    let names = exe_names(stem, windows);
+    resolve_in_dirs(&names, &tool_search_dirs())
 }
 
 /// Build a `Command` with the console suppressed on Windows. A release build has
@@ -406,6 +434,7 @@ fn find_tool(stem: &str) -> Option<PathBuf> {
 fn tool_command(exe: &std::path::Path) -> Command {
     #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = Command::new(exe);
+    command.env("PATH", command_path(exe.parent()));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -535,6 +564,7 @@ fn run_install(cmd: &str, on_output: &Channel<String>) -> Result<i32, String> {
     };
     let mut child = builder
         .current_dir(temp)
+        .env("PATH", command_path(None))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -649,6 +679,15 @@ mod tests {
         assert!(dirs.contains(&PathBuf::from("/home/me/.asdf/shims")));
         assert!(dirs.contains(&PathBuf::from("/home/me/.nvm/versions/node/v22.14.0/bin")));
         assert!(dirs.contains(&PathBuf::from("/home/me/.nvm/versions/node/v20.11.0/bin")));
+    }
+
+    #[test]
+    fn command_search_dirs_prefer_the_resolved_cli_sibling() {
+        // npm-installed CLIs use `#!/usr/bin/env node`; when the app found an
+        // nvm shim outside its inherited PATH, its sibling Node must win.
+        let nvm_bin = PathBuf::from("/home/me/.nvm/versions/node/v22/bin");
+        let dirs = command_search_dirs(Some(&nvm_bin));
+        assert_eq!(dirs.first(), Some(&nvm_bin));
     }
 
     #[test]
