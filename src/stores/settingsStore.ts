@@ -50,6 +50,8 @@ interface SettingsState {
   codexFlags: string;
   /** Install the Claude Code hook that reports live session status to cards. */
   claudeStatusTracking: boolean;
+  /** Resume each pane's exact Claude/Codex conversation after an app relaunch. */
+  autoResumeAiSessions: boolean;
   /**
    * Raise an OS desktop notification when a tracked agent needs approval or
    * finishes, but only while the window is unfocused. Depends on status tracking.
@@ -101,6 +103,7 @@ interface SettingsState {
   setClaudeFlags: (flags: string) => void;
   setCodexFlags: (flags: string) => void;
   setClaudeStatusTracking: (value: boolean) => void;
+  setAutoResumeAiSessions: (value: boolean) => void;
   setClaudeNotifications: (value: boolean) => void;
   setAiInlineCompletion: (value: boolean) => void;
   setAiTerminalContext: (value: boolean) => void;
@@ -146,6 +149,7 @@ export const useSettingsStore = create<SettingsState>()(
       claudeFlags: "",
       codexFlags: "",
       claudeStatusTracking: true,
+      autoResumeAiSessions: true,
       claudeNotifications: true,
       aiInlineCompletion: false,
       aiTerminalContext: true,
@@ -172,6 +176,7 @@ export const useSettingsStore = create<SettingsState>()(
       setClaudeFlags: (claudeFlags) => set({ claudeFlags }),
       setCodexFlags: (codexFlags) => set({ codexFlags }),
       setClaudeStatusTracking: (value) => set({ claudeStatusTracking: value }),
+      setAutoResumeAiSessions: (value) => set({ autoResumeAiSessions: value }),
       setClaudeNotifications: (value) => set({ claudeNotifications: value }),
       setAiInlineCompletion: (value) => set({ aiInlineCompletion: value }),
       setAiTerminalContext: (value) => set({ aiTerminalContext: value }),

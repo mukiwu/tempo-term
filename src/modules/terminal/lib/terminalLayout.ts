@@ -7,13 +7,25 @@
 
 export type SplitDirection = "row" | "col";
 
+/** A resumable local AI CLI conversation tied to one terminal pane. */
+export interface AiSessionBinding {
+  agent: "claude" | "codex";
+  sessionId: string;
+}
+
 /**
  * What a leaf pane shows: a terminal, an open file, a note, a preview, the git
  * graph, a file's uncommitted diff, the AI sessions browser, or the launcher
  * (a freshly split pane that hasn't been chosen yet).
  */
 export type PaneContent =
-  | { kind: "terminal"; cwd?: string; ssh?: { connectionId: string } }
+  | {
+      kind: "terminal";
+      cwd?: string;
+      ssh?: { connectionId: string };
+      /** Last live local AI conversation. Persisted so relaunch can resume it exactly. */
+      aiSession?: AiSessionBinding;
+    }
   | { kind: "editor"; path: string }
   | { kind: "note"; noteId: string }
   | { kind: "preview"; url: string }

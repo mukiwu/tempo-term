@@ -102,7 +102,7 @@ fn install_into(hooks_path: &Path, prefix: &str) -> Result<(), String> {
 }
 
 /// Mirror of `claude_status_hook_install`: registers the native shim
-/// (`"<exe>" --status-hook`) that reports over loopback (see `status_ipc`),
+/// (`"<exe>" --status-hook codex`) that reports over loopback (see `status_ipc`),
 /// migrating away any legacy `.sh` a pre-#181 build wrote. Also enables
 /// Codex's `hooks` feature so it runs the hook.
 /// Steady state is a no-op: files are only written when their content would change.
@@ -111,7 +111,7 @@ pub fn codex_status_hook_install(app: AppHandle) -> Result<(), String> {
     let (script_path, hooks_path, config_path) = codex_paths(&app)?;
     let _ = std::fs::remove_file(&script_path);
     ensure_hooks_feature_at(&config_path)?;
-    let prefix = shim_prefix()?;
+    let prefix = shim_prefix("codex")?;
     install_into(&hooks_path, &prefix)
 }
 
@@ -350,7 +350,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    const SHIM_PREFIX: &str = r#""C:/Program Files/TempoTerm/tempo-term.exe" --status-hook"#;
+    const SHIM_PREFIX: &str = r#""C:/Program Files/TempoTerm/tempo-term.exe" --status-hook codex"#;
 
     #[test]
     fn codex_install_into_skips_rewrite_when_already_correct() {

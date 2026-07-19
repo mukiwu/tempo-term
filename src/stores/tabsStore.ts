@@ -20,6 +20,7 @@ import {
   splitLeaf,
   wrapTree,
   type LayoutNode,
+  type AiSessionBinding,
   type OrderedPane,
   type PaneContent,
   type SplitDirection,
@@ -178,6 +179,12 @@ interface TabsState {
   setPaneContent: (tabId: string, leafId: string, content: PaneContent) => void;
   /** Remember a terminal pane's current working directory for session restore. */
   setTerminalCwd: (tabId: string, leafId: string, cwd: string) => void;
+  /** Bind a local AI CLI conversation to its pane for exact relaunch resume. */
+  setTerminalAiSession: (
+    tabId: string,
+    leafId: string,
+    session: AiSessionBinding | null,
+  ) => void;
   closePane: (tabId: string, leafId: string) => void;
 }
 
@@ -1130,8 +1137,42 @@ export const useTabsStore = create<TabsState>()(
                   kind: "terminal",
                   cwd,
                   ssh: current.ssh,
+                  aiSession: current.aiSession,
                 }),
               }
+            : t,
+        ),
+      };
+    }),
+
+  setTerminalAiSession: (tabId, leafId, session) =>
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === tabId);
+      if (!tab) {
+        return state;
+      }
+      const current = findPaneContent(tab.paneTree, leafId);
+      if (!current || current.kind !== "terminal" || current.ssh) {
+        return state;
+      }
+      const existing = current.aiSession;
+      if (
+        (session === null && existing === undefined) ||
+        (session !== null &&
+          existing?.agent === session.agent &&
+          existing.sessionId === session.sessionId)
+      ) {
+        return state;
+      }
+      const next: PaneContent = {
+        kind: "terminal",
+        cwd: current.cwd,
+        ...(session ? { aiSession: session } : {}),
+      };
+      return {
+        tabs: state.tabs.map((t) =>
+          t.id === tabId
+            ? { ...t, paneTree: setLeafPane(t.paneTree, leafId, next) }
             : t,
         ),
       };

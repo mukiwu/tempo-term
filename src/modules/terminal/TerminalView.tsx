@@ -87,6 +87,12 @@ import {
   parseStatusOsc,
 } from "@/modules/claude-progress/lib/sessionStatus";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
+import {
+  releaseAutoResumeAttempt,
+  sessionEndMatchesBinding,
+  takeAutoResumeCommand,
+} from "./lib/autoResumeAiSession";
+import type { AiSessionBinding } from "./lib/terminalLayout";
 
 import { IS_MAC, IS_WINDOWS, openModifierLabel } from "@/lib/platform";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
@@ -132,9 +138,13 @@ interface TerminalViewProps {
   ssh?: { connectionId: string };
   /** Pane id, so notes/workflows can run commands into this terminal. */
   leafId?: string;
+  /** Persisted local AI conversation to resume exactly after an app relaunch. */
+  aiSession?: AiSessionBinding;
   onExit?: () => void;
   /** Report the shell's current directory so it can be restored next launch. */
   onCwdChange?: (cwd: string) => void;
+  /** Persist or clear the exact local AI conversation bound to this pane. */
+  onAiSessionChange?: (session: AiSessionBinding | null) => void;
   /** Alt+click on a file path in the output opens it (with the resolved abs path). */
   onOpenFile?: (absolutePath: string) => void;
   /** Open a localhost/IP URL from a terminal action card in the in-app preview. */
@@ -148,8 +158,10 @@ export function TerminalView({
   cwd,
   ssh,
   leafId,
+  aiSession,
   onExit,
   onCwdChange,
+  onAiSessionChange,
   onOpenFile,
   onOpenPreview,
 }: TerminalViewProps) {
@@ -176,6 +188,10 @@ export function TerminalView({
   onExitRef.current = onExit;
   const onCwdChangeRef = useRef(onCwdChange);
   onCwdChangeRef.current = onCwdChange;
+  const onAiSessionChangeRef = useRef(onAiSessionChange);
+  onAiSessionChangeRef.current = onAiSessionChange;
+  const aiSessionRef = useRef(aiSession);
+  aiSessionRef.current = aiSession;
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
   const onOpenPreviewRef = useRef(onOpenPreview);
@@ -298,6 +314,14 @@ export function TerminalView({
     if (!container) {
       return;
     }
+    const initialLeafId = leafIdRef.current;
+    const initialAiSession = aiSession;
+    const autoResumeCommand = takeAutoResumeCommand(
+      initialLeafId,
+      initialAiSession,
+      useSettingsStore.getState().autoResumeAiSessions,
+    );
+    let autoResumeStarted = false;
     const containerEl = container;
 
     const initial = useFontStore.getState();
@@ -357,6 +381,7 @@ export function TerminalView({
       kind: string;
       payload: string;
       sessionId?: string | null;
+      agent?: "claude" | "codex" | null;
     }>(
       "session-status",
       (event) => {
@@ -368,13 +393,40 @@ export function TerminalView({
         );
         if (parsed?.kind === "status") {
           const store = useSessionStatusStore.getState();
-          // Store the id before the status transition so a notification raised
+          const tracking = useSettingsStore.getState().claudeStatusTracking;
+          // Session identity is recovery infrastructure, independent of whether
+          // the user wants live badges. New hooks name the agent directly so
+          // concurrent sessions in one cwd can never be paired heuristically.
+          if (event.payload.agent && event.payload.sessionId) {
+            const binding = {
+              agent: event.payload.agent,
+              sessionId: event.payload.sessionId,
+            };
+            aiSessionRef.current = binding;
+            onAiSessionChangeRef.current?.(binding);
+          }
+          if (!tracking) {
+            return;
+          }
+          // Store identity before the status transition so a notification raised
           // by setStatus can resolve this exact session's title immediately.
           if (event.payload.sessionId) {
             store.setSessionId(leaf, event.payload.sessionId);
           }
+          if (event.payload.agent) {
+            store.setAgent(leaf, event.payload.agent);
+          }
           store.setStatus(leaf, parsed.status);
-        } else if (parsed?.kind === "end") {
+        } else if (
+          parsed?.kind === "end" &&
+          sessionEndMatchesBinding(
+            aiSessionRef.current,
+            event.payload.sessionId,
+            event.payload.agent,
+          )
+        ) {
+          aiSessionRef.current = undefined;
+          onAiSessionChangeRef.current?.(null);
           useSessionStatusStore.getState().clear(leaf);
         }
       },
@@ -907,7 +959,8 @@ export function TerminalView({
       });
     };
 
-    // History restore only applies to local PTY sessions.
+    // History restore remains independent from AI conversation recovery: when
+    // enabled it still provides a fallback if the CLI resume command fails.
     const beforeOpen = sshRef.current ? Promise.resolve() : restoreHistory();
 
     // Shared "open session and wire it up" logic, used both on first mount
@@ -942,6 +995,15 @@ export function TerminalView({
             clear: () => term.clear(),
             openSearch: () => openSearchBox(),
             paste: (text) => term.paste(text),
+          });
+        }
+        if (autoResumeCommand && isPtySession(session)) {
+          // The same CR-terminated commands used by the manual Sessions resume
+          // action. Writing after PTY registration matches launcher semantics:
+          // the login shell owns the input even if its prompt is still painting.
+          autoResumeStarted = true;
+          void session.write(`${autoResumeCommand}\r`).catch(() => {
+            releaseAutoResumeAttempt(initialLeafId, initialAiSession);
           });
         }
         // A freshly opened tracking pane drives the explorer to its start dir
@@ -1043,6 +1105,9 @@ export function TerminalView({
 
     return () => {
       disposed = true;
+      if (autoResumeCommand && !autoResumeStarted) {
+        releaseAutoResumeAttempt(initialLeafId, initialAiSession);
+      }
       outputWriter.dispose();
       if (skippedShowTimer.current !== null) clearTimeout(skippedShowTimer.current);
       if (skippedHideTimer.current !== null) clearTimeout(skippedHideTimer.current);
@@ -1231,9 +1296,23 @@ export function TerminalView({
           const command = await session.foregroundCommand().catch(() => null);
           if (!cancelled) {
             if (isClaudeForeground(command)) {
-              useSessionStatusStore.getState().setAgent(leaf, "claude");
+              const store = useSessionStatusStore.getState();
+              store.setAgent(leaf, "claude");
+              const sessionId = store.sessionIds[leaf];
+              if (sessionId) {
+                const binding = { agent: "claude" as const, sessionId };
+                aiSessionRef.current = binding;
+                onAiSessionChangeRef.current?.(binding);
+              }
             } else if (isCodexForeground(command)) {
-              useSessionStatusStore.getState().setAgent(leaf, "codex");
+              const store = useSessionStatusStore.getState();
+              store.setAgent(leaf, "codex");
+              const sessionId = store.sessionIds[leaf];
+              if (sessionId) {
+                const binding = { agent: "codex" as const, sessionId };
+                aiSessionRef.current = binding;
+                onAiSessionChangeRef.current?.(binding);
+              }
             } else {
               useSessionStatusStore.getState().clear(leaf);
             }

@@ -102,6 +102,8 @@ export function WorkspaceSettingsSection() {
   const setPrSource = useSettingsStore((s) => s.setPrSource);
   const statusTracking = useSettingsStore((s) => s.claudeStatusTracking);
   const setStatusTracking = useSettingsStore((s) => s.setClaudeStatusTracking);
+  const autoResumeAiSessions = useSettingsStore((s) => s.autoResumeAiSessions);
+  const setAutoResumeAiSessions = useSettingsStore((s) => s.setAutoResumeAiSessions);
   const notifications = useSettingsStore((s) => s.claudeNotifications);
   const setNotifications = useSettingsStore((s) => s.setClaudeNotifications);
   const claudeFlags = useSettingsStore((s) => s.claudeFlags);
@@ -110,20 +112,33 @@ export function WorkspaceSettingsSection() {
   const setCodexFlags = useSettingsStore((s) => s.setCodexFlags);
   const [ghReady, setGhReady] = useState<boolean | null>(null);
 
+  async function syncSessionHooks(required: boolean) {
+    if (required) {
+      await Promise.all([installStatusHook(), installCodexStatusHook()]);
+    } else {
+      await Promise.all([uninstallStatusHook(), uninstallCodexStatusHook()]);
+    }
+  }
+
   async function toggleStatusTracking(checked: boolean) {
+    const previous = statusTracking;
     setStatusTracking(checked);
     try {
-      if (checked) {
-        await installStatusHook();
-        await installCodexStatusHook();
-      } else {
-        await uninstallStatusHook();
-        await uninstallCodexStatusHook();
-      }
+      await syncSessionHooks(checked || autoResumeAiSessions);
     } catch {
-      // Keep the toggle in sync with the real system state: if install or
-      // uninstall failed, the hook is in the opposite state from what we set.
-      setStatusTracking(!checked);
+      setStatusTracking(previous);
+      void syncSessionHooks(previous || autoResumeAiSessions).catch(() => {});
+    }
+  }
+
+  async function toggleAutoResume(checked: boolean) {
+    const previous = autoResumeAiSessions;
+    setAutoResumeAiSessions(checked);
+    try {
+      await syncSessionHooks(statusTracking || checked);
+    } catch {
+      setAutoResumeAiSessions(previous);
+      void syncSessionHooks(statusTracking || previous).catch(() => {});
     }
   }
 
@@ -196,6 +211,20 @@ export function WorkspaceSettingsSection() {
           {t("workspace.notificationsLabel")}
         </label>
       </Tooltip>
+
+      <label className="mb-1 block text-sm font-medium text-fg">
+        {t("workspace.autoResumeTitle")}
+      </label>
+      <p className="mb-2 text-xs text-fg-muted">{t("workspace.autoResumeDescription")}</p>
+      <label className="mb-6 flex items-center gap-2 text-sm text-fg">
+        <input
+          type="checkbox"
+          checked={autoResumeAiSessions}
+          onChange={(e) => void toggleAutoResume(e.target.checked)}
+          className="h-4 w-4 accent-accent"
+        />
+        {t("workspace.autoResumeLabel")}
+      </label>
 
       <label className="mb-1 block text-sm font-medium text-fg">
         {t("workspace.launcherFlagsTitle")}

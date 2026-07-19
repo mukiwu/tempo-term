@@ -1,7 +1,7 @@
 //! Session-status delivery over a loopback socket. Claude Code / Codex hooks
 //! run a native shim — this very binary invoked as `tempo-term --status-hook
-//! <state>` — that reports the pane's live state to a small TCP listener the
-//! app runs on `127.0.0.1`. Originally built for Windows (#155), where hooks
+//! <agent> <state>` — that reports the pane's live state to a small TCP listener
+//! the app runs on `127.0.0.1`. Originally built for Windows (#155), where hooks
 //! run through cmd, which can't execute a bare `.sh`; now the one delivery
 //! path on every platform (#181), replacing the injected script + `/dev/$tty`
 //! OSC + process-ancestry walk that macOS used to need. The frontend keeps an
@@ -46,15 +46,16 @@ pub struct StatusMessage {
     pub kind: String,
     pub payload: String,
     pub session_id: Option<String>,
+    pub agent: Option<String>,
 }
 
 /// Wire format sent by the shim, one message per connection:
-/// `<token>\t<paneId>\t<kind>\t<payload>\t<sessionId>`. The final field is
-/// optional for compatibility with older four-field shims. Returns the message
+/// `<token>\t<paneId>\t<kind>\t<payload>\t<sessionId>\t<agent>`. The final two
+/// fields are optional for compatibility with older shims. Returns the message
 /// only when the token matches and the pane id parses, so a spoofed or malformed
 /// line is dropped. Pure so it can be unit-tested without a socket.
 pub fn parse_message(line: &str, expected_token: &str) -> Option<StatusMessage> {
-    let mut parts = line.trim_end_matches(['\n', '\r']).splitn(5, '\t');
+    let mut parts = line.trim_end_matches(['\n', '\r']).splitn(6, '\t');
     let token = parts.next()?;
     // Constant-time-ish token check is overkill for a cosmetic loopback badge;
     // a plain compare rejects spoofers well enough.
@@ -68,6 +69,10 @@ pub fn parse_message(line: &str, expected_token: &str) -> Option<StatusMessage> 
         .next()
         .filter(|session_id| !session_id.is_empty())
         .map(str::to_string);
+    let agent = parts
+        .next()
+        .filter(|agent| matches!(*agent, "claude" | "codex"))
+        .map(str::to_string);
     if kind != "status" && kind != "notify" {
         return None;
     }
@@ -79,6 +84,7 @@ pub fn parse_message(line: &str, expected_token: &str) -> Option<StatusMessage> 
         kind: kind.to_string(),
         payload: payload.to_string(),
         session_id,
+        agent,
     })
 }
 
@@ -90,8 +96,9 @@ fn encode_message(
     kind: &str,
     payload: &str,
     session_id: &str,
+    agent: &str,
 ) -> String {
-    format!("{token}\t{pane_id}\t{kind}\t{payload}\t{session_id}")
+    format!("{token}\t{pane_id}\t{kind}\t{payload}\t{session_id}\t{agent}")
 }
 
 /// Live listener details handed to each pane so its shim can phone home.
@@ -209,18 +216,18 @@ where
     rx.recv_timeout(deadline).ok().flatten()
 }
 
-/// The status-hook shim: `tempo-term --status-hook <state>`. Reads the pane env
-/// the app injected, then delivers one status message over loopback. Runs before
-/// Tauri starts (see `run()`), does nothing outside tempo-term, and is
-/// best-effort — a status ping must never fail or slow the hook that spawned it.
+/// The status-hook shim: `tempo-term --status-hook <agent> <state>`. Reads the
+/// pane env the app injected, then delivers one status message over loopback.
+/// Runs before Tauri starts (see `run()`), does nothing outside tempo-term, and
+/// is best-effort — a status ping must never fail or slow the hook that spawned it.
 ///
-/// Claude passes every hook event's JSON on stdin. We retain at most 512 KiB in
-/// memory (bounded by [`STDIN_TIMEOUT`], remainder drained so a large payload
-/// does not receive EPIPE) and forward its `session_id` when present. For the
+/// Claude Code and Codex pass every hook event's JSON on stdin. We retain at
+/// most 512 KiB in memory (bounded by [`STDIN_TIMEOUT`], remainder drained so a
+/// large payload does not receive EPIPE) and forward its `session_id` when present. For the
 /// `notification` catch-all state, `notification_type` becomes the payload
 /// (kind `notify`), mirroring the Unix script. Every other state forwards
 /// directly (kind `status`).
-pub fn run_hook_shim(state: &str) {
+pub fn run_hook_shim(state: &str, agent: Option<&str>) {
     if std::env::var(ENV_MARKER).ok().filter(|v| !v.is_empty()).is_none() {
         return;
     }
@@ -254,6 +261,7 @@ pub fn run_hook_shim(state: &str) {
         kind,
         payload,
         event.session_id.as_deref().unwrap_or(""),
+        agent.filter(|value| matches!(*value, "claude" | "codex")).unwrap_or(""),
     );
     send_status(&addr, &line);
 }
@@ -308,7 +316,7 @@ mod tests {
 
     #[test]
     fn parses_a_valid_status_line() {
-        let line = encode_message(TOKEN, "7", "status", "active", "");
+        let line = encode_message(TOKEN, "7", "status", "active", "", "");
         assert_eq!(
             parse_message(&line, TOKEN),
             Some(StatusMessage {
@@ -316,13 +324,14 @@ mod tests {
                 kind: "status".into(),
                 payload: "active".into(),
                 session_id: None,
+                agent: None,
             })
         );
     }
 
     #[test]
     fn parses_a_notify_line() {
-        let line = encode_message(TOKEN, "3", "notify", "permission_prompt", "");
+        let line = encode_message(TOKEN, "3", "notify", "permission_prompt", "", "");
         assert_eq!(
             parse_message(&line, TOKEN),
             Some(StatusMessage {
@@ -330,6 +339,7 @@ mod tests {
                 kind: "notify".into(),
                 payload: "permission_prompt".into(),
                 session_id: None,
+                agent: None,
             })
         );
     }
@@ -354,7 +364,7 @@ mod tests {
 
     #[test]
     fn roundtrips_a_session_id_through_encode_and_parse() {
-        let line = encode_message(TOKEN, "7", "status", "active", "session-123");
+        let line = encode_message(TOKEN, "7", "status", "active", "session-123", "claude");
         assert_eq!(
             parse_message(&line, TOKEN),
             Some(StatusMessage {
@@ -362,50 +372,59 @@ mod tests {
                 kind: "status".into(),
                 payload: "active".into(),
                 session_id: Some("session-123".into()),
+                agent: Some("claude".into()),
             })
         );
     }
 
     #[test]
+    fn rejects_an_unknown_agent_without_dropping_the_status() {
+        let message =
+            parse_message("secret-token\t7\tstatus\tactive\tsession-123\tother", TOKEN).unwrap();
+        assert_eq!(message.session_id.as_deref(), Some("session-123"));
+        assert_eq!(message.agent, None);
+    }
+
+    #[test]
     fn tolerates_a_trailing_newline() {
-        let line = format!("{}\n", encode_message(TOKEN, "1", "status", "idle", ""));
+        let line = format!("{}\n", encode_message(TOKEN, "1", "status", "idle", "", ""));
         assert!(parse_message(&line, TOKEN).is_some());
     }
 
     #[test]
     fn rejects_a_wrong_token() {
-        let line = encode_message("attacker", "1", "status", "active", "");
+        let line = encode_message("attacker", "1", "status", "active", "", "");
         assert_eq!(parse_message(&line, TOKEN), None);
     }
 
     #[test]
     fn rejects_when_expected_token_is_empty() {
         // A blank expected token must never match (would let any sender through).
-        let line = encode_message("", "1", "status", "active", "");
+        let line = encode_message("", "1", "status", "active", "", "");
         assert_eq!(parse_message(&line, ""), None);
     }
 
     #[test]
     fn rejects_an_unknown_kind() {
-        let line = encode_message(TOKEN, "1", "bogus", "active", "");
+        let line = encode_message(TOKEN, "1", "bogus", "active", "", "");
         assert_eq!(parse_message(&line, TOKEN), None);
     }
 
     #[test]
     fn rejects_a_non_numeric_pane_id() {
-        let line = encode_message(TOKEN, "abc", "status", "active", "");
+        let line = encode_message(TOKEN, "abc", "status", "active", "", "");
         assert_eq!(parse_message(&line, TOKEN), None);
     }
 
     #[test]
     fn rejects_an_empty_payload() {
-        let line = encode_message(TOKEN, "1", "status", "", "");
+        let line = encode_message(TOKEN, "1", "status", "", "", "");
         assert_eq!(parse_message(&line, TOKEN), None);
     }
 
     #[test]
     fn payload_may_contain_hyphens_but_not_tabs() {
-        let line = encode_message(TOKEN, "9", "status", "waiting-approval", "");
+        let line = encode_message(TOKEN, "9", "status", "waiting-approval", "", "");
         assert_eq!(parse_message(&line, TOKEN).unwrap().payload, "waiting-approval");
     }
 

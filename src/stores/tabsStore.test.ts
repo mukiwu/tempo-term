@@ -5,6 +5,7 @@ import {
   openEditorPaths,
   sshAlreadyOpen,
   tabHasDirtyEditor,
+  TABS_STORAGE_KEY,
   useTabsStore,
   migratePersistedTabs,
   type Tab,
@@ -568,6 +569,50 @@ describe("tabsStore", () => {
     const before = useTabsStore.getState().tabs;
     useTabsStore.getState().setTerminalCwd(id, leafId, "/work/dir");
     expect(useTabsStore.getState().tabs).toBe(before);
+  });
+
+  it("persists an exact AI session binding and preserves it across cwd updates", () => {
+    const id = useTabsStore.getState().newTerminalTab("/work");
+    const leafId = activeTab().activeLeafId;
+    useTabsStore
+      .getState()
+      .setTerminalAiSession(id, leafId, { agent: "codex", sessionId: "session-123" });
+    useTabsStore.getState().setTerminalCwd(id, leafId, "/work/subdir");
+
+    expect(findPaneContent(activeTab().paneTree, leafId)).toEqual({
+      kind: "terminal",
+      cwd: "/work/subdir",
+      aiSession: { agent: "codex", sessionId: "session-123" },
+    });
+    expect(localStorage.getItem(TABS_STORAGE_KEY)).toContain(
+      '"aiSession":{"agent":"codex","sessionId":"session-123"}',
+    );
+  });
+
+  it("clears an AI session binding on SessionEnd without changing the cwd", () => {
+    const id = useTabsStore.getState().newTerminalTab("/work");
+    const leafId = activeTab().activeLeafId;
+    useTabsStore
+      .getState()
+      .setTerminalAiSession(id, leafId, { agent: "claude", sessionId: "session-123" });
+    useTabsStore.getState().setTerminalAiSession(id, leafId, null);
+
+    expect(findPaneContent(activeTab().paneTree, leafId)).toEqual({
+      kind: "terminal",
+      cwd: "/work",
+    });
+  });
+
+  it("never binds a local AI session to an SSH pane", () => {
+    const id = useTabsStore.getState().openSshTab("connection-1", "server");
+    const leafId = activeTab().activeLeafId;
+    useTabsStore
+      .getState()
+      .setTerminalAiSession(id, leafId, { agent: "claude", sessionId: "session-123" });
+    expect(findPaneContent(activeTab().paneTree, leafId)).toEqual({
+      kind: "terminal",
+      ssh: { connectionId: "connection-1" },
+    });
   });
 
   it("reorders tabs within the same space", () => {

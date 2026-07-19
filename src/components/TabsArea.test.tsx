@@ -2,6 +2,7 @@ import { render, screen, act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useTabsStore } from "@/stores/tabsStore";
 import { leaf } from "@/modules/terminal/lib/terminalLayout";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 // Track when a tab's content mounts/unmounts so we can assert that switching
 // workspaces never tears a running terminal down.
@@ -48,6 +49,7 @@ beforeEach(() => {
     ],
     activeId: "t1",
   });
+  useSettingsStore.setState({ autoResumeAiSessions: true });
 });
 
 describe("TabsArea", () => {
@@ -81,5 +83,54 @@ describe("TabsArea", () => {
     expect(mountSpy).toHaveBeenCalledTimes(1);
     expect(unmountSpy).not.toHaveBeenCalled();
     expect(screen.getByTestId("pane-t1")).toBeInTheDocument();
+  });
+
+  it("eagerly mounts an inactive tab whose exact AI conversation must resume", () => {
+    useTabsStore.setState((state) => ({
+      tabs: [
+        ...state.tabs,
+        {
+          id: "t2",
+          spaceId: "s1",
+          title: "Agent",
+          kind: "terminal",
+          paneTree: leaf("p2", {
+            kind: "terminal",
+            aiSession: { agent: "codex", sessionId: "session-2" },
+          }),
+          activeLeafId: "p2",
+          paneOrder: ["p2"],
+        },
+      ],
+    }));
+
+    render(<TabsArea />);
+    expect(mountSpy).toHaveBeenCalledWith("t1");
+    expect(mountSpy).toHaveBeenCalledWith("t2");
+  });
+
+  it("keeps inactive AI tabs lazy when automatic recovery is disabled", () => {
+    useSettingsStore.setState({ autoResumeAiSessions: false });
+    useTabsStore.setState((state) => ({
+      tabs: [
+        ...state.tabs,
+        {
+          id: "t2",
+          spaceId: "s1",
+          title: "Agent",
+          kind: "terminal",
+          paneTree: leaf("p2", {
+            kind: "terminal",
+            aiSession: { agent: "claude", sessionId: "session-2" },
+          }),
+          activeLeafId: "p2",
+          paneOrder: ["p2"],
+        },
+      ],
+    }));
+
+    render(<TabsArea />);
+    expect(mountSpy).toHaveBeenCalledWith("t1");
+    expect(mountSpy).not.toHaveBeenCalledWith("t2");
   });
 });

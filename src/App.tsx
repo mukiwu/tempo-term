@@ -325,10 +325,12 @@ function App() {
     return () => sftpSessionStore.getState().closeAll();
   }, []);
 
-  // Keep the Claude session-status hook installed when tracking is enabled, so
-  // workspace cards reflect the live CLI. Idempotent; a failure retries next launch.
+  // Session hooks power both visible status tracking and exact crash/relaunch
+  // recovery. Keep them installed when either feature needs session identity.
+  // Idempotent; a failure retries next launch.
   useEffect(() => {
-    if (useSettingsStore.getState().claudeStatusTracking) {
+    const settings = useSettingsStore.getState();
+    if (settings.claudeStatusTracking || settings.autoResumeAiSessions) {
       void installStatusHook().catch(() => {});
       void installCodexStatusHook().catch(() => {});
     }

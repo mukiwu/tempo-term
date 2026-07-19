@@ -106,15 +106,22 @@ async fn open_new_window(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Native status-hook shim: `tempo-term --status-hook <state>`. Every
+    // Native status-hook shim: `tempo-term --status-hook <agent> <state>`. Every
     // platform's Claude/Codex hook config registers this command (see
     // claude_status_hook); handle it before Tauri starts and exit. It's a
     // no-op outside a tempo-term pane (guards on the TEMPOTERM_* env we
     // inject there).
     let mut args = std::env::args().skip(1);
     if args.next().as_deref() == Some("--status-hook") {
-        let state = args.next().unwrap_or_default();
-        modules::status_ipc::run_hook_shim(&state);
+        let first = args.next().unwrap_or_default();
+        // Backward-compatible with hook entries installed by older builds,
+        // which passed only the state and therefore cannot identify the agent.
+        let (agent, state) = if matches!(first.as_str(), "claude" | "codex") {
+            (Some(first), args.next().unwrap_or_default())
+        } else {
+            (None, first)
+        };
+        modules::status_ipc::run_hook_shim(&state, agent.as_deref());
         return;
     }
 

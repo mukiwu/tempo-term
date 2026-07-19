@@ -4,6 +4,13 @@ import "@/i18n";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 import { useSettingsStore } from "@/stores/settingsStore";
 
+const hookMocks = vi.hoisted(() => ({
+  installStatusHook: vi.fn().mockResolvedValue(undefined),
+  uninstallStatusHook: vi.fn().mockResolvedValue(undefined),
+  installCodexStatusHook: vi.fn().mockResolvedValue(undefined),
+  uninstallCodexStatusHook: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@/modules/workspace/lib/prBridge", () => ({
   ghAvailable: vi.fn().mockResolvedValue(true),
 }));
@@ -12,13 +19,17 @@ vi.mock("@/modules/ai/lib/aiBridge", () => ({
   secretsSetKey: vi.fn().mockResolvedValue(undefined),
   secretsDeleteKey: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@/modules/claude-progress/lib/statusHookBridge", () => hookMocks);
 
 beforeEach(() => {
+  Object.values(hookMocks).forEach((mock) => mock.mockClear());
   useSettingsStore.setState({
     workspaceCard: { status: true, branch: true, cwd: true, pr: true },
     prSource: "auto",
     claudeFlags: "",
     codexFlags: "",
+    claudeStatusTracking: true,
+    autoResumeAiSessions: true,
   });
 });
 
@@ -56,5 +67,35 @@ describe("WorkspaceSettingsSection", () => {
     const input = screen.getByLabelText("Codex flags");
     fireEvent.change(input, { target: { value: "--full-auto" } });
     expect(useSettingsStore.getState().codexFlags).toBe("--full-auto");
+  });
+
+  it("toggles automatic AI conversation recovery independently", () => {
+    render(<WorkspaceSettingsSection />);
+    fireEvent.click(
+      screen.getByLabelText("Automatically resume AI conversations on relaunch"),
+    );
+    expect(useSettingsStore.getState().autoResumeAiSessions).toBe(false);
+    expect(useSettingsStore.getState().claudeStatusTracking).toBe(true);
+  });
+
+  it("keeps both hooks installed while recovery still needs session identity", () => {
+    render(<WorkspaceSettingsSection />);
+    fireEvent.click(screen.getByLabelText("Track Claude session status"));
+
+    expect(useSettingsStore.getState().claudeStatusTracking).toBe(false);
+    expect(hookMocks.installStatusHook).toHaveBeenCalledOnce();
+    expect(hookMocks.installCodexStatusHook).toHaveBeenCalledOnce();
+    expect(hookMocks.uninstallStatusHook).not.toHaveBeenCalled();
+  });
+
+  it("uninstalls both hooks only when tracking and recovery are off", () => {
+    useSettingsStore.setState({ claudeStatusTracking: false });
+    render(<WorkspaceSettingsSection />);
+    fireEvent.click(
+      screen.getByLabelText("Automatically resume AI conversations on relaunch"),
+    );
+
+    expect(hookMocks.uninstallStatusHook).toHaveBeenCalledOnce();
+    expect(hookMocks.uninstallCodexStatusHook).toHaveBeenCalledOnce();
   });
 });

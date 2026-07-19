@@ -21,6 +21,7 @@ describe("settingsStore", () => {
       prSource: "auto",
       claudeFlags: initialState.claudeFlags,
       codexFlags: initialState.codexFlags,
+      autoResumeAiSessions: initialState.autoResumeAiSessions,
       customShellPath: initialState.customShellPath,
     });
   });
@@ -124,6 +125,15 @@ describe("settingsStore", () => {
     useSettingsStore.getState().setClaudeFlags("--model opus");
     const persisted = localStorage.getItem("tempoterm-settings");
     expect(persisted).toContain("--model opus");
+  });
+
+  it("defaults AI conversation recovery on and persists the toggle", () => {
+    expect(useSettingsStore.getState().autoResumeAiSessions).toBe(true);
+    useSettingsStore.getState().setAutoResumeAiSessions(false);
+    expect(useSettingsStore.getState().autoResumeAiSessions).toBe(false);
+    expect(localStorage.getItem("tempoterm-settings")).toContain(
+      '"autoResumeAiSessions":false',
+    );
   });
 
   it("defaults the custom shell path empty and updates it", () => {

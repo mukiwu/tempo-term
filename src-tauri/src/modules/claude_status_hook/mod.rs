@@ -1,6 +1,6 @@
 //! Installs a Claude Code hook that reports the live session state to
 //! tempo-term over the loopback status IPC (see `status_ipc`): each hook event
-//! runs this very binary as `"<exe>" --status-hook <state>`. The merge/remove
+//! runs this very binary as `"<exe>" --status-hook claude <state>`. The merge/remove
 //! of the hook entries in `~/.claude/settings.json` is a pure function over
 //! the parsed JSON so it can be tested without touching the filesystem.
 
@@ -30,14 +30,14 @@ const EVENTS: &[(&str, &str)] = &[
 ];
 
 /// Build a hook command from a prefix and the state argument. The prefix is
-/// the native shim invocation (`"<exe>" --status-hook`); the state is appended
-/// as the final arg.
+/// the native shim invocation (`"<exe>" --status-hook <agent>`); the state is
+/// appended as the final arg.
 fn our_command(prefix: &str, state: &str) -> String {
     format!("{prefix} {state}")
 }
 
 /// Substring identifying our native status-hook shim command in settings.json
-/// (`"<exe>" --status-hook <state>`). Used to strip stale shim entries on
+/// (`"<exe>" --status-hook <agent> <state>`). Used to strip stale shim entries on
 /// reinstall/uninstall no matter where the executable now lives.
 pub const SHIM_MARKER: &str = "--status-hook";
 
@@ -51,18 +51,21 @@ pub const LEGACY_SCRIPT_MARKER: &str = "status-hook.sh";
 /// `command` hooks through bash (git-bash on Windows), which treats `\` as an
 /// escape and mangles a raw Windows path; forward slashes work in cmd, bash,
 /// and sh alike.
-fn shim_prefix_from_exe(exe: &str) -> String {
-    format!("\"{}\" {SHIM_MARKER}", normalize(exe))
+fn shim_prefix_from_exe(exe: &str, agent: &str) -> String {
+    format!("\"{}\" {SHIM_MARKER} {agent}", normalize(exe))
 }
 
 /// The command prefix for the native status-hook shim: the app's own
-/// executable invoked as `--status-hook`, double-quoted so a path with spaces
-/// (e.g. `Program Files`, or a renamed `.app` bundle) survives the hook
+/// executable invoked as `--status-hook <agent>`, double-quoted so a path with
+/// spaces (e.g. `Program Files`, or a renamed `.app` bundle) survives the hook
 /// runner's shell parsing. `merge_hook_settings` appends ` <state>`.
-pub fn shim_prefix() -> Result<String, String> {
+pub fn shim_prefix(agent: &str) -> Result<String, String> {
+    if !matches!(agent, "claude" | "codex") {
+        return Err("invalid status-hook agent".to_string());
+    }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe = exe.to_str().ok_or("executable path is not valid UTF-8")?;
-    Ok(shim_prefix_from_exe(exe))
+    Ok(shim_prefix_from_exe(exe, agent))
 }
 
 /// Canonicalize a hook command for storage and comparison. Hook commands may
@@ -218,7 +221,7 @@ fn install_into(settings_path: &PathBuf, prefix: &str) -> Result<(), String> {
 pub fn claude_status_hook_install(app: AppHandle) -> Result<(), String> {
     let (script_path, settings_path) = paths(&app)?;
     let _ = std::fs::remove_file(&script_path);
-    let prefix = shim_prefix()?;
+    let prefix = shim_prefix("claude")?;
     install_into(&settings_path, &prefix)
 }
 
@@ -470,7 +473,7 @@ mod tests {
     // Install registers a native shim command (`"<exe>" --status-hook`), not a
     // `.sh`. These exercise that prefix through the shared merge/remove logic;
     // pure, so they run on every CI runner.
-    const SHIM_PREFIX: &str = r#""C:\Program Files\TempoTerm\tempo-term.exe" --status-hook"#;
+    const SHIM_PREFIX: &str = r#""C:\Program Files\TempoTerm\tempo-term.exe" --status-hook claude"#;
 
     #[test]
     fn shim_prefix_produces_quoted_exe_command() {
@@ -499,14 +502,18 @@ mod tests {
         // by marker, then merge) must leave exactly one entry at the new path.
         let old = merge_hook_settings(json!({}), r#""C:\old\tempo-term.exe" --status-hook"#, EVENTS);
         let cleaned = remove_hook_settings(old, SHIM_MARKER, EVENTS);
-        let merged = merge_hook_settings(cleaned, r#""C:\new\tempo-term.exe" --status-hook"#, EVENTS);
+        let merged =
+            merge_hook_settings(cleaned, r#""C:\new\tempo-term.exe" --status-hook claude"#, EVENTS);
         let cmds: Vec<&str> = merged["hooks"]["PreToolUse"]
             .as_array()
             .unwrap()
             .iter()
             .filter_map(|e| e["hooks"][0]["command"].as_str())
             .collect();
-        assert_eq!(cmds, vec![r#""C:\new\tempo-term.exe" --status-hook active"#]);
+        assert_eq!(
+            cmds,
+            vec![r#""C:\new\tempo-term.exe" --status-hook claude active"#]
+        );
     }
 
     #[test]
@@ -515,8 +522,12 @@ mod tests {
         // raw backslash path (`C:\Program Files\...`) gets its backslashes eaten
         // as escapes and the shim never runs. The prefix must be built on the
         // same forward-slash form as the script-path flows (see `normalize`).
-        let prefix = shim_prefix_from_exe(r"C:\Program Files\TempoTerm\tempo-term.exe");
-        assert_eq!(prefix, r#""C:/Program Files/TempoTerm/tempo-term.exe" --status-hook"#);
+        let prefix =
+            shim_prefix_from_exe(r"C:\Program Files\TempoTerm\tempo-term.exe", "claude");
+        assert_eq!(
+            prefix,
+            r#""C:/Program Files/TempoTerm/tempo-term.exe" --status-hook claude"#
+        );
     }
 
     #[test]

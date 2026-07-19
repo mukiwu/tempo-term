@@ -2,6 +2,8 @@ import { useState } from "react";
 import { PaneTabContent } from "@/modules/terminal/PaneTabContent";
 import { LauncherPanel } from "@/components/LauncherPanel";
 import { useTabsStore } from "@/stores/tabsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { tabHasAutoResumeSession } from "@/modules/terminal/lib/autoResumeAiSession";
 
 /**
  * The main work area. Every tab is a PaneTabContent (a splittable pane tree).
@@ -19,6 +21,7 @@ import { useTabsStore } from "@/stores/tabsStore";
 export function TabsArea() {
   const tabs = useTabsStore((s) => s.tabs);
   const activeId = useTabsStore((s) => s.activeId);
+  const autoResumeAiSessions = useSettingsStore((s) => s.autoResumeAiSessions);
 
   // Tab ids that have been activated at least once and should stay mounted.
   // Updating during render (not in an effect) lets React fold the new id into
@@ -26,15 +29,27 @@ export function TabsArea() {
   const [mountedIds, setMountedIds] = useState<Set<string>>(
     () => new Set(activeId ? [activeId] : []),
   );
-  if (activeId && !mountedIds.has(activeId)) {
-    setMountedIds((prev) => new Set(prev).add(activeId));
+  const requiredIds = tabs
+    .filter(
+      (tab) =>
+        tab.id === activeId ||
+        (autoResumeAiSessions && tabHasAutoResumeSession(tab)),
+    )
+    .map((tab) => tab.id);
+  if (requiredIds.some((id) => !mountedIds.has(id))) {
+    setMountedIds((prev) => {
+      const next = new Set(prev);
+      requiredIds.forEach((id) => next.add(id));
+      return next;
+    });
   }
 
   return (
     <div className="relative h-full w-full bg-bg">
       {tabs.map((tab) => {
-        // The active tab always mounts immediately; previously-visited tabs
-        // stay mounted; never-visited tabs render nothing until activated.
+        // The active tab and every resumable AI tab mount immediately;
+        // previously-visited tabs stay mounted. Other never-visited tabs remain
+        // lazy so a large restored workspace does not spawn unrelated shells.
         const mount = tab.id === activeId || mountedIds.has(tab.id);
         return (
           <div

@@ -93,6 +93,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   const navigatePreview = useTabsStore((s) => s.navigatePreview);
   const setPreviewTabTitle = useTabsStore((s) => s.setPreviewTabTitle);
   const setTerminalCwd = useTabsStore((s) => s.setTerminalCwd);
+  const setTerminalAiSession = useTabsStore((s) => s.setTerminalAiSession);
   const closePane = useTabsStore((s) => s.closePane);
   const openHtmlPreview = useTabsStore((s) => s.openHtmlPreview);
   const isActiveTab = useTabsStore((s) => s.activeId === tab.id);
@@ -543,8 +544,14 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     )}
                     ssh={pane.content.kind === "terminal" ? pane.content.ssh : undefined}
                     leafId={pane.id}
+                    aiSession={
+                      pane.content.kind === "terminal" ? pane.content.aiSession : undefined
+                    }
                     onExit={() => closePane(tab.id, pane.id)}
                     onCwdChange={(dir) => setTerminalCwd(tab.id, pane.id, dir)}
+                    onAiSessionChange={(session) =>
+                      setTerminalAiSession(tab.id, pane.id, session)
+                    }
                     onOpenFile={(absolutePath) =>
                       splitPaneWith(tab.id, pane.id, { kind: "editor", path: absolutePath }, "row")
                     }
