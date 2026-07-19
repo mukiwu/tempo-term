@@ -254,16 +254,20 @@ function SessionBlock({
   const [titleRef, truncated] = useIsTruncated(title);
   return (
     <span className="block">
-      <Tooltip label={blockTitleTruncated && blockTitle} className="w-full">
-        <span
-          ref={blockTitleRef}
-          className={`min-w-0 flex-1 truncate text-xs font-medium ${
-            active ? "text-accent" : "text-fg"
-          }`}
-        >
-          {blockTitle}
-        </span>
-      </Tooltip>
+      {/* flex, not a bare line box: line-height slack above the inline-flex
+          tooltip wrapper would push the first block below the tab icon. */}
+      <span className="flex">
+        <Tooltip label={blockTitleTruncated && blockTitle} className="w-full">
+          <span
+            ref={blockTitleRef}
+            className={`min-w-0 flex-1 truncate text-xs font-medium ${
+              active ? "text-accent" : "text-fg"
+            }`}
+          >
+            {blockTitle}
+          </span>
+        </Tooltip>
+      </span>
       <span className="mt-0.5 flex items-center gap-1.5">
         {session.agent && (
           <Tooltip label={agentLabel(session.agent)} className="shrink-0">
