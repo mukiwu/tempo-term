@@ -236,13 +236,16 @@ function SessionRow({
   titles: Record<string, string>;
   showStatus: boolean;
 }) {
-  const label = agentLabel(session.agent);
   const title = sessionTitle(session, titles);
   const [titleRef, truncated] = useIsTruncated(title);
   return (
     <span className="flex items-center gap-1.5">
       {showStatus && <StatusBadge status={session.status} />}
-      {label && <span className="shrink-0 text-[11px] text-fg-subtle">{label}</span>}
+      {session.agent && (
+        <Tooltip label={agentLabel(session.agent)} className="shrink-0">
+          <AgentIcon agent={session.agent} size={12} className="shrink-0 text-fg-subtle" />
+        </Tooltip>
+      )}
       <Tooltip label={truncated && title} className="min-w-0 flex-1">
         <span ref={titleRef} className="min-w-0 flex-1 truncate text-[11px] text-fg-muted">
           {title}
@@ -292,13 +295,9 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
   const title = selectCardTitle(tab, autoTitle);
   const pr = cwd ? prs[cwd] : undefined;
   const Icon = tabIcon(tab.kind);
-  const label = agentLabel(primary?.agent);
-  // The CLI icon on the directory line, only when every live session in the
-  // card runs the same agent — a mixed split would make a single icon a lie.
-  const agentKinds = [
-    ...new Set(sessions.map((s) => s.agent).filter((a): a is AgentKind => Boolean(a))),
-  ];
-  const cardAgent = agentKinds.length === 1 ? agentKinds[0] : undefined;
+  // The CLI icon on the directory line marks a single-session card's agent;
+  // a multi-session card labels each session row with its own icon instead.
+  const cardAgent = multi ? undefined : primary?.agent;
   // The rename input replaces the title span while editing, which detaches the
   // ref and turns the flag (and so the card tooltip) off on its own.
   const [titleRef, titleTruncated] = useIsTruncated(title);
@@ -372,9 +371,6 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
               </span>
             )}
             {!multi && card.status && status && <StatusBadge status={status} />}
-            {!multi && card.status && status && label && (
-              <span className="shrink-0 text-[11px] text-fg-subtle">{label}</span>
-            )}
           </span>
           {multi && (
             <span className="mt-1 block space-y-0.5">

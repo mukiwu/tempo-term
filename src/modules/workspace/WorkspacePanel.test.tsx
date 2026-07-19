@@ -264,8 +264,8 @@ describe("WorkspacePanel", () => {
     });
     render(<WorkspacePanel />);
     const card = screen.getByRole("button", { name: /split/ });
-    expect(within(card).getByText("Codex")).toBeInTheDocument();
-    expect(within(card).getByText("Claude")).toBeInTheDocument();
+    expect(within(card).getByRole("img", { name: "Codex" })).toBeInTheDocument();
+    expect(within(card).getByRole("img", { name: "Claude" })).toBeInTheDocument();
     expect(within(card).getByText("Codex task")).toBeInTheDocument();
     expect(within(card).getByText("Claude task")).toBeInTheDocument();
   });
@@ -291,7 +291,7 @@ describe("WorkspacePanel", () => {
     expect(within(card).queryByRole("img", { name: "Codex" })).toBeNull();
   });
 
-  it("shows no single CLI logomark when a split runs two different agents", () => {
+  it("labels each session row with its own logomark on a mixed split, none on the directory", () => {
     useTabsStore.setState({
       spaces: [{ id: "s1", name: "Salon" }],
       activeSpaceId: "s1",
@@ -322,8 +322,10 @@ describe("WorkspacePanel", () => {
     });
     render(<WorkspacePanel />);
     const card = screen.getByRole("button", { name: /split/ });
-    expect(within(card).queryByRole("img", { name: "Claude" })).toBeNull();
-    expect(within(card).queryByRole("img", { name: "Codex" })).toBeNull();
+    // Exactly one icon per session row; a second Claude/Codex match would mean
+    // the shared directory line wrongly picked one of the two agents.
+    expect(within(card).getAllByRole("img", { name: "Claude" })).toHaveLength(1);
+    expect(within(card).getAllByRole("img", { name: "Codex" })).toHaveLength(1);
   });
 
   it("puts the CLI logomark on the worktree line only, not the main repo line", () => {
