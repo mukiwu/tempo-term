@@ -279,7 +279,7 @@ function SessionBlock({
       </span>
       <BranchBlock info={info} cwd={session.cwd} showBranch={showBranch} showCwd={showCwd} />
       {pr && (
-        <span className="mt-0.5 block">
+        <span className="mt-0.5 flex">
           <PrBadge pr={pr} />
         </span>
       )}
@@ -439,7 +439,7 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
                 showCwd={card.cwd}
               />
               {card.pr && pr && (
-                <span className="mt-0.5 block">
+                <span className="mt-0.5 flex">
                   <PrBadge pr={pr} />
                 </span>
               )}
