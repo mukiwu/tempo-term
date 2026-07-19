@@ -426,37 +426,47 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
   return (
     <section className="space-y-1.5">
       <div className="group flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-bg-elevated">
-        {collapsed ? (
-          <ChevronRight size={13} className="shrink-0 text-fg-subtle" />
-        ) : (
-          <ChevronDown size={13} className="shrink-0 text-fg-subtle" />
-        )}
-        <Folder size={14} className="shrink-0 text-fg-subtle" />
-
         {editing ? (
-          <input
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitRename();
-              if (e.key === "Escape") setEditing(false);
-            }}
-            className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
-          />
+          <>
+            {collapsed ? (
+              <ChevronRight size={13} className="shrink-0 text-fg-subtle" />
+            ) : (
+              <ChevronDown size={13} className="shrink-0 text-fg-subtle" />
+            )}
+            <Folder size={14} className="shrink-0 text-fg-subtle" />
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") setEditing(false);
+              }}
+              className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
+            />
+          </>
         ) : (
+          // The chevron and folder live inside the toggle button so the whole
+          // row (not just the name text) collapses/expands the group.
           <Tooltip label={nameTruncated && name} className="min-w-0 flex-1">
             <button
-              ref={nameRef}
               type="button"
               onClick={() => {
                 setActiveSpace(id);
                 setCollapsed((c) => !c);
               }}
-              className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-fg"
+              className="flex min-w-0 flex-1 items-center gap-1 text-left"
             >
-              {name}
+              {collapsed ? (
+                <ChevronRight size={13} className="shrink-0 text-fg-subtle" />
+              ) : (
+                <ChevronDown size={13} className="shrink-0 text-fg-subtle" />
+              )}
+              <Folder size={14} className="shrink-0 text-fg-subtle" />
+              <span ref={nameRef} className="min-w-0 flex-1 truncate text-xs font-semibold text-fg">
+                {name}
+              </span>
             </button>
           </Tooltip>
         )}

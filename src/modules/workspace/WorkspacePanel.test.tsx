@@ -90,6 +90,13 @@ describe("WorkspacePanel", () => {
     expect(screen.queryByText("beta")).not.toBeInTheDocument();
   });
 
+  it("puts the chevron and folder inside the collapse toggle so the whole row toggles", () => {
+    render(<WorkspacePanel />);
+    const toggle = screen.getByRole("button", { name: /Salon/ });
+    // Chevron + folder icons — clicking them must hit the toggle button.
+    expect(toggle.querySelectorAll("svg").length).toBeGreaterThanOrEqual(2);
+  });
+
   it("shows a Claude status badge on a card whose cwd has a running session", () => {
     useSessionStatusStore.setState({ statuses: { p1: "active" } });
     render(<WorkspacePanel />);
