@@ -7,6 +7,7 @@
 - 側邊欄卡片的目錄路徑改以 `~` 縮寫家目錄，Windows 磁碟機路徑維持原樣 (#250)
 - 側邊欄的分頁卡片、群組名稱與 session 名稱被截斷時，滑鼠移到卡片任一處會以提示框顯示完整名稱，未截斷時不會出現 (#248)
 - 分頁列的使用中分頁改用新樣式：分頁撐滿分頁列並貼齊底部框線，以強調色底線加上 10% 透明度的同色背景標示，取代原本的圓點 (#252)
+- Diff 分頁可以留評論給 AI agent：滑到某一行點行號左側的 +，在該行下方留下評論，再按標頭的紙飛機按鈕，把所有評論按檔案分組、附上行號與程式碼，一次貼進正在執行 Claude 或 Codex 的終端機面板，內容先落在輸入框、由你確認後才送出；送過的評論會標示已送出並保留供驗收，檔案重新載入時評論會依行內容自動跟到新位置，第一次打開 diff 分頁會有一次性的操作指引 (#254)
 
 ### fix
 
@@ -21,6 +22,7 @@
 - Directory paths on sidebar cards abbreviate the home prefix to `~`; Windows drive paths are untouched (#250)
 - Hovering anywhere on a sidebar card reveals the full tab, group, or session name in a tooltip when it is truncated, and stays quiet when it is not (#248)
 - The active tab in the tab bar gets a new look: the tab stretches flush to the bar's bottom border and is marked by an accent underline plus a 10% accent background fill, replacing the leading dot (#252)
+- Diff tabs now take review comments for your AI agent: hover a line and click the + left of its line number to comment under it, then use the paper-plane button in the header to batch-send every comment — grouped by file with line numbers and code anchors — into a terminal pane running Claude or Codex; the prompt lands in the input box for you to confirm, sent comments stay visible (marked "Sent") for verification, comments re-anchor by line content when the file reloads, and a one-time hint introduces the flow on your first diff tab (#254)
 
 ### fix
 
