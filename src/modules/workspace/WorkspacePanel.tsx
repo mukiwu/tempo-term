@@ -30,6 +30,7 @@ import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStat
 import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus";
 import type { AgentKind } from "@/modules/claude-progress/lib/codexNormalize";
 import { tabSessionStatus } from "./lib/tabSessionStatus";
+import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { deriveTabCwd } from "./lib/tabCwd";
 import { selectCardTitle } from "./lib/cardTitle";
 import { collectTabSessions, type TabSession } from "./lib/tabSessions";
@@ -224,33 +225,57 @@ function sessionTitle(session: TabSession, titles: Record<string, string>): stri
 }
 
 /**
- * One session line inside a card that runs more than one agent: its status, the
- * agent label, and its own title. The status badge follows the card setting.
+ * One pane's session inside a split card: its status, agent logomark, and
+ * title, followed by that pane's own branch/directory and PR — the same block
+ * a single-session card shows, repeated per pane so a split lists every
+ * directory at once instead of only the focused pane's. The pane the tab
+ * last focused gets its title accented.
  */
-function SessionRow({
+function SessionBlock({
   session,
   titles,
   showStatus,
+  active,
+  info,
+  pr,
+  showBranch,
+  showCwd,
 }: {
   session: TabSession;
   titles: Record<string, string>;
   showStatus: boolean;
-}) {
+  active: boolean;
+  info: WorktreeInfo | undefined;
+  pr: PrInfo | undefined;
+} & BranchFlags) {
   const title = sessionTitle(session, titles);
   const [titleRef, truncated] = useIsTruncated(title);
   return (
-    <span className="flex items-center gap-1.5">
-      {showStatus && <StatusBadge status={session.status} />}
-      {session.agent && (
-        <Tooltip label={agentLabel(session.agent)} className="shrink-0">
-          <AgentIcon agent={session.agent} size={12} className="shrink-0 text-fg-subtle" />
+    <span className="block">
+      <span className="flex items-center gap-1.5">
+        {showStatus && <StatusBadge status={session.status} />}
+        {session.agent && (
+          <Tooltip label={agentLabel(session.agent)} className="shrink-0">
+            <AgentIcon agent={session.agent} size={12} className="shrink-0 text-fg-subtle" />
+          </Tooltip>
+        )}
+        <Tooltip label={truncated && title} className="min-w-0 flex-1">
+          <span
+            ref={titleRef}
+            className={`min-w-0 flex-1 truncate text-[11px] ${
+              active ? "font-medium text-accent" : "text-fg-muted"
+            }`}
+          >
+            {title}
+          </span>
         </Tooltip>
-      )}
-      <Tooltip label={truncated && title} className="min-w-0 flex-1">
-        <span ref={titleRef} className="min-w-0 flex-1 truncate text-[11px] text-fg-muted">
-          {title}
+      </span>
+      <BranchBlock info={info} cwd={session.cwd} showBranch={showBranch} showCwd={showCwd} />
+      {pr && (
+        <span className="mt-0.5 block">
+          <PrBadge pr={pr} />
         </span>
-      </Tooltip>
+      )}
     </span>
   );
 }
@@ -372,29 +397,39 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
             )}
             {!multi && card.status && status && <StatusBadge status={status} />}
           </span>
-          {multi && (
-            <span className="mt-1 block space-y-0.5">
+          {multi ? (
+            // A split card lists every pane's session with its own directory,
+            // instead of the tab-level block that follows only the focused pane.
+            <span className="mt-1 block space-y-1.5">
               {sessions.map((session) => (
-                <SessionRow
+                <SessionBlock
                   key={session.leafId}
                   session={session}
                   titles={titles}
                   showStatus={card.status}
+                  active={session.leafId === tab.activeLeafId}
+                  info={session.cwd ? infos[session.cwd] : undefined}
+                  pr={(card.pr && session.cwd && prs[session.cwd]) || undefined}
+                  showBranch={card.branch}
+                  showCwd={card.cwd}
                 />
               ))}
             </span>
-          )}
-          <BranchBlock
-          info={info}
-          cwd={cwd}
-          agent={cardAgent}
-          showBranch={card.branch}
-          showCwd={card.cwd}
-        />
-          {card.pr && pr && (
-            <span className="mt-0.5 block">
-              <PrBadge pr={pr} />
-            </span>
+          ) : (
+            <>
+              <BranchBlock
+                info={info}
+                cwd={cwd}
+                agent={cardAgent}
+                showBranch={card.branch}
+                showCwd={card.cwd}
+              />
+              {card.pr && pr && (
+                <span className="mt-0.5 block">
+                  <PrBadge pr={pr} />
+                </span>
+              )}
+            </>
           )}
         </span>
         {menu && (
@@ -568,14 +603,20 @@ export function WorkspacePanel() {
   const leafAgents = useSessionStatusStore((s) => s.agents);
   const sessionIds = useSessionStatusStore((s) => s.sessionIds);
   // Dedupe so multiple tabs in the same directory don't trigger redundant IPC
-  // and network lookups for that directory.
+  // and network lookups for that directory. Split panes are listed
+  // individually because a multi-session card shows each pane's own directory.
   const cwds = useMemo(
     () =>
       Array.from(
         new Set(
-          tabs.map((tab) => deriveTabCwd(tab)).filter((cwd): cwd is string => cwd !== null),
+          tabs.flatMap((tab) => [
+            deriveTabCwd(tab),
+            ...computeLayout(tab.paneTree).flatMap((pane) =>
+              pane.content.kind === "terminal" ? [pane.content.cwd ?? tab.cwd ?? null] : [],
+            ),
+          ]),
         ),
-      ),
+      ).filter((cwd): cwd is string => cwd !== null),
     [tabs],
   );
   useWorktreeInfos(cwds);

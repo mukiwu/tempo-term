@@ -270,6 +270,81 @@ describe("WorkspacePanel", () => {
     expect(within(card).getByText("Claude task")).toBeInTheDocument();
   });
 
+  it("shows each pane's own directory on a split card, not just the focused pane's", () => {
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Salon" }],
+      activeSpaceId: "s1",
+      activeId: "t1",
+      tabs: [
+        {
+          id: "t1",
+          spaceId: "s1",
+          title: "split",
+          kind: "terminal",
+          paneTree: {
+            kind: "split",
+            direction: "row",
+            sizes: [0.5, 0.5],
+            children: [
+              { kind: "leaf", id: "p1", pane: { kind: "terminal", cwd: "/x" } },
+              { kind: "leaf", id: "p2", pane: { kind: "terminal", cwd: "/y" } },
+            ],
+          },
+          activeLeafId: "p1",
+          paneOrder: ["p1", "p2"],
+        },
+      ],
+    });
+    useSessionStatusStore.setState({
+      statuses: { p1: "active", p2: "thinking" },
+      agents: { p1: "claude", p2: "codex" },
+    });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /split/ });
+    expect(within(card).getByText("/x")).toBeInTheDocument();
+    expect(within(card).getByText("/y")).toBeInTheDocument();
+  });
+
+  it("accents the focused pane's session title on a split card", () => {
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Salon" }],
+      activeSpaceId: "s1",
+      activeId: "t1",
+      tabs: [
+        {
+          id: "t1",
+          spaceId: "s1",
+          title: "split",
+          kind: "terminal",
+          paneTree: {
+            kind: "split",
+            direction: "row",
+            sizes: [0.5, 0.5],
+            children: [
+              { kind: "leaf", id: "p1", pane: { kind: "terminal", cwd: "/a" } },
+              { kind: "leaf", id: "p2", pane: { kind: "terminal", cwd: "/a" } },
+            ],
+          },
+          activeLeafId: "p1",
+          paneOrder: ["p1", "p2"],
+        },
+      ],
+    });
+    useSessionStatusStore.setState({
+      statuses: { p1: "active", p2: "thinking" },
+      agents: { p1: "codex", p2: "claude" },
+    });
+    useTitlesStore.setState({
+      titles: {
+        [progressKey("/a", "codex")]: "Codex task",
+        [progressKey("/a", "claude")]: "Claude task",
+      },
+    });
+    render(<WorkspacePanel />);
+    expect(screen.getByText("Codex task")).toHaveClass("text-accent");
+    expect(screen.getByText("Claude task")).not.toHaveClass("text-accent");
+  });
+
   it("shows the Claude logomark before the directory when a Claude session runs", () => {
     useSessionStatusStore.setState({ statuses: { p1: "active" }, agents: { p1: "claude" } });
     render(<WorkspacePanel />);
