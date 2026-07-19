@@ -40,7 +40,7 @@ describe("takeAutoResumeCommand", () => {
     ).toBeNull();
   });
 
-  it("can retry when a mount is torn down before the command starts", () => {
+  it("can retry after the pane owning an attempt unmounts", () => {
     const session = { agent: "codex" as const, sessionId: "session-123" };
     expect(takeAutoResumeCommand("leaf-1", session, true)).toBe(
       "codex resume session-123",

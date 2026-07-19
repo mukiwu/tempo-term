@@ -321,7 +321,6 @@ export function TerminalView({
       initialAiSession,
       useSettingsStore.getState().autoResumeAiSessions,
     );
-    let autoResumeStarted = false;
     const containerEl = container;
 
     const initial = useFontStore.getState();
@@ -1001,7 +1000,6 @@ export function TerminalView({
           // The same CR-terminated commands used by the manual Sessions resume
           // action. Writing after PTY registration matches launcher semantics:
           // the login shell owns the input even if its prompt is still painting.
-          autoResumeStarted = true;
           void session.write(`${autoResumeCommand}\r`).catch(() => {
             releaseAutoResumeAttempt(initialLeafId, initialAiSession);
           });
@@ -1105,7 +1103,7 @@ export function TerminalView({
 
     return () => {
       disposed = true;
-      if (autoResumeCommand && !autoResumeStarted) {
+      if (autoResumeCommand) {
         releaseAutoResumeAttempt(initialLeafId, initialAiSession);
       }
       outputWriter.dispose();
