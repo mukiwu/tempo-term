@@ -38,6 +38,52 @@ function firstLeafContent(tab: Tab) {
   return paneOf(node);
 }
 
+describe("media/pdf open routing", () => {
+  beforeEach(reset);
+
+  it("openFromSidebar routes an image to a media pane titled by basename", () => {
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/a/pic.png" });
+    const tab = activeTab();
+    expect(tab.kind).toBe("media");
+    expect(tab.title).toBe("pic.png");
+    expect(firstLeafContent(tab)).toEqual({ kind: "media", path: "/a/pic.png" });
+  });
+
+  it("openFromSidebar routes a pdf to a native preview pane titled by basename", () => {
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/a/doc.pdf" });
+    const tab = activeTab();
+    expect(tab.kind).toBe("preview");
+    expect(tab.title).toBe("doc.pdf");
+    expect(firstLeafContent(tab)).toEqual({ kind: "preview", url: "file:///a/doc.pdf" });
+  });
+
+  it("openInNewTab routes images and pdfs the same way", () => {
+    useTabsStore.getState().openInNewTab({ kind: "editor", path: "/a/pic.webp" });
+    expect(firstLeafContent(activeTab())).toEqual({ kind: "media", path: "/a/pic.webp" });
+    useTabsStore.getState().openInNewTab({ kind: "editor", path: "/a/doc.pdf" });
+    expect(firstLeafContent(activeTab()).kind).toBe("preview");
+  });
+
+  it("openEditorTab routes an image to a dedicated media tab and dedups it", () => {
+    const first = useTabsStore.getState().openEditorTab("/a/pic.png");
+    const again = useTabsStore.getState().openEditorTab("/a/pic.png");
+    expect(again).toBe(first);
+    expect(activeTab().kind).toBe("media");
+  });
+
+  it("openEditorTab delegates a pdf to the preview tab", () => {
+    useTabsStore.getState().openEditorTab("/a/doc.pdf");
+    const tab = activeTab();
+    expect(tab.kind).toBe("preview");
+    expect(firstLeafContent(tab)).toEqual({ kind: "preview", url: "file:///a/doc.pdf" });
+  });
+
+  it("keeps plain files in the editor", () => {
+    useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/a/main.ts" });
+    expect(activeTab().kind).toBe("editor");
+  });
+});
+
 describe("openEditorPaths", () => {
   beforeEach(reset);
 

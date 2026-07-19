@@ -11,6 +11,7 @@ import {
   GitPullRequest,
   Globe,
   History,
+  Image,
   LayoutGrid,
   Pencil,
   Plus,
@@ -56,6 +57,8 @@ function tabIcon(kind: TabKind): LucideIcon {
       return FileText;
     case "preview":
       return Globe;
+    case "media":
+      return Image;
     case "git-graph":
       return GitBranch;
     case "diff":

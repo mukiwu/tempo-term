@@ -38,6 +38,9 @@ const SessionsTabContent = lazy(() =>
     default: m.SessionsTabContent,
   })),
 );
+const MediaTabContent = lazy(() =>
+  import("@/modules/media/MediaTabContent").then((m) => ({ default: m.MediaTabContent })),
+);
 import { LauncherPanel } from "@/components/LauncherPanel";
 import { dropOverlayClassName, outerBandOverlayClassName } from "@/components/EntryDropOverlay";
 import { InfoDialog } from "@/components/InfoDialog";
@@ -49,6 +52,7 @@ import {
   useEntryDragStore,
   type DraggedEntry,
 } from "@/modules/explorer/lib/dragEntry";
+import { fileOpenContent } from "@/modules/explorer/lib/fileOpenContent";
 import { insertLinkIntoNote } from "@/modules/notes/lib/noteBus";
 import { useNoteDragStore } from "@/modules/notes/lib/noteDrag";
 import { useSshDragStore } from "@/modules/ssh/lib/sshDrag";
@@ -196,6 +200,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
     if (
       content.kind === "editor" ||
       content.kind === "preview" ||
+      content.kind === "media" ||
       content.kind === "launcher"
     ) {
       return !entry.isDir;
@@ -212,8 +217,9 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
         }
         break;
       case "editor":
+      case "media":
         if (!entry.isDir) {
-          setPaneContent(tab.id, leafId, { kind: "editor", path: entry.path });
+          setPaneContent(tab.id, leafId, fileOpenContent(entry.path));
         }
         break;
       case "note":
@@ -221,13 +227,20 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
         break;
       case "preview":
         if (!entry.isDir) {
-          setPaneContent(tab.id, leafId, { kind: "preview", url: fileUrl(entry.path) });
+          // A dropped image still replaces the preview with the media viewer;
+          // any other file keeps the existing show-in-preview behavior.
+          const routed = fileOpenContent(entry.path);
+          setPaneContent(
+            tab.id,
+            leafId,
+            routed.kind === "media" ? routed : { kind: "preview", url: fileUrl(entry.path) },
+          );
         }
         break;
       case "launcher":
         // Drop a file onto a freshly split pane to open it right there.
         if (!entry.isDir) {
-          setPaneContent(tab.id, leafId, { kind: "editor", path: entry.path });
+          setPaneContent(tab.id, leafId, fileOpenContent(entry.path));
         }
         break;
     }
@@ -279,7 +292,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
       useEntryDragStore.getState().clearPendingDrop();
       return;
     }
-    const newContent: PaneContent = { kind: "editor", path: pendingDrop.entry.path };
+    const newContent: PaneContent = fileOpenContent(pendingDrop.entry.path);
     if (zone.scope === "individual") {
       splitPaneWith(tab.id, pendingDrop.leafId, newContent, zone.direction, zone.anchor);
     } else {
@@ -490,6 +503,12 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     })}
                     onNavigate={(url) => navigatePreview(tab.id, pane.id, url)}
                     onTitle={(title) => setPreviewTabTitle(tab.id, pane.id, title)}
+                    showClose={multiple}
+                    onClose={() => closePaneAndHistory(pane.id)}
+                  />
+                ) : pane.content.kind === "media" ? (
+                  <MediaTabContent
+                    path={pane.content.path}
                     showClose={multiple}
                     onClose={() => closePaneAndHistory(pane.id)}
                   />

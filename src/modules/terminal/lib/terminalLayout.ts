@@ -17,6 +17,7 @@ export type PaneContent =
   | { kind: "editor"; path: string }
   | { kind: "note"; noteId: string }
   | { kind: "preview"; url: string }
+  | { kind: "media"; path: string }
   | { kind: "git-graph" }
   | { kind: "diff"; path: string; staged: boolean }
   | { kind: "sessions" }

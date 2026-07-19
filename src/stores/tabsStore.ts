@@ -6,6 +6,7 @@ import { perWindowStorage } from "@/lib/window";
 import { markFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { decideHtmlPreviewOpen, previewLocalPath } from "@/modules/preview/lib/htmlPreviewTarget";
 import { fileUrl } from "@/modules/explorer/lib/dragEntry";
+import { fileOpenContent } from "@/modules/explorer/lib/fileOpenContent";
 import {
   computeLayout,
   findPaneContent,
@@ -46,6 +47,7 @@ export type TabKind =
   | "editor"
   | "note"
   | "preview"
+  | "media"
   | "git-graph"
   | "diff"
   | "sessions"
@@ -276,6 +278,16 @@ function previewTitle(url: string): string {
   }
 }
 
+/**
+ * Editor opens re-route by file type (images → media viewer, PDFs → the
+ * native preview); every other content kind passes through untouched. Callers
+ * compute the tab title from the ORIGINAL path before remapping, so a routed
+ * PDF still gets its basename rather than a file:// url as title.
+ */
+function resolveFileOpen(content: PaneContent): PaneContent {
+  return content.kind === "editor" ? fileOpenContent(content.path) : content;
+}
+
 /** True when a tab is a single, unsplit leaf showing exactly `content`. */
 function singleLeafContentEquals(tab: Tab, content: PaneContent): boolean {
   if (tab.paneTree.kind !== "leaf") {
@@ -293,6 +305,9 @@ function singleLeafContentEquals(tab: Tab, content: PaneContent): boolean {
   }
   if (pane.kind === "preview" && content.kind === "preview") {
     return pane.url === content.url;
+  }
+  if (pane.kind === "media" && content.kind === "media") {
+    return pane.path === content.path;
   }
   if (pane.kind === "diff" && content.kind === "diff") {
     return pane.path === content.path && pane.staged === content.staged;
@@ -530,11 +545,17 @@ export const useTabsStore = create<TabsState>()(
 
   openEditorTab: (path) => {
     const spaceId = get().ensureSpace();
+    // Images and PDFs picked from the launcher route to their viewers; the
+    // PDF case delegates to the preview tab (it manages its own dedup).
+    const content = fileOpenContent(path);
+    if (content.kind === "preview") {
+      return get().openPreviewTab(content.url);
+    }
     const existing = get().tabs.find(
       (t) =>
-        t.kind === "editor" &&
+        t.kind === content.kind &&
         t.spaceId === spaceId &&
-        singleLeafContentEquals(t, { kind: "editor", path }),
+        singleLeafContentEquals(t, content),
     );
     if (existing) {
       set({ activeId: existing.id });
@@ -545,9 +566,9 @@ export const useTabsStore = create<TabsState>()(
     const tab: Tab = {
       id,
       spaceId,
-      kind: "editor",
+      kind: content.kind,
       title: basename(path),
-      paneTree: leaf(paneId, { kind: "editor", path }),
+      paneTree: leaf(paneId, content),
       activeLeafId: paneId,
       paneOrder: [paneId],
     };
@@ -697,6 +718,7 @@ export const useTabsStore = create<TabsState>()(
 
     const resolvedTitle =
       title ?? (content.kind === "editor" ? basename(content.path) : "Untitled");
+    content = resolveFileOpen(content);
     const activeTab = get().tabs.find((t) => t.id === get().activeId);
 
     if (!activeTab || activeTab.kind === "launcher") {
@@ -760,6 +782,7 @@ export const useTabsStore = create<TabsState>()(
 
     const resolvedTitle =
       title ?? (content.kind === "editor" ? basename(content.path) : "Untitled");
+    content = resolveFileOpen(content);
     const id = nextTabId();
     const paneId = nextPaneId();
     if (isFreshSsh) {
