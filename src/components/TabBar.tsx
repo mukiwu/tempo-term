@@ -129,21 +129,17 @@ function TabItem({ id }: { id: string }) {
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
       }}
-      // Minimal-weight active indicator: a small accent dot at the leading
-      // edge plus full-opacity text, no border/fill/bold. `pl-4` (vs. `pr-3`)
-      // is reserved on every tab, active or not, so the dot never shifts the
-      // icon/label position when a tab activates. Font-weight is deliberately
-      // left untouched — labels render in the proportional Inter font, so a
-      // bold/regular swap would jostle tab widths on every activation.
-      className={`group relative flex h-7 cursor-pointer items-center gap-2 rounded-md border border-transparent pl-4 pr-3 text-xs transition-colors ${
-        active ? "text-fg" : "text-fg-muted hover:bg-bg-elevated/60"
+      // Active indicator: an accent underline along the bottom edge plus a 10%
+      // accent fill and full-opacity text — no border/bold. Font-weight is
+      // deliberately left untouched — labels render in the proportional Inter
+      // font, so a bold/regular swap would jostle tab widths on every
+      // activation.
+      className={`group relative flex h-7 cursor-pointer items-center gap-2 rounded-md border border-transparent px-3 text-xs transition-colors ${
+        active ? "bg-accent/10 text-fg" : "text-fg-muted hover:bg-bg-elevated/60"
       } ${isDragging ? "opacity-40" : ""}`}
     >
       {active && (
-        <span
-          aria-hidden="true"
-          className="absolute left-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-accent"
-        />
+        <span aria-hidden="true" className="absolute inset-x-1 bottom-0 h-[2px] rounded-full bg-accent" />
       )}
       <Icon size={13} className="shrink-0" />
       {editing ? (
