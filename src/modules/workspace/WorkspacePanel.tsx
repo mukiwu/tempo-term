@@ -236,6 +236,7 @@ function SessionBlock({
   titles,
   showStatus,
   active,
+  divider,
   info,
   pr,
   showBranch,
@@ -245,6 +246,8 @@ function SessionBlock({
   titles: Record<string, string>;
   showStatus: boolean;
   active: boolean;
+  /** Draw a separator above this block (every block but the card's first). */
+  divider: boolean;
   info: WorktreeInfo | undefined;
   pr: PrInfo | undefined;
 } & BranchFlags) {
@@ -253,7 +256,7 @@ function SessionBlock({
   const [blockTitleRef, blockTitleTruncated] = useIsTruncated(blockTitle);
   const [titleRef, truncated] = useIsTruncated(title);
   return (
-    <span className="block">
+    <span className={`block ${divider ? "border-t border-border pt-1.5" : ""}`}>
       {/* flex, not a bare line box: line-height slack above the inline-flex
           tooltip wrapper would push the first block below the tab icon. */}
       <span className="flex">
@@ -419,13 +422,14 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
             // A split card lists every pane's session with its own directory,
             // instead of the tab-level block that follows only the focused pane.
             <span className={`${editing ? "mt-1 " : ""}block space-y-1.5`}>
-              {sessions.map((session) => (
+              {sessions.map((session, i) => (
                 <SessionBlock
                   key={session.leafId}
                   session={session}
                   titles={titles}
                   showStatus={card.status}
                   active={session.leafId === tab.activeLeafId}
+                  divider={i > 0}
                   info={session.cwd ? infos[session.cwd] : undefined}
                   pr={(card.pr && session.cwd && prs[session.cwd]) || undefined}
                   showBranch={card.branch}
