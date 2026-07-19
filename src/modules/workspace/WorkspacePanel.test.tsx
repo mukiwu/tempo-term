@@ -263,7 +263,7 @@ describe("WorkspacePanel", () => {
       },
     });
     render(<WorkspacePanel />);
-    const card = screen.getByRole("button", { name: /split/ });
+    const card = screen.getByRole("button", { name: /Codex task/ });
     expect(within(card).getByRole("img", { name: "Codex" })).toBeInTheDocument();
     expect(within(card).getByRole("img", { name: "Claude" })).toBeInTheDocument();
     expect(within(card).getByText("Codex task")).toBeInTheDocument();
@@ -300,12 +300,12 @@ describe("WorkspacePanel", () => {
       agents: { p1: "claude", p2: "codex" },
     });
     render(<WorkspacePanel />);
-    const card = screen.getByRole("button", { name: /split/ });
+    const card = screen.getByRole("button", { name: /\/x/ });
     expect(within(card).getByText("/x")).toBeInTheDocument();
     expect(within(card).getByText("/y")).toBeInTheDocument();
   });
 
-  it("accents the focused pane's session title on a split card", () => {
+  it("accents the focused pane's block title on a split card", () => {
     useTabsStore.setState({
       spaces: [{ id: "s1", name: "Salon" }],
       activeSpaceId: "s1",
@@ -321,8 +321,8 @@ describe("WorkspacePanel", () => {
             direction: "row",
             sizes: [0.5, 0.5],
             children: [
-              { kind: "leaf", id: "p1", pane: { kind: "terminal", cwd: "/a" } },
-              { kind: "leaf", id: "p2", pane: { kind: "terminal", cwd: "/a" } },
+              { kind: "leaf", id: "p1", pane: { kind: "terminal", cwd: "/ax" } },
+              { kind: "leaf", id: "p2", pane: { kind: "terminal", cwd: "/ay" } },
             ],
           },
           activeLeafId: "p1",
@@ -336,13 +336,16 @@ describe("WorkspacePanel", () => {
     });
     useTitlesStore.setState({
       titles: {
-        [progressKey("/a", "codex")]: "Codex task",
-        [progressKey("/a", "claude")]: "Claude task",
+        [progressKey("/ax", "codex")]: "Codex task",
+        [progressKey("/ay", "claude")]: "Claude task",
       },
     });
     render(<WorkspacePanel />);
-    expect(screen.getByText("Codex task")).toHaveClass("text-accent");
-    expect(screen.getByText("Claude task")).not.toHaveClass("text-accent");
+    // The block title (the pane's folder name) carries the active style, not
+    // the session title.
+    expect(screen.getByText("ax")).toHaveClass("text-accent");
+    expect(screen.getByText("ay")).not.toHaveClass("text-accent");
+    expect(screen.getByText("Codex task")).not.toHaveClass("text-accent");
   });
 
   it("shows the Claude logomark before the directory when a Claude session runs", () => {
@@ -382,8 +385,8 @@ describe("WorkspacePanel", () => {
             direction: "row",
             sizes: [0.5, 0.5],
             children: [
-              { kind: "leaf", id: "p1", pane: { kind: "terminal", cwd: "/a" } },
-              { kind: "leaf", id: "p2", pane: { kind: "terminal", cwd: "/a" } },
+              { kind: "leaf", id: "p1", pane: { kind: "terminal", cwd: "/gamma" } },
+              { kind: "leaf", id: "p2", pane: { kind: "terminal", cwd: "/gamma" } },
             ],
           },
           activeLeafId: "p1",
@@ -396,9 +399,9 @@ describe("WorkspacePanel", () => {
       agents: { p1: "codex", p2: "claude" },
     });
     render(<WorkspacePanel />);
-    const card = screen.getByRole("button", { name: /split/ });
+    const card = screen.getByRole("button", { name: /gamma/ });
     // Exactly one icon per session row; a second Claude/Codex match would mean
-    // the shared directory line wrongly picked one of the two agents.
+    // a directory line wrongly picked up an agent icon too.
     expect(within(card).getAllByRole("img", { name: "Claude" })).toHaveLength(1);
     expect(within(card).getAllByRole("img", { name: "Codex" })).toHaveLength(1);
   });

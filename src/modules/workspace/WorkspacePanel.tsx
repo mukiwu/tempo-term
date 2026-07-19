@@ -43,6 +43,7 @@ import { useWorkspacePrs } from "./lib/useWorkspacePrs";
 import type { WorktreeInfo } from "./lib/worktreeBridge";
 import type { PrInfo } from "./lib/prBridge";
 import { agentLabel } from "./lib/agentLabel";
+import { abbreviateHome } from "./lib/abbreviatePath";
 import { probeCardRender } from "@/lib/perfProbe";
 
 function tabIcon(kind: TabKind): LucideIcon {
@@ -101,7 +102,7 @@ function BranchLine({
   showCwd,
 }: { branch: string | null; path: string | null; agent?: AgentKind } & BranchFlags) {
   const shownBranch = showBranch ? branch : null;
-  const shownPath = showCwd ? path : null;
+  const shownPath = showCwd && path ? abbreviateHome(path) : null;
   if (!shownBranch && !shownPath) {
     return null;
   }
@@ -225,11 +226,10 @@ function sessionTitle(session: TabSession, titles: Record<string, string>): stri
 }
 
 /**
- * One pane's session inside a split card: its status, agent logomark, and
- * title, followed by that pane's own branch/directory and PR — the same block
- * a single-session card shows, repeated per pane so a split lists every
- * directory at once instead of only the focused pane's. The pane the tab
- * last focused gets its title accented.
+ * One pane's session inside a split card, a five-line block: the pane's own
+ * card title (its folder name, accented while the pane is the tab's focused
+ * one), then agent logomark + session title with the status badge pushed
+ * right, then that pane's own branch, directory, and PR.
  */
 function SessionBlock({
   session,
@@ -248,27 +248,34 @@ function SessionBlock({
   info: WorktreeInfo | undefined;
   pr: PrInfo | undefined;
 } & BranchFlags) {
+  const blockTitle = session.cwd ? basename(session.cwd) : sessionTitle(session, titles);
   const title = sessionTitle(session, titles);
+  const [blockTitleRef, blockTitleTruncated] = useIsTruncated(blockTitle);
   const [titleRef, truncated] = useIsTruncated(title);
   return (
     <span className="block">
-      <span className="flex items-center gap-1.5">
-        {showStatus && <StatusBadge status={session.status} />}
+      <Tooltip label={blockTitleTruncated && blockTitle} className="w-full">
+        <span
+          ref={blockTitleRef}
+          className={`min-w-0 flex-1 truncate text-xs font-medium ${
+            active ? "text-accent" : "text-fg"
+          }`}
+        >
+          {blockTitle}
+        </span>
+      </Tooltip>
+      <span className="mt-0.5 flex items-center gap-1.5">
         {session.agent && (
           <Tooltip label={agentLabel(session.agent)} className="shrink-0">
             <AgentIcon agent={session.agent} size={12} className="shrink-0 text-fg-subtle" />
           </Tooltip>
         )}
         <Tooltip label={truncated && title} className="min-w-0 flex-1">
-          <span
-            ref={titleRef}
-            className={`min-w-0 flex-1 truncate text-[11px] ${
-              active ? "font-medium text-accent" : "text-fg-muted"
-            }`}
-          >
+          <span ref={titleRef} className="min-w-0 flex-1 truncate text-[11px] text-fg-muted">
             {title}
           </span>
         </Tooltip>
+        {showStatus && <StatusBadge status={session.status} />}
       </span>
       <BranchBlock info={info} cwd={session.cwd} showBranch={showBranch} showCwd={showCwd} />
       {pr && (
@@ -375,32 +382,39 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
           <span className="text-[10px] font-medium leading-none text-fg-subtle">{index}</span>
         </span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5">
-            {editing ? (
-              <input
-                ref={inputRef}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onBlur={commitRename}
-                onClick={(event) => event.stopPropagation()}
-                onPointerDown={(event) => event.stopPropagation()}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") commitRename();
-                  if (event.key === "Escape") setEditing(false);
-                }}
-                className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
-              />
-            ) : (
-              <span ref={titleRef} className="min-w-0 flex-1 truncate text-xs font-medium text-fg">
-                {title}
-              </span>
-            )}
-            {!multi && card.status && status && <StatusBadge status={status} />}
-          </span>
+          {/* A split card has no shared title row — each pane block carries its
+              own; the row still appears there while renaming the tab. */}
+          {(editing || !multi) && (
+            <span className="flex items-center gap-1.5">
+              {editing ? (
+                <input
+                  ref={inputRef}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onBlur={commitRename}
+                  onClick={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") commitRename();
+                    if (event.key === "Escape") setEditing(false);
+                  }}
+                  className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
+                />
+              ) : (
+                <span
+                  ref={titleRef}
+                  className="min-w-0 flex-1 truncate text-xs font-medium text-fg"
+                >
+                  {title}
+                </span>
+              )}
+              {!multi && card.status && status && <StatusBadge status={status} />}
+            </span>
+          )}
           {multi ? (
             // A split card lists every pane's session with its own directory,
             // instead of the tab-level block that follows only the focused pane.
-            <span className="mt-1 block space-y-1.5">
+            <span className={`${editing ? "mt-1 " : ""}block space-y-1.5`}>
               {sessions.map((session) => (
                 <SessionBlock
                   key={session.leafId}
