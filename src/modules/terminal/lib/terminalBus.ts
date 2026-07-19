@@ -91,6 +91,21 @@ export function unregisterTerminalPathDrop(leafId: string): void {
   pathDropHandlers.delete(leafId);
 }
 
+/**
+ * Paste text into a specific pane through its xterm paste, which wraps the
+ * text in bracketed-paste markers when the foreground app enabled them — so a
+ * multi-line prompt lands in an agent's input box instead of being submitted
+ * line by line. Falls back to a raw PTY write for panes without ops.
+ */
+export function pasteToTerminal(leafId: string, text: string): void {
+  const ops = opsRegistry.get(leafId);
+  if (ops) {
+    ops.paste(text);
+  } else {
+    writeToTerminal(leafId, text);
+  }
+}
+
 /** Write to a specific pane, queueing until it registers (fresh PTYs). */
 export function writeToTerminal(leafId: string, text: string): void {
   const write = writers.get(leafId);
