@@ -545,12 +545,10 @@ export const useTabsStore = create<TabsState>()(
 
   openEditorTab: (path) => {
     const spaceId = get().ensureSpace();
-    // Images and PDFs picked from the launcher route to their viewers; the
-    // PDF case delegates to the preview tab (it manages its own dedup).
+    // Images and PDFs picked from the launcher route to their viewers. All
+    // three kinds share the same dedup and get the file basename as title
+    // (openPreviewTab would title a PDF with its raw file:// url instead).
     const content = fileOpenContent(path);
-    if (content.kind === "preview") {
-      return get().openPreviewTab(content.url);
-    }
     const existing = get().tabs.find(
       (t) =>
         t.kind === content.kind &&

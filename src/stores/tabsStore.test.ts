@@ -71,11 +71,13 @@ describe("media/pdf open routing", () => {
     expect(activeTab().kind).toBe("media");
   });
 
-  it("openEditorTab delegates a pdf to the preview tab", () => {
-    useTabsStore.getState().openEditorTab("/a/doc.pdf");
+  it("openEditorTab opens a pdf as a preview tab titled by basename, deduped", () => {
+    const first = useTabsStore.getState().openEditorTab("/a/doc.pdf");
     const tab = activeTab();
     expect(tab.kind).toBe("preview");
+    expect(tab.title).toBe("doc.pdf");
     expect(firstLeafContent(tab)).toEqual({ kind: "preview", url: "file:///a/doc.pdf" });
+    expect(useTabsStore.getState().openEditorTab("/a/doc.pdf")).toBe(first);
   });
 
   it("keeps plain files in the editor", () => {
