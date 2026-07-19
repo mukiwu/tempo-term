@@ -139,7 +139,10 @@ function TabItem({ id }: { id: string }) {
       } ${isDragging ? "opacity-40" : ""}`}
     >
       {active && (
-        <span aria-hidden="true" className="absolute inset-x-1 bottom-0 h-[2px] rounded-full bg-accent" />
+        <span
+          aria-hidden="true"
+          className="absolute inset-x-1.5 bottom-0 h-[2px] rounded-full bg-accent"
+        />
       )}
       <Icon size={13} className="shrink-0" />
       {editing ? (
