@@ -216,13 +216,14 @@ function SessionRow({
   showStatus: boolean;
 }) {
   const label = agentLabel(session.agent);
+  const title = sessionTitle(session, titles);
   return (
     <span className="flex items-center gap-1.5">
       {showStatus && <StatusBadge status={session.status} />}
       {label && <span className="shrink-0 text-[11px] text-fg-subtle">{label}</span>}
-      <span className="min-w-0 flex-1 truncate text-[11px] text-fg-muted">
-        {sessionTitle(session, titles)}
-      </span>
+      <Tooltip label={title} className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 truncate text-[11px] text-fg-muted">{title}</span>
+      </Tooltip>
     </span>
   );
 }
@@ -329,7 +330,9 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
               className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
             />
           ) : (
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{title}</span>
+            <Tooltip label={title} className="min-w-0 flex-1">
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{title}</span>
+            </Tooltip>
           )}
           {!multi && card.status && status && <StatusBadge status={status} />}
           {!multi && card.status && status && label && (
@@ -430,16 +433,18 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
             className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
           />
         ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setActiveSpace(id);
-              setCollapsed((c) => !c);
-            }}
-            className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-fg"
-          >
-            {name}
-          </button>
+          <Tooltip label={name} className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSpace(id);
+                setCollapsed((c) => !c);
+              }}
+              className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-fg"
+            >
+              {name}
+            </button>
+          </Tooltip>
         )}
 
         {!editing && (
