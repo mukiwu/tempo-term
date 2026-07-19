@@ -452,6 +452,7 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
           <Tooltip label={nameTruncated && name} className="min-w-0 flex-1">
             <button
               type="button"
+              aria-expanded={!collapsed}
               onClick={() => {
                 setActiveSpace(id);
                 setCollapsed((c) => !c);
