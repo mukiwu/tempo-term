@@ -58,4 +58,10 @@ describe("reanchorComments", () => {
   it("leaves a comment alone when its text no longer exists", () => {
     expect(reanchorComments([comment({ line: 2, lineText: "vanished" })], doc)).toEqual([]);
   });
+
+  it("never re-anchors a comment on a blank line", () => {
+    const blankDoc = ["alpha", "", "gamma", ""];
+    expect(reanchorComments([comment({ line: 2, lineText: "" })], blankDoc)).toEqual([]);
+    expect(reanchorComments([comment({ line: 3, lineText: "  " })], blankDoc)).toEqual([]);
+  });
 });

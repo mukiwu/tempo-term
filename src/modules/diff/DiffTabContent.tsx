@@ -73,6 +73,10 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
   );
   const unsent = useMemo(() => allComments.filter((c) => !c.sent), [allComments]);
   const [draft, setDraft] = useState<{ side: "a" | "b"; line: number } | null>(null);
+  // The draft's text lives in a ref (not state): the widget reads it back on
+  // rebuild — view recreation, draft moved to another line — so typed text is
+  // never lost, and keystrokes don't re-render the component.
+  const draftBodyRef = useRef("");
   // Bumped once the async MergeView construction finishes, so the dispatch
   // effect below re-runs against the fresh editors.
   const [viewEpoch, setViewEpoch] = useState(0);
@@ -124,16 +128,26 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
   // MergeView effect so the saved line text is read from that side's doc.
   function commentHandlers(side: "a" | "b"): CommentHandlers {
     return {
+      // Clicking another line moves the draft there, carrying its text —
+      // never silently saving and never discarding what was typed.
       onAdd: (line) => setDraft({ side, line }),
       onSave: (line, body) => {
         const view = side === "a" ? mergeViewRef.current?.a : mergeViewRef.current?.b;
         const clamped = view ? Math.max(1, Math.min(line, view.state.doc.lines)) : line;
         const lineText = view ? view.state.doc.line(clamped).text : "";
         useDiffCommentStore.getState().add({ path, staged, side, line: clamped, lineText, body });
+        draftBodyRef.current = "";
         setDraft(null);
       },
-      onCancel: () => setDraft(null),
+      onCancel: () => {
+        draftBodyRef.current = "";
+        setDraft(null);
+      },
       onDelete: (id) => useDiffCommentStore.getState().remove(id),
+      getDraftBody: () => draftBodyRef.current,
+      onDraftChange: (text) => {
+        draftBodyRef.current = text;
+      },
       labels: {
         placeholder: t("diffCommentPlaceholder"),
         save: t("diffCommentSave"),

@@ -50,6 +50,11 @@ export function reanchorComments(
     if (at === comment.lineText) {
       continue;
     }
+    // A blank line matches everywhere, so "nearest match" would drift the
+    // comment to an unrelated block — better to leave it where it was.
+    if (!comment.lineText.trim()) {
+      continue;
+    }
     let nearest: number | null = null;
     for (let i = 0; i < docLines.length; i++) {
       if (docLines[i] !== comment.lineText) {

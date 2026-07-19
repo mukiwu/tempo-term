@@ -24,6 +24,10 @@ export interface CommentHandlers {
   onSave: (line: number, body: string) => void;
   onCancel: () => void;
   onDelete: (id: string) => void;
+  /** In-progress draft text, kept by the host so a widget rebuild (view
+   *  recreation, draft moved to another line) doesn't lose what was typed. */
+  getDraftBody: () => string;
+  onDraftChange: (text: string) => void;
   labels: {
     placeholder: string;
     save: string;
@@ -116,6 +120,8 @@ class DraftWidget extends WidgetType {
     input.className = "cm-diff-comment-input";
     input.rows = 2;
     input.placeholder = this.handlers.labels.placeholder;
+    input.value = this.handlers.getDraftBody();
+    input.addEventListener("input", () => this.handlers.onDraftChange(input.value));
     const save = () => {
       const body = input.value.trim();
       if (body) {
