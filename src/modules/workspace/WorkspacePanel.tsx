@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTabsStore, type Tab, type TabKind } from "@/stores/tabsStore";
+import { AgentIcon } from "@/components/AgentIcon";
 import { Tooltip } from "@/components/Tooltip";
 import { useIsTruncated } from "@/components/useIsTruncated";
 import { ContextMenu } from "@/components/ContextMenu";
@@ -27,6 +28,7 @@ import { useTabCloseRequest } from "@/components/useTabCloseRequest";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus";
+import type { AgentKind } from "@/modules/claude-progress/lib/codexNormalize";
 import { tabSessionStatus } from "./lib/tabSessionStatus";
 import { deriveTabCwd } from "./lib/tabCwd";
 import { selectCardTitle } from "./lib/cardTitle";
@@ -93,9 +95,10 @@ interface BranchFlags {
 function BranchLine({
   branch,
   path,
+  agent,
   showBranch,
   showCwd,
-}: { branch: string | null; path: string | null } & BranchFlags) {
+}: { branch: string | null; path: string | null; agent?: AgentKind } & BranchFlags) {
   const shownBranch = showBranch ? branch : null;
   const shownPath = showCwd ? path : null;
   if (!shownBranch && !shownPath) {
@@ -105,6 +108,8 @@ function BranchLine({
   // truncation) so a long repo or path is always readable. The path is indented
   // to sit under the branch text, so it stays visually paired with its repo when
   // a card lists more than one (e.g. a worktree's main repo plus the worktree).
+  // A detected CLI's logomark takes over the indent slot (icon 11px + gap 4px
+  // = the same 15px), marking which agent runs in that directory.
   return (
     <span className="block text-[11px] leading-snug text-fg-subtle">
       {shownBranch && (
@@ -113,9 +118,15 @@ function BranchLine({
           <span className="min-w-0 break-all">{shownBranch}</span>
         </span>
       )}
-      {shownPath && (
-        <span className={`block break-all ${shownBranch ? "pl-[15px]" : ""}`}>{shownPath}</span>
-      )}
+      {shownPath &&
+        (agent ? (
+          <span className="flex items-start gap-1">
+            <AgentIcon agent={agent} size={11} className="mt-[3px] shrink-0" />
+            <span className="min-w-0 break-all">{shownPath}</span>
+          </span>
+        ) : (
+          <span className={`block break-all ${shownBranch ? "pl-[15px]" : ""}`}>{shownPath}</span>
+        ))}
     </span>
   );
 }
@@ -128,20 +139,22 @@ function BranchLine({
 function BranchBlock({
   info,
   cwd,
+  agent,
   showBranch,
   showCwd,
-}: { info: WorktreeInfo | undefined; cwd: string | null } & BranchFlags) {
+}: { info: WorktreeInfo | undefined; cwd: string | null; agent?: AgentKind } & BranchFlags) {
   if (!showBranch && !showCwd) {
     return null;
   }
   if (!info) {
     return showCwd && cwd ? (
-      <span className="block break-all text-[11px] leading-snug text-fg-subtle">{cwd}</span>
+      <BranchLine branch={null} path={cwd} agent={agent} showBranch={showBranch} showCwd={showCwd} />
     ) : null;
   }
   if (info.isWorktree) {
     // Extra space between the two repo groups so each branch stays visually
-    // paired with its own path.
+    // paired with its own path. The agent runs in the worktree, so only that
+    // line carries the CLI icon.
     return (
       <span className="block space-y-1.5">
         <BranchLine
@@ -153,6 +166,7 @@ function BranchBlock({
         <BranchLine
           branch={info.branch}
           path={info.cwd}
+          agent={agent}
           showBranch={showBranch}
           showCwd={showCwd}
         />
@@ -160,7 +174,13 @@ function BranchBlock({
     );
   }
   return (
-    <BranchLine branch={info.branch} path={info.cwd} showBranch={showBranch} showCwd={showCwd} />
+    <BranchLine
+      branch={info.branch}
+      path={info.cwd}
+      agent={agent}
+      showBranch={showBranch}
+      showCwd={showCwd}
+    />
   );
 }
 
@@ -273,6 +293,12 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
   const pr = cwd ? prs[cwd] : undefined;
   const Icon = tabIcon(tab.kind);
   const label = agentLabel(primary?.agent);
+  // The CLI icon on the directory line, only when every live session in the
+  // card runs the same agent — a mixed split would make a single icon a lie.
+  const agentKinds = [
+    ...new Set(sessions.map((s) => s.agent).filter((a): a is AgentKind => Boolean(a))),
+  ];
+  const cardAgent = agentKinds.length === 1 ? agentKinds[0] : undefined;
   // The rename input replaces the title span while editing, which detaches the
   // ref and turns the flag (and so the card tooltip) off on its own.
   const [titleRef, titleTruncated] = useIsTruncated(title);
@@ -362,7 +388,13 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
               ))}
             </span>
           )}
-          <BranchBlock info={info} cwd={cwd} showBranch={card.branch} showCwd={card.cwd} />
+          <BranchBlock
+          info={info}
+          cwd={cwd}
+          agent={cardAgent}
+          showBranch={card.branch}
+          showCwd={card.cwd}
+        />
           {card.pr && pr && (
             <span className="mt-0.5 block">
               <PrBadge pr={pr} />

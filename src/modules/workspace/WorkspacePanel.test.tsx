@@ -270,6 +270,80 @@ describe("WorkspacePanel", () => {
     expect(within(card).getByText("Claude task")).toBeInTheDocument();
   });
 
+  it("shows the Claude logomark before the directory when a Claude session runs", () => {
+    useSessionStatusStore.setState({ statuses: { p1: "active" }, agents: { p1: "claude" } });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /alpha/ });
+    expect(within(card).getByRole("img", { name: "Claude" })).toBeInTheDocument();
+  });
+
+  it("shows the Codex logomark before the directory when a codex session runs", () => {
+    useSessionStatusStore.setState({ statuses: { p1: "active" }, agents: { p1: "codex" } });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /alpha/ });
+    expect(within(card).getByRole("img", { name: "Codex" })).toBeInTheDocument();
+  });
+
+  it("shows no CLI logomark when the card has no live session", () => {
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /beta/ });
+    expect(within(card).queryByRole("img", { name: "Claude" })).toBeNull();
+    expect(within(card).queryByRole("img", { name: "Codex" })).toBeNull();
+  });
+
+  it("shows no single CLI logomark when a split runs two different agents", () => {
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Salon" }],
+      activeSpaceId: "s1",
+      activeId: "t1",
+      tabs: [
+        {
+          id: "t1",
+          spaceId: "s1",
+          title: "split",
+          kind: "terminal",
+          paneTree: {
+            kind: "split",
+            direction: "row",
+            sizes: [0.5, 0.5],
+            children: [
+              { kind: "leaf", id: "p1", pane: { kind: "terminal", cwd: "/a" } },
+              { kind: "leaf", id: "p2", pane: { kind: "terminal", cwd: "/a" } },
+            ],
+          },
+          activeLeafId: "p1",
+          paneOrder: ["p1", "p2"],
+        },
+      ],
+    });
+    useSessionStatusStore.setState({
+      statuses: { p1: "active", p2: "thinking" },
+      agents: { p1: "codex", p2: "claude" },
+    });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /split/ });
+    expect(within(card).queryByRole("img", { name: "Claude" })).toBeNull();
+    expect(within(card).queryByRole("img", { name: "Codex" })).toBeNull();
+  });
+
+  it("puts the CLI logomark on the worktree line only, not the main repo line", () => {
+    useWorktreeStore.setState({
+      infos: {
+        "/a": {
+          branch: "feature",
+          cwd: "/a",
+          isWorktree: true,
+          mainBranch: "main",
+          mainPath: "/main",
+        },
+      },
+    });
+    useSessionStatusStore.setState({ statuses: { p1: "active" }, agents: { p1: "claude" } });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /alpha/ });
+    expect(within(card).getAllByRole("img", { name: "Claude" })).toHaveLength(1);
+  });
+
   it("shows a PR badge on a card whose cwd has a tracked PR", () => {
     usePrStore.setState({
       prs: { "/a": { number: 42, state: "open", url: "u", title: "Add thing" } },
