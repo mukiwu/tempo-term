@@ -20,133 +20,56 @@ TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a nati
 
 </div>
 
+## Highlights
+
+- **An AI agent command center**: each tab's card tracks its Claude Code or Codex CLI session live — status, Git branch, worktree and pull request — split panes each list their own agent, and a desktop notification fires when an agent needs approval
+- **Review diffs, reply to your agent**: comment on any diff line and batch-send the feedback straight into a running agent session
+- **Parallel worktrees**: run several worktrees of one repo side by side, each in its own directory with its own agent
+- **AI Sessions**: browse every past Claude Code, Codex and Antigravity conversation in one place, with an activity dashboard and estimated cost
+- **A one-window workspace**: terminal, code editor, file explorer, source control, notes, SSH/SFTP, web preview and image/PDF preview, all freely splittable side by side
+- **Bring-your-own-key AI assistant**: OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, Ollama and any OpenAI-compatible endpoint, with keys encrypted and bound to your machine
+- **First-class Traditional Chinese**: a fully translated UI and terminal font settings that keep full-width CJK glyphs aligned
+
 ## Features
 
-### Groups & agent sessions
+### AI workflow
 
-- Organize work into named groups in a sidebar, with rename and delete from the list; the app opens on this panel
-- Each tab's card shows the Git branch and worktree, a live status badge for its Claude Code or Codex CLI session (working, thinking, waiting for input, waiting for approval) you can filter by, and the matching pull request status
-- A tab split into several panes lists each pane's own agent and status on the card
-- Card titles are derived automatically from the session transcript
-- Session status comes from a Claude Code or Codex hook you can toggle; choose which blocks a card shows and where PR data comes from in settings
-- A desktop notification fires when a tracked agent needs approval or finishes and the window isn't focused
-- Open additional windows, each with its own tabs, groups and chat state; closing a window only tears down its own terminals
-- The launcher can start Claude Code or Codex CLI directly, with a configurable default set of arguments
+- Named groups in the sidebar organize your tabs; each card shows a filterable session status (working, thinking, waiting for input or approval), the branch, worktree and matching PR, a split tab lists every pane's own agent, and card titles derive from the session transcript
+- A desktop notification fires when a tracked agent needs approval or finishes in the background; the launcher starts Claude Code or Codex CLI directly with default arguments
+- Comment on any diff line via the + in its gutter, then send the batch — grouped by file, anchored to lines and code — into a terminal pane running Claude or Codex; the prompt lands in its input box for you to confirm
+- Create a worktree from the terminal menu or the commit graph; creation can copy local files such as `.env`, run a remembered setup command and launch an agent right away. A status-bar badge opens the manager listing each worktree's branch, changes, agent activity and disk usage
+- AI Sessions reads each CLI's local files directly (nothing is copied into TempoTerm), with an activity heatmap, model usage, per-project stats, cost estimates, and Markdown/CSV export
+- The AI assistant panel works with your own keys; attach files from the explorer as context — terminal output is included by default with secrets redacted first
 
 ![Groups sidebar with live Claude session cards](screenshots/workspaces.png)
 
-### Layout
+![AI Sessions dashboard](screenshots/ai-sessions-dashboard.png)
 
-- Sidebar panels (file explorer, source control, notes, AI assistant, SSH connections, ports) dock as icon strips on either side of the window; drag an icon across to move a panel to the other side
-- Every pane in a tab shares the same slim header strip, so close buttons no longer float over content
-- Terminal and editor headers show the path as a breadcrumb; click a segment to browse that folder and cd the terminal or swap the file in place, SSH panes included
+![AI assistant panel with a Markdown reply](screenshots/ai-assistant.png)
 
-### Terminal
+### Terminal & workspace
 
-- xterm.js v6 over a native PTY (portable-pty), with typed tabs
-- Renders through xterm's DOM renderer, chosen deliberately over WebGL, which renders glyphs unreliably inside a WKWebView
-- Free split layout: panels can mix types, for example a terminal next to a file editor, with draggable dividers to resize
-- Full keyboard shortcut set, zsh command autosuggestions, in-terminal search, and hover action cards for IPs, host:port pairs and archive files
-- Large-output protection with a batched writer and an overload notice, plus an optional custom shell path override
-- Drag to reorder tabs, or right-click a tab to rename or close it, with a per-group tab count badge in the tab bar
-- Cmd or Ctrl click a file path in the output to open it in a split pane, with a hover hint and support for paths broken across wrapped lines
-- Optionally restore each terminal's previous output as read-only scrollback on the next launch
-- Standard editing shortcuts that carry over from other terminals: Shift+Enter, word and line navigation, delete to line start/end, copy and paste
-- Unicode 11 width tables so full-width CJK glyphs stay aligned
-
-### Split panes
-
-Any pane in any tab can be split four ways: click a sidebar item to auto-split, drag a file or note onto a pane, use the right-click menu, or drag onto the tab bar for a brand-new tab
+- xterm.js v6 over a native PTY: in-terminal search, zsh autosuggestions, hover action cards for IPs and archives, and Unicode width tables that keep full-width CJK glyphs aligned
+- Any pane splits four ways: click a sidebar item to auto-split, drag a file onto a pane, use the right-click menu, or drop onto the tab bar for a new tab
+- CodeMirror 6 editor with AI ghost-text completion (Tab to accept), Markdown edit/split/preview modes, and auto-reload when a file changes on disk
+- File tree with fuzzy find and content grep, two-way cd sync with the terminal; click an image or PDF to preview it right in the pane
+- One-click native web preview for HTML files (not an iframe, so no embedding restrictions), updating on save
+- Terminal and editor headers show a clickable breadcrumb path; sidebar panels dock as icon strips on either side of the window
 
 | **Click to split**<br>Click a file or note in the explorer or notes sidebar; it splits straight into the active tab<br>![Click to split](screenshots/split-click.gif) | **Drag onto a pane**<br>Drag a file or note onto any pane; where you drop it decides the split direction<br>![Drag onto a pane](screenshots/split-drag.gif) |
 | --- | --- |
 | **Right-click menu**<br>Open in a new tab, or split into a pane, straight from the right-click menu<br>![Right-click menu](screenshots/split-context-menu.gif) | **Drag onto the tab bar**<br>Drop a file, note or SSH connection onto the tab bar to open a brand-new tab<br>![Drag onto the tab bar](screenshots/split-tab-drop.gif) |
 
-### Editor
+### Everything else
 
-- CodeMirror 6 with syntax highlighting
-- AI ghost-text inline completion; press Tab to accept
-- Follows the app theme's light or dark appearance
-- Markdown files toggle between edit, split and preview
-- Closing a tab with unsaved changes prompts for confirmation; a dot on the tab marks unsaved edits
-- Reloads automatically when the file changes on disk (for example, edited by the AI or another tool) if there are no unsaved changes; otherwise offers to pick a version, plus a manual reload button
-- Preview an HTML file from the toolbar with one click (see Web preview below)
-
-### File explorer
-
-- File tree with fuzzy find and content grep
-- Two-way directory sync with the terminal: cd on either side moves the other
-- Right-click context menu: open, reveal in Finder, new file or folder, copy path, attach to the AI agent, delete to trash
-- Drag a file or folder onto any pane, with behavior per pane type
-
-### SSH & remote files
-
-- Connect to SSH hosts from a dedicated connections panel; connection details and key passphrases can be remembered
-- Local port forwarding (-L)
-- Browse, upload, download and edit remote files over SFTP in the file explorer while a connection is open
-
-### Source control
-
-- Stage, unstage, commit and push, with changes grouped by folder and folder-level staging
-- Generate a Conventional Commits message from the staged diff with AI
-- Commit graph (DAG) with branch and tag actions; click any commit to see its changed files and diff
-- Ask AI to explain a commit's diff in plain, scannable language
-- Toolbar for remote branches, stashes, fetch and keyword search
+- Source control: stage, commit and push grouped by folder, an AI-generated Conventional Commits message from the staged diff, and a commit graph where any commit shows its changes and diff, with an AI explanation on demand
+- SSH: a connections panel that remembers details and key passphrases, local port forwarding, and SFTP browse/edit of remote files in the explorer while connected
+- Notes: a WYSIWYG editor with a slash-command menu and code blocks that run in the terminal with one click
+- Status bar: live CPU, memory and network, plus a ports panel listing each port's owning process with direct actions
+- Multiple windows, each with its own tabs, groups and chat state
+- Several dark and light themes; English and Traditional Chinese UI switchable on the fly
 
 ![Git commit graph](screenshots/git-graph.png)
-
-### Parallel worktrees
-
-- Run several worktrees of one repo side by side, each in its own directory with its own agent
-- Create a worktree from the terminal's ⋯ menu or from a branch's right-click menu in the commit graph
-- Creation can copy local files such as `.env`, run a setup command (remembered per repo) and launch Claude Code or Codex CLI right away
-- A status bar badge counts your worktrees and opens the manager, which lists each one's branch, uncommitted changes, agent activity and disk usage, and removes ones you're done with
-- Open a worktree from the manager in a new tab or split beside the current pane; if it's already open, TempoTerm jumps to it instead
-
-### Web preview
-
-- Native child webview (not an iframe) for a URL or a dropped local file, so it isn't blocked by embedding restrictions like X-Frame-Options
-- Open a file's live preview from the editor toolbar with one click; it updates on save
-- Tab title follows the page's real `<title>`
-- Back/forward buttons and ⌘[ / ⌘] history navigation
-- ⌘L jumps straight to the address bar
-
-### Notes
-
-- WYSIWYG editor (TipTap) with a slash command menu
-- Code blocks with syntax highlighting, copy and run-in-terminal
-- Global folders that persist across restarts
-
-### AI assistant
-
-- Bring your own key: OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, Ollama and any OpenAI-compatible endpoint
-- Provider keys and your GitHub token are stored in an encrypted file bound to this machine, and are never returned to the webview
-- Replies render as Markdown; attach files from the explorer as context
-- Terminal output is included as context by default, with secrets redacted before it's sent
-
-![AI assistant panel with a Markdown reply](screenshots/ai-assistant.png)
-
-### AI Sessions
-
-- Browse every past AI CLI conversation from Claude Code, Codex, and Antigravity CLI in one place. They are read directly from their local session files, so nothing is ever copied into TempoTerm's own storage
-- A dashboard summarizes your history: a full-range activity heatmap, today's hour-of-day distribution, model usage as a share donut, a per-agent weekly breakdown, top conversations, and an estimated cost in USD
-- Open a project view from any conversation's project name to see its aggregate stats, recent sessions, and a one-click terminal rooted at that project
-- See the local git commits made during a session, right below its transcript
-- Filter the list by agent or model; pin, delete to trash, export a transcript to Markdown, or export the filtered list to CSV
-
-![AI Sessions dashboard](screenshots/ai-sessions-dashboard.png)
-
-### Status bar
-
-- Live CPU, memory and network throughput
-- Ports: a badge counts listening ports and opens the Ports panel, which lists each port's owning process and resource usage; open one in the browser, open a terminal at its process, or end the process
-- Worktrees: a badge counts your worktrees and opens the manager (see Parallel worktrees above)
-
-### Themes and languages
-
-- Several dark and light themes, applied across the whole window
-- Full English and Traditional Chinese UI, switchable on the fly
-- CJK-friendly terminal font settings, with a configurable icon font fallback
 
 ![Theme and language settings](screenshots/themes.png)
 
