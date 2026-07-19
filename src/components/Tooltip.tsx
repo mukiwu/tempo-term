@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
 interface TooltipProps {
@@ -14,6 +24,13 @@ interface TooltipProps {
 
 const MARGIN = 6;
 const DEFAULT_DELAY_MS = 300;
+
+/**
+ * Lets a nested Tooltip silence its nearest ancestor Tooltip while hovered, so
+ * wrapping a whole card in a Tooltip doesn't stack a second tooltip on top of
+ * the ones already inside it (PR badge, session rows).
+ */
+const TooltipNestingContext = createContext<{ suppress(): void; release(): void } | null>(null);
 
 /**
  * A hover tooltip rendered through a portal with fixed positioning, clamped to
@@ -36,6 +53,11 @@ export function Tooltip({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const parent = useContext(TooltipNestingContext);
+  // Count of hovered nested tooltips; while positive this one stays hidden.
+  const suppressedRef = useRef(0);
+  // Whether this tooltip currently holds a suppression on its parent.
+  const holdRef = useRef(false);
 
   const cancel = useCallback(() => {
     if (timerRef.current !== null) {
@@ -56,8 +78,8 @@ export function Tooltip({
     }
   }, [label, cancel]);
 
-  function arm() {
-    if (!label || timerRef.current !== null) {
+  const arm = useCallback(() => {
+    if (!label || suppressedRef.current > 0 || timerRef.current !== null) {
       return;
     }
     timerRef.current = setTimeout(() => {
@@ -67,7 +89,38 @@ export function Tooltip({
       const el = anchorRef.current?.firstElementChild ?? anchorRef.current;
       setAnchor(el?.getBoundingClientRect() ?? null);
     }, delayMs);
-  }
+  }, [label, delayMs]);
+
+  const nesting = useMemo(
+    () => ({
+      suppress() {
+        suppressedRef.current += 1;
+        cancel();
+      },
+      release() {
+        suppressedRef.current = Math.max(0, suppressedRef.current - 1);
+        // Re-arm for the case where the pointer moved off the nested tooltip
+        // but is still over this one. If it left both, this wrapper's own
+        // mouseleave fires right after (leave events go bottom-up) and cancels.
+        if (suppressedRef.current === 0) {
+          arm();
+        }
+      },
+    }),
+    [arm, cancel],
+  );
+
+  // A nested tooltip unmounting mid-hover (e.g. its row disappears) never
+  // fires mouseleave, so give the suppression back here instead.
+  useEffect(
+    () => () => {
+      if (holdRef.current) {
+        holdRef.current = false;
+        parent?.release();
+      }
+    },
+    [parent],
+  );
 
   // Measure the rendered tooltip, then place it and clamp to the viewport.
   useLayoutEffect(() => {
@@ -97,12 +150,24 @@ export function Tooltip({
   return (
     <span
       ref={anchorRef}
-      onMouseEnter={arm}
-      onMouseLeave={cancel}
+      onMouseEnter={() => {
+        if (parent && !holdRef.current) {
+          holdRef.current = true;
+          parent.suppress();
+        }
+        arm();
+      }}
+      onMouseLeave={() => {
+        if (parent && holdRef.current) {
+          holdRef.current = false;
+          parent.release();
+        }
+        cancel();
+      }}
       onMouseDownCapture={cancel}
       className={className ? `inline-flex ${className}` : "inline-flex"}
     >
-      {children}
+      <TooltipNestingContext.Provider value={nesting}>{children}</TooltipNestingContext.Provider>
       {label &&
         anchor &&
         createPortal(

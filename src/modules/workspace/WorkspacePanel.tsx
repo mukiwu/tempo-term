@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useTabsStore, type Tab, type TabKind } from "@/stores/tabsStore";
 import { Tooltip } from "@/components/Tooltip";
+import { useIsTruncated } from "@/components/useIsTruncated";
 import { ContextMenu } from "@/components/ContextMenu";
 import { tabContextMenuItems } from "@/components/tabContextMenuItems";
 import { useTabCloseRequest } from "@/components/useTabCloseRequest";
@@ -217,12 +218,15 @@ function SessionRow({
 }) {
   const label = agentLabel(session.agent);
   const title = sessionTitle(session, titles);
+  const [titleRef, truncated] = useIsTruncated(title);
   return (
     <span className="flex items-center gap-1.5">
       {showStatus && <StatusBadge status={session.status} />}
       {label && <span className="shrink-0 text-[11px] text-fg-subtle">{label}</span>}
-      <Tooltip label={title} className="min-w-0 flex-1">
-        <span className="min-w-0 flex-1 truncate text-[11px] text-fg-muted">{title}</span>
+      <Tooltip label={truncated && title} className="min-w-0 flex-1">
+        <span ref={titleRef} className="min-w-0 flex-1 truncate text-[11px] text-fg-muted">
+          {title}
+        </span>
       </Tooltip>
     </span>
   );
@@ -269,6 +273,9 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
   const pr = cwd ? prs[cwd] : undefined;
   const Icon = tabIcon(tab.kind);
   const label = agentLabel(primary?.agent);
+  // The rename input replaces the title span while editing, which detaches the
+  // ref and turns the flag (and so the card tooltip) off on its own.
+  const [titleRef, titleTruncated] = useIsTruncated(title);
 
   function startRename() {
     setDraft(title);
@@ -293,84 +300,89 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
   }, [editing]);
 
   return (
-    <button
-      type="button"
-      onClick={() => setActive(tab.id)}
-      onContextMenu={(event) => {
-        // Right-clicks on the rename input skip the card menu and bubble to
-        // the window-level InputContextMenu, like every other text field.
-        if (event.target instanceof HTMLInputElement) return;
-        event.preventDefault();
-        setMenu({ x: event.clientX, y: event.clientY });
-      }}
-      className={`flex w-full items-stretch gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
-        active
-          ? "border-accent bg-accent/10 text-fg"
-          : "border-border bg-bg-inset text-fg-muted hover:bg-bg-elevated"
-      }`}
-    >
-      <span className="flex shrink-0 flex-col items-center justify-start gap-1">
-        <Icon size={14} className="text-fg-subtle" />
-        <span className="text-[10px] font-medium leading-none text-fg-subtle">{index}</span>
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          {editing ? (
-            <input
-              ref={inputRef}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onBlur={commitRename}
-              onClick={(event) => event.stopPropagation()}
-              onPointerDown={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") commitRename();
-                if (event.key === "Escape") setEditing(false);
-              }}
-              className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
-            />
-          ) : (
-            <Tooltip label={title} className="min-w-0 flex-1">
-              <span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{title}</span>
-            </Tooltip>
+    // The whole card reveals the full title on hover, but only while the title
+    // is actually truncated. Tooltips inside the card (PR badge, session rows)
+    // suppress this one while hovered, so they never stack.
+    <Tooltip label={titleTruncated && title} className="w-full">
+      <button
+        type="button"
+        onClick={() => setActive(tab.id)}
+        onContextMenu={(event) => {
+          // Right-clicks on the rename input skip the card menu and bubble to
+          // the window-level InputContextMenu, like every other text field.
+          if (event.target instanceof HTMLInputElement) return;
+          event.preventDefault();
+          setMenu({ x: event.clientX, y: event.clientY });
+        }}
+        className={`flex w-full items-stretch gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+          active
+            ? "border-accent bg-accent/10 text-fg"
+            : "border-border bg-bg-inset text-fg-muted hover:bg-bg-elevated"
+        }`}
+      >
+        <span className="flex shrink-0 flex-col items-center justify-start gap-1">
+          <Icon size={14} className="text-fg-subtle" />
+          <span className="text-[10px] font-medium leading-none text-fg-subtle">{index}</span>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            {editing ? (
+              <input
+                ref={inputRef}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onBlur={commitRename}
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commitRename();
+                  if (event.key === "Escape") setEditing(false);
+                }}
+                className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
+              />
+            ) : (
+              <span ref={titleRef} className="min-w-0 flex-1 truncate text-xs font-medium text-fg">
+                {title}
+              </span>
+            )}
+            {!multi && card.status && status && <StatusBadge status={status} />}
+            {!multi && card.status && status && label && (
+              <span className="shrink-0 text-[11px] text-fg-subtle">{label}</span>
+            )}
+          </span>
+          {multi && (
+            <span className="mt-1 block space-y-0.5">
+              {sessions.map((session) => (
+                <SessionRow
+                  key={session.leafId}
+                  session={session}
+                  titles={titles}
+                  showStatus={card.status}
+                />
+              ))}
+            </span>
           )}
-          {!multi && card.status && status && <StatusBadge status={status} />}
-          {!multi && card.status && status && label && (
-            <span className="shrink-0 text-[11px] text-fg-subtle">{label}</span>
+          <BranchBlock info={info} cwd={cwd} showBranch={card.branch} showCwd={card.cwd} />
+          {card.pr && pr && (
+            <span className="mt-0.5 block">
+              <PrBadge pr={pr} />
+            </span>
           )}
         </span>
-        {multi && (
-          <span className="mt-1 block space-y-0.5">
-            {sessions.map((session) => (
-              <SessionRow
-                key={session.leafId}
-                session={session}
-                titles={titles}
-                showStatus={card.status}
-              />
-            ))}
-          </span>
+        {menu && (
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={tabContextMenuItems(t, {
+              onRename: startRename,
+              onClose: requestClose,
+            })}
+          />
         )}
-        <BranchBlock info={info} cwd={cwd} showBranch={card.branch} showCwd={card.cwd} />
-        {card.pr && pr && (
-          <span className="mt-0.5 block">
-            <PrBadge pr={pr} />
-          </span>
-        )}
-      </span>
-      {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          items={tabContextMenuItems(t, {
-            onRename: startRename,
-            onClose: requestClose,
-          })}
-        />
-      )}
-      {confirmCloseDialog}
-    </button>
+        {confirmCloseDialog}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -397,6 +409,7 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
   // ⌘1-9. O(1) lookup per card (vs an O(n) indexOf), memoized on the slice so a
   // rename keystroke or status update doesn't rebuild the map.
   const tabNumberById = useMemo(() => new Map(allTabs.map((tab, i) => [tab.id, i + 1])), [allTabs]);
+  const [nameRef, nameTruncated] = useIsTruncated(name);
 
   // Under an active filter a group with no matching cards adds only noise.
   if (filter !== "all" && tabs.length === 0) {
@@ -433,8 +446,9 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
             className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 text-xs text-fg outline-none"
           />
         ) : (
-          <Tooltip label={name} className="min-w-0 flex-1">
+          <Tooltip label={nameTruncated && name} className="min-w-0 flex-1">
             <button
+              ref={nameRef}
               type="button"
               onClick={() => {
                 setActiveSpace(id);

@@ -75,4 +75,67 @@ describe("Tooltip", () => {
     act(() => vi.advanceTimersByTime(1000));
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
+
+  it("suppresses an ancestor tooltip while a nested one is hovered", () => {
+    const { container } = render(
+      <Tooltip label="card">
+        <div>
+          <Tooltip label="badge">
+            <button type="button">x</button>
+          </Tooltip>
+        </div>
+      </Tooltip>,
+    );
+    const outer = container.firstElementChild!;
+    const inner = screen.getByRole("button").parentElement!;
+
+    fireEvent.mouseEnter(outer);
+    act(() => vi.advanceTimersByTime(300));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("card");
+
+    // Entering the nested tooltip hides the ancestor's immediately, and only
+    // the nested label shows after the delay.
+    fireEvent.mouseEnter(inner);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(300));
+    const tips = screen.getAllByRole("tooltip");
+    expect(tips).toHaveLength(1);
+    expect(tips[0]).toHaveTextContent("badge");
+
+    // Leaving the nested one (pointer still over the ancestor — relatedTarget
+    // points inside it, so no leave fires on the ancestor) brings the
+    // ancestor's tooltip back after its delay.
+    fireEvent.mouseLeave(inner, { relatedTarget: outer });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(300));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("card");
+
+    // Leaving the ancestor too cancels everything.
+    fireEvent.mouseLeave(outer);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("releases the suppression when the nested tooltip unmounts mid-hover", () => {
+    const { container, rerender } = render(
+      <Tooltip label="card">
+        <div>
+          <Tooltip label="badge">
+            <button type="button">x</button>
+          </Tooltip>
+        </div>
+      </Tooltip>,
+    );
+    const outer = container.firstElementChild!;
+
+    fireEvent.mouseEnter(outer);
+    fireEvent.mouseEnter(screen.getByRole("button").parentElement!);
+    rerender(
+      <Tooltip label="card">
+        <div />
+      </Tooltip>,
+    );
+    // The ancestor is no longer suppressed, so it can show again.
+    act(() => vi.advanceTimersByTime(300));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("card");
+  });
 });
