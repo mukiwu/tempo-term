@@ -97,6 +97,22 @@ describe("WorkspacePanel", () => {
     expect(toggle.querySelectorAll("svg").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("keeps the active space and tab untouched when another group is toggled", () => {
+    useTabsStore.setState({
+      ...useTabsStore.getState(),
+      spaces: [
+        { id: "s1", name: "Salon" },
+        { id: "s2", name: "Studio" },
+      ],
+      activeSpaceId: "s2",
+      activeId: "t1",
+    });
+    render(<WorkspacePanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Salon/ }));
+    expect(useTabsStore.getState().activeSpaceId).toBe("s2");
+    expect(useTabsStore.getState().activeId).toBe("t1");
+  });
+
   it("shows a Claude status badge on a card whose cwd has a running session", () => {
     useSessionStatusStore.setState({ statuses: { p1: "active" } });
     render(<WorkspacePanel />);

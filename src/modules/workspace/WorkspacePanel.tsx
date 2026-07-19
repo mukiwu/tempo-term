@@ -453,10 +453,9 @@ function SpaceGroup({ id, name, filter }: { id: string; name: string; filter: St
             <button
               type="button"
               aria-expanded={!collapsed}
-              onClick={() => {
-                setActiveSpace(id);
-                setCollapsed((c) => !c);
-              }}
+              // Collapse/expand only — activating the space here would yank
+              // the main view over to this group's tab.
+              onClick={() => setCollapsed((c) => !c)}
               className="flex min-w-0 flex-1 items-center gap-1 text-left"
             >
               {collapsed ? (
