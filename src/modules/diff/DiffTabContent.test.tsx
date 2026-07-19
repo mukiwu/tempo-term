@@ -28,6 +28,7 @@ import { pasteToTerminal } from "@/modules/terminal/lib/terminalBus";
 import { useDiffCommentStore } from "./lib/diffCommentStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { leaf } from "@/modules/terminal/lib/terminalLayout";
 
 describe("DiffTabContent", () => {
@@ -36,6 +37,8 @@ describe("DiffTabContent", () => {
     vi.mocked(gitResolveRepo).mockResolvedValue("/repo");
     useDiffCommentStore.setState({ comments: [] });
     useSessionStatusStore.setState({ statuses: {}, agents: {}, sessionIds: {} });
+    // Most tests are not about the one-time hint; dedicated cases flip it back.
+    useSettingsStore.setState({ diffCommentHintSeen: true });
   });
 
   it("compares index vs working tree for an unstaged diff", async () => {
@@ -158,6 +161,29 @@ describe("DiffTabContent", () => {
     expect(useDiffCommentStore.getState().comments[0].sent).toBe(true);
     // The picked pane's tab becomes active so the user can review and submit.
     expect(useTabsStore.getState().activeId).toBe("t1");
+  });
+
+  it("shows the one-time comment hint on first open and dismisses it for good", async () => {
+    vi.mocked(gitFileAtRev).mockResolvedValue("x\n");
+    vi.mocked(fsReadFile).mockResolvedValue("y\n");
+    useSettingsStore.setState({ diffCommentHintSeen: false });
+
+    render(<DiffTabContent path="/repo/a.ts" staged={false} />);
+
+    expect(screen.getByText("diffCommentHintTitle")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "diffCommentHintDismiss" }));
+    expect(screen.queryByText("diffCommentHintTitle")).not.toBeInTheDocument();
+    expect(useSettingsStore.getState().diffCommentHintSeen).toBe(true);
+  });
+
+  it("keeps the hint hidden once it was seen", async () => {
+    vi.mocked(gitFileAtRev).mockResolvedValue("x\n");
+    vi.mocked(fsReadFile).mockResolvedValue("y\n");
+
+    render(<DiffTabContent path="/repo/a.ts" staged={false} />);
+
+    await waitFor(() => expect(screen.getByText("diffUnstaged")).toBeInTheDocument());
+    expect(screen.queryByText("diffCommentHintTitle")).not.toBeInTheDocument();
   });
 
   it("shows a disabled hint when no agent session is running", async () => {

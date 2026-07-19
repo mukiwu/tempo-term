@@ -59,6 +59,8 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
   // Shares the editor's word-wrap setting so both surfaces toggle together.
   const wordWrap = useSettingsStore((s) => s.wordWrap);
   const toggleWordWrap = useSettingsStore((s) => s.toggleWordWrap);
+  const hintSeen = useSettingsStore((s) => s.diffCommentHintSeen);
+  const setHintSeen = useSettingsStore((s) => s.setDiffCommentHintSeen);
   const [docs, setDocs] = useState<DiffDocs | null>(null);
   const [error, setError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -130,7 +132,10 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     return {
       // Clicking another line moves the draft there, carrying its text —
       // never silently saving and never discarding what was typed.
-      onAdd: (line) => setDraft({ side, line }),
+      onAdd: (line) => {
+        useSettingsStore.getState().setDiffCommentHintSeen(true);
+        setDraft({ side, line });
+      },
       onSave: (line, body) => {
         const view = side === "a" ? mergeViewRef.current?.a : mergeViewRef.current?.b;
         const clamped = view ? Math.max(1, Math.min(line, view.state.doc.lines)) : line;
@@ -322,7 +327,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
   const name = path.split(/[\\/]/).pop() ?? path;
 
   return (
-    <div className="flex h-full flex-col bg-bg">
+    <div className="relative flex h-full flex-col bg-bg">
       <PaneHeader
         left={
         /* The controls sit at the end of the left half — the visual middle of
@@ -378,7 +383,10 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
               type="button"
               aria-label={t("diffSendToAgent")}
               disabled={unsent.length === 0}
-              onClick={(event) => setSendMenu({ x: event.clientX, y: event.clientY })}
+              onClick={(event) => {
+                setHintSeen(true);
+                setSendMenu({ x: event.clientX, y: event.clientY });
+              }}
               className="flex items-center gap-1 rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
             >
               <Send size={14} />
@@ -397,6 +405,27 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
         <p className="px-3 py-2 text-xs text-danger">{t("diffLoadError")}</p>
       ) : (
         <div ref={containerRef} className="diff-merge-view min-h-0 flex-1 overflow-hidden" />
+      )}
+      {!hintSeen && !error && (
+        // One-time pointer at the review-comment loop, anchored under the
+        // send button (the last control before the pane's midline) with a
+        // notch, like the worktrees pane hint. Any use of the feature — the
+        // "+" gutter or the send button — also dismisses it.
+        <div className="absolute right-1/2 top-8 z-20 w-72 translate-x-8 rounded-lg border border-border-strong bg-bg-elevated p-3 shadow-xl">
+          <span
+            aria-hidden
+            className="absolute -top-[5px] right-[24px] h-2 w-2 rotate-45 border-l border-t border-border-strong bg-bg-elevated"
+          />
+          <p className="text-sm font-semibold text-fg">{t("diffCommentHintTitle")}</p>
+          <p className="mt-1 text-sm leading-relaxed text-fg-muted">{t("diffCommentHintBody")}</p>
+          <button
+            type="button"
+            onClick={() => setHintSeen(true)}
+            className="mt-2 rounded py-1 text-sm text-accent transition-colors hover:text-fg"
+          >
+            {t("diffCommentHintDismiss")}
+          </button>
+        </div>
       )}
       {sendMenu && (
         <ContextMenu

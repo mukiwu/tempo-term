@@ -85,6 +85,9 @@ interface SettingsState {
    */
   worktreeHintSeen: boolean;
   setWorktreeHintSeen: (value: boolean) => void;
+  /** The diff review-comment hint was shown once and dismissed. */
+  diffCommentHintSeen: boolean;
+  setDiffCommentHintSeen: (value: boolean) => void;
   setOnboardingCompleted: (value: boolean) => void;
   setShowAllPorts: (value: boolean) => void;
   setLanguage: (language: SupportedLanguage) => void;
@@ -154,6 +157,8 @@ export const useSettingsStore = create<SettingsState>()(
       onboardingCompleted: false,
       worktreeHintSeen: false,
       setWorktreeHintSeen: (value) => set({ worktreeHintSeen: value }),
+      diffCommentHintSeen: false,
+      setDiffCommentHintSeen: (value) => set({ diffCommentHintSeen: value }),
       setOnboardingCompleted: (value) => set({ onboardingCompleted: value }),
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
