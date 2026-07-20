@@ -72,7 +72,9 @@ describe("WorkspaceSettingsSection", () => {
   it("toggles automatic AI conversation recovery independently", () => {
     render(<WorkspaceSettingsSection />);
     fireEvent.click(
-      screen.getByLabelText("Automatically resume AI conversations on relaunch"),
+      screen.getByLabelText(
+        "Automatically resume AI conversations whenever tempo-term starts",
+      ),
     );
     expect(useSettingsStore.getState().autoResumeAiSessions).toBe(false);
     expect(useSettingsStore.getState().claudeStatusTracking).toBe(true);
@@ -92,7 +94,9 @@ describe("WorkspaceSettingsSection", () => {
     useSettingsStore.setState({ claudeStatusTracking: false });
     render(<WorkspaceSettingsSection />);
     fireEvent.click(
-      screen.getByLabelText("Automatically resume AI conversations on relaunch"),
+      screen.getByLabelText(
+        "Automatically resume AI conversations whenever tempo-term starts",
+      ),
     );
 
     expect(hookMocks.uninstallStatusHook).toHaveBeenCalledOnce();

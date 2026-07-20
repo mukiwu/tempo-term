@@ -149,7 +149,7 @@ export const useSettingsStore = create<SettingsState>()(
       claudeFlags: "",
       codexFlags: "",
       claudeStatusTracking: true,
-      autoResumeAiSessions: true,
+      autoResumeAiSessions: false,
       claudeNotifications: true,
       aiInlineCompletion: false,
       aiTerminalContext: true,

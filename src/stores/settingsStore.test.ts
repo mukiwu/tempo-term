@@ -127,12 +127,12 @@ describe("settingsStore", () => {
     expect(persisted).toContain("--model opus");
   });
 
-  it("defaults AI conversation recovery on and persists the toggle", () => {
-    expect(useSettingsStore.getState().autoResumeAiSessions).toBe(true);
-    useSettingsStore.getState().setAutoResumeAiSessions(false);
+  it("defaults AI conversation recovery off and persists an opt-in", () => {
     expect(useSettingsStore.getState().autoResumeAiSessions).toBe(false);
+    useSettingsStore.getState().setAutoResumeAiSessions(true);
+    expect(useSettingsStore.getState().autoResumeAiSessions).toBe(true);
     expect(localStorage.getItem("tempoterm-settings")).toContain(
-      '"autoResumeAiSessions":false',
+      '"autoResumeAiSessions":true',
     );
   });
 
