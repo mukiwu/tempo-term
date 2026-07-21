@@ -29,7 +29,10 @@ ignore = "0.4"
 grep-regex = "0.1"
 grep-searcher = "0.1"
 grep-matcher = "0.1"
-git2 = "0.19"
+# default-features = false drops the ssh/https transports (libssh2-sys +
+# openssl-sys), which dynamically linked the build machine's Homebrew OpenSSL
+# and crashed at launch on Macs without it (#262). All git2 usage is local-only.
+git2 = { version = "0.19", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "rt", "io-util", "net", "time"] }
 tauri-plugin-dialog = "2.7.1"
