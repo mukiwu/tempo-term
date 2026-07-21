@@ -62,5 +62,10 @@
     "quote": "引用",
     "code": "程式碼區塊",
     "divider": "分隔線"
+  },
+  "quickAccess": {
+    "title": "快捷命令",
+    "search": "搜尋命令與 prompt…",
+    "empty": "筆記裡還沒有程式碼區塊"
   }
 }

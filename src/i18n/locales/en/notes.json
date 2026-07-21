@@ -62,5 +62,10 @@
     "quote": "Quote",
     "code": "Code block",
     "divider": "Divider"
+  },
+  "quickAccess": {
+    "title": "Quick commands",
+    "search": "Search commands and prompts…",
+    "empty": "No code blocks in your notes yet"
   }
 }

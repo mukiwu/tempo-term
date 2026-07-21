@@ -7,6 +7,7 @@ import { formatBytes, formatPercent, formatRate, ramPercent } from "@/modules/sy
 import { Tooltip } from "@/components/Tooltip";
 import { PortsIndicator } from "@/modules/ports/PortsIndicator";
 import { WorktreesIndicator } from "@/modules/worktrees/WorktreesIndicator";
+import { NotesQuickAccess } from "@/modules/notes/NotesQuickAccess";
 
 export function StatusBar() {
   const { t } = useTranslation();
@@ -57,6 +58,7 @@ export function StatusBar() {
       )}
 
       <div className="ml-auto flex items-center gap-1">
+        <NotesQuickAccess />
         <WorktreesIndicator />
         <PortsIndicator />
         {showIndicator && (
