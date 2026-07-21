@@ -20,10 +20,12 @@ pub struct Session {
     pub shell_name: String,
 }
 
-/// Tauri-managed registry of every open session.
+/// Tauri-managed registry of every open session. The map is behind an `Arc`
+/// so each session's waiter thread can prune its own entry on child exit
+/// (see `spawn_with_sinks`).
 #[derive(Default)]
 pub struct PtyState {
-    sessions: RwLock<HashMap<u32, Arc<Session>>>,
+    sessions: Arc<RwLock<HashMap<u32, Arc<Session>>>>,
     next_id: AtomicU32,
 }
 
@@ -142,7 +144,9 @@ pub fn spawn_with_sinks(
         .map_err(|e| e.to_string())?;
 
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
-    // Drop the slave so EOF propagates to the reader once the child exits.
+    // Drop the slave so EOF propagates to the reader once the child exits
+    // (unix; on Windows EOF needs the pseudo console closed — see the waiter
+    // thread below).
     drop(pair.slave);
 
     let killer = child.clone_killer();
@@ -157,6 +161,23 @@ pub fn spawn_with_sinks(
     });
 
     state.sessions.write().unwrap().insert(id, session);
+
+    // Waiter thread: detect child exit directly instead of inferring it from
+    // reader EOF. On Windows ConPTY the reader NEVER sees EOF while the pseudo
+    // console is open (microsoft/terminal#1810), and the master lives in the
+    // registry — so waiting for EOF before `child.wait()` deadlocks there and
+    // a pane whose shell ran `exit` hangs forever. Waiting first and pruning
+    // the session is what closes the pseudo console and unblocks the reader;
+    // on unix the reader gets EOF on its own and this just prunes early. The
+    // exit code crosses to the flusher thread, which still reports `on_exit`
+    // only after the remaining output has been flushed.
+    let sessions = Arc::clone(&state.sessions);
+    let (exit_code_tx, exit_code_rx) = std::sync::mpsc::channel::<i32>();
+    std::thread::spawn(move || {
+        let code = child.wait().map(|s| s.exit_code() as i32).unwrap_or(-1);
+        sessions.write().unwrap().remove(&id);
+        let _ = exit_code_tx.send(code);
+    });
 
     // Coalesce PTY output before it crosses the IPC boundary. The old design sent
     // one Tauri message per 8 KB read; under a heavy stream (e.g. several Claude
@@ -224,11 +245,12 @@ pub fn spawn_with_sinks(
 
         // Drop the receiver BEFORE joining. If the reader is blocked on a full
         // channel `tx.send`, closing `rx` makes that send return an error so the
-        // reader loop exits; otherwise `join()` — and thus `child.wait()` /
-        // `on_exit` — would deadlock and leak both threads.
+        // reader loop exits; otherwise `join()` — and thus `on_exit` — would
+        // deadlock and leak both threads.
         drop(rx);
         let _ = reader_thread.join();
-        let code = child.wait().map(|s| s.exit_code() as i32).unwrap_or(-1);
+        // The waiter thread owns `child.wait()`; recv fails only if it died.
+        let code = exit_code_rx.recv().unwrap_or(-1);
         on_exit(code);
     });
 
@@ -507,6 +529,39 @@ mod tests {
         let id = spawn_with_sinks(&state, state.alloc_id(), 80, 24, cmd, "echo".to_string(), |_| true, |_| {})
             .expect("spawn should succeed");
         assert!(state.get(id).is_ok());
+    }
+
+    #[test]
+    fn removes_the_session_once_the_child_exits() {
+        // The waiter thread must prune the registry before the exit event is
+        // delivered: dropping the session (and its master) is what closes the
+        // pseudo console on Windows so the blocked reader can see EOF at all
+        // (microsoft/terminal#1810) — a session left in the map after exit
+        // means Windows panes hang forever on `exit`.
+        let state = PtyState::new();
+        let cmd = CommandBuilder::new("/bin/echo");
+        let (exit_tx, exit_rx) = mpsc::channel::<i32>();
+        let id = spawn_with_sinks(
+            &state,
+            state.alloc_id(),
+            80,
+            24,
+            cmd,
+            "echo".to_string(),
+            |_| true,
+            move |code| {
+                let _ = exit_tx.send(code);
+            },
+        )
+        .expect("spawn should succeed");
+
+        exit_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("command should exit within timeout");
+        assert!(
+            state.get(id).is_err(),
+            "session should be pruned from the registry before the exit event fires"
+        );
     }
 
     #[cfg(target_os = "macos")]
