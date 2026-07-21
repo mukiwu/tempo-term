@@ -125,6 +125,14 @@ function TabItem({ id }: { id: string }) {
       aria-selected={active}
       onClick={() => setActive(tab.id)}
       onDoubleClick={startRename}
+      onAuxClick={(e) => {
+        // Middle-click closes the tab (browser/editor convention). Routed
+        // through requestClose so a dirty editor still gets its confirm dialog.
+        if (e.button === 1) {
+          e.preventDefault();
+          requestClose();
+        }
+      }}
       onContextMenu={(e) => {
         // Right-clicks on the rename input skip the tab menu and bubble to the
         // window-level InputContextMenu, like every other text field.

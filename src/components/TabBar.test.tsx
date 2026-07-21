@@ -78,6 +78,23 @@ describe("TabBar close button tooltip", () => {
   });
 });
 
+describe("TabBar middle-click close", () => {
+  const auxClick = (el: Element, button: number) =>
+    fireEvent(el, new MouseEvent("auxclick", { bubbles: true, button }));
+
+  it("closes the tab on middle-click (no unsaved changes)", () => {
+    render(<TabBar />);
+    auxClick(screen.getByRole("tab"), 1);
+    expect(useTabsStore.getState().tabs).toHaveLength(0);
+  });
+
+  it("leaves the tab alone on other aux buttons", () => {
+    render(<TabBar />);
+    auxClick(screen.getByRole("tab"), 2);
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+  });
+});
+
 describe("TabBar tab context menu", () => {
   it("opens a context menu with a rename item on right-click", () => {
     render(<TabBar />);
