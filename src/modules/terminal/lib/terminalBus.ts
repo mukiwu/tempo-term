@@ -164,32 +164,56 @@ function resolveActiveTerminal(): { tabId: string; leafId: string } | null {
 }
 
 /**
+ * Resolve like `resolveActiveTerminal`, focus the resolved tab, and open a new
+ * terminal tab when none exists anywhere. Returns the target leaf id, or null
+ * when even the freshly created tab is not a terminal.
+ */
+function focusOrCreateTerminal(): string | null {
+  const resolved = resolveActiveTerminal();
+  if (resolved) {
+    useTabsStore.getState().setActive(resolved.tabId);
+    return resolved.leafId;
+  }
+  const root = useWorkspaceStore.getState().rootPath ?? undefined;
+  useTabsStore.getState().newTerminalTab(root);
+  const created = useTabsStore.getState().tabs.find(
+    (t) => t.id === useTabsStore.getState().activeId,
+  );
+  if (!created || created.kind !== "terminal") {
+    return null;
+  }
+  return created.activeLeafId;
+}
+
+/**
  * Run a command in a terminal: reuse the active terminal tab if there is one,
  * otherwise the first terminal in the active space, otherwise open a new one.
  * The command is queued if the target pane's shell is still starting.
  */
 export function runCommandInTerminal(command: string): void {
-  const resolved = resolveActiveTerminal();
-  let leafId: string;
-  if (resolved) {
-    leafId = resolved.leafId;
-    useTabsStore.getState().setActive(resolved.tabId);
-  } else {
-    const root = useWorkspaceStore.getState().rootPath ?? undefined;
-    useTabsStore.getState().newTerminalTab(root);
-    const created = useTabsStore.getState().tabs.find(
-      (t) => t.id === useTabsStore.getState().activeId,
-    );
-    if (!created || created.kind !== "terminal") {
-      return;
-    }
-    leafId = created.activeLeafId;
+  const leafId = focusOrCreateTerminal();
+  if (!leafId) {
+    return;
   }
-
   // CR (`\r`), not LF — the byte Enter sends. Windows' PSReadLine treats LF as
   // a `>>` continuation (never submits); CR submits on every platform. Strip any
   // trailing CR/LF first so a caller-supplied newline can't yield `\n\r`.
   writeToTerminal(leafId, `${command.replace(/[\r\n]+$/, "")}\r`);
+}
+
+/**
+ * Paste text into a terminal for the user to edit and submit themselves,
+ * resolving the target like `runCommandInTerminal`. Goes through the pane's
+ * xterm paste (bracketed paste), so a multi-line prompt lands in an agent's
+ * input box instead of being submitted line by line. Trailing newlines are
+ * stripped so a shell never auto-executes the pasted text.
+ */
+export function pasteIntoActiveTerminal(text: string): void {
+  const leafId = focusOrCreateTerminal();
+  if (!leafId) {
+    return;
+  }
+  pasteToTerminal(leafId, text.replace(/[\r\n]+$/, ""));
 }
 
 /** Read the active terminal's scrollback as plain text, or null if there is

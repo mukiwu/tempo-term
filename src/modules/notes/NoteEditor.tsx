@@ -18,10 +18,13 @@ import Link from "@tiptap/extension-link";
 import { Markdown } from "tiptap-markdown";
 import { common, createLowlight } from "lowlight";
 import { exitCode } from "@tiptap/pm/commands";
-import { Check, Copy, SquareTerminal } from "lucide-react";
+import { Check, ClipboardPaste, Copy, SquareTerminal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { runCommandInTerminal } from "@/modules/terminal/lib/terminalBus";
+import {
+  pasteIntoActiveTerminal,
+  runCommandInTerminal,
+} from "@/modules/terminal/lib/terminalBus";
 import { isWebUrl } from "@/lib/url";
 import { createSlashCommand } from "./slashCommand";
 import { registerNoteInserter, unregisterNoteInserter } from "./lib/noteBus";
@@ -98,6 +101,16 @@ function CodeBlockView({ node, updateAttributes }: NodeViewProps) {
               className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
             >
               {copied ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+            </button>
+          </Tooltip>
+          <Tooltip label={t("paste")}>
+            <button
+              type="button"
+              aria-label={t("paste")}
+              onClick={() => pasteIntoActiveTerminal(node.textContent)}
+              className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-accent"
+            >
+              <ClipboardPaste size={14} />
             </button>
           </Tooltip>
           {runnable && (

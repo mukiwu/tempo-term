@@ -36,6 +36,7 @@
   "preview": "Preview",
   "copy": "Copy",
   "copied": "Copied",
+  "paste": "Paste into terminal",
   "run": "Run in terminal",
   "language": "Language",
   "exitHint": "Cmd + Enter to exit",

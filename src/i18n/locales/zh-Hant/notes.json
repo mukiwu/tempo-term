@@ -36,6 +36,7 @@
   "preview": "預覽",
   "copy": "複製",
   "copied": "已複製",
+  "paste": "貼到終端機",
   "run": "在終端機執行",
   "language": "語言",
   "exitHint": "Cmd + Enter 跳脫",

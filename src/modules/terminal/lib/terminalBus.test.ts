@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   focusedTerminalOps,
+  pasteIntoActiveTerminal,
   readTerminalBuffer,
+  registerTerminal,
   registerTerminalOps,
   registerTerminalReader,
+  unregisterTerminal,
   unregisterTerminalOps,
   unregisterTerminalReader,
   type TerminalOps,
@@ -92,5 +95,66 @@ describe("terminal ops registry", () => {
     });
     expect(focusedTerminalOps()).toBeNull();
     unregisterTerminalOps("leaf-1");
+  });
+});
+
+describe("pasteIntoActiveTerminal", () => {
+  beforeEach(() => {
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs: [
+        {
+          id: "a",
+          spaceId: "s1",
+          title: "a",
+          kind: "terminal",
+          paneTree: leaf("leaf-1", { kind: "terminal" }),
+          activeLeafId: "leaf-1",
+          paneOrder: ["leaf-1"],
+        },
+      ],
+      activeId: "a",
+    });
+  });
+
+  it("pastes through the pane's xterm paste so bracketed paste applies", () => {
+    const ops = makeOps();
+    registerTerminalOps("leaf-1", ops);
+    pasteIntoActiveTerminal("echo hi");
+    expect(ops.paste).toHaveBeenCalledWith("echo hi");
+    unregisterTerminalOps("leaf-1");
+  });
+
+  it("strips trailing newlines so a shell never auto-executes the paste", () => {
+    const ops = makeOps();
+    registerTerminalOps("leaf-1", ops);
+    pasteIntoActiveTerminal("echo hi\n");
+    expect(ops.paste).toHaveBeenCalledWith("echo hi");
+    unregisterTerminalOps("leaf-1");
+  });
+
+  it("keeps interior newlines of a multi-line prompt", () => {
+    const ops = makeOps();
+    registerTerminalOps("leaf-1", ops);
+    pasteIntoActiveTerminal("line one\nline two\r\n");
+    expect(ops.paste).toHaveBeenCalledWith("line one\nline two");
+    unregisterTerminalOps("leaf-1");
+  });
+
+  it("falls back to a raw write when the pane has no ops registered", () => {
+    const write = vi.fn();
+    registerTerminal("leaf-1", write);
+    pasteIntoActiveTerminal("echo hi");
+    expect(write).toHaveBeenCalledWith("echo hi");
+    unregisterTerminal("leaf-1");
+  });
+
+  it("opens a new terminal tab when none exists", () => {
+    useTabsStore.setState({ tabs: [], activeId: null });
+    pasteIntoActiveTerminal("echo hi");
+    const state = useTabsStore.getState();
+    expect(state.tabs).toHaveLength(1);
+    expect(state.tabs[0].kind).toBe("terminal");
   });
 });
