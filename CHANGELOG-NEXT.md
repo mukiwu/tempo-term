@@ -6,6 +6,8 @@
 
 ### fix
 
+- 修正沒有安裝 Homebrew OpenSSL 的 Mac 打不開 app 的問題：內建 git 功能改為不連結外部的 OpenSSL，啟動不再依賴 `/opt/homebrew` 底下的檔案 (#265)
+
 ## English
 
 ### feat
@@ -13,3 +15,5 @@
 - New opt-in "AI conversation recovery" setting: when enabled, every tempo-term start resumes each pane's saved Claude Code and Codex conversation in its original pane using its exact session ID; background tabs holding resumable conversations mount eagerly so they recover too, SSH panes are excluded, and both agents' status hooks stay installed while the setting is on to remember session IDs; resume may fail if the original project directory no longer exists (#260)
 
 ### fix
+
+- Fix the app failing to launch on Macs without Homebrew's OpenSSL: the built-in git integration no longer links external OpenSSL, so startup no longer depends on anything under `/opt/homebrew` (#265)
