@@ -9,6 +9,7 @@
 ### fix
 
 - 修正沒有安裝 Homebrew OpenSSL 的 Mac 打不開 app 的問題：內建 git 功能改為不連結外部的 OpenSSL，啟動不再依賴 `/opt/homebrew` 底下的檔案 (#265)
+- 修正 Windows 上在終端機輸入 exit 後分頁卡住無法關閉的問題：改為直接偵測 shell 行程結束並主動釋放 pseudo console，不再等待 ConPTY 不會送出的 EOF (#272)
 
 ## English
 
@@ -21,3 +22,4 @@
 ### fix
 
 - Fix the app failing to launch on Macs without Homebrew's OpenSSL: the built-in git integration no longer links external OpenSSL, so startup no longer depends on anything under `/opt/homebrew` (#265)
+- Fix panes hanging on Windows after typing exit in the terminal: shell exit is now detected directly and the pseudo console released proactively, instead of waiting for an EOF that ConPTY never delivers (#272)

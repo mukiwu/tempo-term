@@ -17,6 +17,7 @@ Apply while writing, not after. Each line links to the detailed rule.
 - [ ] **Resolving an executable on disk?** Windows binaries are `gh.exe`/`.cmd`/`.bat`, home is `USERPROFILE`, install dirs differ. [→](#2-executable-resolution-differs-on-windows)
 - [ ] **A subprocess with no timeout?** A hung `gh`/`git` blocks the caller thread forever; add a timeout. [→](#3-give-external-commands-a-timeout)
 - [ ] **Injecting a command into a pty?** Terminate with `\r`, not `\n`, or ConPTY leaves it on a `>>` continuation line. [→](#4-inject-pty-commands-with-cr-not-lf)
+- [ ] **Waiting on pty reader EOF to detect anything?** ConPTY never EOFs while the pseudo console is open; detect child exit with `child.wait()` and close the console to unblock the reader (catalog row #272).
 - [ ] **Building a path that bash will run?** Use forward slashes; never inject a bare `.sh`; quote Windows paths with double quotes. [→](#5-paths-forward-slashes-for-bash-double-quotes-for-shells)
 - [ ] **A `#[cfg(unix)]` API, a cfg-split command, or a new native crate?** It must compile **warning-free** on Windows — `windows-check.yml` runs `cargo check` with `-D warnings` per PR. Provide a Windows arm or cfg-gate cleanly, and `allow(dead_code)`/`allow(unused_variables)` the mac-only bits. [→](#6-unix-only-apis-and-native-crates-must-still-build-on-windows)
 - [ ] **Reaching into `/proc`, `lsof`, a unix socket, pty foreground?** No Windows backend exists; skip the feature there or return a clean `None`. [→](#7-no-windows-backend-skip-do-not-crash-or-spin)
@@ -40,6 +41,7 @@ Apply while writing, not after. Each line links to the detailed rule.
 | Updater "更新內容" dialog empty after a release | Windows CI `tauri-action` rewrites `latest.json` and wipes `notes` | Re-patch notes post-build from `CHANGELOG-NEXT.md` | #43 |
 | Diff-open lag only in the release build | Same console-flash spawn cost, per git subprocess | `CREATE_NO_WINDOW` (see row 1) | #82 |
 | Ctrl+N opens a blank unclosable window; shortcuts die app-wide | `WebviewWindowBuilder::build()` in a **sync** command deadlocks the WebView2 event loop (wry#583) | Window-creating commands must be `async` + `spawn_blocking` | #209 |
+| Pane hangs dead after `exit`; on_exit never fires | ConPTY's reader never sees EOF while the pseudo console is open (microsoft/terminal#1810), and the session registry kept the master alive — teardown sequenced behind reader EOF deadlocks | Detect exit via `child.wait()` in a waiter thread, then drop the master (closes the pseudo console) to unblock the reader; never gate teardown on reader EOF | #272 |
 
 ---
 
