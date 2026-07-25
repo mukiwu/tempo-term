@@ -78,7 +78,7 @@ import { applyTerminalPadding } from "./lib/terminalPadding";
 import { debounce } from "@/lib/debounce";
 import { dropOverlayClassName } from "@/components/EntryDropOverlay";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
-import { fsHomeDir, fsReadFile } from "@/modules/explorer/lib/fsBridge";
+import { fsHomeDir, fsIsFile } from "@/modules/explorer/lib/fsBridge";
 import { getDraggedEntry } from "@/modules/explorer/lib/dragEntry";
 import {
   STATUS_OSC_CODE,
@@ -731,8 +731,11 @@ export function TerminalView({
       }
       const abs = resolveFilePath(raw, resolvedCwd, await getHomeDir());
       try {
-        await fsReadFile(abs);
-        onOpenFileRef.current?.(abs);
+        // Metadata-only probe: don't read the whole file (the editor pane
+        // does that itself) just to know whether the click should open one.
+        if (await fsIsFile(abs)) {
+          onOpenFileRef.current?.(abs);
+        }
       } catch {
         // not a real file (e.g. a bare domain) — ignore the click
       }

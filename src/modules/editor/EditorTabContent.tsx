@@ -82,6 +82,11 @@ export function EditorTabContent({
   const [mode, setMode] = useState<EditorMode>("edit");
   const [confirmReload, setConfirmReload] = useState(false);
   const [externalChanged, setExternalChanged] = useState(false);
+  // Why the initial read failed (too large, unreadable, not a regular file).
+  // While set, the editor shows an error instead of an editable buffer: a
+  // fabricated empty baseline would look like a clean empty file, and saving
+  // it would truncate the real file on disk.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const selfWrite = useRef<{ path: string; at: number } | null>(null);
   const effectiveMode: EditorMode = isMarkdown ? mode : "edit";
 
@@ -91,14 +96,27 @@ export function EditorTabContent({
   const languageCompartment = useRef(new Compartment());
 
   useEffect(() => {
+    setLoadError(null);
     // Re-read from disk whenever the file (re)opens so external edits show up;
     // skip only when there are unsaved local edits, to avoid clobbering them.
     if (!shouldReloadFromDisk(useEditorStore.getState().buffers[path])) {
       return;
     }
+    let cancelled = false;
     fsReadFile(path)
-      .then((text) => setBaseline(path, text))
-      .catch(() => setBaseline(path, ""));
+      .then((text) => {
+        if (!cancelled) {
+          setBaseline(path, text);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setLoadError(String(err));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [path, setBaseline]);
 
   const extensions = useMemo(() => {
@@ -145,6 +163,12 @@ export function EditorTabContent({
   }, [path, effectiveMode]);
 
   async function save() {
+    // Never write a buffer that has no successfully loaded baseline: it would
+    // replace the real file with the placeholder (e.g. truncate a file that
+    // was too large to open).
+    if (!useEditorStore.getState().buffers[path]) {
+      return;
+    }
     const current = useEditorStore.getState().contentOf(path);
     // Mark our own write BEFORE the async write: the OS watcher event can arrive
     // before fsWriteFile resolves, so setting the marker afterwards would race and
@@ -241,6 +265,15 @@ export function EditorTabContent({
     // reloadFromDisk closes over `path` and stable setters; re-subscribe on path.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
+
+  if (loadError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-sm text-fg-subtle">
+        <span>{t("loadError")}</span>
+        <span className="max-w-full break-all text-xs">{loadError}</span>
+      </div>
+    );
+  }
 
   const editorPane = (
     <CodeMirror

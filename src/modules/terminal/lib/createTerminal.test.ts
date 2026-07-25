@@ -44,6 +44,23 @@ describe("createTerminal link handler", () => {
     expect(term.options.linkHandler?.allowNonHttpProtocols).toBe(true);
     term.dispose();
   });
+
+  it("shows the resolved target in the hover tooltip, not just the hint", () => {
+    const { term } = createTerminal({ linkHint: "Cmd-click to open" });
+    const event = new MouseEvent("mousemove", { clientX: 10, clientY: 20 });
+    const range = { start: { x: 1, y: 1 }, end: { x: 2, y: 1 } };
+
+    // OSC 8 display text can lie about its target, so the tooltip must show
+    // where the link really points.
+    term.options.linkHandler?.hover?.(event, "file:///Users/dev/notes.md", range);
+    const tooltip = document.querySelector(".terminal-link-tooltip");
+    expect(tooltip?.textContent).toBe("/Users/dev/notes.md (Cmd-click to open)");
+
+    term.options.linkHandler?.hover?.(event, "https://example.com/x", range);
+    expect(tooltip?.textContent).toBe("https://example.com/x (Cmd-click to open)");
+
+    term.dispose();
+  });
 });
 
 describe("createTerminal search", () => {

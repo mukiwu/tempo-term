@@ -205,6 +205,12 @@ textarea:focus-visible,
   z-index: 9999;
   display: none;
   pointer-events: none;
+  /* The text is an attacker-chosen link target: keep it inside a bounded box
+     and render it strictly left-to-right so bidi text can't reorder a path. */
+  max-width: min(600px, 80vw);
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
+  direction: ltr;
   font-size: 12px;
   line-height: 1rem;
   color: var(--color-fg);

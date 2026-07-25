@@ -25,7 +25,7 @@ vi.mock("@/modules/ssh/lib/sftp-bridge", () => ({
   sftpRename: (...a: unknown[]) => sftpRename(...a),
 }));
 
-import { canSearchRoot, fsCreateDir, fsCreateFile, fsDelete, fsReadDir, fsReadFile, fsRename, fsWriteFile } from "./fsBridge";
+import { canSearchRoot, fsCreateDir, fsCreateFile, fsDelete, fsIsFile, fsReadDir, fsReadFile, fsRename, fsWriteFile } from "./fsBridge";
 
 beforeEach(() => {
   invoke.mockReset();
@@ -70,6 +70,23 @@ describe("fsBridge routing", () => {
     invoke.mockResolvedValue(undefined);
     await fsWriteFile("/a.txt", "x");
     expect(invoke).toHaveBeenCalledWith("fs_write_file", { path: "/a.txt", contents: "x" });
+  });
+
+  it("probes a local file through fs_is_file without reading it", async () => {
+    invoke.mockResolvedValue(true);
+    expect(await fsIsFile("/a.txt")).toBe(true);
+    expect(invoke).toHaveBeenCalledWith("fs_is_file", { path: "/a.txt" });
+  });
+
+  it("probes a remote file over sftp, mapping failure to false", async () => {
+    ensure.mockResolvedValue(7);
+    sftpReadFile.mockResolvedValue("body");
+    expect(await fsIsFile("ssh://c1/a.txt")).toBe(true);
+    expect(sftpReadFile).toHaveBeenCalledWith(7, "/a.txt");
+
+    sftpReadFile.mockRejectedValue(new Error("no such file"));
+    expect(await fsIsFile("ssh://c1/missing.txt")).toBe(false);
+    expect(invoke).not.toHaveBeenCalled();
   });
 });
 

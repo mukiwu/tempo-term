@@ -111,10 +111,15 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
           }
         }
       },
-      hover: (event) => {
-        if (options.linkHint) {
-          showLinkTooltip(options.linkHint, event.clientX, event.clientY);
-        }
+      hover: (event, uri) => {
+        // OSC 8 display text can lie about its target, so always surface the
+        // real one (the resolved path for file links) alongside the hint.
+        const target = /^file:/i.test(uri) ? fileUriToPath(uri) || uri : uri;
+        showLinkTooltip(
+          options.linkHint ? `${target} (${options.linkHint})` : target,
+          event.clientX,
+          event.clientY,
+        );
       },
       leave: () => hideLinkTooltip(),
     },

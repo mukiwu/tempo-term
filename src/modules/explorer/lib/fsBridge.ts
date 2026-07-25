@@ -39,6 +39,27 @@ export async function fsReadFile(path: string): Promise<string> {
   return invoke<string>("fs_read_file", { path });
 }
 
+/**
+ * Metadata-only existence probe: true when `path` names a regular file.
+ * Terminal links use this instead of reading the whole file just to decide
+ * whether a click should open an editor pane. Remote (SFTP) paths fall back
+ * to a read — the only probe the SFTP bridge has — which downloads the whole
+ * remote file: the local size cap and file-type checks do NOT apply there.
+ */
+export async function fsIsFile(path: string): Promise<boolean> {
+  const remote = parseRemoteUri(path);
+  if (remote) {
+    try {
+      const id = await sftpSessionStore.getState().ensure(remote.connectionId);
+      await sftpReadFile(id, remote.path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return invoke<boolean>("fs_is_file", { path });
+}
+
 export async function fsWriteFile(path: string, contents: string): Promise<void> {
   const remote = parseRemoteUri(path);
   if (remote) {
