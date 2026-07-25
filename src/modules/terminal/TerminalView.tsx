@@ -417,6 +417,13 @@ export function TerminalView({
           }
           if (event.payload.agent) {
             store.setAgent(leaf, event.payload.agent);
+          } else {
+            // An agentless report comes from a stale (pre-agent-token) hook
+            // entry — we cannot tell who sent it. Clearing beats keeping a
+            // previous session's label: on Windows there is no foreground
+            // poll to correct a wrong icon (issue #279), on mac/Linux the
+            // poll below re-labels within a tick.
+            store.clearAgent(leaf);
           }
           store.setStatus(leaf, parsed.status);
         } else if (

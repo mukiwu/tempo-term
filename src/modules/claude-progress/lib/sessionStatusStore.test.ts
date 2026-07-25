@@ -69,6 +69,29 @@ describe("sessionStatusStore agents", () => {
     expect(useSessionStatusStore.getState().agents["leaf-1"]).toBe("codex");
   });
 
+  it("clearAgent drops only the agent label, keeping status and session id", () => {
+    // An agentless status report (stale pre-agent-token hook entry) cannot
+    // say who sent it; the previous session's label must go — on Windows no
+    // foreground poll exists to correct a wrong leftover icon (issue #279).
+    const store = useSessionStatusStore.getState();
+    store.setStatus("leaf-1", "active");
+    store.setAgent("leaf-1", "claude");
+    store.setSessionId("leaf-1", "session-a");
+
+    store.clearAgent("leaf-1");
+
+    const state = useSessionStatusStore.getState();
+    expect(state.agents["leaf-1"]).toBeUndefined();
+    expect(state.statuses["leaf-1"]).toBe("active");
+    expect(state.sessionIds["leaf-1"]).toBe("session-a");
+  });
+
+  it("clearAgent on a leaf without an agent is a no-op", () => {
+    const before = useSessionStatusStore.getState();
+    useSessionStatusStore.getState().clearAgent("missing");
+    expect(useSessionStatusStore.getState()).toBe(before);
+  });
+
   it("clears all of a leaf's session state when the session ends", () => {
     const store = useSessionStatusStore.getState();
     store.setStatus("leaf-1", "thinking");

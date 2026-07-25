@@ -74,6 +74,15 @@ fn ensure_hooks_feature_at(config_path: &Path) -> Result<(), String> {
     let existing = match std::fs::read_to_string(config_path) {
         Ok(t) => t,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
+            // The classic Windows trap: a PowerShell 5.1 redirect rewrites the
+            // file as UTF-16, which read_to_string cannot decode. Name the fix
+            // instead of surfacing a bare "stream did not contain valid UTF-8".
+            return Err(format!(
+                "{} is not UTF-8 (PowerShell redirects often write UTF-16); re-save it as UTF-8",
+                config_path.display()
+            ));
+        }
         Err(err) => return Err(err.to_string()),
     };
     let updated = ensure_hooks_feature(&existing)?;
@@ -101,6 +110,17 @@ fn install_into(hooks_path: &Path, prefix: &str) -> Result<(), String> {
     write_atomic(hooks_path, &text)
 }
 
+/// File-level install order matters: reconcile hooks.json BEFORE touching
+/// config.toml. A config.toml problem (UTF-16 from a PowerShell redirect,
+/// invalid TOML) used to early-return first, so stale agentless hook entries
+/// were never upgraded — they keep reporting without an agent field and the
+/// UI holds the previous agent's icon (issue #279). The config error still
+/// surfaces after the upgrade.
+fn install_at(hooks_path: &Path, config_path: &Path, prefix: &str) -> Result<(), String> {
+    install_into(hooks_path, prefix)?;
+    ensure_hooks_feature_at(config_path)
+}
+
 /// Mirror of `claude_status_hook_install`: registers the native shim
 /// (`"<exe>" --status-hook codex`) that reports over loopback (see `status_ipc`),
 /// migrating away any legacy `.sh` a pre-#181 build wrote. Also enables
@@ -110,9 +130,8 @@ fn install_into(hooks_path: &Path, prefix: &str) -> Result<(), String> {
 pub fn codex_status_hook_install(app: AppHandle) -> Result<(), String> {
     let (script_path, hooks_path, config_path) = codex_paths(&app)?;
     let _ = std::fs::remove_file(&script_path);
-    ensure_hooks_feature_at(&config_path)?;
     let prefix = shim_prefix("codex")?;
-    install_into(&hooks_path, &prefix)
+    install_at(&hooks_path, &config_path, &prefix)
 }
 
 /// Remove our entries from `hooks_path`, skipping the rewrite entirely when
@@ -193,8 +212,19 @@ pub fn codex_status_hook_cleanup_legacy(app: AppHandle) -> Result<(), String> {
 
 /// Ensure `[features] hooks = true` in the given config.toml text, preserving all
 /// other keys, tables, and comments. Returns the updated text. A blank input
-/// yields a document containing just the features table.
+/// yields a document containing just the features table. A UTF-8 BOM (typical
+/// of files edited with PowerShell) is stripped, not treated as a TOML error;
+/// the write-back drops it, which every TOML parser is happy with.
 pub fn ensure_hooks_feature(existing_toml: &str) -> Result<String, String> {
+    let existing_toml = existing_toml.strip_prefix('\u{feff}').unwrap_or(existing_toml);
+    // BOM-less UTF-16 decodes as valid UTF-8 (ASCII chars interleaved with
+    // NULs) and would produce a baffling TOML error; name the real problem.
+    if existing_toml.contains('\0') {
+        return Err(
+            "config.toml contains NUL bytes — it is probably UTF-16; re-save it as UTF-8"
+                .to_string(),
+        );
+    }
     let mut doc = existing_toml
         .parse::<DocumentMut>()
         .map_err(|e| format!("config.toml is not valid TOML: {e}"))?;
@@ -275,6 +305,65 @@ mod tests {
         assert!(out.contains("# flag for multi-agent"));
         assert!(out.contains("multi_agent = true"));
         assert!(out.contains("hooks = true"));
+    }
+
+    #[test]
+    fn ensure_hooks_feature_tolerates_a_utf8_bom() {
+        // PowerShell writes UTF-8 files with a BOM; toml_edit rejects it as
+        // invalid TOML, which used to fail the whole install (issue #279).
+        let input = "\u{feff}model = \"gpt-5.5\"\n";
+        let out = ensure_hooks_feature(input).unwrap();
+        assert!(out.contains("model = \"gpt-5.5\""));
+        assert!(out.contains("hooks = true"));
+        assert!(!out.starts_with('\u{feff}'), "the BOM must not be written back");
+    }
+
+    #[test]
+    fn install_at_upgrades_hooks_json_even_when_config_toml_is_broken() {
+        // Issue #279: a config.toml that cannot be read/parsed (UTF-16 from a
+        // PowerShell redirect, invalid TOML) used to early-return BEFORE the
+        // hooks.json upgrade, leaving stale agentless entries behind forever —
+        // those report without an agent field and the UI keeps showing the
+        // previous agent's icon. hooks.json must be reconciled first; the
+        // config error still surfaces.
+        let dir = temp_dir_for("broken-config");
+        let hooks_path = dir.join("hooks.json");
+        let config_path = dir.join("config.toml");
+        let stale = json!({
+            "hooks": {
+                "PreToolUse": [
+                    { "hooks": [{ "type": "command", "command": "/old/tempoterm/status-hook.sh active" }] }
+                ]
+            }
+        });
+        std::fs::write(&hooks_path, serde_json::to_string_pretty(&stale).unwrap()).unwrap();
+        // UTF-16LE with BOM, exactly what a PowerShell 5.1 redirect writes;
+        // the 0xFF 0xFE BOM makes read_to_string fail with InvalidData.
+        let mut utf16: Vec<u8> = vec![0xFF, 0xFE];
+        utf16.extend("model = \"x\"\n".encode_utf16().flat_map(u16::to_le_bytes));
+        std::fs::write(&config_path, utf16).unwrap();
+
+        let err = install_at(&hooks_path, &config_path, "\"/app/tempo-term\" --status-hook codex")
+            .unwrap_err();
+        assert!(err.contains("UTF-8"), "unexpected error: {err}");
+
+        let after: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&hooks_path).unwrap()).unwrap();
+        let pre = after["hooks"]["PreToolUse"].as_array().unwrap();
+        assert!(
+            pre.iter().any(|e| e["hooks"][0]["command"]
+                .as_str()
+                .is_some_and(|c| c.contains("--status-hook codex"))),
+            "hooks.json should hold the new shim entry despite the config error"
+        );
+        assert!(
+            !pre.iter().any(|e| e["hooks"][0]["command"]
+                .as_str()
+                .is_some_and(|c| c.contains("status-hook.sh"))),
+            "the stale legacy entry should be gone"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn temp_dir_for(tag: &str) -> PathBuf {

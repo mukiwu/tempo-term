@@ -331,8 +331,15 @@ function App() {
   useEffect(() => {
     const settings = useSettingsStore.getState();
     if (settings.claudeStatusTracking || settings.autoResumeAiSessions) {
-      void installStatusHook().catch(() => {});
-      void installCodexStatusHook().catch(() => {});
+      // Log instead of swallowing: a broken install (e.g. an unreadable
+      // ~/.codex/config.toml) silently disables status tracking otherwise,
+      // and the console is the only place the cause survives (issue #279).
+      void installStatusHook().catch((e: unknown) =>
+        console.error("claude status hook install failed:", e),
+      );
+      void installCodexStatusHook().catch((e: unknown) =>
+        console.error("codex status hook install failed:", e),
+      );
     }
   }, []);
 

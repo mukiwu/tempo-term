@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, KeyRound } from "lucide-react";
+import { InfoDialog } from "@/components/InfoDialog";
 import { Tooltip } from "@/components/Tooltip";
 import {
   useSettingsStore,
@@ -111,6 +112,10 @@ export function WorkspaceSettingsSection() {
   const codexFlags = useSettingsStore((s) => s.codexFlags);
   const setCodexFlags = useSettingsStore((s) => s.setCodexFlags);
   const [ghReady, setGhReady] = useState<boolean | null>(null);
+  // Why the last hook install/uninstall failed; shown in a dialog so the
+  // toggle doesn't just silently snap back (issue #279 — e.g. an unreadable
+  // ~/.codex/config.toml used to look like the switch being broken).
+  const [hookError, setHookError] = useState<string | null>(null);
 
   async function syncSessionHooks(required: boolean) {
     if (required) {
@@ -125,7 +130,8 @@ export function WorkspaceSettingsSection() {
     setStatusTracking(checked);
     try {
       await syncSessionHooks(checked || autoResumeAiSessions);
-    } catch {
+    } catch (err: unknown) {
+      setHookError(String(err));
       setStatusTracking(previous);
       void syncSessionHooks(previous || autoResumeAiSessions).catch(() => {});
     }
@@ -136,7 +142,8 @@ export function WorkspaceSettingsSection() {
     setAutoResumeAiSessions(checked);
     try {
       await syncSessionHooks(statusTracking || checked);
-    } catch {
+    } catch (err: unknown) {
+      setHookError(String(err));
       setAutoResumeAiSessions(previous);
       void syncSessionHooks(statusTracking || previous).catch(() => {});
     }
@@ -159,6 +166,14 @@ export function WorkspaceSettingsSection() {
 
   return (
     <section>
+      {hookError && (
+        <InfoDialog
+          title={t("workspace.hookErrorTitle")}
+          message={t("workspace.hookErrorMessage", { error: hookError })}
+          confirmLabel={t("workspace.hookErrorConfirm")}
+          onConfirm={() => setHookError(null)}
+        />
+      )}
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-fg-subtle">
         {t("sections.workspace")}
       </h2>

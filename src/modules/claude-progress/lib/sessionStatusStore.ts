@@ -19,6 +19,11 @@ interface SessionStatusState {
   setStatus: (leafId: string, status: SessionStatus) => void;
   setSessionId: (leafId: string, sessionId: string) => void;
   setAgent: (leafId: string, agent: AgentKind) => void;
+  /** Drop only the agent label, keeping status/session id. For reports that
+   *  cannot name their agent (a stale pre-agent-token hook entry): a wrong
+   *  leftover icon is worse than none, and on Windows no foreground poll
+   *  exists to correct it. */
+  clearAgent: (leafId: string) => void;
   clear: (leafId: string) => void;
 }
 
@@ -88,6 +93,15 @@ export const useSessionStatusStore = create<SessionStatusState>((set) => ({
       probeStoreUpdate("agent");
       return { agents: { ...s.agents, [leafId]: agent } };
     }),
+  clearAgent: (leafId) =>
+    set((s) => {
+      if (!(leafId in s.agents)) {
+        return s;
+      }
+      probeStoreUpdate("agent");
+      return { agents: without(s.agents, leafId) };
+    }),
+
   clear: (leafId) =>
     set((s) => {
       if (
