@@ -105,6 +105,8 @@ export function WorkspaceSettingsSection() {
   const setStatusTracking = useSettingsStore((s) => s.setClaudeStatusTracking);
   const autoResumeAiSessions = useSettingsStore((s) => s.autoResumeAiSessions);
   const setAutoResumeAiSessions = useSettingsStore((s) => s.setAutoResumeAiSessions);
+  const resumeWithLauncherFlags = useSettingsStore((s) => s.resumeWithLauncherFlags);
+  const setResumeWithLauncherFlags = useSettingsStore((s) => s.setResumeWithLauncherFlags);
   const notifications = useSettingsStore((s) => s.claudeNotifications);
   const setNotifications = useSettingsStore((s) => s.setClaudeNotifications);
   const claudeFlags = useSettingsStore((s) => s.claudeFlags);
@@ -231,7 +233,7 @@ export function WorkspaceSettingsSection() {
         {t("workspace.autoResumeTitle")}
       </label>
       <p className="mb-2 text-xs text-fg-muted">{t("workspace.autoResumeDescription")}</p>
-      <label className="mb-6 flex items-center gap-2 text-sm text-fg">
+      <label className="mb-2 flex items-center gap-2 text-sm text-fg">
         <input
           type="checkbox"
           checked={autoResumeAiSessions}
@@ -239,6 +241,15 @@ export function WorkspaceSettingsSection() {
           className="h-4 w-4 accent-accent"
         />
         {t("workspace.autoResumeLabel")}
+      </label>
+      <label className="mb-6 ml-6 flex items-center gap-2 text-sm text-fg">
+        <input
+          type="checkbox"
+          checked={resumeWithLauncherFlags}
+          onChange={(e) => setResumeWithLauncherFlags(e.target.checked)}
+          className="h-4 w-4 accent-accent"
+        />
+        {t("workspace.resumeWithFlagsLabel")}
       </label>
 
       <label className="mb-1 block text-sm font-medium text-fg">

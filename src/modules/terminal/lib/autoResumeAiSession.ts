@@ -14,16 +14,19 @@ function attemptKey(leafId: string, session: AiSessionBinding): string {
 /**
  * Return the exact resume command once per pane/session in this app process.
  * Invalid ids are never marked attempted, so fixing persisted data can recover.
+ * `flags` (the launcher default flags, when the resume-with-flags setting is
+ * on) is appended to the command; pass "" to resume bare.
  */
 export function takeAutoResumeCommand(
   leafId: string | undefined,
   session: AiSessionBinding | undefined,
   enabled: boolean,
+  flags = "",
 ): string | null {
   if (!enabled || !leafId || !session) {
     return null;
   }
-  const command = resumeCommand(session.agent, session.sessionId);
+  const command = resumeCommand(session.agent, session.sessionId, flags);
   if (!command) {
     return null;
   }

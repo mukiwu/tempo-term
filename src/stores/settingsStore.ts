@@ -52,6 +52,9 @@ interface SettingsState {
   claudeStatusTracking: boolean;
   /** Resume each pane's exact Claude/Codex conversation after an app relaunch. */
   autoResumeAiSessions: boolean;
+  /** Append the launcher default flags to resume commands too (auto-resume
+   *  and the Sessions panel's one-click resume). */
+  resumeWithLauncherFlags: boolean;
   /**
    * Raise an OS desktop notification when a tracked agent needs approval or
    * finishes, but only while the window is unfocused. Depends on status tracking.
@@ -104,6 +107,7 @@ interface SettingsState {
   setCodexFlags: (flags: string) => void;
   setClaudeStatusTracking: (value: boolean) => void;
   setAutoResumeAiSessions: (value: boolean) => void;
+  setResumeWithLauncherFlags: (value: boolean) => void;
   setClaudeNotifications: (value: boolean) => void;
   setAiInlineCompletion: (value: boolean) => void;
   setAiTerminalContext: (value: boolean) => void;
@@ -149,7 +153,10 @@ export const useSettingsStore = create<SettingsState>()(
       claudeFlags: "",
       codexFlags: "",
       claudeStatusTracking: true,
-      autoResumeAiSessions: false,
+      // Opt-out rather than opt-in since v0.3.2; persisted state from an
+      // earlier run still wins, so existing users keep whatever they had.
+      autoResumeAiSessions: true,
+      resumeWithLauncherFlags: false,
       claudeNotifications: true,
       aiInlineCompletion: false,
       aiTerminalContext: true,
@@ -177,6 +184,7 @@ export const useSettingsStore = create<SettingsState>()(
       setCodexFlags: (codexFlags) => set({ codexFlags }),
       setClaudeStatusTracking: (value) => set({ claudeStatusTracking: value }),
       setAutoResumeAiSessions: (value) => set({ autoResumeAiSessions: value }),
+      setResumeWithLauncherFlags: (value) => set({ resumeWithLauncherFlags: value }),
       setClaudeNotifications: (value) => set({ claudeNotifications: value }),
       setAiInlineCompletion: (value) => set({ aiInlineCompletion: value }),
       setAiTerminalContext: (value) => set({ aiTerminalContext: value }),

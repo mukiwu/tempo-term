@@ -127,12 +127,22 @@ describe("settingsStore", () => {
     expect(persisted).toContain("--model opus");
   });
 
-  it("defaults AI conversation recovery off and persists an opt-in", () => {
-    expect(useSettingsStore.getState().autoResumeAiSessions).toBe(false);
-    useSettingsStore.getState().setAutoResumeAiSessions(true);
+  it("defaults AI conversation recovery on and persists an opt-out", () => {
+    // Opt-out since v0.3.2; persisted state from an earlier run still wins.
     expect(useSettingsStore.getState().autoResumeAiSessions).toBe(true);
+    useSettingsStore.getState().setAutoResumeAiSessions(false);
+    expect(useSettingsStore.getState().autoResumeAiSessions).toBe(false);
     expect(localStorage.getItem("tempoterm-settings")).toContain(
-      '"autoResumeAiSessions":true',
+      '"autoResumeAiSessions":false',
+    );
+  });
+
+  it("defaults resume-with-launcher-flags off and persists an opt-in", () => {
+    expect(useSettingsStore.getState().resumeWithLauncherFlags).toBe(false);
+    useSettingsStore.getState().setResumeWithLauncherFlags(true);
+    expect(useSettingsStore.getState().resumeWithLauncherFlags).toBe(true);
+    expect(localStorage.getItem("tempoterm-settings")).toContain(
+      '"resumeWithLauncherFlags":true',
     );
   });
 

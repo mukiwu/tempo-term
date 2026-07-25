@@ -1,7 +1,8 @@
 import { useTabsStore } from "@/stores/tabsStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { writeToTerminal } from "@/modules/terminal/lib/terminalBus";
 import type { SessionSummary } from "./sessionsBridge";
-import { resumeCommand } from "./resumeCommand";
+import { resumeCommand, resumeFlagsFor } from "./resumeCommand";
 export { resumeCommand };
 
 /**
@@ -26,7 +27,7 @@ export { resumeCommand };
  * Returns false (no tab opened) when the agent has no resume command.
  */
 export function resumeSession(s: SessionSummary): boolean {
-  const cmd = resumeCommand(s.agent, s.id);
+  const cmd = resumeCommand(s.agent, s.id, resumeFlagsFor(s.agent, useSettingsStore.getState()));
   if (cmd === null) {
     return false;
   }

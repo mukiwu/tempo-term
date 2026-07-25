@@ -92,6 +92,7 @@ import {
   sessionEndMatchesBinding,
   takeAutoResumeCommand,
 } from "./lib/autoResumeAiSession";
+import { resumeFlagsFor } from "@/modules/sessions/lib/resumeCommand";
 import type { AiSessionBinding } from "./lib/terminalLayout";
 
 import { IS_MAC, IS_WINDOWS, openModifierLabel } from "@/lib/platform";
@@ -316,10 +317,12 @@ export function TerminalView({
     }
     const initialLeafId = leafIdRef.current;
     const initialAiSession = aiSession;
+    const settings = useSettingsStore.getState();
     const autoResumeCommand = takeAutoResumeCommand(
       initialLeafId,
       initialAiSession,
-      useSettingsStore.getState().autoResumeAiSessions,
+      settings.autoResumeAiSessions,
+      resumeFlagsFor(initialAiSession?.agent, settings),
     );
     const containerEl = container;
 
