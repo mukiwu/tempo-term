@@ -513,10 +513,14 @@ function FileList({
   );
 }
 
+/** Keys of the collapsible sections, a closed set so typos fail typecheck. */
+type SectionKey = "staged" | "changes" | "history";
+
 /**
- * Collapsible section heading. The whole row is the click target for toggling;
- * `action` (e.g. the "stage all" button) sits at the trailing edge and must
- * stop propagation so its own click doesn't also toggle the section. `action`
+ * Collapsible section heading. The toggle is a real button stretched across
+ * the row (like WorkspacePanel's group headers) so it works from the keyboard
+ * and reports its state; `action` (e.g. the "stage all" button) sits outside
+ * it at the trailing edge, so its clicks never reach the toggle. `action`
  * stays visible while collapsed, so e.g. staging everything doesn't require
  * expanding the section first.
  */
@@ -532,18 +536,20 @@ function SectionHeader({
   action?: ReactNode;
 }) {
   return (
-    <div
-      onClick={onToggle}
-      className="flex cursor-pointer items-center justify-between px-3 py-1 text-fg-subtle hover:bg-bg-elevated/60 hover:text-fg"
-    >
-      <span className="flex min-w-0 items-center gap-1 text-[11px] font-semibold uppercase tracking-wide">
+    <div className="flex items-center justify-between px-3 py-1 text-fg-subtle hover:bg-bg-elevated/60 hover:text-fg">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        onClick={onToggle}
+        className="flex min-w-0 flex-1 items-center gap-1 text-left text-[11px] font-semibold uppercase tracking-wide"
+      >
         {collapsed ? (
           <ChevronRight size={12} className="shrink-0" />
         ) : (
           <ChevronDown size={12} className="shrink-0" />
         )}
         <span className="truncate">{label}</span>
-      </span>
+      </button>
       {action}
     </div>
   );
@@ -562,10 +568,10 @@ export function SourceControlView() {
   const [pushing, setPushing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("flat");
   const [refreshing, setRefreshing] = useState(false);
-  // Section headers the user has collapsed (keyed by "staged" | "changes" |
-  // "history"). Component-local, like viewMode — resets when the view remounts.
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-  const toggleSection = useCallback((key: string) => {
+  // Section headers the user has collapsed. Component-local, like viewMode —
+  // resets when the view remounts.
+  const [collapsedSections, setCollapsedSections] = useState<Set<SectionKey>>(new Set());
+  const toggleSection = useCallback((key: SectionKey) => {
     setCollapsedSections((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
@@ -779,103 +785,102 @@ export function SourceControlView() {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
-        {(status?.staged.length ?? 0) > 0 && (
+          {(status?.staged.length ?? 0) > 0 && (
+            <section className="mb-2">
+              <SectionHeader
+                label={t("stagedChanges")}
+                collapsed={collapsedSections.has("staged")}
+                onToggle={() => toggleSection("staged")}
+              />
+              {!collapsedSections.has("staged") && (
+                <FileList
+                  files={status!.staged}
+                  viewMode={viewMode}
+                  actionIcon={Minus}
+                  actionLabel={t("unstage")}
+                  folderActionLabel={t("unstageFolder")}
+                  onFileAction={(path) => void withRepo((repo) => gitUnstage(repo, path))}
+                  onFolderAction={(paths) =>
+                    void withRepo(async (repo) => {
+                      for (const path of paths) {
+                        await gitUnstage(repo, path);
+                      }
+                    })
+                  }
+                  onFileOpen={(path) => openDiff(path, true)}
+                  repoPath={repoPath ?? ""}
+                />
+              )}
+            </section>
+          )}
+
           <section className="mb-2">
             <SectionHeader
-              label={t("stagedChanges")}
-              collapsed={collapsedSections.has("staged")}
-              onToggle={() => toggleSection("staged")}
+              label={t("changes")}
+              collapsed={collapsedSections.has("changes")}
+              onToggle={() => toggleSection("changes")}
+              action={
+                (status?.unstaged.length ?? 0) > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void withRepo(async (repo) => {
+                        for (const file of status!.unstaged) {
+                          await gitStage(repo, file.path);
+                        }
+                      });
+                    }}
+                    className="shrink-0 text-[11px] text-accent hover:underline"
+                  >
+                    {t("stageAll")}
+                  </button>
+                ) : undefined
+              }
             />
-            {!collapsedSections.has("staged") && (
-              <FileList
-                files={status!.staged}
-                viewMode={viewMode}
-                actionIcon={Minus}
-                actionLabel={t("unstage")}
-                folderActionLabel={t("unstageFolder")}
-                onFileAction={(path) => void withRepo((repo) => gitUnstage(repo, path))}
-                onFolderAction={(paths) =>
-                  void withRepo(async (repo) => {
-                    for (const path of paths) {
-                      await gitUnstage(repo, path);
-                    }
-                  })
-                }
-                onFileOpen={(path) => openDiff(path, true)}
-                repoPath={repoPath ?? ""}
-              />
-            )}
-          </section>
-        )}
-
-        <section className="mb-2">
-          <SectionHeader
-            label={t("changes")}
-            collapsed={collapsedSections.has("changes")}
-            onToggle={() => toggleSection("changes")}
-            action={
-              (status?.unstaged.length ?? 0) > 0 ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
+            {!collapsedSections.has("changes") &&
+              ((status?.unstaged.length ?? 0) === 0 ? (
+                <p className="px-3 py-1 text-xs text-fg-subtle">{t("noChanges")}</p>
+              ) : (
+                <FileList
+                  files={status!.unstaged}
+                  viewMode={viewMode}
+                  actionIcon={Plus}
+                  actionLabel={t("stage")}
+                  folderActionLabel={t("stageFolder")}
+                  onFileAction={(path) => void withRepo((repo) => gitStage(repo, path))}
+                  onFolderAction={(paths) =>
                     void withRepo(async (repo) => {
-                      for (const file of status!.unstaged) {
-                        await gitStage(repo, file.path);
+                      for (const path of paths) {
+                        await gitStage(repo, path);
                       }
-                    });
-                  }}
-                  className="text-[11px] text-accent hover:underline"
-                >
-                  {t("stageAll")}
-                </button>
-              ) : undefined
-            }
-          />
-          {!collapsedSections.has("changes") &&
-            ((status?.unstaged.length ?? 0) === 0 ? (
-              <p className="px-3 py-1 text-xs text-fg-subtle">{t("noChanges")}</p>
-            ) : (
-              <FileList
-                files={status!.unstaged}
-                viewMode={viewMode}
-                actionIcon={Plus}
-                actionLabel={t("stage")}
-                folderActionLabel={t("stageFolder")}
-                onFileAction={(path) => void withRepo((repo) => gitStage(repo, path))}
-                onFolderAction={(paths) =>
-                  void withRepo(async (repo) => {
-                    for (const path of paths) {
-                      await gitStage(repo, path);
-                    }
-                  })
-                }
-                onFileOpen={(path) => openDiff(path, false)}
-                onRequestDiscard={setDiscardTarget}
-                repoPath={repoPath ?? ""}
-              />
-            ))}
-        </section>
-
-        {/* Expanded: history lives in the normal scroll flow below Changes, so
-            it never eats into or covers the Changes area — you just scroll. */}
-        {history.length > 0 && !collapsedSections.has("history") && (
-          <section className="mt-2 border-t border-border pt-1">
-            <SectionHeader
-              label={t("history")}
-              collapsed={false}
-              onToggle={() => toggleSection("history")}
-            />
-            <div className="flex gap-1 px-3 pb-2">
-              <HistoryGraphColumn commits={history} />
-              <ul className="min-w-0 flex-1">
-                {history.map((commit) => (
-                  <HistoryRow key={commit.id} commit={commit} />
-                ))}
-              </ul>
-            </div>
+                    })
+                  }
+                  onFileOpen={(path) => openDiff(path, false)}
+                  onRequestDiscard={setDiscardTarget}
+                  repoPath={repoPath ?? ""}
+                />
+              ))}
           </section>
-        )}
+
+          {/* Expanded: history lives in the normal scroll flow below Changes, so
+              it never eats into or covers the Changes area — you just scroll. */}
+          {history.length > 0 && !collapsedSections.has("history") && (
+            <section className="mt-2 border-t border-border pt-1">
+              <SectionHeader
+                label={t("history")}
+                collapsed={false}
+                onToggle={() => toggleSection("history")}
+              />
+              <div className="flex gap-1 px-3 pb-2">
+                <HistoryGraphColumn commits={history} />
+                <ul className="min-w-0 flex-1">
+                  {history.map((commit) => (
+                    <HistoryRow key={commit.id} commit={commit} />
+                  ))}
+                </ul>
+              </div>
+            </section>
+          )}
         </div>
 
         {/* Collapsed: just the header, pinned to the very bottom of the panel. */}

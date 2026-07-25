@@ -118,6 +118,48 @@ describe("SourceControlView row interactions", () => {
   });
 });
 
+describe("SourceControlView collapsible sections", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(gitBridge.gitResolveRepo).mockResolvedValue("/repo");
+    vi.mocked(gitBridge.gitLog).mockResolvedValue([]);
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
+    useWorkspaceStore.getState().setRoot("/repo");
+  });
+
+  it("collapses and re-expands a section from its header button", async () => {
+    render(<SourceControlView />);
+    await screen.findByText("src/a.ts");
+
+    const header = screen.getByRole("button", { name: "Changes" });
+    expect(header).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(header);
+    expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
+    expect(header).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(header);
+    expect(await screen.findByText("src/a.ts")).toBeInTheDocument();
+  });
+
+  it("keeps 'stage all' usable while collapsed without toggling the section", async () => {
+    render(<SourceControlView />);
+    await screen.findByText("src/a.ts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+    expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stage all" }));
+
+    await waitFor(() => expect(gitBridge.gitStage).toHaveBeenCalledWith("/repo", "src/a.ts"));
+    // Staging is not a toggle gesture — the section must stay collapsed.
+    expect(screen.getByRole("button", { name: "Changes" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+});
+
 describe("SourceControlView folder view", () => {
   beforeEach(() => {
     vi.clearAllMocks();
