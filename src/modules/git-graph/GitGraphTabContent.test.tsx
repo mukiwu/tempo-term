@@ -92,7 +92,10 @@ describe("GitGraphTabContent pending commit selection", () => {
     render(<GitGraphTabContent />);
 
     await waitFor(() => expect(screen.getByText("msg ddd4444")).toBeInTheDocument());
-    expect(usePendingGraphSelectionStore.getState().hash).toBeNull();
+    // The pending hash is consumed by a separate effect pass after the commit
+    // renders — assert it asynchronously like the sibling tests, or a slow
+    // runner (CI) sees the commit before the selection effect has run.
+    await waitFor(() => expect(usePendingGraphSelectionStore.getState().hash).toBeNull());
   });
 
   it("selects a second commit requested after the tab is already mounted with an unchanged commit list", async () => {
