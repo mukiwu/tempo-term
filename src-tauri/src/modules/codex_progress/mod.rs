@@ -17,12 +17,15 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::modules::claude_progress::{byte_len, read_new_lines};
 
-/// A discovered Codex rollout file: its path, last-modified time, and the cwd
+/// A discovered Codex rollout file: its path, last-modified time, and metadata
 /// read from its session_meta line.
 pub struct RolloutCandidate {
     pub path: PathBuf,
     pub modified: SystemTime,
     pub cwd: String,
+    /// The rollout's own thread id from `payload.id`, equal to the filename
+    /// UUID; this is not `payload.session_id`, which identifies the root session.
+    pub rollout_id: Option<String>,
 }
 
 /// The newest candidate whose cwd equals `target_cwd`, or None.
@@ -34,18 +37,22 @@ pub fn select_newest_for_cwd(candidates: &[RolloutCandidate], target_cwd: &str) 
         .map(|c| c.path.clone())
 }
 
-/// The cwd recorded in a Codex rollout's first line. Returns None when the line
-/// is not a `session_meta` record or has no cwd.
-pub fn parse_session_meta_cwd(first_line: &str) -> Option<String> {
+struct SessionMeta {
+    cwd: String,
+    rollout_id: Option<String>,
+}
+
+/// The cwd and rollout id recorded in a Codex rollout's first line. Returns
+/// None when the line is not a `session_meta` record or has no cwd.
+fn parse_session_meta(first_line: &str) -> Option<SessionMeta> {
     let value: Value = serde_json::from_str(first_line).ok()?;
     if value.get("type").and_then(Value::as_str) != Some("session_meta") {
         return None;
     }
-    value
-        .get("payload")?
-        .get("cwd")?
-        .as_str()
-        .map(str::to_string)
+    let payload = value.get("payload")?;
+    let cwd = payload.get("cwd")?.as_str()?.to_string();
+    let rollout_id = payload.get("id").and_then(Value::as_str).map(str::to_string);
+    Some(SessionMeta { cwd, rollout_id })
 }
 
 /// Longest session title we keep; longer text is truncated for display.
@@ -129,8 +136,13 @@ pub fn scan_recent_rollouts(base: &Path, days: &[(i32, u32, u32)]) -> Vec<Rollou
                 Ok(t) => t,
                 Err(_) => continue,
             };
-            if let Some(cwd) = first_line(&path).as_deref().and_then(parse_session_meta_cwd) {
-                out.push(RolloutCandidate { path, modified, cwd });
+            if let Some(meta) = first_line(&path).as_deref().and_then(parse_session_meta) {
+                out.push(RolloutCandidate {
+                    path,
+                    modified,
+                    cwd: meta.cwd,
+                    rollout_id: meta.rollout_id,
+                });
             }
         }
     }
@@ -297,19 +309,46 @@ fn route_event(app: &AppHandle, base: &Path, route: &Arc<Mutex<RouteState>>, eve
     }
 }
 
-/// The title of the newest Codex session for `cwd`, read from its rollout.
-/// Returns None when no recent rollout exists for that directory.
+/// Resolve the title for a title request from already-discovered rollout
+/// candidates. Kept separate from the Tauri command for focused selection
+/// tests. A provided id matches `payload.id` exactly, without cwd filtering
+/// or fallback; only an id-less request keeps the legacy newest-for-cwd
+/// behavior. First match wins: Codex mints rollout ids as UUIDs, so two
+/// candidates sharing one id would mean a corrupted sessions tree.
+fn resolve_session_title(
+    candidates: &[RolloutCandidate],
+    cwd: &str,
+    session_id: Option<&str>,
+) -> Option<String> {
+    let path = match session_id {
+        Some(id) => candidates
+            .iter()
+            .find(|candidate| candidate.rollout_id.as_deref() == Some(id))
+            .map(|candidate| candidate.path.clone()),
+        None => select_newest_for_cwd(candidates, cwd),
+    }?;
+    let file = File::open(path).ok()?;
+    extract_codex_title(BufReader::new(file))
+}
+
+/// The title of the requested Codex session, read from its rollout. A provided
+/// id — valid or not — answers for that exact rollout only, never the newest:
+/// a just-started titleless session would otherwise wear a concurrent
+/// sibling's title (the Claude counterpart of this rule shipped in #233). An
+/// id-less request keeps the legacy newest-for-`cwd` behavior.
 #[tauri::command]
-pub async fn codex_session_title(app: AppHandle, cwd: String) -> Option<String> {
+pub async fn codex_session_title(
+    app: AppHandle,
+    cwd: String,
+    session_id: Option<String>,
+) -> Option<String> {
     // Scanning rollouts and parsing the transcript scales with session length;
     // run it on a blocking thread so a long session never freezes the UI.
     tauri::async_runtime::spawn_blocking(move || {
         let home = app.path().home_dir().ok()?;
         let base = codex_sessions_base(&home);
         let candidates = scan_recent_rollouts(&base, &recent_days());
-        let path = select_newest_for_cwd(&candidates, &cwd)?;
-        let file = File::open(path).ok()?;
-        extract_codex_title(BufReader::new(file))
+        resolve_session_title(&candidates, &cwd, session_id.as_deref())
     })
     .await
     .ok()
@@ -319,58 +358,289 @@ pub async fn codex_session_title(app: AppHandle, cwd: String) -> Option<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime};
 
-    fn write_rollout(dir: &PathBuf, name: &str, cwd: &str) -> PathBuf {
+    struct TempBase {
+        path: PathBuf,
+    }
+
+    impl TempBase {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "tempoterm-codex-{name}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempBase {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    struct RolloutSpec<'a> {
+        name: &'a str,
+        cwd: &'a str,
+        rollout_id: Option<&'a str>,
+        root_session_id: Option<&'a str>,
+        title: &'a str,
+    }
+
+    fn write_rollout(dir: &Path, spec: RolloutSpec<'_>) -> PathBuf {
         std::fs::create_dir_all(dir).unwrap();
-        let path = dir.join(name);
-        let line = format!(r#"{{"type":"session_meta","payload":{{"cwd":"{cwd}"}}}}"#);
-        std::fs::write(&path, line + "\n").unwrap();
+        let path = dir.join(spec.name);
+        let mut payload = serde_json::json!({ "cwd": spec.cwd });
+        if let Some(rollout_id) = spec.rollout_id {
+            payload["id"] = Value::String(rollout_id.to_string());
+        }
+        if let Some(root_session_id) = spec.root_session_id {
+            payload["session_id"] = Value::String(root_session_id.to_string());
+        }
+        let meta = serde_json::json!({ "type": "session_meta", "payload": payload });
+        let user_message = serde_json::json!({
+            "type": "event_msg",
+            "payload": { "type": "user_message", "message": spec.title }
+        });
+        std::fs::write(&path, format!("{meta}\n{user_message}\n")).unwrap();
         path
     }
 
     #[test]
     fn scans_only_the_given_day_dirs_and_reads_each_cwd() {
-        let base = std::env::temp_dir().join(format!("tempoterm-codex-scan-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        let day = base.join("2026").join("06").join("22");
-        write_rollout(&day, "rollout-a.jsonl", "/proj/x");
+        let base = TempBase::new("scan-days");
+        let day = base.path().join("2026").join("06").join("22");
+        write_rollout(
+            &day,
+            RolloutSpec {
+                name: "rollout-a.jsonl",
+                cwd: "/proj/x",
+                rollout_id: Some("a"),
+                root_session_id: None,
+                title: "A",
+            },
+        );
         // A file in a day we do not scan must be ignored.
-        let other = base.join("2026").join("06").join("01");
-        write_rollout(&other, "rollout-b.jsonl", "/proj/y");
+        let other = base.path().join("2026").join("06").join("01");
+        write_rollout(
+            &other,
+            RolloutSpec {
+                name: "rollout-b.jsonl",
+                cwd: "/proj/y",
+                rollout_id: Some("b"),
+                root_session_id: None,
+                title: "B",
+            },
+        );
 
-        let found = scan_recent_rollouts(&base, &[(2026, 6, 22)]);
+        let found = scan_recent_rollouts(base.path(), &[(2026, 6, 22)]);
         let cwds: Vec<&str> = found.iter().map(|c| c.cwd.as_str()).collect();
         assert!(cwds.contains(&"/proj/x"));
         assert!(!cwds.contains(&"/proj/y"));
-
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
-    fn reads_cwd_from_a_session_meta_line() {
+    fn reads_cwd_and_rollout_id_from_a_session_meta_line() {
         let line = r#"{"type":"session_meta","payload":{"id":"x","cwd":"/Users/me/proj","cli_version":"0.140.0"}}"#;
-        assert_eq!(parse_session_meta_cwd(line).as_deref(), Some("/Users/me/proj"));
+        let meta = parse_session_meta(line).unwrap();
+        assert_eq!(meta.cwd, "/Users/me/proj");
+        assert_eq!(meta.rollout_id.as_deref(), Some("x"));
     }
 
     #[test]
     fn returns_none_for_non_session_meta_or_malformed() {
-        assert_eq!(parse_session_meta_cwd(r#"{"type":"event_msg","payload":{}}"#), None);
-        assert_eq!(parse_session_meta_cwd("not json"), None);
-        assert_eq!(parse_session_meta_cwd(r#"{"type":"session_meta","payload":{}}"#), None);
+        assert!(parse_session_meta(r#"{"type":"event_msg","payload":{}}"#).is_none());
+        assert!(parse_session_meta("not json").is_none());
+        assert!(parse_session_meta(r#"{"type":"session_meta","payload":{}}"#).is_none());
+    }
+
+    #[test]
+    fn scan_keeps_rollouts_without_rollout_id_and_parses_payload_ids() {
+        let base = TempBase::new("scan-ids");
+        let day = base.path().join("2026").join("06").join("22");
+        write_rollout(
+            &day,
+            RolloutSpec {
+                name: "rollout-with-id.jsonl",
+                cwd: "/proj",
+                rollout_id: Some("session-a"),
+                root_session_id: None,
+                title: "A",
+            },
+        );
+        write_rollout(
+            &day,
+            RolloutSpec {
+                name: "rollout-without-id.jsonl",
+                cwd: "/proj",
+                rollout_id: None,
+                root_session_id: None,
+                title: "Legacy",
+            },
+        );
+
+        let found = scan_recent_rollouts(base.path(), &[(2026, 6, 22)]);
+        assert_eq!(found.len(), 2);
+        assert!(found.iter().any(|candidate| {
+            candidate.path.ends_with("rollout-with-id.jsonl")
+                && candidate.rollout_id.as_deref() == Some("session-a")
+        }));
+        assert!(found.iter().any(|candidate| {
+            candidate.path.ends_with("rollout-without-id.jsonl")
+                && candidate.rollout_id.is_none()
+        }));
     }
 
     #[test]
     fn picks_the_newest_candidate_whose_cwd_matches() {
         let base = SystemTime::UNIX_EPOCH;
         let candidates = vec![
-            RolloutCandidate { path: PathBuf::from("/a/old.jsonl"), modified: base, cwd: "/proj".into() },
-            RolloutCandidate { path: PathBuf::from("/a/new.jsonl"), modified: base + Duration::from_secs(10), cwd: "/proj".into() },
-            RolloutCandidate { path: PathBuf::from("/a/other.jsonl"), modified: base + Duration::from_secs(20), cwd: "/elsewhere".into() },
+            RolloutCandidate {
+                path: PathBuf::from("/a/old.jsonl"),
+                modified: base,
+                cwd: "/proj".into(),
+                rollout_id: Some("old".into()),
+            },
+            RolloutCandidate {
+                path: PathBuf::from("/a/new.jsonl"),
+                modified: base + Duration::from_secs(10),
+                cwd: "/proj".into(),
+                rollout_id: Some("new".into()),
+            },
+            RolloutCandidate {
+                path: PathBuf::from("/a/other.jsonl"),
+                modified: base + Duration::from_secs(20),
+                cwd: "/elsewhere".into(),
+                rollout_id: Some("other".into()),
+            },
         ];
         assert_eq!(select_newest_for_cwd(&candidates, "/proj"), Some(PathBuf::from("/a/new.jsonl")));
         assert_eq!(select_newest_for_cwd(&candidates, "/missing"), None);
+    }
+
+    fn two_rollout_candidates(name: &str) -> (TempBase, Vec<RolloutCandidate>) {
+        let base = TempBase::new(name);
+        let day = base.path().join("2026").join("06").join("22");
+        write_rollout(
+            &day,
+            RolloutSpec {
+                name: "rollout-old.jsonl",
+                cwd: "/proj",
+                rollout_id: Some("session-a"),
+                root_session_id: None,
+                title: "Old session title",
+            },
+        );
+        write_rollout(
+            &day,
+            RolloutSpec {
+                name: "rollout-new.jsonl",
+                cwd: "/proj",
+                rollout_id: Some("session-b"),
+                root_session_id: None,
+                title: "New session title",
+            },
+        );
+        let mut candidates = scan_recent_rollouts(base.path(), &[(2026, 6, 22)]);
+        for candidate in &mut candidates {
+            candidate.modified = if candidate.rollout_id.as_deref() == Some("session-a") {
+                SystemTime::UNIX_EPOCH
+            } else {
+                SystemTime::UNIX_EPOCH + Duration::from_secs(10)
+            };
+        }
+        (base, candidates)
+    }
+
+    #[test]
+    fn requested_id_resolves_older_rollout_in_same_cwd() {
+        let (_base, candidates) = two_rollout_candidates("resolve-old");
+
+        assert_eq!(
+            resolve_session_title(&candidates, "/proj", Some("session-a")).as_deref(),
+            Some("Old session title")
+        );
+    }
+
+    #[test]
+    fn missing_requested_id_does_not_fall_back_to_newest() {
+        let (_base, candidates) = two_rollout_candidates("resolve-missing");
+
+        assert_eq!(
+            resolve_session_title(&candidates, "/proj", Some("missing")),
+            None
+        );
+    }
+
+    #[test]
+    fn request_without_id_keeps_newest_for_cwd_behavior() {
+        let (_base, candidates) = two_rollout_candidates("resolve-legacy");
+
+        assert_eq!(
+            resolve_session_title(&candidates, "/proj", None).as_deref(),
+            Some("New session title")
+        );
+    }
+
+    #[test]
+    fn requested_id_never_matches_payload_session_id() {
+        let base = TempBase::new("session-id-trap");
+        let day = base.path().join("2026").join("06").join("22");
+        write_rollout(
+            &day,
+            RolloutSpec {
+                name: "rollout-trap.jsonl",
+                cwd: "/proj",
+                rollout_id: Some("actual-rollout-id"),
+                root_session_id: Some("root-session-id"),
+                title: "Wrong subagent title",
+            },
+        );
+        let candidates = scan_recent_rollouts(base.path(), &[(2026, 6, 22)]);
+
+        assert_eq!(
+            resolve_session_title(&candidates, "/proj", Some("root-session-id")),
+            None
+        );
+    }
+
+    #[test]
+    fn path_like_requested_id_is_a_safe_miss() {
+        let (_base, candidates) = two_rollout_candidates("resolve-garbage");
+
+        assert_eq!(
+            resolve_session_title(&candidates, "/proj", Some("../x")),
+            None
+        );
+    }
+
+    #[test]
+    fn exact_id_match_does_not_filter_by_cwd() {
+        let base = TempBase::new("resolve-cross-cwd");
+        let day = base.path().join("2026").join("06").join("22");
+        write_rollout(
+            &day,
+            RolloutSpec {
+                name: "rollout-cross-cwd.jsonl",
+                cwd: "/private/tmp/proj",
+                rollout_id: Some("session-a"),
+                root_session_id: None,
+                title: "Exact id title",
+            },
+        );
+        let candidates = scan_recent_rollouts(base.path(), &[(2026, 6, 22)]);
+
+        assert_eq!(
+            resolve_session_title(&candidates, "/tmp/proj", Some("session-a")).as_deref(),
+            Some("Exact id title")
+        );
     }
 
     #[test]

@@ -645,8 +645,9 @@ export function WorkspacePanel() {
     [tabs],
   );
   useWorktreeInfos(cwds);
-  // Titles use the exact Claude session id when known, and retain the legacy
-  // cwd + agent key otherwise (including Codex).
+  // Claude and Codex titles use an exact session key when an id is known. Only
+  // sessions without an id (SSH remotes or not yet reported) fall back to the
+  // legacy cwd + agent key.
   const titleTargets = useMemo(
     () =>
       tabs.flatMap((tab) =>

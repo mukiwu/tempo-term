@@ -75,7 +75,7 @@ export function useWorkspaceTitles(targets: VisibleSession[]): void {
   const depKey = enriched.map((t) => `${titleKey(t)}@${t.fingerprint}`).join("\n");
 
   useEffect(() => {
-    // Session-scoped cache keys are minted per Claude session; drop the ones
+    // Session-scoped cache keys are minted per AI session; drop the ones
     // no longer visible so the cache stays bounded over a long-lived app.
     prune(new Set(enriched.map((t) => titleKey(t))));
     if (enriched.length === 0) {

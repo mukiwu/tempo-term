@@ -68,6 +68,33 @@ describe("titlesStore", () => {
     expect(titles[titleKey(sessionB)]).toBe("Title B");
   });
 
+  it("passes a known Codex session id through the title bridge", async () => {
+    await useTitlesStore.getState().refresh([
+      {
+        cwd: "/p",
+        agent: "codex",
+        sessionId: "codex-session-a",
+        fingerprint: "0|0",
+      },
+    ]);
+
+    expect(invoke).toHaveBeenCalledWith("codex_session_title", {
+      cwd: "/p",
+      sessionId: "codex-session-a",
+    });
+  });
+
+  it("passes undefined for a legacy Codex target without a session id", async () => {
+    await useTitlesStore
+      .getState()
+      .refresh([{ cwd: "/p", agent: "codex", fingerprint: "0|0" }]);
+
+    expect(invoke).toHaveBeenCalledWith("codex_session_title", {
+      cwd: "/p",
+      sessionId: undefined,
+    });
+  });
+
   it("skips IPC calls for targets already fetched at the same fingerprint", async () => {
     await useTitlesStore
       .getState()

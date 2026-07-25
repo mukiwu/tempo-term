@@ -5,7 +5,10 @@ export function claudeSessionTitle(cwd: string, sessionId?: string): Promise<str
   return invoke<string | null>("claude_session_title", { cwd, sessionId });
 }
 
-/** The auto title for a directory's newest Codex session, or null if none. */
-export function codexSessionTitle(cwd: string): Promise<string | null> {
-  return invoke<string | null>("codex_session_title", { cwd });
+/**
+ * With a session id, returns only that Codex rollout's auto title or null,
+ * never a fallback. Without an id, returns the directory's latest title.
+ */
+export function codexSessionTitle(cwd: string, sessionId?: string): Promise<string | null> {
+  return invoke<string | null>("codex_session_title", { cwd, sessionId });
 }

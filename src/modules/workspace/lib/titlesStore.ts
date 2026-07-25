@@ -58,7 +58,7 @@ interface TitlesStoreState {
   refresh: (targets: TitleTarget[]) => Promise<void>;
   /**
    * Drop cached entries whose key is not in `liveKeys`. Session-scoped keys
-   * are minted per Claude session, so without pruning the cache would grow for
+   * are minted per AI session, so without pruning the cache would grow for
    * the app's lifetime (progressStore.syncSessions plays the same role for
    * progress).
    */
@@ -67,10 +67,9 @@ interface TitlesStoreState {
 
 async function fetchTitle(target: TitleTarget): Promise<string | null> {
   try {
-    if (target.agent === "codex") {
-      return (await codexSessionTitle(target.cwd)) ?? null;
-    }
-    return (await claudeSessionTitle(target.cwd, target.sessionId)) ?? null;
+    const fetchSessionTitle =
+      target.agent === "codex" ? codexSessionTitle : claudeSessionTitle;
+    return (await fetchSessionTitle(target.cwd, target.sessionId)) ?? null;
   } catch {
     // No transcript yet, or no backend in tests/web preview; keep last value.
     return null;

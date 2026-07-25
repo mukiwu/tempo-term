@@ -16,8 +16,8 @@ export interface TabSession {
  * The live agent sessions in a tab, one per terminal pane that currently has a
  * status. A pane's own cwd wins, falling back to the tab's starting cwd. The
  * agent comes from the per-leaf agent map; it may be undefined until the
- * foreground poll classifies the pane. A locally reported Claude session id is
- * carried from its own per-leaf map. Panes are returned in layout order.
+ * foreground poll classifies the pane. A locally reported session id is carried
+ * from its own per-leaf map. Panes are returned in layout order.
  */
 export function collectTabSessions(
   tab: Tab,
