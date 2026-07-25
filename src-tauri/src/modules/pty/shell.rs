@@ -342,6 +342,30 @@ pub fn windows_integration_env(
     )]
 }
 
+/// True for a UNC path (`\\server\share`, or the `//server/share` form Win32
+/// also accepts).
+fn is_unc_path(path: &str) -> bool {
+    path.starts_with(r"\\") || path.starts_with("//")
+}
+
+/// cmd.exe refuses to start in a UNC directory — it prints "UNC paths are not
+/// supported" and silently falls back to C:\Windows — while PowerShell handles
+/// UNC fine. When the shell is the cmd.exe default and the session starts in a
+/// UNC directory, swap in PowerShell. An explicit user override is respected
+/// as-is: the user chose that shell knowingly. `windows` is passed in (not
+/// cfg-gated) so the Windows behaviour stays unit-testable from any platform.
+pub fn adjust_shell_for_unc_cwd(
+    shell: String,
+    override_present: bool,
+    cwd: Option<&str>,
+    windows: bool,
+) -> String {
+    if windows && !override_present && is_cmd(&shell) && cwd.map(is_unc_path).unwrap_or(false) {
+        return "powershell.exe".to_string();
+    }
+    shell
+}
+
 /// Keep a start directory only when it is a real, existing directory. A restored
 /// session may point at a folder that has since been deleted; spawning there
 /// would fail, so fall back (the caller drops to the default) instead.
@@ -398,6 +422,65 @@ mod tests {
     fn blank_override_falls_through_to_shell_env() {
         assert_eq!(
             resolve_shell_from(Some("   ".to_string()), Some("/bin/zsh".to_string())),
+            "/bin/zsh"
+        );
+    }
+
+    #[test]
+    fn swaps_default_cmd_for_powershell_in_a_unc_cwd() {
+        assert_eq!(
+            adjust_shell_for_unc_cwd(
+                r"C:\Windows\system32\cmd.exe".to_string(),
+                false,
+                Some(r"\\vm.local\workspace\project"),
+                true,
+            ),
+            "powershell.exe"
+        );
+    }
+
+    #[test]
+    fn treats_forward_slash_unc_paths_the_same() {
+        assert_eq!(
+            adjust_shell_for_unc_cwd("cmd.exe".to_string(), false, Some("//server/share"), true),
+            "powershell.exe"
+        );
+    }
+
+    #[test]
+    fn respects_an_explicit_cmd_override_even_in_a_unc_cwd() {
+        assert_eq!(
+            adjust_shell_for_unc_cwd("cmd.exe".to_string(), true, Some(r"\\server\share"), true),
+            "cmd.exe"
+        );
+    }
+
+    #[test]
+    fn keeps_cmd_for_local_paths_and_other_shells_everywhere() {
+        assert_eq!(
+            adjust_shell_for_unc_cwd("cmd.exe".to_string(), false, Some(r"C:\work"), true),
+            "cmd.exe"
+        );
+        assert_eq!(
+            adjust_shell_for_unc_cwd("cmd.exe".to_string(), false, None, true),
+            "cmd.exe"
+        );
+        assert_eq!(
+            adjust_shell_for_unc_cwd(
+                "powershell.exe".to_string(),
+                false,
+                Some(r"\\server\share"),
+                true,
+            ),
+            "powershell.exe"
+        );
+    }
+
+    #[test]
+    fn never_swaps_shells_off_windows() {
+        // A POSIX path may legally start with a double slash; that is not UNC.
+        assert_eq!(
+            adjust_shell_for_unc_cwd("/bin/zsh".to_string(), false, Some("//net/share"), false),
             "/bin/zsh"
         );
     }

@@ -10,7 +10,10 @@ use std::sync::{Arc, Mutex, RwLock};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtyPair, PtySize};
 use tauri::ipc::{Channel, Response};
 
-use super::shell::{autosuggest_env, login_args, resolve_shell_with, terminal_env, usable_cwd};
+use super::shell::{
+    adjust_shell_for_unc_cwd, autosuggest_env, login_args, resolve_shell_with, terminal_env,
+    usable_cwd,
+};
 
 /// A single live terminal session.
 pub struct Session {
@@ -66,14 +69,26 @@ fn build_shell_command(
     shell_override: Option<String>,
     status_env: Vec<(String, String)>,
 ) -> (CommandBuilder, String) {
-    let shell = resolve_shell_with(shell_override);
+    // Resolve the start directory before picking the shell: on Windows the
+    // choice depends on it (cmd.exe cannot start in a UNC directory).
+    let cwd = usable_cwd(cwd);
+    let override_present = shell_override
+        .as_deref()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    let shell = adjust_shell_for_unc_cwd(
+        resolve_shell_with(shell_override),
+        override_present,
+        cwd.as_deref(),
+        cfg!(windows),
+    );
     let mut cmd = CommandBuilder::new(&shell);
     // Run as a login shell so it sources the user's profile and inherits the
     // full PATH (Homebrew etc.); a GUI-launched non-login shell misses those.
     for arg in login_args(&shell) {
         cmd.arg(arg);
     }
-    if let Some(dir) = usable_cwd(cwd) {
+    if let Some(dir) = cwd {
         cmd.cwd(dir);
     }
     // Windows has no OS-level cwd backend (no /proc, no lsof — see
