@@ -6,7 +6,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { buildTerminalFontFamily } from "@/modules/fonts/lib/fontChain";
 import { isLocalUrl, isWebUrl } from "@/lib/url";
-import { IS_MAC, matchesOpenModifier } from "@/lib/platform";
+import { IS_MAC, IS_WINDOWS, matchesOpenModifier } from "@/lib/platform";
 import { hideLinkTooltip, showLinkTooltip } from "./linkTooltip";
 import "@xterm/xterm/css/xterm.css";
 
@@ -22,6 +22,39 @@ export interface TerminalHandle {
   term: Terminal;
   fit: FitAddon;
   search: SearchAddon;
+}
+
+/**
+ * Convert a file:// URI from an OSC 8 link into a filesystem path, or "" when
+ * the URI doesn't name a plain local file. OSC 8 URIs are attacker-supplied
+ * (anything that prints to the terminal), so this rejects rather than guesses.
+ * On Windows the URL pathname keeps a leading slash before the drive letter
+ * (file:///C:/x -> /C:/x), which the fs commands reject.
+ */
+export function fileUriToPath(uri: string, isWindows: boolean = IS_WINDOWS): string {
+  let path: string;
+  try {
+    const url = new URL(uri);
+    if (url.protocol !== "file:") {
+      return "";
+    }
+    // A remote host would either vanish from pathname (file://host/x -> /x)
+    // or come back as a UNC target; reject rather than open something other
+    // than what the link claims to be.
+    if (url.host && url.host !== "localhost") {
+      return "";
+    }
+    path = decodeURIComponent(url.pathname);
+  } catch {
+    path = uri.replace(/^file:\/\/(?:localhost)?/i, "");
+  }
+  if (isWindows && /^\/[A-Za-z]:/.test(path)) {
+    path = path.slice(1);
+  }
+  // Accept only plain absolute paths. A leading double slash (or backslash)
+  // is a UNC host on Windows — opening one fires an SMB connection at an
+  // attacker-chosen machine — and anything relative is not a file link.
+  return /^(?:[A-Za-z]:[\\/]|\/(?![/\\]))/.test(path) ? path : "";
 }
 
 export interface CreateTerminalOptions {
@@ -56,6 +89,11 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
     // Alt+click that opens file links.
     altClickMovesCursor: false,
     linkHandler: {
+      // Without this xterm's built-in OSC 8 provider drops every non-http(s)
+      // URI before the handler runs, so file:// links would never activate.
+      // Safe to enable: activate only acts on web and file:// URIs, requires a
+      // modifier-click, and file links open read-only in the editor pane.
+      allowNonHttpProtocols: true,
       activate: (event, uri) => {
         if (!matchesOpenModifier(event, IS_MAC)) {
           return;
@@ -66,13 +104,10 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
           } else {
             void openUrl(uri);
           }
-        } else if (uri.startsWith("file://") && options.onOpenFileUrl) {
-          try {
-            const raw = decodeURIComponent(new URL(uri).pathname);
-            options.onOpenFileUrl(raw);
-          } catch {
-            const raw = uri.replace(/^file:\/\/(?:localhost)?/i, "");
-            options.onOpenFileUrl(raw);
+        } else if (/^file:/i.test(uri) && options.onOpenFileUrl) {
+          const path = fileUriToPath(uri);
+          if (path) {
+            options.onOpenFileUrl(path);
           }
         }
       },
