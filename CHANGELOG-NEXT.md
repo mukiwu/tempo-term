@@ -8,6 +8,7 @@
 ### fix
 
 - 修正 git graph 裡分支尾端併回主線時，分支的線會蓋在主線上的問題：分支現在沿自己的軌道畫到底、貼著匯入的 commit 才彎進去，多條分支併進同一個 commit 也各走各的軌道 (#274)
+- 修正 Windows 上工作目錄在網路共享（UNC 路徑）時終端機開錯位置的問題：cmd.exe 不支援 UNC 起始目錄會退回 C:\Windows，現在這種情況自動改用 PowerShell 啟動；有自訂 shell 設定時仍尊重使用者的選擇 (#284)
 
 ## English
 
@@ -19,3 +20,4 @@
 ### fix
 
 - Fix branch tails overdrawing the trunk in the git graph when merging back: a branch now runs down its own lane and only bends in right at its parent commit, and multiple branches joining the same commit each keep their own lane (#274)
+- Fix terminals opening in the wrong place on Windows when the working directory is a network share (UNC path): cmd.exe rejects a UNC start directory and falls back to C:\Windows, so PowerShell is started instead in that case; a custom shell setting is still respected as-is (#284)
