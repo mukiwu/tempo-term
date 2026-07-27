@@ -66,6 +66,36 @@ describe("FileTree opening a file", () => {
     const tab = useTabsStore.getState().tabs[0];
     expect(tab.paneTree.kind).toBe("split");
   });
+
+  // The component reads the platform default, and jsdom is neither mac nor
+  // Windows, so these fire both modifiers rather than betting on the UA
+  // sniff. Which key maps to which platform is pinned in platform.test.ts.
+  const newTabClick = (el: Element) =>
+    fireEvent.click(el, { metaKey: true, ctrlKey: true });
+
+  it("opens a modifier-clicked file in its own tab instead of splitting", () => {
+    const entries = [
+      { name: "main.ts", path: "/p/main.ts", is_dir: false, size: 0 },
+      { name: "util.ts", path: "/p/util.ts", is_dir: false, size: 0 },
+    ];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+
+    fireEvent.click(screen.getByText("main.ts"));
+    newTabClick(screen.getByText("util.ts"));
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(2);
+    expect(tabs.every((t) => t.paneTree.kind === "leaf")).toBe(true);
+  });
+
+  it("ignores the modifier on a directory, which expands rather than opens", () => {
+    const entries = [{ name: "dir", path: "/p/dir", is_dir: true, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+
+    newTabClick(screen.getByText("dir"));
+
+    expect(useTabsStore.getState().tabs).toHaveLength(0);
+  });
 });
 
 describe("FileTree at pane capacity", () => {

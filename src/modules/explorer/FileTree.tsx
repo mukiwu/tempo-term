@@ -15,6 +15,7 @@ import {
   TerminalSquare,
   Trash2,
 } from "lucide-react";
+import { matchesNewTabModifier } from "@/lib/platform";
 import { FileIcon } from "./components/FileIcon";
 import {
   fsCreateDir,
@@ -173,9 +174,16 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
     setExpanded(true);
   }
 
-  async function toggle() {
+  /**
+   * `newTab` is the Cmd/Ctrl-click path onto the same action the context menu
+   * already offers, for people who never find the context menu. Directories
+   * ignore it — clicking one expands it in place, it opens nothing.
+   */
+  async function toggle(newTab = false) {
     if (!entry.is_dir) {
-      const result = openFromSidebar({ kind: "editor", path: entry.path });
+      const result = newTab
+        ? openInNewTab({ kind: "editor", path: entry.path })
+        : openFromSidebar({ kind: "editor", path: entry.path });
       if (result.status === "at-capacity") {
         setAtCapacity(true);
       }
@@ -383,11 +391,11 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
           <Tooltip label={entry.name} className="w-full">
             <button
               type="button"
-              onClick={() => {
+              onClick={(event) => {
                 if (consumeDragClick()) {
                   return;
                 }
-                void toggle();
+                void toggle(matchesNewTabModifier(event));
               }}
               onContextMenu={(event) => {
                 event.preventDefault();

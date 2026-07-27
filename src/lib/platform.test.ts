@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { matchesOpenModifier, openModifierLabel } from "./platform";
+import {
+  matchesNewTabModifier,
+  matchesOpenModifier,
+  openModifierLabel,
+} from "./platform";
 
 type Mods = { altKey?: boolean; metaKey?: boolean; ctrlKey?: boolean };
 const ev = (m: Mods) => ({ altKey: false, metaKey: false, ctrlKey: false, ...m });
@@ -25,6 +29,33 @@ describe("matchesOpenModifier", () => {
   });
   it("non-mac: Cmd alone does not match", () => {
     expect(matchesOpenModifier(ev({ metaKey: true }), false)).toBe(false);
+  });
+});
+
+// Narrower than matchesOpenModifier on purpose: Alt activates a terminal link
+// but has never meant "new tab" anywhere, so it must not open one here.
+describe("matchesNewTabModifier", () => {
+  it("mac: Cmd matches", () => {
+    expect(matchesNewTabModifier(ev({ metaKey: true }), true)).toBe(true);
+  });
+  it("mac: Ctrl does not match", () => {
+    expect(matchesNewTabModifier(ev({ ctrlKey: true }), true)).toBe(false);
+  });
+  it("mac: Alt does not match", () => {
+    expect(matchesNewTabModifier(ev({ altKey: true }), true)).toBe(false);
+  });
+  it("non-mac: Ctrl matches", () => {
+    expect(matchesNewTabModifier(ev({ ctrlKey: true }), false)).toBe(true);
+  });
+  it("non-mac: Cmd does not match", () => {
+    expect(matchesNewTabModifier(ev({ metaKey: true }), false)).toBe(false);
+  });
+  it("non-mac: Alt does not match", () => {
+    expect(matchesNewTabModifier(ev({ altKey: true }), false)).toBe(false);
+  });
+  it("no modifier never matches", () => {
+    expect(matchesNewTabModifier(ev({}), true)).toBe(false);
+    expect(matchesNewTabModifier(ev({}), false)).toBe(false);
   });
 });
 

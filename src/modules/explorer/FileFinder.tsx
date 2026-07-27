@@ -8,6 +8,7 @@ import { useRecentFilesStore } from "./lib/recentFiles";
 import { FileIcon } from "./components/FileIcon";
 import { InfoDialog } from "@/components/InfoDialog";
 import { useOverlayGuard } from "@/lib/overlayGuard";
+import { matchesNewTabModifier } from "@/lib/platform";
 import { useTabsStore } from "@/stores/tabsStore";
 
 interface FileFinderProps {
@@ -33,6 +34,7 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const activeResultRef = useRef<HTMLButtonElement | null>(null);
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
+  const openInNewTab = useTabsStore((s) => s.openInNewTab);
   const recentPaths = useRecentFilesStore((s) => s.paths);
   const addRecent = useRecentFilesStore((s) => s.addRecent);
 
@@ -113,8 +115,11 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
     // still re-scrolls back to the active row.
   }, [activeIndex, results]);
 
-  function open(path: string) {
-    const result = openFromSidebar({ kind: "editor", path });
+  /** `newTab` mirrors the file tree's Cmd/Ctrl gesture, on click and on Enter. */
+  function open(path: string, newTab = false) {
+    const result = newTab
+      ? openInNewTab({ kind: "editor", path })
+      : openFromSidebar({ kind: "editor", path });
     if (result.status === "at-capacity") {
       setAtCapacity(true);
       return;
@@ -138,7 +143,7 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
       e.preventDefault();
       setActiveIndex((i) => (results.length ? (i - 1 + results.length) % results.length : 0));
     } else if (e.key === "Enter" && results[activeIndex]) {
-      open(results[activeIndex]);
+      open(results[activeIndex], matchesNewTabModifier(e));
     }
   }
 
@@ -194,7 +199,7 @@ export function FileFinder({ root, onClose }: FileFinderProps) {
                     <button
                       ref={active ? activeResultRef : undefined}
                       type="button"
-                      onClick={() => open(path)}
+                      onClick={(event) => open(path, matchesNewTabModifier(event))}
                       // mousemove, not mouseenter: keyboard-driven scrolling
                       // can slide a row under a stationary cursor, and a plain
                       // enter there would steal the selection from the keyboard.

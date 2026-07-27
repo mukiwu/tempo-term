@@ -44,3 +44,24 @@ export function matchesOpenModifier(
 export function openModifierLabel(isMac: boolean = IS_MAC): string {
   return isMac ? "Alt / Cmd" : "Alt / Ctrl";
 }
+
+/**
+ * Whether a click (or Enter) asks for a new tab instead of the sidebar's
+ * default, which is to split the active tab.
+ *
+ * Deliberately not `matchesOpenModifier`: that one is the terminal's
+ * link-activation gesture and counts Alt, which nowhere means "new tab". This
+ * is the plain Cmd/Ctrl-click that browsers, editors and Finder all share.
+ *
+ * Splitting on mac rather than on `IS_WINDOWS` is intentional here (cf. the
+ * windows-tauri rule against mac-vs-everything-else gates): Ctrl-click is the
+ * new-tab gesture on Windows *and* Linux, so the non-mac arm is the real
+ * Windows path, not a fallback that leaves it without one. Both arms are
+ * asserted in platform.test.ts.
+ */
+export function matchesNewTabModifier(
+  event: ModifierEvent,
+  isMac: boolean = IS_MAC,
+): boolean {
+  return isMac ? event.metaKey : event.ctrlKey;
+}

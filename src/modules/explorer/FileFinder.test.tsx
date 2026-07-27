@@ -50,6 +50,35 @@ describe("FileFinder opening a file", () => {
     const tab = useTabsStore.getState().tabs[0];
     expect(tab.paneTree.kind).toBe("split");
   });
+
+  // Both modifiers fired for the same reason as in FileTree.test.tsx: jsdom is
+  // neither platform, so the mapping is pinned in platform.test.ts instead.
+  const MODS = { metaKey: true, ctrlKey: true };
+
+  it("opens a modifier-clicked result in its own tab instead of splitting", async () => {
+    useTabsStore.getState().openEditorTab("/p/main.ts");
+    render(<FileFinder root="/p" onClose={() => {}} />);
+    await waitFor(() => screen.getByText("util.ts"));
+
+    fireEvent.click(screen.getByText("util.ts"), MODS);
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(2);
+    expect(tabs.every((t) => t.paneTree.kind === "leaf")).toBe(true);
+  });
+
+  it("honours the modifier on Enter, not just on click", async () => {
+    useTabsStore.getState().openEditorTab("/p/main.ts");
+    render(<FileFinder root="/p" onClose={() => {}} />);
+    await waitFor(() => screen.getByText("util.ts"));
+
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "util" } });
+    await waitFor(() => screen.getByText("util.ts"));
+    fireEvent.keyDown(input, { key: "Enter", ...MODS });
+
+    expect(useTabsStore.getState().tabs).toHaveLength(2);
+  });
 });
 
 describe("FileFinder keyboard navigation", () => {
