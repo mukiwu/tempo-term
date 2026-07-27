@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
+import { SquareMinus } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 
 /**
@@ -29,6 +29,17 @@ export function PaneHeader({
       {left ?? <span />}
       <div className="flex shrink-0 items-center gap-0.5">
         {actions}
+        {/*
+          Deliberately not a ✕, and deliberately not the danger hover. This
+          button sits one row below the tab bar's own ✕, and the two used to be
+          near-identical glyphs a few pixels apart — with the colours the wrong
+          way round, since the tab ✕ destroys the whole tab (shells included, no
+          undo) while this one only peels off a split. So: the destructive close
+          keeps the ✕ and takes the danger hover, and this one reads as
+          "remove this cell" instead. The Panel and Columns icon families are
+          out: they already mean the sidebar toggles and the editor's split
+          mode.
+        */}
         {showClose && (
           <Tooltip label={t("workspace.closePane")}>
             <button
@@ -38,9 +49,9 @@ export function PaneHeader({
                 e.stopPropagation();
                 onClose();
               }}
-              className="rounded p-1 text-fg-muted transition-colors hover:bg-danger/15 hover:text-danger"
+              className="rounded p-1 text-fg-muted transition-colors hover:bg-border-strong hover:text-fg"
             >
-              <X size={14} />
+              <SquareMinus size={14} />
             </button>
           </Tooltip>
         )}

@@ -173,8 +173,15 @@ function TabItem({ id }: { id: string }) {
           <span className="max-w-[160px] truncate">{tab.title}</span>
         </Tooltip>
       )}
-      {/* The ✕ glyph is self-explanatory; only the dirty dot needs a hint. */}
-      <Tooltip label={dirty ? t("editor:unsaved") : undefined} side="bottom">
+      {/*
+        Always labelled, and the only close button in the window that hovers to
+        danger. A split tab also shows a close button in each pane header one
+        row below; that one used to be the ✕-shaped red one even though it just
+        peels off a split, while this ✕ — which drops the whole tab, shells and
+        all, with no undo — hovered to plain grey. The weight now matches the
+        cost, and the tooltip names which is which.
+      */}
+      <Tooltip label={dirty ? t("editor:unsaved") : t("actions.closeTab")} side="bottom">
         <button
           type="button"
           aria-label={dirty ? t("editor:unsaved") : t("actions.closeTab")}
@@ -183,7 +190,7 @@ function TabItem({ id }: { id: string }) {
             e.stopPropagation();
             requestClose();
           }}
-          className="group/close rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
+          className="group/close rounded p-0.5 text-fg-subtle hover:bg-danger/15 hover:text-danger"
         >
           {dirty ? (
             <>

@@ -64,14 +64,16 @@ describe("TabBar global file search trigger", () => {
 });
 
 describe("TabBar close button tooltip", () => {
-  it("shows no tooltip on a clean tab's close button (the ✕ is self-explanatory)", () => {
+  // A split tab shows a second close button in each pane header one row below,
+  // so the ✕ cannot stand on its own — it has to name the level it acts on.
+  it("names the tab on a clean tab's close button", () => {
     vi.useFakeTimers();
     try {
       render(<TabBar />);
       const close = screen.getByLabelText("Close Tab");
       fireEvent.mouseEnter(close.parentElement!);
       act(() => vi.advanceTimersByTime(1000));
-      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+      expect(screen.getByRole("tooltip")).toHaveTextContent("Close Tab");
     } finally {
       vi.useRealTimers();
     }
