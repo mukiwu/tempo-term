@@ -89,6 +89,29 @@
     "dark": "深色",
     "light": "淺色"
   },
+  "background": {
+    "label": "背景圖片",
+    "description": "挑選一張本機圖片套用至工作區或整個視窗。TempoTerm 會保存一份 App 管理的副本，移動原始圖片也不會失效。",
+    "emptyTitle": "加入個人背景",
+    "formats": "PNG、JPEG 或 WebP，檔案上限 20 MB",
+    "previewAlt": "自訂背景預覽",
+    "previewUnavailable": "無法顯示預覽",
+    "scopeLabel": "顯示範圍",
+    "scope": {
+      "workspace": "工作區",
+      "window": "整個視窗"
+    },
+    "opacity": "圖片透明度",
+    "opacityHint": "介面表面會保留主題色遮罩，避免文字與圖片混成一場視力測驗。",
+    "choose": "選擇圖片",
+    "replace": "替換",
+    "remove": "移除",
+    "saving": "儲存中⋯",
+    "removing": "移除中⋯",
+    "saveError": "無法儲存圖片，請選擇 20 MB 以下的 PNG、JPEG 或 WebP 檔案。",
+    "removeError": "無法移除已儲存的背景圖片。",
+    "loadError": "無法載入已儲存的圖片，請替換成另一張圖片。"
+  },
   "fonts": {
     "label": "終端機字體",
     "description": "挑一個主要等寬字體，正體中文會自動套用合適的後備字體",

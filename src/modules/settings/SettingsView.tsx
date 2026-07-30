@@ -14,6 +14,7 @@ import { AiSettingsSection } from "./AiSettingsSection";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 import { AboutSettingsSection } from "./AboutSettingsSection";
+import { BackgroundImageSettings } from "./BackgroundImageSettings";
 
 const SECTIONS = ["appearance", "terminal", "ai", "workspace", "shortcuts", "about"] as const;
 type SectionId = typeof SECTIONS[number];
@@ -165,6 +166,10 @@ function AppearanceSection() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="mt-8 border-t border-border pt-8">
+        <BackgroundImageSettings />
       </div>
 
       {/* Font settings stay under Appearance; terminal behaviour now has its

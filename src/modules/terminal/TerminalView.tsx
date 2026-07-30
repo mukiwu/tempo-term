@@ -100,7 +100,7 @@ import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useTabsStore } from "@/stores/tabsStore";
-import { getTheme } from "@/themes/themes";
+import { terminalThemeWithBackground } from "./lib/backgroundTheme";
 
 // The home dir never changes within a session; fetch it once and share it so
 // `~/…` paths in terminal output can be expanded.
@@ -213,6 +213,9 @@ export function TerminalView({
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
   const themeId = useSettingsStore((s) => s.themeId);
+  const backgroundImagePath = useSettingsStore((s) => s.backgroundImagePath);
+  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity);
+  const backgroundImageActive = Boolean(backgroundImagePath) && backgroundImageOpacity > 0;
   const terminalPadding = useSettingsStore((s) => s.terminalPadding);
   const [connecting, setConnecting] = useState(true);
   // For SSH panes restored after an app relaunch: the freshSshLeaves set is empty,
@@ -330,7 +333,11 @@ export function TerminalView({
     const handle = createTerminal({
       fontFamily: selectTerminalFontFamily(initial),
       fontSize: initial.fontSize,
-      theme: getTheme(useSettingsStore.getState().themeId).terminal,
+      theme: terminalThemeWithBackground(
+        useSettingsStore.getState().themeId,
+        Boolean(useSettingsStore.getState().backgroundImagePath) &&
+          useSettingsStore.getState().backgroundImageOpacity > 0,
+      ),
       linkHint: linkHintRef.current,
       onOpenLocalUrl: (url) => onOpenPreviewRef.current?.(url),
       onOpenFileUrl: (url) => {
@@ -1209,9 +1216,9 @@ export function TerminalView({
   useEffect(() => {
     const handle = handleRef.current;
     if (handle) {
-      handle.term.options.theme = getTheme(themeId).terminal;
+      handle.term.options.theme = terminalThemeWithBackground(themeId, backgroundImageActive);
     }
-  }, [themeId]);
+  }, [themeId, backgroundImageActive]);
 
   // The pane's inner padding is configurable via a settings-panel slider,
   // which fires this effect on every value while the user drags — apply it
@@ -1552,7 +1559,7 @@ export function TerminalView({
       ref={containerRef}
       className="relative h-full w-full"
       style={{
-        backgroundColor: getTheme(themeId).terminal.background,
+        backgroundColor: terminalThemeWithBackground(themeId, backgroundImageActive).background,
       }}
       onDragEnter={(event) => {
         if (nativeDragPathsRef.current.length > 0) {

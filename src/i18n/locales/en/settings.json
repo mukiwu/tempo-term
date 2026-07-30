@@ -89,6 +89,29 @@
     "dark": "Dark",
     "light": "Light"
   },
+  "background": {
+    "label": "Background image",
+    "description": "Choose a local image for the workspace or the whole window. TempoTerm keeps a private app-managed copy, so moving the original will not break it.",
+    "emptyTitle": "Add a personal background",
+    "formats": "PNG, JPEG, or WebP · up to 20 MB",
+    "previewAlt": "Custom background preview",
+    "previewUnavailable": "Preview unavailable",
+    "scopeLabel": "Display area",
+    "scope": {
+      "workspace": "Workspace",
+      "window": "Whole window"
+    },
+    "opacity": "Image opacity",
+    "opacityHint": "Interface surfaces keep a theme-coloured scrim so text stays readable.",
+    "choose": "Choose image",
+    "replace": "Replace",
+    "remove": "Remove",
+    "saving": "Saving…",
+    "removing": "Removing…",
+    "saveError": "The image could not be saved. Choose a PNG, JPEG, or WebP file under 20 MB.",
+    "removeError": "The saved background could not be removed.",
+    "loadError": "The saved image could not be loaded. Replace it with another image."
+  },
   "fonts": {
     "label": "Terminal font",
     "description": "Pick the primary monospace font; a Traditional Chinese fallback is applied automatically",

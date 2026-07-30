@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_TERMINAL_PADDING,
+  MAX_BACKGROUND_IMAGE_OPACITY,
   MAX_TERMINAL_PADDING,
+  MIN_BACKGROUND_IMAGE_OPACITY,
   MIN_TERMINAL_PADDING,
   useSettingsStore,
 } from "./settingsStore";
@@ -15,6 +18,9 @@ describe("settingsStore", () => {
     useSettingsStore.setState({
       language: initialState.language,
       themeId: initialState.themeId,
+      backgroundImagePath: null,
+      backgroundImageOpacity: DEFAULT_BACKGROUND_IMAGE_OPACITY,
+      backgroundImageScope: "workspace",
       terminalPadding: initialState.terminalPadding,
       wordWrap: initialState.wordWrap,
       workspaceCard: { status: true, branch: true, cwd: true, pr: true },
@@ -29,6 +35,47 @@ describe("settingsStore", () => {
   it("defaults to English and the default theme", () => {
     expect(useSettingsStore.getState().language).toBe("en");
     expect(useSettingsStore.getState().themeId).toBe(DEFAULT_THEME_ID);
+  });
+
+  it("stores an app-managed background image and clears it independently", () => {
+    expect(useSettingsStore.getState().backgroundImagePath).toBeNull();
+    useSettingsStore.getState().setBackgroundImage("/app-data/appearance/background.png");
+    expect(useSettingsStore.getState().backgroundImagePath).toBe(
+      "/app-data/appearance/background.png",
+    );
+    expect(localStorage.getItem("tempoterm-settings")).toContain("background.png");
+
+    useSettingsStore.getState().clearBackgroundImage();
+    expect(useSettingsStore.getState().backgroundImagePath).toBeNull();
+  });
+
+  it("defaults and clamps background image opacity to an integer percentage", () => {
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(
+      DEFAULT_BACKGROUND_IMAGE_OPACITY,
+    );
+    useSettingsStore.getState().setBackgroundImageOpacity(1000);
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(
+      MAX_BACKGROUND_IMAGE_OPACITY,
+    );
+    useSettingsStore.getState().setBackgroundImageOpacity(-4);
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(
+      MIN_BACKGROUND_IMAGE_OPACITY,
+    );
+    useSettingsStore.getState().setBackgroundImageOpacity(42.6);
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(43);
+    useSettingsStore.getState().setBackgroundImageOpacity(Number.NaN);
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(
+      DEFAULT_BACKGROUND_IMAGE_OPACITY,
+    );
+  });
+
+  it("switches and persists the background image scope", () => {
+    expect(useSettingsStore.getState().backgroundImageScope).toBe("workspace");
+    useSettingsStore.getState().setBackgroundImageScope("window");
+    expect(useSettingsStore.getState().backgroundImageScope).toBe("window");
+    expect(localStorage.getItem("tempoterm-settings")).toContain(
+      '"backgroundImageScope":"window"',
+    );
   });
 
   it("defaults the terminal padding and clamps out-of-range values", () => {

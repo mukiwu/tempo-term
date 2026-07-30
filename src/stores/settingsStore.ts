@@ -12,6 +12,12 @@ export const MAX_UI_ZOOM = 2;
 export const UI_ZOOM_STEP = 0.1;
 export const DEFAULT_UI_ZOOM = 1;
 
+export const MIN_BACKGROUND_IMAGE_OPACITY = 0;
+export const MAX_BACKGROUND_IMAGE_OPACITY = 100;
+export const DEFAULT_BACKGROUND_IMAGE_OPACITY = 20;
+
+export type BackgroundImageScope = "workspace" | "window";
+
 /** Which info blocks each workspace card shows; all on by default. */
 export interface WorkspaceCardBlocks {
   status: boolean;
@@ -33,6 +39,12 @@ const DEFAULT_WORKSPACE_CARD: WorkspaceCardBlocks = {
 interface SettingsState {
   language: SupportedLanguage;
   themeId: string;
+  /** App-managed local image shown behind workspace surfaces. */
+  backgroundImagePath: string | null;
+  /** Background image visibility as an integer percentage. */
+  backgroundImageOpacity: number;
+  /** Whether the image stays in the central workspace or spans the window. */
+  backgroundImageScope: BackgroundImageScope;
   /** Inner padding (px) between the terminal content and its pane edges. */
   terminalPadding: number;
   wordWrap: boolean;
@@ -97,6 +109,10 @@ interface SettingsState {
   setShowAllPorts: (value: boolean) => void;
   setLanguage: (language: SupportedLanguage) => void;
   setThemeId: (themeId: string) => void;
+  setBackgroundImage: (path: string) => void;
+  clearBackgroundImage: () => void;
+  setBackgroundImageOpacity: (opacity: number) => void;
+  setBackgroundImageScope: (scope: BackgroundImageScope) => void;
   setTerminalPadding: (padding: number) => void;
   toggleWordWrap: () => void;
   setRestoreTerminalHistory: (value: boolean) => void;
@@ -139,11 +155,24 @@ function clampZoom(value: number): number {
   return Math.round(clamped * 10) / 10;
 }
 
+function clampBackgroundImageOpacity(value: number): number {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return DEFAULT_BACKGROUND_IMAGE_OPACITY;
+  }
+  return Math.min(
+    MAX_BACKGROUND_IMAGE_OPACITY,
+    Math.max(MIN_BACKGROUND_IMAGE_OPACITY, Math.round(value)),
+  );
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       language: DEFAULT_LANGUAGE,
       themeId: DEFAULT_THEME_ID,
+      backgroundImagePath: null,
+      backgroundImageOpacity: DEFAULT_BACKGROUND_IMAGE_OPACITY,
+      backgroundImageScope: "workspace",
       terminalPadding: DEFAULT_TERMINAL_PADDING,
       wordWrap: false,
       restoreTerminalHistory: true,
@@ -173,6 +202,11 @@ export const useSettingsStore = create<SettingsState>()(
       setOnboardingCompleted: (value) => set({ onboardingCompleted: value }),
       setLanguage: (language) => set({ language }),
       setThemeId: (themeId) => set({ themeId }),
+      setBackgroundImage: (backgroundImagePath) => set({ backgroundImagePath }),
+      clearBackgroundImage: () => set({ backgroundImagePath: null }),
+      setBackgroundImageOpacity: (opacity) =>
+        set({ backgroundImageOpacity: clampBackgroundImageOpacity(opacity) }),
+      setBackgroundImageScope: (backgroundImageScope) => set({ backgroundImageScope }),
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
       toggleWordWrap: () => set((s) => ({ wordWrap: !s.wordWrap })),
       setRestoreTerminalHistory: (value) => set({ restoreTerminalHistory: value }),

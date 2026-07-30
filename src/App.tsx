@@ -27,6 +27,7 @@ import { focusedTerminalOps } from "@/modules/terminal/lib/terminalBus";
 import { getPreviewControls, type PreviewControls } from "@/modules/preview/lib/previewControls";
 import { menuCopy, menuPaste, menuSelectAll } from "@/lib/editActions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { BackgroundImageLayer } from "@/components/BackgroundImageLayer";
 import { FileFinder } from "@/modules/explorer/FileFinder";
 import { canSearchRoot } from "@/modules/explorer/lib/fsBridge";
 import { applyTheme, getTheme } from "@/themes/themes";
@@ -153,6 +154,13 @@ function App() {
   const { t } = useTranslation();
   const themeId = useSettingsStore((s) => s.themeId);
   const uiZoom = useSettingsStore((s) => s.uiZoom);
+  const backgroundImagePath = useSettingsStore((s) => s.backgroundImagePath);
+  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity);
+  const backgroundImageScope = useSettingsStore((s) => s.backgroundImageScope);
+  const windowBackgroundActive =
+    Boolean(backgroundImagePath) &&
+    backgroundImageOpacity > 0 &&
+    backgroundImageScope === "window";
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const worktreesModal = useUiStore((s) => s.worktreesModal);
   const setupWizardOpen = useUiStore((s) => s.setupWizardOpen);
@@ -695,37 +703,45 @@ function App() {
   }, [setSetupWizardOpen]);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-fg">
+    <div
+      data-background-image-scope={backgroundImagePath ? backgroundImageScope : "none"}
+      className={`relative isolate flex h-screen w-screen flex-col overflow-hidden bg-bg text-fg ${
+        windowBackgroundActive ? "wallpaper-surface" : ""
+      }`}
+    >
+      <BackgroundImageLayer scope="window" />
       <TitleBar />
       <TabBar />
 
       <DockShell />
 
       <StatusBar />
-      {settingsOpen && <SettingsModal />}
-      {worktreesModal && <WorktreesModal state={worktreesModal} />}
-      {setupWizardOpen && <SetupWizard />}
-      {fileFinderOpen && canSearchRoot(rootPath) && (
-        <FileFinder root={rootPath} onClose={() => setFileFinderOpen(false)} />
-      )}
-      <UpdateModal />
-      <UpdateToast />
-      <NotifyToast />
-      <SshPromptDialog />
-      <InputContextMenu />
-      {pendingCloseAction && (
-        <ConfirmDialog
-          title={t("editor:closeUnsavedTitle")}
-          message={t("editor:closeUnsavedMessage")}
-          confirmLabel={t("editor:discardClose")}
-          cancelLabel={t("actions.cancel")}
-          onConfirm={() => {
-            pendingCloseAction();
-            setPendingCloseAction(null);
-          }}
-          onCancel={() => setPendingCloseAction(null)}
-        />
-      )}
+      <div className="wallpaper-solid-surface contents">
+        {settingsOpen && <SettingsModal />}
+        {worktreesModal && <WorktreesModal state={worktreesModal} />}
+        {setupWizardOpen && <SetupWizard />}
+        {fileFinderOpen && canSearchRoot(rootPath) && (
+          <FileFinder root={rootPath} onClose={() => setFileFinderOpen(false)} />
+        )}
+        <UpdateModal />
+        <UpdateToast />
+        <NotifyToast />
+        <SshPromptDialog />
+        <InputContextMenu />
+        {pendingCloseAction && (
+          <ConfirmDialog
+            title={t("editor:closeUnsavedTitle")}
+            message={t("editor:closeUnsavedMessage")}
+            confirmLabel={t("editor:discardClose")}
+            cancelLabel={t("actions.cancel")}
+            onConfirm={() => {
+              pendingCloseAction();
+              setPendingCloseAction(null);
+            }}
+            onCancel={() => setPendingCloseAction(null)}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -82,6 +82,10 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
     // Keep the default line height (1.0). A larger value spreads the rows
     // apart and the text looks scattered.
     cursorBlink: true,
+    // xterm requires transparency support to be chosen before open() and does
+    // not allow changing it later. Background-image settings are live, so keep
+    // the renderer capable and use an opaque theme whenever no image is active.
+    allowTransparency: true,
     allowProposedApi: true,
     theme: options.theme,
     scrollback: 10000,

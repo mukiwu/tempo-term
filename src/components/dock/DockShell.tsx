@@ -10,7 +10,9 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { TabsArea } from "@/components/TabsArea";
+import { BackgroundImageLayer } from "@/components/BackgroundImageLayer";
 import { Resizer } from "@/components/Resizer";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore, type DockSide, type PanelId } from "@/stores/uiStore";
 import { PANEL_REGISTRY } from "./panelRegistry";
 import { DockColumn } from "./DockColumn";
@@ -34,6 +36,13 @@ export function DockShell() {
   const panelOrder = useUiStore((s) => s.panelOrder);
   const visible = useUiStore((s) => s.visible);
   const width = useUiStore((s) => s.width);
+  const backgroundImagePath = useSettingsStore((s) => s.backgroundImagePath);
+  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity);
+  const backgroundImageScope = useSettingsStore((s) => s.backgroundImageScope);
+  const workspaceBackgroundActive =
+    Boolean(backgroundImagePath) &&
+    backgroundImageOpacity > 0 &&
+    backgroundImageScope === "workspace";
 
   const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
   const [draggingId, setDraggingId] = useState<PanelId | null>(null);
@@ -107,7 +116,12 @@ export function DockShell() {
           />
         )}
 
-        <main className="min-w-0 flex-1 overflow-hidden">
+        <main
+          className={`relative isolate min-w-0 flex-1 overflow-hidden ${
+            workspaceBackgroundActive ? "wallpaper-surface" : ""
+          }`}
+        >
+          <BackgroundImageLayer scope="workspace" />
           <TabsArea />
         </main>
 

@@ -87,6 +87,31 @@ body {
 }
 
 /*
+ * Custom background images sit behind the normal semantic surfaces. Only the
+ * scope owner opts into these translucent token overrides, so workspace mode
+ * leaves window chrome untouched. Elevated controls stay more opaque than
+ * broad surfaces, and full-screen overlays rebind the original solid tokens.
+ */
+.wallpaper-surface {
+  --color-bg: color-mix(in srgb, var(--color-bg-solid) 82%, transparent);
+  --color-bg-inset: color-mix(in srgb, var(--color-bg-inset-solid) 82%, transparent);
+  --color-bg-elevated: color-mix(in srgb, var(--color-bg-elevated-solid) 92%, transparent);
+}
+
+:root[data-appearance="light"] .wallpaper-surface {
+  --color-bg: color-mix(in srgb, var(--color-bg-solid) 88%, transparent);
+  --color-bg-inset: color-mix(in srgb, var(--color-bg-inset-solid) 88%, transparent);
+  --color-bg-elevated: color-mix(in srgb, var(--color-bg-elevated-solid) 94%, transparent);
+}
+
+.wallpaper-solid-surface,
+.wallpaper-surface [role="dialog"][aria-modal="true"] {
+  --color-bg: var(--color-bg-solid);
+  --color-bg-inset: var(--color-bg-inset-solid);
+  --color-bg-elevated: var(--color-bg-elevated-solid);
+}
+
+/*
  * No custom ::-webkit-scrollbar styling on purpose. Any rule here switches
  * WebKit (the macOS WKWebView this app runs in) from native overlay scrollbars
  * to always-on classic ones, which float over and cover text in the default

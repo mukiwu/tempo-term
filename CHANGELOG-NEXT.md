@@ -2,6 +2,7 @@
 
 ### feat
 
+- 外觀設定新增自訂背景圖片，可保存 PNG、JPEG 或 WebP 到 App 資料夾，調整透明度，並選擇只套用於工作區或延伸至整個視窗
 - 檔案總管與檔案搜尋支援按住 Cmd／Ctrl 點擊，把檔案開成獨立分頁而不是分割目前的分頁；一般點擊維持原本的分割行為，檔案搜尋按 Enter 時也同樣有效 (#300)
 
 ### fix
@@ -12,6 +13,7 @@
 
 ### feat
 
+- Add app-managed PNG, JPEG, or WebP background images in Appearance settings, with adjustable opacity and a choice between the workspace or the whole window
 - Cmd/Ctrl-click a file in the explorer or the file finder to open it in its own tab instead of splitting the active one; a plain click still splits, and the file finder honours the modifier on Enter too (#300)
 
 ### fix

@@ -64,6 +64,12 @@ describe("createTerminal link handler", () => {
 });
 
 describe("createTerminal search", () => {
+  it("enables transparency before the terminal is opened", () => {
+    const { term } = createTerminal();
+    expect(term.options.allowTransparency).toBe(true);
+    term.dispose();
+  });
+
   it("exposes a search addon that finds text already in the buffer", async () => {
     const { term, search } = createTerminal();
     const container = document.createElement("div");
