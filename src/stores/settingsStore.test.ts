@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  DEFAULT_BACKGROUND_IMAGE_OPACITY,
+  DEFAULT_TERMINAL_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_TERMINAL_PADDING,
+  MAX_BACKGROUND_IMAGE_OPACITY,
   MAX_TERMINAL_PADDING,
+  MIN_BACKGROUND_IMAGE_OPACITY,
   MIN_TERMINAL_PADDING,
   useSettingsStore,
 } from "./settingsStore";
@@ -15,6 +19,11 @@ describe("settingsStore", () => {
     useSettingsStore.setState({
       language: initialState.language,
       themeId: initialState.themeId,
+      backgroundImagePath: null,
+      backgroundImageOpacity: DEFAULT_BACKGROUND_IMAGE_OPACITY,
+      terminalBackgroundImageOpacity: DEFAULT_TERMINAL_BACKGROUND_IMAGE_OPACITY,
+      backgroundImageScope: "workspace",
+      backgroundImageTextColor: null,
       terminalPadding: initialState.terminalPadding,
       wordWrap: initialState.wordWrap,
       workspaceCard: { status: true, branch: true, cwd: true, pr: true },
@@ -29,6 +38,69 @@ describe("settingsStore", () => {
   it("defaults to English and the default theme", () => {
     expect(useSettingsStore.getState().language).toBe("en");
     expect(useSettingsStore.getState().themeId).toBe(DEFAULT_THEME_ID);
+  });
+
+  it("stores an app-managed background image and clears it independently", () => {
+    expect(useSettingsStore.getState().backgroundImagePath).toBeNull();
+    useSettingsStore.getState().setBackgroundImage("/app-data/appearance/background.png");
+    expect(useSettingsStore.getState().backgroundImagePath).toBe(
+      "/app-data/appearance/background.png",
+    );
+    expect(localStorage.getItem("tempoterm-settings")).toContain("background.png");
+
+    useSettingsStore.getState().clearBackgroundImage();
+    expect(useSettingsStore.getState().backgroundImagePath).toBeNull();
+  });
+
+  it("defaults and clamps background image opacity to an integer percentage", () => {
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(
+      DEFAULT_BACKGROUND_IMAGE_OPACITY,
+    );
+    useSettingsStore.getState().setBackgroundImageOpacity(1000);
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(
+      MAX_BACKGROUND_IMAGE_OPACITY,
+    );
+    useSettingsStore.getState().setBackgroundImageOpacity(-4);
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(
+      MIN_BACKGROUND_IMAGE_OPACITY,
+    );
+    useSettingsStore.getState().setBackgroundImageOpacity(42.6);
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(43);
+    useSettingsStore.getState().setBackgroundImageOpacity(Number.NaN);
+    expect(useSettingsStore.getState().backgroundImageOpacity).toBe(
+      DEFAULT_BACKGROUND_IMAGE_OPACITY,
+    );
+  });
+
+  it("stores a separately clamped terminal background image opacity", () => {
+    expect(useSettingsStore.getState().terminalBackgroundImageOpacity).toBe(
+      DEFAULT_TERMINAL_BACKGROUND_IMAGE_OPACITY,
+    );
+    useSettingsStore.getState().setTerminalBackgroundImageOpacity(62.8);
+    expect(useSettingsStore.getState().terminalBackgroundImageOpacity).toBe(63);
+    expect(localStorage.getItem("tempoterm-settings")).toContain(
+      '"terminalBackgroundImageOpacity":63',
+    );
+    useSettingsStore.getState().setTerminalBackgroundImageOpacity(-10);
+    expect(useSettingsStore.getState().terminalBackgroundImageOpacity).toBe(0);
+  });
+
+  it("switches and persists the background image scope", () => {
+    expect(useSettingsStore.getState().backgroundImageScope).toBe("workspace");
+    useSettingsStore.getState().setBackgroundImageScope("window");
+    expect(useSettingsStore.getState().backgroundImageScope).toBe("window");
+    expect(localStorage.getItem("tempoterm-settings")).toContain(
+      '"backgroundImageScope":"window"',
+    );
+  });
+
+  it("stores only a safe six-digit background text colour", () => {
+    useSettingsStore.getState().setBackgroundImageTextColor("#F4F7FF");
+    expect(useSettingsStore.getState().backgroundImageTextColor).toBe("#f4f7ff");
+    expect(localStorage.getItem("tempoterm-settings")).toContain("#f4f7ff");
+
+    useSettingsStore.getState().setBackgroundImageTextColor("var(--danger)");
+    expect(useSettingsStore.getState().backgroundImageTextColor).toBeNull();
   });
 
   it("defaults the terminal padding and clamps out-of-range values", () => {

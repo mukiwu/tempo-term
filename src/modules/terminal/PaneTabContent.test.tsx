@@ -7,6 +7,7 @@ import { useEntryDragStore } from "@/modules/explorer/lib/dragEntry";
 import { useNoteDragStore } from "@/modules/notes/lib/noteDrag";
 import { useSshDragStore } from "@/modules/ssh/lib/sshDrag";
 import { leaf, splitLeaf } from "./lib/terminalLayout";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -39,6 +40,26 @@ describe("PaneTabContent file-drop dispatch", () => {
       hoverLeafId: null,
       hoverPointerPct: null,
       pendingDrop: null,
+    });
+    useSettingsStore.setState({
+      themeId: "vitesse-dark",
+      backgroundImagePath: null,
+      backgroundImageOpacity: 20,
+      terminalBackgroundImageOpacity: 35,
+    });
+  });
+
+  it("uses one continuous wallpaper tint across the terminal header and gutter", () => {
+    const { tabId } = makeSinglePaneTab();
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    useSettingsStore.setState({
+      backgroundImagePath: "/app-data/appearance/background.png",
+    });
+
+    const { container } = render(<PaneTabContent tab={tab} />);
+
+    expect(container.querySelector("[data-pane-leaf]")).toHaveStyle({
+      backgroundColor: "rgba(34, 34, 34, 0.685)",
     });
   });
 

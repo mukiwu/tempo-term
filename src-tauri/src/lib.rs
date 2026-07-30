@@ -2,6 +2,9 @@ mod modules;
 
 use tauri::Manager;
 
+use modules::appearance::{
+    appearance_remove_background_image, appearance_save_background_image,
+};
 use modules::fonts::fonts_report;
 use modules::fs::{
     fs_create_dir, fs_create_file, fs_delete, fs_grep, fs_home_dir, fs_is_file, fs_list_files,
@@ -225,6 +228,8 @@ pub fn run() {
             pty_close_all,
             app_build_info,
             open_new_window,
+            appearance_save_background_image,
+            appearance_remove_background_image,
             set_native_menu,
             set_app_languages,
             terminal_clipboard_paths,

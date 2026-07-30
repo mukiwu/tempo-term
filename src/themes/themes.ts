@@ -425,6 +425,12 @@ export function getTheme(id: string): AppTheme {
 export function cssVariablesFor(theme: AppTheme): Record<string, string> {
   const c = theme.colors;
   return {
+    "--color-bg-solid": c.bg,
+    "--color-bg-elevated-solid": c.bgElevated,
+    "--color-bg-inset-solid": c.bgInset,
+    "--color-fg-solid": c.fg,
+    "--color-fg-muted-solid": c.fgMuted,
+    "--color-fg-subtle-solid": c.fgSubtle,
     "--color-bg": c.bg,
     "--color-bg-elevated": c.bgElevated,
     "--color-bg-inset": c.bgInset,

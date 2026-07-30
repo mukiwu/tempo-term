@@ -63,6 +63,8 @@ import { useUiStore, selectAnyOverlayOpen } from "@/stores/uiStore";
 import { shouldShowPreview } from "@/modules/preview/lib/previewWebview";
 import { useRemoteExplorerRoot } from "@/modules/ssh/lib/useRemoteExplorerRoot";
 import { useOsc7FallbackHint } from "@/modules/ssh/lib/useOsc7FallbackHint";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { terminalThemeWithBackground } from "./lib/backgroundTheme";
 
 const MIN_FRACTION = 0.1;
 const MAX_FRACTION = 0.9;
@@ -85,6 +87,19 @@ const HEADERLESS_KINDS = new Set<PaneContent["kind"]>([
  */
 export function PaneTabContent({ tab }: { tab: Tab }) {
   const { t } = useTranslation();
+  const themeId = useSettingsStore((s) => s.themeId);
+  const backgroundImagePath = useSettingsStore((s) => s.backgroundImagePath);
+  const backgroundImageOpacity = useSettingsStore((s) => s.backgroundImageOpacity);
+  const terminalBackgroundImageOpacity = useSettingsStore(
+    (s) => s.terminalBackgroundImageOpacity,
+  );
+  const terminalPaneBackground =
+    backgroundImagePath && backgroundImageOpacity > 0
+      ? terminalThemeWithBackground(
+          themeId,
+          terminalBackgroundImageOpacity,
+        ).background
+      : undefined;
   const setActiveLeaf = useTabsStore((s) => s.setActiveLeaf);
   const resizePane = useTabsStore((s) => s.resizePane);
   const splitPaneWith = useTabsStore((s) => s.splitPaneWith);
@@ -425,7 +440,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-bg-inset">
+    <div className="wallpaper-passthrough-surface flex h-full flex-col bg-bg-inset">
       <div ref={paneAreaRef} data-pane-area className="relative min-h-0 flex-1">
         {panes.map((pane) => {
           const active = pane.id === tab.activeLeafId;
@@ -441,6 +456,10 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                 top: `${pane.rect.top}%`,
                 width: `${pane.rect.width}%`,
                 height: `${pane.rect.height}%`,
+                backgroundColor:
+                  pane.content?.kind === "terminal"
+                    ? terminalPaneBackground
+                    : undefined,
               }}
               className={`flex flex-col p-1 ${
                 multiple ? (active ? "border border-accent/40" : "border border-border") : ""

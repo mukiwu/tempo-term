@@ -60,6 +60,10 @@ fn pty_size(cols: u16, rows: u16) -> PtySize {
     }
 }
 
+fn strip_parent_color_opt_out(cmd: &mut CommandBuilder) {
+    cmd.env_remove("NO_COLOR");
+}
+
 /// Build the shell command and its display name from the live environment.
 /// `suggestions` is the user's "suggest previous commands" setting, passed per
 /// spawn so a freshly opened (or restored) session reflects the current value.
@@ -83,6 +87,12 @@ fn build_shell_command(
         cfg!(windows),
     );
     let mut cmd = CommandBuilder::new(&shell);
+    // The GUI process may itself be launched by a non-interactive tool (for
+    // example a test runner or IDE) that sets NO_COLOR for its own logs.
+    // Leaking that implementation detail into a user's terminal disables
+    // colour in Claude Code and other TUIs. A user's login-shell config still
+    // runs afterwards and can deliberately set NO_COLOR again.
+    strip_parent_color_opt_out(&mut cmd);
     // Run as a login shell so it sources the user's profile and inherits the
     // full PATH (Homebrew etc.); a GUI-launched non-login shell misses those.
     for arg in login_args(&shell) {
@@ -485,6 +495,14 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::time::Duration;
+
+    #[test]
+    fn terminal_command_does_not_inherit_parent_no_color() {
+        let mut cmd = CommandBuilder::new("test-shell");
+        cmd.env("NO_COLOR", "1");
+        strip_parent_color_opt_out(&mut cmd);
+        assert!(cmd.get_env("NO_COLOR").is_none());
+    }
 
     fn collect_command_output(program: &str, args: &[&str]) -> String {
         let state = PtyState::new();

@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod appearance;
 pub mod ssh;
 pub mod sftp;
 pub mod claude_progress;

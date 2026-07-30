@@ -87,6 +87,50 @@ body {
 }
 
 /*
+ * Custom background images sit behind the normal semantic surfaces. Only the
+ * scope owner opts into these translucent token overrides, so workspace mode
+ * leaves window chrome untouched. Elevated controls stay more opaque than
+ * broad surfaces, and full-screen overlays rebind the original solid tokens.
+ */
+.wallpaper-surface {
+  --color-bg: color-mix(
+    in srgb,
+    var(--color-bg-solid) var(--wallpaper-surface-alpha, 82%),
+    transparent
+  );
+  --color-bg-inset: color-mix(
+    in srgb,
+    var(--color-bg-inset-solid) var(--wallpaper-surface-alpha, 82%),
+    transparent
+  );
+  --color-bg-elevated: color-mix(
+    in srgb,
+    var(--color-bg-elevated-solid) var(--wallpaper-elevated-alpha, 92%),
+    transparent
+  );
+}
+
+/*
+ * TabsArea and PaneTabContent are structural shells. Letting both repaint the
+ * broad wallpaper tint compounds it before xterm is reached, making a 20%
+ * image effectively almost invisible. Their actual pane content owns the one
+ * readable surface instead.
+ */
+.wallpaper-surface .wallpaper-passthrough-surface {
+  background-color: transparent;
+}
+
+.wallpaper-solid-surface,
+.wallpaper-surface [role="dialog"][aria-modal="true"] {
+  --color-bg: var(--color-bg-solid);
+  --color-bg-inset: var(--color-bg-inset-solid);
+  --color-bg-elevated: var(--color-bg-elevated-solid);
+  --color-fg: var(--color-fg-solid);
+  --color-fg-muted: var(--color-fg-muted-solid);
+  --color-fg-subtle: var(--color-fg-subtle-solid);
+}
+
+/*
  * No custom ::-webkit-scrollbar styling on purpose. Any rule here switches
  * WebKit (the macOS WKWebView this app runs in) from native overlay scrollbars
  * to always-on classic ones, which float over and cover text in the default

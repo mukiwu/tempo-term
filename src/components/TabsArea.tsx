@@ -45,7 +45,7 @@ export function TabsArea() {
   }
 
   return (
-    <div className="relative h-full w-full bg-bg">
+    <div className="wallpaper-passthrough-surface relative h-full w-full bg-bg">
       {tabs.map((tab) => {
         // The active tab and every resumable AI tab mount immediately;
         // previously-visited tabs stay mounted. Other never-visited tabs remain
