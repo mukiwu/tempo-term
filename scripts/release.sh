@@ -19,6 +19,12 @@ export APPLE_PASSWORD="${APPLE_PASSWORD:-${APPLE_APP_SPECIFIC_PASSWORD:-}}"
 [ -z "${APPLE_TEAM_ID:-}" ] && { echo "✗ APPLE_TEAM_ID env not set"; exit 1; }
 [ -f ~/.tauri/tempo-term.key ] || { echo "✗ Updater private key missing at ~/.tauri/tempo-term.key"; exit 1; }
 [ -f CHANGELOG-NEXT.md ] || { echo "✗ CHANGELOG-NEXT.md missing (write release notes there first)"; exit 1; }
+# Existing does not mean written. The template ships headings for feat, fix and
+# 貢獻者/Contributors, and a release with no community PRs is expected to delete
+# that last one rather than leave it blank — this catches either mistake before
+# the long build, since the same file becomes the release body AND the updater
+# notes the in-app prompt renders.
+node scripts/checkChangelog.mjs CHANGELOG-NEXT.md || exit 1
 if gh release view "$TAG" >/dev/null 2>&1; then
   echo "✗ Release $TAG already exists on GitHub"
   exit 1

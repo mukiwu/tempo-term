@@ -4,8 +4,12 @@
 
 ### fix
 
+### 貢獻者
+
 ## English
 
 ### feat
 
 ### fix
+
+### Contributors
