@@ -24,7 +24,7 @@ export APPLE_PASSWORD="${APPLE_PASSWORD:-${APPLE_APP_SPECIFIC_PASSWORD:-}}"
 # that last one rather than leave it blank — this catches either mistake before
 # the long build, since the same file becomes the release body AND the updater
 # notes the in-app prompt renders.
-node scripts/checkChangelog.mjs CHANGELOG-NEXT.md || exit 1
+node scripts/checkChangelog.mjs CHANGELOG-NEXT.md
 if gh release view "$TAG" >/dev/null 2>&1; then
   echo "✗ Release $TAG already exists on GitHub"
   exit 1

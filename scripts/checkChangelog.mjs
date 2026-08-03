@@ -15,7 +15,11 @@ import { fileURLToPath } from "node:url";
  * @returns {string[]} names of headings with no content under them
  */
 export function findEmptySections(markdown) {
-  const lines = markdown.split("\n");
+  // Strip HTML comments first: a comment is not content. Writing
+  // `<!-- none this release -->` under an unused heading is the obvious instinct,
+  // and it is exactly the thing that ships as visible text — so a section left
+  // holding only a comment still counts as empty.
+  const lines = markdown.replace(/<!--[\s\S]*?-->/g, "").split("\n");
   const empty = [];
   let current = null;
   let filled = false;

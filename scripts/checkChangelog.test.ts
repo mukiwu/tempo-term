@@ -76,4 +76,25 @@ describe("findEmptySections", () => {
   it("does not treat a following top-level heading as content", () => {
     expect(findEmptySections("### fix\n\n## English\n")).toEqual(["fix"]);
   });
+
+  // react-markdown runs without rehype-raw, so a comment left as a placeholder
+  // renders as visible text in the in-app update prompt. It must not count as
+  // content, or the guard waves through the very thing it exists to stop.
+  it("does not treat an HTML comment as content", () => {
+    expect(findEmptySections("### fix\n\n<!-- none this release -->\n")).toEqual(["fix"]);
+  });
+
+  it("does not treat a multi-line HTML comment as content", () => {
+    const multiline = `### fix
+
+<!--
+nothing shipped this time
+-->
+`;
+    expect(findEmptySections(multiline)).toEqual(["fix"]);
+  });
+
+  it("still sees real content that sits next to a comment", () => {
+    expect(findEmptySections("### fix\n\n<!-- note -->\n\n- Fix a thing (#1)\n")).toEqual([]);
+  });
 });
