@@ -33,6 +33,8 @@ interface BreadcrumbProps {
   onSelect: (path: string) => void;
   /** Which segments open a menu. An editor only offers its filename segment. */
   clickable?: "all" | "last";
+  /** "sm" for the explorer sidebar's path row, whose text sits below pane-header size. */
+  size?: "sm" | "md";
   menu: BreadcrumbMenu;
 }
 
@@ -41,7 +43,13 @@ interface BreadcrumbProps {
  * "Breadcrumb"). Aligned to the trail's end so a narrow pane clips the head,
  * keeping the segments closest to the cwd/file visible.
  */
-export function Breadcrumb({ crumbs, onSelect, clickable = "all", menu }: BreadcrumbProps) {
+export function Breadcrumb({
+  crumbs,
+  onSelect,
+  clickable = "all",
+  size = "md",
+  menu,
+}: BreadcrumbProps) {
   const [openFor, setOpenFor] = useState<{ crumb: Crumb; x: number; y: number } | null>(null);
 
   function openMenu(e: MouseEvent<HTMLButtonElement>, crumb: Crumb) {
@@ -51,7 +59,11 @@ export function Breadcrumb({ crumbs, onSelect, clickable = "all", menu }: Breadc
   }
 
   return (
-    <div className="flex min-w-0 items-center justify-end overflow-hidden text-[13px] text-fg-muted">
+    <div
+      className={`flex min-w-0 items-center justify-end overflow-hidden text-fg-muted ${
+        size === "sm" ? "text-[11px]" : "text-[13px]"
+      }`}
+    >
       {crumbs.map((crumb, index) => {
         const isLast = index === crumbs.length - 1;
         const isClickable = clickable === "all" || isLast;

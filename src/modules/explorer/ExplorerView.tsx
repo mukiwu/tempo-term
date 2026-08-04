@@ -3,10 +3,13 @@ import { useTranslation } from "react-i18next";
 import { ChevronsDownUp, ChevronsUpDown, FolderOpen, RotateCw } from "lucide-react";
 import { FileTree } from "./FileTree";
 import { Tooltip } from "@/components/Tooltip";
+import { Breadcrumb } from "@/components/Breadcrumb";
+import { buildCrumbs } from "@/lib/breadcrumb";
+import { listSubdirectories, useHomeDir } from "@/components/paneCrumbs";
 import { fsReadDir, type DirEntry } from "./lib/fsBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pickFolder } from "@/lib/dialog";
-import { isRemoteUri, parseRemoteUri } from "@/modules/ssh/lib/remotePath";
+import { buildRemoteUri, isRemoteUri, parseRemoteUri } from "@/modules/ssh/lib/remotePath";
 
 export function ExplorerView() {
   const { t } = useTranslation("explorer");
@@ -31,7 +34,16 @@ export function ExplorerView() {
   // A remote (SFTP) root hides local-only controls and shows the remote path
   // rather than the raw ssh:// uri.
   const remote = rootPath ? isRemoteUri(rootPath) : false;
-  const displayRoot = rootPath ? (parseRemoteUri(rootPath)?.path ?? rootPath) : null;
+  const remoteRoot = rootPath ? parseRemoteUri(rootPath) : null;
+  const displayRoot = rootPath ? (remoteRoot?.path ?? rootPath) : null;
+
+  // The root's path row is a breadcrumb, same as a terminal pane header's:
+  // clicking a segment lists its subdirectories, and picking one re-roots the
+  // explorer there. Because the workspace root is two-way bound to the active
+  // terminal (see terminal/lib/cwdSync), that also cds the shell — exactly what
+  // opening another folder does today.
+  const homeDir = useHomeDir(remoteRoot?.connectionId);
+  const crumbs = displayRoot ? buildCrumbs(displayRoot, { homeDir }) : [];
 
   async function openFolder() {
     const folder = await pickFolder();
@@ -138,9 +150,30 @@ export function ExplorerView() {
       </div>
 
       {rootPath && (
-        <div className="border-b border-border px-3 py-1">
-          <Tooltip label={displayRoot ?? rootPath} className="max-w-full">
-            <span className="block truncate text-[11px] text-fg-subtle">{displayRoot}</span>
+        // The wrapper is a flex row and the tooltip span a min-w-0 item, so the
+        // trail sits left while it fits and only starts clipping its head — the
+        // segments furthest from the current folder — once the sidebar is too
+        // narrow for it.
+        <div className="flex border-b border-border px-3 py-1">
+          <Tooltip label={displayRoot ?? rootPath} className="min-w-0">
+            {crumbs.length > 0 ? (
+              <Breadcrumb
+                crumbs={crumbs}
+                size="sm"
+                menu={{
+                  kind: "tree",
+                  loadChildren: (path) => listSubdirectories(path, remoteRoot?.connectionId),
+                }}
+                onSelect={(path) =>
+                  setRoot(remoteRoot ? buildRemoteUri(remoteRoot.connectionId, path) : path)
+                }
+              />
+            ) : (
+              // A filesystem root ("/") has no segments below it to walk. Same
+              // size and colour as the Breadcrumb above, so the row does not
+              // change shade with the folder it is showing.
+              <span className="block truncate text-[11px] text-fg-muted">{displayRoot}</span>
+            )}
           </Tooltip>
         </div>
       )}
