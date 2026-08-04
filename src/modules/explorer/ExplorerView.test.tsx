@@ -1,8 +1,13 @@
-import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, act, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 
-vi.mock("./lib/fsBridge", () => ({ fsReadDir: vi.fn().mockResolvedValue([]) }));
+// fsHomeDir backs the path breadcrumb's home-relative trail; rejecting keeps the
+// home unknown so these tests read the plain absolute segments.
+vi.mock("./lib/fsBridge", () => ({
+  fsReadDir: vi.fn().mockResolvedValue([]),
+  fsHomeDir: vi.fn().mockRejectedValue(new Error("no home in tests")),
+}));
 
 import { ExplorerView } from "./ExplorerView";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -16,7 +21,11 @@ describe("ExplorerView remote root", () => {
     useWorkspaceStore.setState({ rootPath: "ssh://c1/home/me" });
     render(<ExplorerView />);
     expect(screen.queryByLabelText("Open folder")).toBeNull();
-    expect(screen.getByText("/home/me")).toBeInTheDocument();
+    // The path renders as breadcrumb segments of the remote path, never the raw
+    // ssh:// uri.
+    expect(screen.getByRole("button", { name: "home" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "me" })).toBeInTheDocument();
+    expect(screen.queryByText(/ssh:\/\//)).toBeNull();
   });
 
   it("keeps the open-folder button for a local root", () => {
@@ -31,6 +40,59 @@ describe("ExplorerView remote root", () => {
     useWorkspaceStore.setState({ rootPath: "/home/me" });
     render(<ExplorerView />);
     expect(screen.queryByLabelText("Find files")).toBeNull();
+  });
+});
+
+describe("ExplorerView path breadcrumb", () => {
+  it("re-roots the explorer at a directory picked from a path segment's menu", async () => {
+    const { fsReadDir } = await import("./lib/fsBridge");
+    vi.mocked(fsReadDir).mockImplementation(async (path: string) => {
+      if (path === "/work") {
+        return [
+          { name: "app", path: "/work/app", is_dir: true, size: 0 },
+          { name: "docs", path: "/work/docs", is_dir: true, size: 0 },
+        ];
+      }
+      if (path === "/work/app") {
+        return [{ name: "main.ts", path: "/work/app/main.ts", is_dir: false, size: 0 }];
+      }
+      return [];
+    });
+
+    useWorkspaceStore.setState({ rootPath: "/work/app" });
+    render(<ExplorerView />);
+    await screen.findByText("main.ts");
+
+    // Clicking the parent segment lists its subdirectories, headed by itself.
+    fireEvent.click(screen.getByRole("button", { name: "work" }));
+    const menu = await screen.findByRole("menu");
+    await within(menu).findByRole("menuitem", { name: "docs" });
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "docs" }));
+
+    await waitFor(() => expect(useWorkspaceStore.getState().rootPath).toBe("/work/docs"));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("keeps a remote root remote when a segment is picked", async () => {
+    const { fsReadDir } = await import("./lib/fsBridge");
+    vi.mocked(fsReadDir).mockImplementation(async (path: string) => {
+      if (path === "ssh://c1/srv") {
+        return [{ name: "logs", path: "ssh://c1/srv/logs", is_dir: true, size: 0 }];
+      }
+      return [];
+    });
+
+    useWorkspaceStore.setState({ rootPath: "ssh://c1/srv/app" });
+    render(<ExplorerView />);
+
+    fireEvent.click(screen.getByRole("button", { name: "srv" }));
+    const menu = await screen.findByRole("menu");
+    fireEvent.click(await within(menu).findByRole("menuitem", { name: "logs" }));
+
+    // The picked path comes back as a plain remote path; the root must be
+    // rebuilt as an ssh:// uri or the tree would read it as a local folder.
+    await waitFor(() => expect(useWorkspaceStore.getState().rootPath).toBe("ssh://c1/srv/logs"));
   });
 });
 
