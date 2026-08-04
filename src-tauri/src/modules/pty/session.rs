@@ -94,15 +94,21 @@ fn build_shell_command(
     // Windows has no OS-level cwd backend (no /proc, no lsof — see
     // read_process_cwd below), so the shell itself reports its cwd via OSC 7 at
     // every prompt: PowerShell through an injected prompt wrapper, cmd.exe
-    // through a PROMPT prefix. The frontend parses the sequence (see
-    // src/modules/terminal/lib/osc7.ts). Unix keeps the poll backend.
+    // through a PROMPT prefix, bash through PROMPT_COMMAND. The frontend parses
+    // the sequence (see src/modules/terminal/lib/osc7.ts). Unix keeps the poll
+    // backend.
     #[cfg(windows)]
     {
         for arg in super::shell::windows_integration_args(&shell) {
             cmd.arg(arg);
         }
         let inherited_prompt = std::env::var("PROMPT").ok();
-        for (key, value) in super::shell::windows_integration_env(&shell, inherited_prompt) {
+        let inherited_prompt_command = std::env::var("PROMPT_COMMAND").ok();
+        for (key, value) in super::shell::windows_integration_env(
+            &shell,
+            inherited_prompt,
+            inherited_prompt_command,
+        ) {
             cmd.env(key, value);
         }
     }

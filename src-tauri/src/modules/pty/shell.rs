@@ -269,6 +269,24 @@ const POWERSHELL_OSC7_SNIPPET: &str = r#"if ($env:TEMPOTERM_OSC7 -ne '1') {
   }
 }"#;
 
+/// The bash counterpart of the PowerShell snippet, run through `PROMPT_COMMAND`
+/// (bash executes it before printing each prompt). This is what makes the
+/// explorer follow `cd` in a Git Bash / MSYS2 pane, which until now reported
+/// nothing at all: Windows has no cwd backend to poll, and the PowerShell and
+/// cmd hooks only cover their own shells.
+///
+/// The path needs converting because bash reports MSYS paths (`/d/code`) while
+/// the frontend parser only accepts drive-lettered ones — deliberately, so a
+/// cwd leaking from a remote shell inside the pane can't move the explorer to a
+/// directory that doesn't exist here (see `parseOsc7Cwd`). The common case, a
+/// path under a drive mount, is rewritten with a bash regex and costs no
+/// process; only MSYS-virtual locations (`/tmp`, `/usr/bin`) fall back to
+/// `cygpath -w`. An empty result — no `cygpath`, as under WSL's `bash.exe`,
+/// whose `/mnt/d` paths this shell integration cannot describe anyway — reports
+/// nothing rather than a wrong directory.
+#[cfg_attr(not(windows), allow(dead_code))]
+const BASH_OSC7_PROMPT_COMMAND: &str = r#"__tempoterm_d="$PWD"; if [[ $__tempoterm_d =~ ^/([A-Za-z])(/.*)?$ ]]; then __tempoterm_d="${BASH_REMATCH[1]^^}:${BASH_REMATCH[2]}"; else __tempoterm_d="$(cygpath -w "$__tempoterm_d" 2>/dev/null)"; fi; if [ -n "$__tempoterm_d" ]; then printf '\033]7;file://localhost/%s\033\\' "$__tempoterm_d"; fi"#;
+
 /// The last path component, split on both separators so a Windows path still
 /// resolves when this code is unit-tested on Unix, lowercased for matching.
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -295,6 +313,15 @@ fn is_cmd(shell: &str) -> bool {
     shell_file_name(shell).trim_end_matches(".exe") == "cmd"
 }
 
+/// True for Git Bash / MSYS2 bash, and for `sh.exe` — which Git for Windows
+/// ships as bash under another name. A shell that only *looks* like this and
+/// ignores `PROMPT_COMMAND` (a real POSIX `sh`) simply reports no cwd; the
+/// variable is never read, so nothing breaks.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_bash(shell: &str) -> bool {
+    matches!(shell_file_name(shell).trim_end_matches(".exe"), "bash" | "sh")
+}
+
 /// PowerShell's `-EncodedCommand` payload: base64 of the UTF-16LE script bytes.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn encoded_command(script: &str) -> String {
@@ -319,27 +346,51 @@ pub fn windows_integration_args(shell: &str) -> Vec<String> {
     ]
 }
 
-/// Extra environment that wires up cwd reporting on Windows. cmd.exe has no
-/// prompt function to wrap, but its `PROMPT` string expands `$e` to ESC and
-/// `$p` to the current directory, so prefixing the user's prompt (default
-/// `$P$G`, i.e. `C:\dir>`) with an OSC 7 report does the same job. The path
-/// arrives raw — unencoded spaces and backslashes — which the frontend parser
-/// tolerates. Other shells get nothing.
+/// Extra environment that wires up cwd reporting on Windows.
+///
+/// cmd.exe has no prompt function to wrap, but its `PROMPT` string expands `$e`
+/// to ESC and `$p` to the current directory, so prefixing the user's prompt
+/// (default `$P$G`, i.e. `C:\dir>`) with an OSC 7 report does the same job. The
+/// path arrives raw — unencoded spaces and backslashes — which the frontend
+/// parser tolerates.
+///
+/// bash (Git Bash / MSYS2) gets the same report from `PROMPT_COMMAND`, which it
+/// runs before every prompt. Both values wrap whatever the user already had —
+/// Git for Windows' own profile sets neither, but a `PROMPT_COMMAND` inherited
+/// from the environment would otherwise be lost. Any other shell gets nothing.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn windows_integration_env(
     shell: &str,
     current_prompt: Option<String>,
+    current_prompt_command: Option<String>,
 ) -> Vec<(String, String)> {
-    if !is_cmd(shell) {
-        return Vec::new();
+    if is_cmd(shell) {
+        let user_prompt = current_prompt
+            .filter(|p| !p.trim().is_empty())
+            .unwrap_or_else(|| "$P$G".to_string());
+        return vec![(
+            "PROMPT".to_string(),
+            format!("$e]7;file://localhost/$P$e\\{user_prompt}"),
+        )];
     }
-    let user_prompt = current_prompt
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| "$P$G".to_string());
-    vec![(
-        "PROMPT".to_string(),
-        format!("$e]7;file://localhost/$P$e\\{user_prompt}"),
-    )]
+    if is_bash(shell) {
+        let user_command = current_prompt_command.filter(|c| !c.trim().is_empty());
+        // Already wrapped (a shell spawned from inside a tempo-term pane
+        // inherits the wrapped value): leave it alone rather than reporting the
+        // cwd twice per prompt.
+        if user_command
+            .as_deref()
+            .is_some_and(|c| c.contains("__tempoterm_d"))
+        {
+            return Vec::new();
+        }
+        let value = match user_command {
+            Some(user) => format!("{BASH_OSC7_PROMPT_COMMAND}; {user}"),
+            None => BASH_OSC7_PROMPT_COMMAND.to_string(),
+        };
+        return vec![("PROMPT_COMMAND".to_string(), value)];
+    }
+    Vec::new()
 }
 
 /// True for a UNC path (`\\server\share`, or the `//server/share` form Win32
@@ -664,7 +715,7 @@ mod tests {
     #[test]
     fn cmd_gets_an_osc7_prompt_prefix_keeping_the_default_prompt() {
         for shell in ["cmd.exe", r"C:\Windows\System32\cmd.exe", "cmd"] {
-            let env = windows_integration_env(shell, None);
+            let env = windows_integration_env(shell, None, None);
             assert_eq!(
                 env,
                 vec![(
@@ -675,19 +726,57 @@ mod tests {
             );
         }
         // A blank inherited PROMPT falls back to the default too.
-        let env = windows_integration_env("cmd.exe", Some("   ".to_string()));
+        let env = windows_integration_env("cmd.exe", Some("   ".to_string()), None);
         assert_eq!(env[0].1, r"$e]7;file://localhost/$P$e\$P$G");
     }
 
     #[test]
     fn cmd_prompt_prefix_preserves_a_custom_prompt() {
-        let env = windows_integration_env("cmd.exe", Some("$D $P$G".to_string()));
+        let env = windows_integration_env("cmd.exe", Some("$D $P$G".to_string()), None);
         assert_eq!(env[0].1, r"$e]7;file://localhost/$P$e\$D $P$G");
     }
 
     #[test]
-    fn non_cmd_shells_get_no_integration_env() {
-        assert!(windows_integration_env("powershell.exe", None).is_empty());
-        assert!(windows_integration_env("/bin/zsh", None).is_empty());
+    fn bash_gets_an_osc7_prompt_command() {
+        for shell in [
+            r"C:\Program Files\Git\bin\bash.exe",
+            "C:/Program Files/Git/usr/bin/sh.exe",
+            "bash",
+        ] {
+            let env = windows_integration_env(shell, None, None);
+            assert_eq!(env.len(), 1, "{shell}");
+            assert_eq!(env[0].0, "PROMPT_COMMAND", "{shell}");
+            // Reports OSC 7, and rewrites the MSYS path into the drive-lettered
+            // form the frontend parser accepts.
+            assert!(env[0].1.contains(r"\033]7;file://localhost/%s"), "{shell}");
+            assert!(env[0].1.contains("BASH_REMATCH"), "{shell}");
+            assert!(env[0].1.contains("cygpath -w"), "{shell}");
+        }
+    }
+
+    #[test]
+    fn bash_prompt_command_keeps_an_inherited_one() {
+        let env = windows_integration_env("bash.exe", None, Some("history -a".to_string()));
+        assert!(env[0].1.starts_with(BASH_OSC7_PROMPT_COMMAND));
+        assert!(env[0].1.ends_with("; history -a"));
+
+        // Blank is the same as unset, not something worth appending.
+        let env = windows_integration_env("bash.exe", None, Some("  ".to_string()));
+        assert_eq!(env[0].1, BASH_OSC7_PROMPT_COMMAND);
+    }
+
+    #[test]
+    fn bash_prompt_command_is_not_wrapped_twice() {
+        // A shell launched from inside a pane inherits the wrapped value; adding
+        // ours again would report the cwd twice per prompt.
+        let already = format!("{BASH_OSC7_PROMPT_COMMAND}; history -a");
+        assert!(windows_integration_env("bash.exe", None, Some(already)).is_empty());
+    }
+
+    #[test]
+    fn shells_without_an_integration_get_no_env() {
+        assert!(windows_integration_env("powershell.exe", None, None).is_empty());
+        assert!(windows_integration_env("/bin/zsh", None, None).is_empty());
+        assert!(windows_integration_env("/usr/bin/nu", None, None).is_empty());
     }
 }

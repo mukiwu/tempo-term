@@ -16,6 +16,19 @@ describe("parseOsc7Cwd", () => {
     );
   });
 
+  it("parses Git Bash's PROMPT_COMMAND report", () => {
+    // The injected PROMPT_COMMAND (see windows_integration_env in
+    // src-tauri/src/modules/pty/shell.rs) rewrites MSYS "/d/code" into the
+    // drive-lettered form before printing, so forward slashes arrive here.
+    expect(parseOsc7Cwd("file://localhost/D:/code/tempo-term")).toBe("D:\\code\\tempo-term");
+    // A drive root reports as a bare "D:" (BASH_REMATCH[2] is empty there).
+    expect(parseOsc7Cwd("file://localhost/D:")).toBe("D:\\");
+    // MSYS-virtual locations come from `cygpath -w`, i.e. already backslashed.
+    expect(parseOsc7Cwd("file://localhost/C:\\Users\\muki\\AppData\\Local\\Temp")).toBe(
+      "C:\\Users\\muki\\AppData\\Local\\Temp",
+    );
+  });
+
   it("decodes percent-encoded non-ASCII (CJK folder names) back to UTF-8", () => {
     expect(parseOsc7Cwd("file:///D:/%E5%B0%88%E6%A1%88/app")).toBe("D:\\專案\\app");
   });
