@@ -284,6 +284,25 @@ const POWERSHELL_OSC7_SNIPPET: &str = r#"if ($env:TEMPOTERM_OSC7 -ne '1') {
 /// `cygpath -w`. An empty result — no `cygpath`, as under WSL's `bash.exe`,
 /// whose `/mnt/d` paths this shell integration cannot describe anyway — reports
 /// nothing rather than a wrong directory.
+///
+/// Two things the other two hooks never have to deal with. The uppercase drive
+/// letter is load-bearing rather than cosmetic: `shouldCdToRoot` compares the
+/// reported cwd against the explorer root as plain strings, so a lowercase
+/// `d:\code` never matches a `D:\code` root and the two keep cd-ing at each
+/// other; PowerShell's `System.Uri` and cmd's `$P` both report uppercase
+/// already. And `${var^^}` needs bash 4.0+ — on an older one it is a runtime
+/// `bad substitution` that aborts the rest of the command, leaving the pane
+/// printing an error line at every prompt and reporting nothing. Git for
+/// Windows ships 5.x, but `is_bash` also matches `sh`.
+///
+/// This is also the only one of the three a user can override: a
+/// `PROMPT_COMMAND` assignment in `~/.bashrc` wins over the value we put in the
+/// environment. Windows panes run bash non-login (`login_args` splits on `/`
+/// alone, so a `C:\...\bash.exe` never matches it), so `/etc/profile` and its
+/// `profile.d` scripts never run — but `/etc/bash.bashrc` and `~/.bashrc` do.
+/// PowerShell's snippet arrives as an `-EncodedCommand` that runs after the
+/// profile, and cmd has no rc file at all. Losing this hook degrades to the old
+/// behaviour, no report, rather than to a wrong one.
 #[cfg_attr(not(windows), allow(dead_code))]
 const BASH_OSC7_PROMPT_COMMAND: &str = r#"__tempoterm_d="$PWD"; if [[ $__tempoterm_d =~ ^/([A-Za-z])(/.*)?$ ]]; then __tempoterm_d="${BASH_REMATCH[1]^^}:${BASH_REMATCH[2]}"; else __tempoterm_d="$(cygpath -w "$__tempoterm_d" 2>/dev/null)"; fi; if [ -n "$__tempoterm_d" ]; then printf '\033]7;file://localhost/%s\033\\' "$__tempoterm_d"; fi"#;
 

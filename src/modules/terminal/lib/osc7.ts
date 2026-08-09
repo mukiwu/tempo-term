@@ -4,10 +4,11 @@
  *
  * macOS/Linux read the shell's cwd from the OS (lsof / /proc — see
  * `read_process_cwd` in src-tauri/src/modules/pty/session.rs); Windows has no
- * such backend, so the injected shell integration (a PowerShell prompt wrapper
- * / a cmd.exe PROMPT prefix — see `windows_integration_args` /
- * `windows_integration_env` in src-tauri/src/modules/pty/shell.rs) makes the
- * shell announce its cwd in an OSC 7 sequence at every prompt instead.
+ * such backend, so the injected shell integration (a PowerShell prompt wrapper,
+ * a cmd.exe PROMPT prefix, a bash PROMPT_COMMAND — see
+ * `windows_integration_args` / `windows_integration_env` in
+ * src-tauri/src/modules/pty/shell.rs) makes the shell announce its cwd in an
+ * OSC 7 sequence at every prompt instead.
  */
 
 /**
@@ -18,9 +19,11 @@
  * shell (`ssh` run inside the pane, WSL) whose directories don't exist here —
  * matching macOS, where a pane running ssh keeps the explorer on the local dir.
  *
- * Tolerates both local emitters: PowerShell sends a percent-encoded URI
+ * Tolerates all three local emitters: PowerShell sends a percent-encoded URI
  * (`file:///C:/Users/f%20o`), while cmd.exe's PROMPT expands `$P` raw
- * (`file://localhost/C:\Users\f o` — spaces, backslashes and `%` unencoded).
+ * (`file://localhost/C:\Users\f o` — spaces, backslashes and `%` unencoded) and
+ * bash's PROMPT_COMMAND prints an equally raw drive-lettered path, rewritten
+ * from the MSYS form it starts out in (`file://localhost/D:/code`).
  */
 export function parseOsc7Cwd(payload: string): string | null {
   // Cap the raw input before any decoding or regex work: a hostile or runaway

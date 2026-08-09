@@ -8,6 +8,8 @@
 
 ### 貢獻者
 
+- @yw-chan (#312)
+
 ## English
 
 ### feat
@@ -17,3 +19,5 @@
 ### fix
 
 ### Contributors
+
+- @yw-chan (#312)
