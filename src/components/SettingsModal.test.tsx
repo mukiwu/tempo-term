@@ -92,4 +92,39 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Live preview/ }));
     expect(screen.getByTestId("background-preview-panel")).toBeInTheDocument();
   });
+
+  it("drops the background draft when settings close without going through close() or Escape", () => {
+    useBackgroundImageDraftStore.getState().begin({
+      path: "/pictures/draft.png",
+      opacity: 40,
+      terminalOpacity: 50,
+      scope: "workspace",
+      textColor: null,
+    });
+    const { unmount } = render(<SettingsModal />);
+
+    // What AboutSettingsSection does: flip the store and let App unmount us.
+    useUiStore.getState().setSettingsOpen(false);
+    unmount();
+
+    expect(useBackgroundImageDraftStore.getState().draft).toBeNull();
+  });
+
+  it("leaves live preview when the modal unmounts mid-preview", () => {
+    useBackgroundImageDraftStore.getState().begin({
+      path: "/pictures/draft.png",
+      opacity: 40,
+      terminalOpacity: 50,
+      scope: "workspace",
+      textColor: null,
+    });
+    useBackgroundImageDraftStore.getState().enterPreview();
+    const { unmount } = render(<SettingsModal />);
+
+    unmount();
+
+    // Otherwise useBackgroundImage keeps serving the draft to the whole shell,
+    // with no panel left on screen to get out of it.
+    expect(useBackgroundImageDraftStore.getState().previewActive).toBe(false);
+  });
 });

@@ -39,6 +39,17 @@ export function SettingsModal() {
     return () => window.removeEventListener("keydown", onKey);
   }, [cancelBackgroundDraft, leaveBackgroundPreview, setSettingsOpen]);
 
+  // close() and Escape both drop the background draft, but they are not the
+  // only ways out: AboutSettingsSection closes settings to go elsewhere, and
+  // anything else flipping settingsOpen from outside skips them entirely. A
+  // draft left behind reopens holding last session's unapplied edits, and one
+  // left mid-preview keeps previewActive true with no panel on screen to leave
+  // it — the whole shell then renders someone's abandoned preview. Unmount is
+  // the one point every exit passes through.
+  useEffect(() => {
+    return () => useBackgroundImageDraftStore.getState().cancel();
+  }, []);
+
   if (previewActive) {
     return (
       <div
