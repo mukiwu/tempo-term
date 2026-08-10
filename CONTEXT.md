@@ -12,6 +12,10 @@ _Avoid_: panel, split, view
 The unified h-7 strip at the top of a pane. Full headers (terminal, editor, preview, diff) carry that pane's identity and actions plus the close button; minimal headers (launcher, git-graph, note, sessions) carry only the close button and render only while the tab is split.
 _Avoid_: toolbar (reserved for rows of actions inside content, like GitGraphToolbar)
 
+**Pane grid**:
+The arrangement a sidebar open gives a tab: up to four equal columns, each holding up to two stacked panes, recomputed for the pane count on every open. A tab is on the grid only until the user arranges the panes themselves (a stacked split, an edge drop) — from then on it keeps the shape they gave it, and a sidebar open adds one pane alongside rather than rebuilding.
+_Avoid_: tiling, auto-layout
+
 **Breadcrumb**:
 The location trail on the left of a terminal or editor pane header, and the explorer sidebar's path row under its title — always home-relative (absolute outside home). Clicking a segment opens its menu — the segment itself plus its subdirectories for a terminal or the explorer (directories expand in place), the files sharing the folder for an editor — and choosing an entry switches what that pane shows: the terminal cds, the editor swaps file, the explorer re-roots. It never opens a new tab.
 _Avoid_: path bar, address bar (that is the preview pane's URL row)

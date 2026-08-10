@@ -522,17 +522,46 @@ export function gridLayout(panes: OrderedPane[]): LayoutNode {
  * rebuilt, or every sidebar click would flatten their stack back into
  * columns.
  *
- * Shape alone can't tell a hand-built layout from a grid that a close left
- * off-canon (possible from 6 panes up, where removing a stacked pane leaves a
- * tree the current count would grid differently). Such a tab reads as
- * hand-built and stops re-gridding, which errs the safe way: panes stay where
- * they are instead of being rearranged.
+ * Two things it deliberately does not distinguish:
+ *
+ * - A hand-made split that happens to land on the grid (splitting a
+ *   single-pane tab left/right builds the very tree `gridLayout` would) reads
+ *   as a grid. Harmless: re-gridding it can't flip a direction the user chose.
+ * - A grid that a close left off-canon reads as hand-made. `closePane` only
+ *   collapses the removed leaf's parent, so from five panes up the survivors
+ *   can sit in slots the new count would assign differently, and that tab
+ *   stops re-gridding. It errs the safe way — panes stay where they are.
  */
-export function isGridLayout(tree: LayoutNode, paneOrder: string[]): boolean {
+export function matchesGridLayout(tree: LayoutNode, paneOrder: string[]): boolean {
   if (paneOrder.length === 0) {
     return false;
   }
+  // Only the shape is compared, so the content here is filler.
   return sameShape(tree, gridLayout(paneOrder.map((id) => ({ id, content: TERMINAL_PANE }))));
+}
+
+/**
+ * Add a pane alongside the whole tree, splitting on whichever direction the
+ * tree already uses (a single leaf has none, so side by side). Nothing
+ * existing is carved up and no existing split changes direction — the tab
+ * keeps the shape it had, with one more pane at the end.
+ *
+ * The tree keeps a share proportional to the panes it holds, so repeated
+ * appends divide the tab evenly rather than halving whatever is already there
+ * (which is the 50/25/12.5 shrink `gridLayout` exists to avoid).
+ */
+export function appendAlongside(
+  tree: LayoutNode,
+  newId: string,
+  newPane: PaneContent,
+): LayoutNode {
+  const existing = leafIds(tree).length;
+  return {
+    kind: "split",
+    direction: tree.kind === "split" ? tree.direction : "row",
+    children: [tree, leaf(newId, newPane)],
+    sizes: [existing / (existing + 1), 1 / (existing + 1)],
+  };
 }
 
 /** Same splits, same directions, same leaf ids. Sizes and pane content are not compared. */

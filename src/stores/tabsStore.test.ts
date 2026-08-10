@@ -1211,6 +1211,20 @@ describe("openFromSidebar", () => {
       expect(tab.paneOrder).toEqual([...before.map((b) => b.id), added.id]);
     });
 
+    it("keeps every pane an even share as more open into the stack", () => {
+      stackedTab();
+      useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/c.ts" });
+      useTabsStore.getState().openFromSidebar({ kind: "note", noteId: "/d.md" }, "d");
+
+      const panes = computeLayout(activeTab().paneTree);
+      expect(panes).toHaveLength(4);
+      // Appending must not halve whatever is already there (50, 25, 12.5, ...)
+      // — that is the shrink the grid was introduced to remove.
+      for (const pane of panes) {
+        expect(pane.rect.height).toBeCloseTo(25, 5);
+      }
+    });
+
     it("still honours the 8-pane cap", () => {
       stackedTab();
       for (let i = 3; i <= 8; i++) {
