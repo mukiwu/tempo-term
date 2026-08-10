@@ -510,6 +510,43 @@ export function gridLayout(panes: OrderedPane[]): LayoutNode {
   return combineEqualRow(columns);
 }
 
+/**
+ * True when `tree` is exactly the grid `gridLayout` would build for
+ * `paneOrder`: same nesting, same directions, same leaf in every slot. Split
+ * ratios are not compared — dragging a splitter resizes the grid, it doesn't
+ * replace it.
+ *
+ * Sidebar opens rebuild the whole tab through `gridLayout`, which is only
+ * safe while the tab still *is* that grid. A layout the user built by hand —
+ * panes stacked with the split shortcut, say — has to be added to instead of
+ * rebuilt, or every sidebar click would flatten their stack back into
+ * columns.
+ *
+ * Shape alone can't tell a hand-built layout from a grid that a close left
+ * off-canon (possible from 6 panes up, where removing a stacked pane leaves a
+ * tree the current count would grid differently). Such a tab reads as
+ * hand-built and stops re-gridding, which errs the safe way: panes stay where
+ * they are instead of being rearranged.
+ */
+export function isGridLayout(tree: LayoutNode, paneOrder: string[]): boolean {
+  if (paneOrder.length === 0) {
+    return false;
+  }
+  return sameShape(tree, gridLayout(paneOrder.map((id) => ({ id, content: TERMINAL_PANE }))));
+}
+
+/** Same splits, same directions, same leaf ids. Sizes and pane content are not compared. */
+function sameShape(a: LayoutNode, b: LayoutNode): boolean {
+  if (a.kind === "leaf" || b.kind === "leaf") {
+    return a.kind === "leaf" && b.kind === "leaf" && a.id === b.id;
+  }
+  return (
+    a.direction === b.direction &&
+    sameShape(a.children[0], b.children[0]) &&
+    sameShape(a.children[1], b.children[1])
+  );
+}
+
 /** Nest `nodes` left to right as equal-width row splits ([1/n, (n-1)/n] at
  * each level, so `computeLayout` gives every node the same width). */
 function combineEqualRow(nodes: LayoutNode[]): LayoutNode {

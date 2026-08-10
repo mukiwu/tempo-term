@@ -11,6 +11,7 @@ import {
   computeLayout,
   findPaneContent,
   gridLayout,
+  isGridLayout,
   leaf,
   leafIds,
   paneOf,
@@ -757,14 +758,28 @@ export const useTabsStore = create<TabsState>()(
     if (isFreshSsh) {
       markFreshSshLeaf(newId);
     }
-    const panes: OrderedPane[] = [
-      ...activeTab.paneOrder.map((id) => ({
-        id,
-        content: findPaneContent(activeTab.paneTree, id)!,
-      })),
-      { id: newId, content },
-    ];
-    const paneTree = gridLayout(panes);
+    // Recomputing the canonical grid is only right while the tab still is one.
+    // Once the user has arranged the panes themselves — stacked a pair with
+    // the split shortcut, dropped a file onto an edge — re-gridding would
+    // flatten every one of their splits back into columns on the next sidebar
+    // click. Such a tab gets the new pane appended alongside the whole tree,
+    // the same way the outer drop zone adds one, so no existing pane is
+    // carved up and no existing split changes direction.
+    const paneTree = isGridLayout(activeTab.paneTree, activeTab.paneOrder)
+      ? gridLayout([
+          ...activeTab.paneOrder.map((id) => ({
+            id,
+            content: findPaneContent(activeTab.paneTree, id)!,
+          })),
+          { id: newId, content },
+        ] satisfies OrderedPane[])
+      : wrapTree(
+          activeTab.paneTree,
+          newId,
+          content,
+          activeTab.paneTree.kind === "split" ? activeTab.paneTree.direction : "row",
+          "after",
+        );
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.id === activeTab.id
@@ -970,8 +985,10 @@ export const useTabsStore = create<TabsState>()(
             ? {
                 ...t,
                 // A fresh split shows the launcher so the user picks what goes in it.
-                // Directional and pane-specific (unlike openFromSidebar's grid rebuild)
-                // — the user is choosing exactly which pane to split and which way.
+                // Directional and pane-specific — the user is choosing exactly which
+                // pane to split and which way, so the tree is edited in place. That
+                // choice also takes the tab off the canonical grid, which is what
+                // stops a later sidebar open from rebuilding it (see isGridLayout).
                 paneTree: splitLeaf(t.paneTree, t.activeLeafId, direction, newId, {
                   kind: "launcher",
                 }),

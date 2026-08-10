@@ -1170,6 +1170,61 @@ describe("openFromSidebar", () => {
       expect(computeLayout(after.paneTree)).toHaveLength(4);
     });
   });
+
+  describe("openFromSidebar into a layout the user arranged by hand", () => {
+    beforeEach(reset);
+
+    /** A tab split top/bottom with the split shortcut — a shape the grid never builds. */
+    function stackedTab() {
+      useTabsStore.getState().openEditorTab("/a.ts");
+      useTabsStore.getState().splitActivePane("col");
+      return activeTab();
+    }
+
+    it("leaves stacked panes stacked instead of re-gridding them into columns", () => {
+      const before = computeLayout(stackedTab().paneTree);
+      expect(before.every((p) => Math.round(p.rect.width) === 100)).toBe(true);
+
+      useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/b.ts" });
+
+      const panes = computeLayout(activeTab().paneTree);
+      expect(panes).toHaveLength(3);
+      // Nothing sits beside anything else: the tab is still one column.
+      expect(panes.every((p) => Math.round(p.rect.width) === 100)).toBe(true);
+      const original = panes.filter((p) => before.some((b) => b.id === p.id));
+      expect(original).toHaveLength(2);
+    });
+
+    it("adds the new pane below the existing ones and focuses it", () => {
+      const before = computeLayout(stackedTab().paneTree);
+      useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/b.ts" });
+
+      const tab = activeTab();
+      const panes = computeLayout(tab.paneTree);
+      const added = panes.find((p) => !before.some((b) => b.id === p.id))!;
+      const original = panes.filter((p) => before.some((b) => b.id === p.id));
+      expect(added.content).toMatchObject({ kind: "editor", path: "/b.ts" });
+      expect(added.rect.top).toBeGreaterThanOrEqual(
+        Math.max(...original.map((p) => p.rect.top + p.rect.height)),
+      );
+      expect(tab.activeLeafId).toBe(added.id);
+      expect(tab.paneOrder).toEqual([...before.map((b) => b.id), added.id]);
+    });
+
+    it("still honours the 8-pane cap", () => {
+      stackedTab();
+      for (let i = 3; i <= 8; i++) {
+        expect(useTabsStore.getState().openFromSidebar({ kind: "editor", path: `/${i}.ts` })).toEqual({
+          status: "opened",
+        });
+      }
+      const before = activeTab();
+      expect(useTabsStore.getState().openFromSidebar({ kind: "editor", path: "/9.ts" })).toEqual({
+        status: "at-capacity",
+      });
+      expect(activeTab().paneOrder).toEqual(before.paneOrder);
+    });
+  });
 });
 
 describe("openFromSidebar with ssh content", () => {

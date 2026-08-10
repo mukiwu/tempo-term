@@ -5,6 +5,7 @@ import {
   findPaneContent,
   firstLeafId,
   gridLayout,
+  isGridLayout,
   leaf,
   leafIds,
   paneIdAt,
@@ -259,6 +260,41 @@ describe("gridLayout", () => {
       expect(top.rect.height).toBeCloseTo(50, 5);
       expect(bottom.rect.height).toBeCloseTo(50, 5);
     }
+  });
+});
+
+describe("isGridLayout", () => {
+  function order(n: number): string[] {
+    return Array.from({ length: n }, (_, i) => `p${i}`);
+  }
+
+  function grid(ids: string[]): LayoutNode {
+    return gridLayout(ids.map((id) => ({ id, content: { kind: "terminal" } as const })));
+  }
+
+  it("recognises the tree gridLayout itself builds, at every size", () => {
+    for (const n of [1, 2, 3, 4, 5, 8]) {
+      const ids = order(n);
+      expect(isGridLayout(grid(ids), ids)).toBe(true);
+    }
+  });
+
+  it("ignores split ratios, so dragging a splitter does not leave the grid", () => {
+    const ids = order(2);
+    const tree = grid(ids);
+    expect(isGridLayout(setSizesById(tree, splitId(tree), [0.8, 0.2]), ids)).toBe(true);
+  });
+
+  it("rejects a hand-stacked pair, which the grid would have laid out as columns", () => {
+    expect(isGridLayout(splitLeaf(leaf("a"), "a", "col", "b"), ["a", "b"])).toBe(false);
+  });
+
+  it("rejects a grid whose panes sit in a different add-order", () => {
+    expect(isGridLayout(grid(["a", "b"]), ["b", "a"])).toBe(false);
+  });
+
+  it("rejects an empty paneOrder rather than asking gridLayout to build nothing", () => {
+    expect(isGridLayout(leaf("a"), [])).toBe(false);
   });
 });
 
