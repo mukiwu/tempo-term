@@ -8,12 +8,22 @@
 /** Match a run of either slash flavour, so the helpers work on both platforms. */
 const SEPARATORS = /[\\/]+/;
 
-/** A Windows drive designator with nothing after it: "C:", "D:". */
+/** Matches a Windows drive designator and nothing else: "C:", "D:". */
 const DRIVE = /^[A-Za-z]:$/;
 
-/** Whichever separator the path itself uses, defaulting to "/". */
+/**
+ * Whichever separator the path itself uses, defaulting to "/". A leading drive
+ * designator counts as a Windows path even before any separator shows up, so
+ * "C:" on its own still resolves to "\". Kept in step with the same-named
+ * helper in `@/lib/breadcrumb` — two path helpers answering this differently
+ * is worse than the duplication.
+ */
 function separatorOf(path: string): string {
-  return path.includes("\\") && !path.includes("/") ? "\\" : "/";
+  if (path.includes("/")) {
+    return "/";
+  }
+  // slice(0, 2) is the drive head of "C:\Windows", or the whole of "C:".
+  return path.includes("\\") || DRIVE.test(path.slice(0, 2)) ? "\\" : "/";
 }
 
 /** The final path segment ("/a/b/c.txt" -> "c.txt"), ignoring trailing slashes. */

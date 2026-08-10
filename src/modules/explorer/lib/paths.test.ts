@@ -54,6 +54,11 @@ describe("joinPath", () => {
   it("uses backslashes on Windows-style directories", () => {
     expect(joinPath("C:\\a\\b", "c.txt")).toBe("C:\\a\\b\\c.txt");
   });
+
+  it("recognises a drive designator as a Windows path before any separator", () => {
+    expect(joinPath("C:\\", "Windows")).toBe("C:\\Windows");
+    expect(joinPath("C:", "Windows")).toBe("C:\\Windows");
+  });
 });
 
 describe("relativePath", () => {

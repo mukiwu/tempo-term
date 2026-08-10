@@ -22,8 +22,18 @@ export interface CrumbRoots {
 /** Match a run of either slash flavour, so Windows paths work too. */
 const SEPARATORS = /[\\/]+/;
 
-/** A Windows drive designator with nothing after it: "C:", "D:". */
+/** Matches a Windows drive designator and nothing else: "C:", "D:". */
 const DRIVE = /^[A-Za-z]:$/;
+
+/**
+ * A path a crumb can stand on. A bare "C:" cannot: on Windows it means the
+ * *current directory* on drive C:, which is per-drive process state, so only
+ * "C:\" names the root. Everything else is already a location and passes
+ * through untouched.
+ */
+function rooted(path: string, sep: string): string {
+  return DRIVE.test(path) ? `${path}${sep}` : path;
+}
 
 function trimTrailing(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, "");
@@ -35,14 +45,15 @@ function isInside(path: string, root: string): boolean {
 }
 
 /**
- * The separator the path itself uses, defaulting to "/". A drive designator
- * counts as a Windows path even before any separator shows up, so "C:" on its
- * own still resolves to "\" rather than the default.
+ * The separator the path itself uses, defaulting to "/". A leading drive
+ * designator counts as a Windows path even before any separator shows up, so
+ * "C:" on its own still resolves to "\" rather than the default.
  */
 function separatorOf(path: string): string {
   if (path.includes("/")) {
     return "/";
   }
+  // slice(0, 2) is the drive head of "C:\Windows", or the whole of "C:".
   return path.includes("\\") || DRIVE.test(path.slice(0, 2)) ? "\\" : "/";
 }
 
@@ -55,7 +66,7 @@ export function buildCrumbs(path: string, roots: CrumbRoots): Crumb[] {
     // Home itself would otherwise be an empty trail; "~" keeps it visible
     // (and clickable) without spelling out the home prefix anywhere else.
     if (target === homeDir) {
-      return [{ label: "~", path: homeDir }];
+      return [{ label: "~", path: rooted(homeDir, sep) }];
     }
     return crumbsBelow(homeDir, target, sep);
   }
@@ -72,18 +83,15 @@ function crumbsBelow(root: string, target: string, sep: string): Crumb[] {
   for (const segment of rest.length > 0 ? rest.split(SEPARATORS) : []) {
     if (current.length === 0) {
       // Trail starting from nothing keeps the target's exact leading
-      // separators: "/opt" stays rooted, a UNC path keeps its "\\\\" prefix,
-      // and a Windows drive letter opens bare ("C:").
+      // separators: "/opt" stays rooted and a UNC path keeps its "\\\\" prefix.
       const leading = target.match(/^[\\/]+/)?.[0] ?? "";
       current = `${leading}${segment}`;
     } else {
       current = `${current}${sep}${segment}`;
     }
-    // A bare "C:" is the *current directory* on drive C:, which is per-drive
-    // process state — only "C:\" names the root. The separator goes on the
-    // crumb the user clicks, not on the accumulator, so the next segment
-    // still joins as "C:\Windows" rather than "C:\\Windows".
-    crumbs.push({ label: segment, path: DRIVE.test(current) ? `${current}${sep}` : current });
+    // `rooted` goes on the crumb the user clicks, not on the accumulator, so
+    // the next segment still joins as "C:\Windows", not "C:\\Windows".
+    crumbs.push({ label: segment, path: rooted(current, sep) });
   }
   return crumbs;
 }

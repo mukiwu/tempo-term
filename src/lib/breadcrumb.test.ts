@@ -115,4 +115,8 @@ describe("buildCrumbs", () => {
       { label: "muki", path: "C:\\Users\\muki" },
     ]);
   });
+
+  it("roots the ~ crumb too when home itself is a drive root", () => {
+    expect(buildCrumbs("C:\\", { homeDir: "C:\\" })).toEqual([{ label: "~", path: "C:\\" }]);
+  });
 });
