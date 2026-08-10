@@ -32,7 +32,9 @@ const EVENTS: &[(&str, &str)] = &[
 /// Build a hook command from a prefix and the state argument. The prefix is
 /// the native shim invocation (`"<exe>" --status-hook <agent>`); the state is
 /// appended as the final arg.
-fn our_command(prefix: &str, state: &str) -> String {
+/// `pub(crate)`: `codex_status_hook` builds the same command a second time for
+/// its `commandWindows` override, and the two must not drift apart.
+pub(crate) fn our_command(prefix: &str, state: &str) -> String {
     format!("{prefix} {state}")
 }
 
@@ -66,6 +68,26 @@ pub fn shim_prefix(agent: &str) -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe = exe.to_str().ok_or("executable path is not valid UTF-8")?;
     Ok(shim_prefix_from_exe(exe, agent))
+}
+
+/// The same prefix with the executable path left exactly as the OS reports it,
+/// i.e. backslashes on Windows. `normalize` exists for hook runners that go
+/// through bash, where `\` is an escape; a runner that goes through `cmd.exe`
+/// wants the native form instead. Used only for Codex's `commandWindows`
+/// override — see `codex_status_hook`. On Unix this is identical to
+/// `shim_prefix`, since there is nothing to normalize.
+fn shim_prefix_from_exe_native(exe: &str, agent: &str) -> String {
+    format!("\"{exe}\" {SHIM_MARKER} {agent}")
+}
+
+/// `shim_prefix_from_exe_native` resolved against the running executable.
+pub fn shim_prefix_native(agent: &str) -> Result<String, String> {
+    if !matches!(agent, "claude" | "codex") {
+        return Err("invalid status-hook agent".to_string());
+    }
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = exe.to_str().ok_or("executable path is not valid UTF-8")?;
+    Ok(shim_prefix_from_exe_native(exe, agent))
 }
 
 /// Canonicalize a hook command for storage and comparison. Hook commands may

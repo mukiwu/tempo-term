@@ -5,12 +5,13 @@
 
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
 use tauri::{AppHandle, Manager};
 use toml_edit::{DocumentMut, Item, Table, value};
 
 use crate::modules::claude_status_hook::{
-    merge_hook_settings, normalize, remove_hook_settings, shim_prefix, LEGACY_SCRIPT_MARKER,
-    SHIM_MARKER,
+    merge_hook_settings, normalize, our_command, remove_hook_settings, shim_prefix,
+    shim_prefix_native, LEGACY_SCRIPT_MARKER, SHIM_MARKER,
 };
 
 /// Codex hook event to status argument. No `Notification` catch-all: Codex signals
@@ -98,11 +99,19 @@ fn ensure_hooks_feature_at(config_path: &Path) -> Result<(), String> {
 /// File-level install: reconcile `hooks_path` to hold exactly our current shim
 /// entries, writing only when the result differs from what's on disk (see
 /// `claude_status_hook::install_into` for why). Split for testability.
-fn install_into(hooks_path: &Path, prefix: &str) -> Result<(), String> {
+fn install_into(
+    hooks_path: &Path,
+    prefix: &str,
+    windows_prefix: Option<&str>,
+) -> Result<(), String> {
     let existing = read_json(hooks_path)?;
     let cleaned = remove_hook_settings(existing.clone(), LEGACY_SCRIPT_MARKER, CODEX_EVENTS);
     let cleaned = remove_hook_settings(cleaned, SHIM_MARKER, CODEX_EVENTS);
     let merged = merge_hook_settings(cleaned, prefix, CODEX_EVENTS);
+    let merged = match windows_prefix {
+        Some(windows_prefix) => add_windows_command(merged, windows_prefix),
+        None => merged,
+    };
     if merged == existing {
         return Ok(());
     }
@@ -116,9 +125,60 @@ fn install_into(hooks_path: &Path, prefix: &str) -> Result<(), String> {
 /// were never upgraded — they keep reporting without an agent field and the
 /// UI holds the previous agent's icon (issue #279). The config error still
 /// surfaces after the upgrade.
-fn install_at(hooks_path: &Path, config_path: &Path, prefix: &str) -> Result<(), String> {
-    install_into(hooks_path, prefix)?;
+fn install_at(
+    hooks_path: &Path,
+    config_path: &Path,
+    prefix: &str,
+    windows_prefix: Option<&str>,
+) -> Result<(), String> {
+    install_into(hooks_path, prefix, windows_prefix)?;
     ensure_hooks_feature_at(config_path)
+}
+
+/// Give every one of our entries a `commandWindows` alongside its `command`.
+///
+/// Codex runs a hook's command through `cmd.exe /C` on Windows (its
+/// `build_command` defaults to that shell), while `command` carries the
+/// forward-slash path `normalize` produces for the benefit of runners that go
+/// through bash. `commandWindows` overrides `command` on Windows only, so the
+/// two runners can each get the path form they can actually execute. Codex
+/// deserializes it with `#[serde(default)]`, so a build that predates the field
+/// ignores it rather than failing to parse.
+///
+/// Only entries carrying [`SHIM_MARKER`] are touched — a user's own hooks are
+/// left exactly as they are. Takes the prefix rather than a whole command so
+/// each event's state argument is appended the same way `merge_hook_settings`
+/// does it, via the shared `our_command`.
+fn add_windows_command(mut merged: Value, windows_prefix: &str) -> Value {
+    let Some(hooks) = merged.get_mut("hooks").and_then(Value::as_object_mut) else {
+        return merged;
+    };
+    for (event, state) in CODEX_EVENTS {
+        let Some(entries) = hooks.get_mut(*event).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for entry in entries.iter_mut() {
+            let Some(handlers) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
+                continue;
+            };
+            for handler in handlers.iter_mut() {
+                let ours = handler
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .is_some_and(|command| command.contains(SHIM_MARKER));
+                if !ours {
+                    continue;
+                }
+                if let Some(object) = handler.as_object_mut() {
+                    object.insert(
+                        "commandWindows".to_string(),
+                        Value::String(our_command(windows_prefix, state)),
+                    );
+                }
+            }
+        }
+    }
+    merged
 }
 
 /// Mirror of `claude_status_hook_install`: registers the native shim
@@ -131,7 +191,17 @@ pub fn codex_status_hook_install(app: AppHandle) -> Result<(), String> {
     let (script_path, hooks_path, config_path) = codex_paths(&app)?;
     let _ = std::fs::remove_file(&script_path);
     let prefix = shim_prefix("codex")?;
-    install_at(&hooks_path, &config_path, &prefix)
+    // Windows only: Codex executes hook commands through `cmd.exe /C`, which
+    // does not reliably run the forward-slash path `shim_prefix` produces for
+    // bash-based runners. Off Windows the two prefixes would be identical, so
+    // the field is left out entirely rather than written as a no-op (issue
+    // #279).
+    let windows_prefix = if cfg!(windows) {
+        Some(shim_prefix_native("codex")?)
+    } else {
+        None
+    };
+    install_at(&hooks_path, &config_path, &prefix, windows_prefix.as_deref())
 }
 
 /// Remove our entries from `hooks_path`, skipping the rewrite entirely when
@@ -343,8 +413,13 @@ mod tests {
         utf16.extend("model = \"x\"\n".encode_utf16().flat_map(u16::to_le_bytes));
         std::fs::write(&config_path, utf16).unwrap();
 
-        let err = install_at(&hooks_path, &config_path, "\"/app/tempo-term\" --status-hook codex")
-            .unwrap_err();
+        let err = install_at(
+            &hooks_path,
+            &config_path,
+            "\"/app/tempo-term\" --status-hook codex",
+            None,
+        )
+        .unwrap_err();
         assert!(err.contains("UTF-8"), "unexpected error: {err}");
 
         let after: serde_json::Value =
@@ -449,7 +524,7 @@ mod tests {
         let original = serde_json::to_string_pretty(&merged).unwrap() + "\n";
         std::fs::write(&hooks_path, &original).unwrap();
 
-        install_into(&hooks_path, SHIM_PREFIX).unwrap();
+        install_into(&hooks_path, SHIM_PREFIX, None).unwrap();
 
         let after = std::fs::read_to_string(&hooks_path).unwrap();
         assert_eq!(after, original, "an already-correct hooks.json must be left byte-identical");
@@ -496,6 +571,102 @@ mod tests {
         let after = std::fs::read_to_string(&config_path).unwrap();
         assert_eq!(after, original);
         assert_eq!(before, after_meta, "config.toml must not be rewritten when already correct");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The same executable as SHIM_PREFIX, spelled the way Windows reports it.
+    const WINDOWS_SHIM_PREFIX: &str =
+        r#""C:\Program Files\TempoTerm\tempo-term.exe" --status-hook codex"#;
+
+    #[test]
+    fn windows_command_carries_the_native_path_and_the_events_own_state() {
+        // command keeps the forward-slash form for bash-based runners;
+        // commandWindows is what Codex actually executes on Windows, where the
+        // command goes through cmd.exe (issue #279).
+        let merged = merge_hook_settings(json!({}), SHIM_PREFIX, CODEX_EVENTS);
+        let with_windows = add_windows_command(merged, WINDOWS_SHIM_PREFIX);
+
+        for (event, state) in CODEX_EVENTS {
+            let handler = &with_windows["hooks"][*event][0]["hooks"][0];
+            assert_eq!(
+                handler["command"],
+                json!(format!("{SHIM_PREFIX} {state}")),
+                "{event} command"
+            );
+            assert_eq!(
+                handler["commandWindows"],
+                json!(format!("{WINDOWS_SHIM_PREFIX} {state}")),
+                "{event} commandWindows"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_command_is_not_added_to_a_users_own_hook() {
+        let existing = json!({
+            "hooks": {
+                "SessionStart": [
+                    { "hooks": [{ "type": "command", "command": "echo mine" }] }
+                ]
+            }
+        });
+        let merged = merge_hook_settings(existing, SHIM_PREFIX, CODEX_EVENTS);
+        let with_windows = add_windows_command(merged, WINDOWS_SHIM_PREFIX);
+
+        let entries = with_windows["hooks"]["SessionStart"].as_array().unwrap();
+        let theirs = entries
+            .iter()
+            .find(|e| e["hooks"][0]["command"] == json!("echo mine"))
+            .expect("the user's own hook must survive");
+        assert!(
+            theirs["hooks"][0].get("commandWindows").is_none(),
+            "only entries carrying the shim marker may gain a commandWindows"
+        );
+    }
+
+    #[test]
+    fn install_writes_the_windows_command_when_one_is_given() {
+        let dir = temp_dir_for("windows-command");
+        let hooks_path = dir.join("hooks.json");
+
+        install_into(&hooks_path, SHIM_PREFIX, Some(WINDOWS_SHIM_PREFIX)).unwrap();
+
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&hooks_path).unwrap()).unwrap();
+        assert_eq!(
+            written["hooks"]["SessionStart"][0]["hooks"][0]["commandWindows"],
+            json!(format!("{WINDOWS_SHIM_PREFIX} idle"))
+        );
+
+        // Re-running with the same inputs must still be a no-op, or every
+        // launch rewrites the file.
+        let before = std::fs::metadata(&hooks_path).unwrap().modified().unwrap();
+        install_into(&hooks_path, SHIM_PREFIX, Some(WINDOWS_SHIM_PREFIX)).unwrap();
+        let after = std::fs::metadata(&hooks_path).unwrap().modified().unwrap();
+        assert_eq!(before, after, "an already-correct hooks.json must not be rewritten");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn install_upgrades_an_existing_entry_that_has_no_windows_command() {
+        // What every current Windows user has on disk: our entries from a
+        // build that predates commandWindows. install_into removes and rebuilds
+        // our entries, so the upgrade needs no separate migration step.
+        let dir = temp_dir_for("windows-command-upgrade");
+        let hooks_path = dir.join("hooks.json");
+        let old = merge_hook_settings(json!({}), SHIM_PREFIX, CODEX_EVENTS);
+        std::fs::write(&hooks_path, serde_json::to_string_pretty(&old).unwrap()).unwrap();
+
+        install_into(&hooks_path, SHIM_PREFIX, Some(WINDOWS_SHIM_PREFIX)).unwrap();
+
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&hooks_path).unwrap()).unwrap();
+        assert_eq!(
+            written["hooks"]["PreToolUse"][0]["hooks"][0]["commandWindows"],
+            json!(format!("{WINDOWS_SHIM_PREFIX} active"))
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
