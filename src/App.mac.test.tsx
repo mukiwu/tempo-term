@@ -152,4 +152,48 @@ describe("App shell — macOS keyboard shortcuts", () => {
     const tab = useTabsStore.getState().tabs.find((t) => t.id === "a");
     expect(tab?.paneTree).toEqual(paneTree);
   });
+
+  it("leaves bare Ctrl+letter combos alone on macOS", () => {
+    // The app's modifier here is Cmd. Every one of these is a terminal control
+    // code or a readline binding — ^D is EOF, ^P walks history, ^T transposes,
+    // and ^B is tmux's prefix — so a focused terminal sends the byte and then
+    // lets the event bubble up to this handler (see the attachCustomKeyEventHandler
+    // comment in TerminalView). Acting on it here fires the app action *as well
+    // as* the control code, on every press.
+    const paneTree = splitLeaf(
+      leaf("left-leaf", { kind: "launcher" }),
+      "left-leaf",
+      "row",
+      "right-leaf",
+      { kind: "launcher" },
+    );
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs: [
+        {
+          id: "a",
+          spaceId: "s1",
+          title: "a",
+          kind: "launcher" as const,
+          paneTree,
+          activeLeafId: "left-leaf",
+          paneOrder: ["left-leaf", "right-leaf"],
+        },
+      ],
+      activeId: "a",
+    });
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: "KeyD", key: "d", ctrlKey: true });
+    fireEvent.keyDown(window, { code: "KeyP", key: "p", ctrlKey: true });
+    fireEvent.keyDown(window, { code: "KeyT", key: "t", ctrlKey: true });
+    fireEvent.keyDown(window, { code: "Comma", key: ",", ctrlKey: true });
+
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === "a");
+    expect(tab?.paneTree).toEqual(paneTree);
+    expect(useUiStore.getState().fileFinderOpen).toBe(false);
+    expect(useUiStore.getState().settingsOpen).toBe(false);
+    expect(useTabsStore.getState().tabs.length).toBe(1);
+  });
 });

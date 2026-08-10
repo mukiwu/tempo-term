@@ -535,6 +535,15 @@ function App() {
         return;
       }
 
+      // The four below match on `key` instead of `code`, and until now sat
+      // outside the primaryMod gate — only the `metaKey || ctrlKey` check far
+      // above stood between them and a keypress. On macOS that let a bare
+      // Ctrl+T/P/,/D fire the app action even though Cmd is the modifier here,
+      // and a focused terminal had already sent the control byte by then (^D is
+      // EOF, ^P walks history), so one press did both things at once.
+      if (!primaryMod) {
+        return;
+      }
       const key = e.key.toLowerCase();
       if (key === "t") {
         e.preventDefault();
