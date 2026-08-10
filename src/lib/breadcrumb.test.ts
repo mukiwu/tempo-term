@@ -81,10 +81,38 @@ describe("buildCrumbs", () => {
       homeDir: "C:\\Users\\muki",
     });
 
+    // "C:" on its own means the *current directory* on drive C:, not its root.
+    // Only "C:\" reaches the root, so the crumb has to carry the separator —
+    // without doubling it into the paths built on top of it.
     expect(crumbs).toEqual([
-      { label: "C:", path: "C:" },
+      { label: "C:", path: "C:\\" },
       { label: "Windows", path: "C:\\Windows" },
       { label: "System32", path: "C:\\Windows\\System32" },
+    ]);
+  });
+
+  it("gives a bare Windows drive root a trailing separator", () => {
+    expect(buildCrumbs("C:\\", { homeDir: "C:\\Users\\muki" })).toEqual([
+      { label: "C:", path: "C:\\" },
+    ]);
+    expect(buildCrumbs("D:", { homeDir: "C:\\Users\\muki" })).toEqual([
+      { label: "D:", path: "D:\\" },
+    ]);
+  });
+
+  it("roots a Windows path even when home is unknown", () => {
+    expect(buildCrumbs("D:\\code", { homeDir: null })).toEqual([
+      { label: "D:", path: "D:\\" },
+      { label: "code", path: "D:\\code" },
+    ]);
+  });
+
+  it("leaves a drive-rooted home alone (the trail below it needs no re-rooting)", () => {
+    const crumbs = buildCrumbs("C:\\Users\\muki", { homeDir: "C:\\" });
+
+    expect(crumbs).toEqual([
+      { label: "Users", path: "C:\\Users" },
+      { label: "muki", path: "C:\\Users\\muki" },
     ]);
   });
 });

@@ -22,6 +22,9 @@ export interface CrumbRoots {
 /** Match a run of either slash flavour, so Windows paths work too. */
 const SEPARATORS = /[\\/]+/;
 
+/** A Windows drive designator with nothing after it: "C:", "D:". */
+const DRIVE = /^[A-Za-z]:$/;
+
 function trimTrailing(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, "");
   return trimmed.length > 0 ? trimmed : path;
@@ -31,9 +34,16 @@ function isInside(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}\\`);
 }
 
-/** The separator the path itself uses, defaulting to "/". */
+/**
+ * The separator the path itself uses, defaulting to "/". A drive designator
+ * counts as a Windows path even before any separator shows up, so "C:" on its
+ * own still resolves to "\" rather than the default.
+ */
 function separatorOf(path: string): string {
-  return path.includes("\\") && !path.includes("/") ? "\\" : "/";
+  if (path.includes("/")) {
+    return "/";
+  }
+  return path.includes("\\") || DRIVE.test(path.slice(0, 2)) ? "\\" : "/";
 }
 
 export function buildCrumbs(path: string, roots: CrumbRoots): Crumb[] {
@@ -69,7 +79,11 @@ function crumbsBelow(root: string, target: string, sep: string): Crumb[] {
     } else {
       current = `${current}${sep}${segment}`;
     }
-    crumbs.push({ label: segment, path: current });
+    // A bare "C:" is the *current directory* on drive C:, which is per-drive
+    // process state — only "C:\" names the root. The separator goes on the
+    // crumb the user clicks, not on the accumulator, so the next segment
+    // still joins as "C:\Windows" rather than "C:\\Windows".
+    crumbs.push({ label: segment, path: DRIVE.test(current) ? `${current}${sep}` : current });
   }
   return crumbs;
 }

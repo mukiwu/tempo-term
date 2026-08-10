@@ -8,6 +8,9 @@
 /** Match a run of either slash flavour, so the helpers work on both platforms. */
 const SEPARATORS = /[\\/]+/;
 
+/** A Windows drive designator with nothing after it: "C:", "D:". */
+const DRIVE = /^[A-Za-z]:$/;
+
 /** Whichever separator the path itself uses, defaulting to "/". */
 function separatorOf(path: string): string {
   return path.includes("\\") && !path.includes("/") ? "\\" : "/";
@@ -29,7 +32,11 @@ export function dirname(path: string): string {
     // No separator, or the only one is the leading root slash.
     return index === 0 ? trimmed.slice(0, 1) : trimmed;
   }
-  return trimmed.slice(0, index);
+  const parent = trimmed.slice(0, index);
+  // "C:\file.txt" sits at the root of drive C:, and the root only keeps that
+  // meaning with its separator — a bare "C:" means the drive's *current
+  // directory* instead, which is per-drive process state.
+  return DRIVE.test(parent) ? `${parent}${trimmed.charAt(index)}` : parent;
 }
 
 /** Join a directory and a child segment with the directory's own separator. */

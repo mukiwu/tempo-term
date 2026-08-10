@@ -32,6 +32,13 @@ describe("dirname", () => {
   it("handles Windows separators", () => {
     expect(dirname("C:\\Users\\me\\file.txt")).toBe("C:\\Users\\me");
   });
+
+  it("keeps the separator on a Windows drive root", () => {
+    // A bare "C:" means the current directory on drive C:, not its root, so
+    // read_dir on it lists whatever folder the process happens to sit in.
+    expect(dirname("C:\\file.txt")).toBe("C:\\");
+    expect(dirname("C:\\Windows")).toBe("C:\\");
+  });
 });
 
 describe("joinPath", () => {
