@@ -25,8 +25,17 @@ const GROUPS: ShortcutGroup[] = [
       { labelKey: "shortcutsList.closeTab", keys: `${MOD} W` },
       { labelKey: "shortcutsList.switchTab", keys: `${MOD} 1–9` },
       { labelKey: "shortcutsList.switchSidebar", keys: `${ALT} 1–8` },
-      { labelKey: "shortcutsList.findFiles", keys: `${MOD} P` },
-      { labelKey: "shortcutsList.toggleSidebar", keys: `${MOD} B` },
+      // Windows moved these to Ctrl+Shift so the bare Ctrl+<letter> reaches the
+      // shell (^P/^N walk readline history, ^B is tmux's prefix). macOS has no
+      // collision because its modifier is Cmd.
+      {
+        labelKey: "shortcutsList.findFiles",
+        keys: IS_MAC ? `${MOD} P` : `${MOD} ${SHIFT} P`,
+      },
+      {
+        labelKey: "shortcutsList.toggleSidebar",
+        keys: IS_MAC ? `${MOD} B` : `${MOD} ${SHIFT} B`,
+      },
       { labelKey: "shortcutsList.toggleRightSidebar", keys: `${MOD} ${ALT} B` },
       { labelKey: "shortcutsList.zoomIn", keys: `${MOD} +` },
       { labelKey: "shortcutsList.zoomOut", keys: `${MOD} -` },

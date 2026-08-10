@@ -71,10 +71,16 @@ export function isAppShortcut(event: AppShortcutEvent, isWindows: boolean): bool
       case "KeyT":
       case "KeyD":
         return true;
-      // Find Files, Toggle Sidebar, New Window, Settings — no Shift variant.
+      // Find Files, Toggle Sidebar and New Window moved to Ctrl+Shift+<letter>
+      // so the bare combo reaches the shell: ^B is tmux's prefix and Claude
+      // Code's background-run key, ^P and ^N walk readline history. The app
+      // action now lives on the Shift variant, so that is what we claim.
       case "KeyP":
       case "KeyB":
       case "KeyN":
+        return event.shiftKey;
+      // Settings keeps the bare combo. Ctrl+, is not a control code and no
+      // shell binds it, so there is nothing here to yield to.
       case "Comma":
         return !event.shiftKey;
       default:

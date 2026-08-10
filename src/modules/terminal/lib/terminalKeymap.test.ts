@@ -79,18 +79,31 @@ describe("isAppShortcut", () => {
     }
   });
 
-  it("routes the Windows Ctrl+letter shortcuts to the app so the shell can't eat them", () => {
-    // These collide with terminal control codes (Ctrl+T=^T, Ctrl+D=EOF, ...);
-    // on Windows the app must win. Shift variants of W/T/D are valid too.
+  it("keeps Ctrl+W/T/D for the app on Windows, Shift variants included", () => {
+    // Their Ctrl+Shift slots are already taken (Close Window, New Terminal Tab,
+    // Split Down), so these three have nowhere to move to yet and the app still
+    // wins. See #313.
     for (const code of ["KeyW", "KeyT", "KeyD"]) {
       expect(win({ code, ctrlKey: true })).toBe(true);
       expect(win({ code, ctrlKey: true, shiftKey: true })).toBe(true);
     }
-    for (const code of ["KeyP", "KeyB", "KeyN", "Comma"]) {
-      expect(win({ code, ctrlKey: true })).toBe(true);
-      // No Shift variant for these — Ctrl+Shift+P etc. stay with the terminal.
-      expect(win({ code, ctrlKey: true, shiftKey: true })).toBe(false);
+  });
+
+  it("hands Ctrl+B/P/N to the shell on Windows and claims the Shift variants", () => {
+    // ^B is tmux's prefix and Claude Code's background-run key, ^P and ^N walk
+    // readline history — a terminal app has no business eating those, so the
+    // app action moved to Ctrl+Shift+<letter>.
+    for (const code of ["KeyP", "KeyB", "KeyN"]) {
+      expect(win({ code, ctrlKey: true })).toBe(false);
+      expect(win({ code, ctrlKey: true, shiftKey: true })).toBe(true);
     }
+  });
+
+  it("keeps Ctrl+, for Settings on Windows (no shell binds it)", () => {
+    // Comma is not a control code and none of Claude Code, bash or pwsh binds
+    // it, so there is nothing to yield to and it stays on the bare combo.
+    expect(win({ code: "Comma", ctrlKey: true })).toBe(true);
+    expect(win({ code: "Comma", ctrlKey: true, shiftKey: true })).toBe(false);
   });
 
   it("does NOT claim those Ctrl+letter keys off Windows (macOS uses Cmd, no collision)", () => {

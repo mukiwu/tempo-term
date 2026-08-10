@@ -458,8 +458,10 @@ function App() {
           useTabsStore.getState().focusNextPane();
           return;
         }
-        // N opens a new window (mirrors File > New Window).
-        if (e.code === "KeyN" && !e.shiftKey) {
+        // N opens a new window (mirrors File > New Window). Windows moved it to
+        // Ctrl+Shift+N so a bare Ctrl+N reaches the shell (readline's
+        // next-history); macOS keeps Cmd+N, which never collides.
+        if (e.code === "KeyN" && (IS_WINDOWS ? e.shiftKey : !e.shiftKey)) {
           e.preventDefault();
           void invoke("open_new_window").catch(() => {});
           return;
@@ -530,6 +532,12 @@ function App() {
       // bare Ctrl+B on macOS still reaches the terminal (readline/tmux). Read
       // `code` (not `key`) because ⌥ rewrites `e.key` on macOS (⌥B → "∫").
       if (e.code === "KeyB" && primaryMod) {
+        // The left dock moved to Ctrl+Shift+B on Windows so a bare Ctrl+B
+        // reaches the shell (tmux's prefix, Claude Code's background-run key).
+        // The right dock keeps Alt, which is not a control code anywhere.
+        if (IS_WINDOWS && !e.altKey && !e.shiftKey) {
+          return;
+        }
         e.preventDefault();
         useUiStore.getState().toggleSide(e.altKey ? "right" : "left");
         return;
@@ -555,7 +563,9 @@ function App() {
         } else {
           useTabsStore.getState().openLauncherTab();
         }
-      } else if (key === "p") {
+      } else if (key === "p" && (!IS_WINDOWS || e.shiftKey)) {
+        // Windows moved Find Files to Ctrl+Shift+P so a bare Ctrl+P reaches the
+        // shell (readline's previous-history).
         e.preventDefault();
         useUiStore.getState().openFileFinder();
       } else if (key === ",") {

@@ -114,7 +114,7 @@ export function buildMenus(ctx: MenuContext): MenuDef[] {
       items: [
         { id: "new-tab", labelKey: "menuBar.newTab", group: 0, shortcut: { mac: "⌘T", win: "Ctrl+T" }, action: { kind: "event", event: "menu:new-tab" } },
         { id: "new-terminal-tab", labelKey: "menuBar.newTerminalTab", group: 0, shortcut: { mac: "⇧⌘T", win: "Ctrl+Shift+T" }, action: { kind: "event", event: "menu:new-terminal-tab" } },
-        { id: "new-window", labelKey: "menuBar.newWindow", group: 0, shortcut: { mac: "⌘N", win: "Ctrl+N" }, action: { kind: "newWindow" } },
+        { id: "new-window", labelKey: "menuBar.newWindow", group: 0, shortcut: { mac: "⌘N", win: "Ctrl+Shift+N" }, action: { kind: "newWindow" } },
         { id: "save", labelKey: "menuBar.save", group: 1, shortcut: { mac: "⌘S", win: "Ctrl+S" }, action: { kind: "event", event: "menu:save" }, disabled: notEditor },
         { id: "close-tab", labelKey: "menuBar.closeTab", group: 2, shortcut: { mac: "⌘W", win: "Ctrl+W" }, action: { kind: "event", event: "menu:close-tab" } },
         { id: "close-window", labelKey: "menuBar.closeWindow", group: 2, shortcut: { mac: "⇧⌘W", win: "Ctrl+Shift+W" }, action: { kind: "window", op: "close" } },
@@ -130,14 +130,14 @@ export function buildMenus(ctx: MenuContext): MenuDef[] {
         { id: "paste", labelKey: "menuBar.paste", group: 0, shortcut: { mac: "⌘V", win: "Ctrl+V" }, action: { kind: "event", event: "menu:paste" } },
         { id: "select-all", labelKey: "menuBar.selectAll", group: 0, shortcut: { mac: "⌘A", win: "Ctrl+A" }, action: { kind: "event", event: "menu:select-all" } },
         { id: "find-in-terminal", labelKey: "menuBar.findInTerminal", group: 1, shortcut: { mac: "⌘F", win: "Ctrl+Shift+F" }, action: { kind: "event", event: "menu:find-in-terminal" }, disabled: notTerminal },
-        { id: "find-files", labelKey: "menuBar.findFiles", group: 1, shortcut: { mac: "⌘P", win: "Ctrl+P" }, action: { kind: "event", event: "menu:find-files" } },
+        { id: "find-files", labelKey: "menuBar.findFiles", group: 1, shortcut: { mac: "⌘P", win: "Ctrl+Shift+P" }, action: { kind: "event", event: "menu:find-files" } },
       ],
     },
     {
       id: "view",
       labelKey: "menuBar.view",
       items: [
-        { id: "toggle-sidebar", labelKey: "menuBar.toggleSidebar", group: 0, shortcut: { mac: "⌘B", win: "Ctrl+B" }, action: { kind: "event", event: "menu:toggle-sidebar" } },
+        { id: "toggle-sidebar", labelKey: "menuBar.toggleSidebar", group: 0, shortcut: { mac: "⌘B", win: "Ctrl+Shift+B" }, action: { kind: "event", event: "menu:toggle-sidebar" } },
         { id: "toggle-right-sidebar", labelKey: "menuBar.toggleRightSidebar", group: 0, shortcut: { mac: "⌥⌘B", win: "Ctrl+Alt+B" }, action: { kind: "event", event: "menu:toggle-right-sidebar" } },
         {
           id: "sidebar-panel",

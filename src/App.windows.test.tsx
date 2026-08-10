@@ -168,4 +168,34 @@ describe("App shell — Windows keyboard shortcuts", () => {
     const tab = useTabsStore.getState().tabs.find((t) => t.id === "a");
     expect(tab?.activeLeafId).toBe("right-leaf");
   });
+
+  it("leaves bare Ctrl+B/P to the shell and answers to the Shift variants", () => {
+    // ^B is tmux's prefix and Claude Code's background-run key, ^P walks
+    // readline history. Windows has no Cmd to hide behind, so the app action
+    // moved up to Ctrl+Shift rather than swallowing the control code (#313).
+    // A searchable root is required: App closes the finder again when there is
+    // no local folder to search (see the canSearchRoot effect).
+    useWorkspaceStore.setState({ rootPath: "/work" });
+    render(<App />);
+
+    const dockBefore = useUiStore.getState().visible.left;
+    fireEvent.keyDown(window, { code: "KeyB", key: "b", ctrlKey: true });
+    fireEvent.keyDown(window, { code: "KeyP", key: "p", ctrlKey: true });
+    expect(useUiStore.getState().visible.left).toBe(dockBefore);
+    expect(useUiStore.getState().fileFinderOpen).toBe(false);
+
+    fireEvent.keyDown(window, { code: "KeyB", key: "B", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { code: "KeyP", key: "P", ctrlKey: true, shiftKey: true });
+    expect(useUiStore.getState().visible.left).toBe(!dockBefore);
+    expect(useUiStore.getState().fileFinderOpen).toBe(true);
+  });
+
+  it("keeps the right dock on Ctrl+Alt+B", () => {
+    // Alt is not a control code, so the right dock never had to move.
+    render(<App />);
+
+    const rightBefore = useUiStore.getState().visible.right;
+    fireEvent.keyDown(window, { code: "KeyB", key: "b", ctrlKey: true, altKey: true });
+    expect(useUiStore.getState().visible.right).toBe(!rightBefore);
+  });
 });
