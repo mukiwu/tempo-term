@@ -13,6 +13,8 @@
 - 修正整個視窗模式下終端機重複套用遮罩的問題 (#305)
 - Windows 上寫進 Codex 的 hook 指令改用反斜線路徑。Codex 在 Windows 是透過 `cmd.exe` 執行 hook，先前寫入的正斜線路徑在那裡不一定跑得起來，安裝在含空白的資料夾（例如 `Program Files`）時特別容易失敗。Claude Code 那條維持正斜線不變，因為它走的是 bash (#321)
 - 修正 macOS 上 `Ctrl+T`、`Ctrl+P`、`Ctrl+,`、`Ctrl+D` 會誤觸應用程式功能的問題。這幾組在終端機裡是控制碼，先前按一次會同時送出控制碼並執行應用程式動作，例如 `Ctrl+D` 送出 EOF 的同時把窗格分割掉；現在一律留給終端機，應用程式快捷鍵維持用 `Cmd` (#317)
+- 修正 Windows 上點麵包屑的磁碟機代號時，開出來的不是該磁碟根目錄的問題。先前產生的位置是不帶反斜線的 `C:`，那在 Windows 代表「C 槽目前所在的目錄」而不是根目錄，因此會列出毫不相干的資料夾，之後每一次點選都跟著錯下去；編輯器麵包屑列出同層檔案時也有同樣狀況。macOS 與 Linux 不受影響 (#322)
+- 修正從側邊欄開檔案、筆記或 SSH 連線時，會把自己排好的窗格佈局壓平的問題。先前每次開啟都會把整個分頁重排成等寬欄位，上下疊放的窗格因此全部翻成左右並排，而且不只新增的那格，整個分頁裡的分割都被改寫。現在只有還維持預設排列的分頁會重排，自己動過的分頁保留原樣，新窗格接在旁邊，連開幾次每格也維持平均大小 (#323)
 
 ### 貢獻者
 
@@ -34,6 +36,8 @@
 - Fix duplicate terminal wallpaper masks in whole-window mode (#305)
 - The Codex hook command written on Windows now uses a backslash path. Codex runs hooks through `cmd.exe` there, where the forward-slash path we used to write is not reliably executable — most visibly for installs in a folder with a space in it, such as `Program Files`. The Claude Code entry keeps forward slashes, since it goes through bash (#321)
 - Fix `Ctrl+T`, `Ctrl+P`, `Ctrl+,` and `Ctrl+D` firing app actions on macOS. They are terminal control codes, so a single press used to send the byte and run the app action together — `Ctrl+D` sent EOF to the shell while splitting the pane. They now belong to the terminal; the app's shortcuts stay on `Cmd` (#317)
+- Fix a Windows breadcrumb opening a drive's current directory instead of the drive root. The crumb used to carry a bare `C:`, which on Windows means "wherever this process sits on drive C:" rather than the root, so it listed an unrelated folder and every click after it inherited the mistake. The editor breadcrumb's sibling-file menu had the same problem. macOS and Linux are unaffected (#322)
+- Opening a file, note, or SSH entry from the sidebar no longer flattens a pane layout you arranged yourself. Every open used to rebuild the whole tab as equal columns, so panes stacked top to bottom all flipped to side by side — and not just the one being added, every split in the tab was rewritten. Tabs still in the default arrangement rearrange as before; one you have split yourself keeps its shape, takes the new pane alongside, and stays evenly divided however many you open (#323)
 
 ### Contributors
 
