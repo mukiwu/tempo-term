@@ -17,6 +17,7 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::Path;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -32,6 +33,20 @@ pub const ENV_ADDR: &str = "TEMPOTERM_STATUS_ADDR";
 pub const ENV_TOKEN: &str = "TEMPOTERM_STATUS_TOKEN";
 pub const ENV_PANE_ID: &str = "TEMPOTERM_PANE_ID";
 pub const ENV_MARKER: &str = "TEMPOTERM";
+/// Where the shim appends one line per hook event. Carried in the pane's env
+/// like the address above, for two reasons: the shim runs before Tauri starts
+/// (see `run`), so it has no `AppHandle` to resolve an app-data path with, and
+/// keeping it in the injected env means a Codex or Claude session started
+/// outside a tempo-term pane writes nothing at all.
+pub const ENV_LOG: &str = "TEMPOTERM_STATUS_LOG";
+
+/// Log file name under the app data directory.
+const HOOK_LOG_FILE: &str = "status-hook.log";
+
+/// Rewrite the log from empty once it passes this. The shim runs on every hook
+/// event of every session, so an uncapped file would grow without bound; a few
+/// thousand lines is far more than any diagnosis needs.
+const HOOK_LOG_MAX_BYTES: u64 = 256 * 1024;
 
 /// The Tauri event the listener emits; the frontend routes it to the pane whose
 /// pty id matches `pane_id` (see TerminalView).
@@ -105,6 +120,7 @@ fn encode_message(
 pub struct StatusIpc {
     addr: String,
     token: String,
+    log_path: String,
 }
 
 impl StatusIpc {
@@ -112,11 +128,17 @@ impl StatusIpc {
     /// so its status hook can reach us and be trusted. Returns `None` when the
     /// listener never started (then panes simply carry no status env).
     pub fn env_for(&self, pane_id: u32) -> Vec<(String, String)> {
-        vec![
+        let mut env = vec![
             (ENV_ADDR.to_string(), self.addr.clone()),
             (ENV_TOKEN.to_string(), self.token.clone()),
             (ENV_PANE_ID.to_string(), pane_id.to_string()),
-        ]
+        ];
+        // Omitted when the app-data path could not be resolved: the shim then
+        // behaves exactly as it did before, silently.
+        if !self.log_path.is_empty() {
+            env.push((ENV_LOG.to_string(), self.log_path.clone()));
+        }
+        env
     }
 }
 
@@ -136,6 +158,8 @@ pub fn start(app: &tauri::AppHandle) -> Result<StatusIpc, String> {
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let token = generate_token();
+    // Resolved before the handle is moved into the accept loop below.
+    let log_path = hook_log_path(app);
 
     let app = app.clone();
     let accept_token = token.clone();
@@ -149,7 +173,21 @@ pub fn start(app: &tauri::AppHandle) -> Result<StatusIpc, String> {
     Ok(StatusIpc {
         addr: format!("127.0.0.1:{port}"),
         token,
+        log_path,
     })
+}
+
+/// The shim's log file inside the app data directory, or an empty string when
+/// that path cannot be resolved — logging is diagnostic, so it degrades to off
+/// rather than failing the listener that panes actually depend on.
+fn hook_log_path(app: &tauri::AppHandle) -> String {
+    use tauri::Manager;
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join(HOOK_LOG_FILE))
+        .ok()
+        .and_then(|path| path.to_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 fn handle_connection(stream: TcpStream, token: &str, app: &tauri::AppHandle) {
@@ -235,7 +273,10 @@ pub fn run_hook_shim(state: &str, agent: Option<&str>) {
     // nobody to report to, so the payload read would be pure wasted latency.
     let addr = match std::env::var(ENV_ADDR) {
         Ok(a) if !a.is_empty() => a,
-        _ => return,
+        _ => {
+            log_hook_event(agent, state, "", "no-listener-address");
+            return;
+        }
     };
 
     let stdin_json =
@@ -249,7 +290,11 @@ pub fn run_hook_shim(state: &str, agent: Option<&str>) {
     let (kind, payload) = if state == "notification" {
         match &event.notification_type {
             Some(t) => ("notify", t.as_str()),
-            None => return, // unknown/missing type: emit nothing, like the .sh
+            None => {
+                // Unknown/missing type: emit nothing, like the .sh did.
+                log_hook_event(agent, state, &pane_id, "no-notification-type");
+                return;
+            }
         }
     } else {
         ("status", state)
@@ -263,7 +308,73 @@ pub fn run_hook_shim(state: &str, agent: Option<&str>) {
         event.session_id.as_deref().unwrap_or(""),
         agent.filter(|value| matches!(*value, "claude" | "codex")).unwrap_or(""),
     );
-    send_status(&addr, &line);
+    log_hook_event(agent, state, &pane_id, send_status(&addr, &line));
+}
+
+/// One line per hook event, appended to the path the pane's env carries. This
+/// exists because the shim is otherwise completely silent: every failure path
+/// returns quietly (by design — a status ping must never break the hook that
+/// sent it), which left issue #279 unanswerable for weeks. A user reporting a
+/// hook problem can now say which of three things happened:
+///
+/// - the file has no line for the event → the hook runner never executed this
+///   binary at all, so the problem is the command string or its shell
+/// - a line with `connect-failed` / `write-failed` → the shim ran and the
+///   listener side is at fault
+/// - a line with `sent` → delivery worked, so anything wrong is downstream
+///
+/// A missing or empty `TEMPOTERM_STATUS_LOG` disables it entirely, which is
+/// what a session started outside a tempo-term pane gets.
+fn log_hook_event(agent: Option<&str>, state: &str, pane_id: &str, outcome: &str) {
+    let path = match std::env::var(ENV_LOG) {
+        Ok(p) if !p.is_empty() => p,
+        _ => return,
+    };
+    let stamp = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    append_capped(
+        Path::new(&path),
+        &hook_log_line(&stamp, agent, state, pane_id, outcome),
+        HOOK_LOG_MAX_BYTES,
+    );
+}
+
+/// Format one log line. Pure so the shape stays pinned by tests — it is the
+/// thing a bug report gets pasted from, so it should not drift silently.
+fn hook_log_line(
+    stamp: &str,
+    agent: Option<&str>,
+    state: &str,
+    pane_id: &str,
+    outcome: &str,
+) -> String {
+    let blank_as_dash = |value: &str| if value.is_empty() { "-".to_string() } else { value.to_string() };
+    format!(
+        "{stamp} pane={} agent={} state={} {outcome}",
+        blank_as_dash(pane_id),
+        agent.map(blank_as_dash).unwrap_or_else(|| "-".to_string()),
+        blank_as_dash(state),
+    )
+}
+
+/// Append `line` to `path`, starting the file over once it passes `limit`.
+/// Best-effort throughout: a hook event must not fail because its diagnostic
+/// could not be written, so every error here is swallowed. Creates the parent
+/// directory because the app data dir may not exist on a first run.
+fn append_capped(path: &Path, line: &str, limit: u64) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let over_limit = std::fs::metadata(path).is_ok_and(|meta| meta.len() > limit);
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).write(true);
+    if over_limit {
+        options.truncate(true);
+    } else {
+        options.append(true);
+    }
+    if let Ok(mut file) = options.open(path) {
+        let _ = writeln!(file, "{line}");
+    }
 }
 
 /// Connect to `addr` and write `line`, bounded by [`SEND_TIMEOUT`] on both the
@@ -271,11 +382,19 @@ pub fn run_hook_shim(state: &str, agent: Option<&str>) {
 /// hook that called us. Any failure (bad address, refused/timed-out connect,
 /// write error) is a silent no-op — see module docs. Split out from
 /// `run_hook_shim` so the socket logic is unit-testable on its own.
-fn send_status(addr: &str, line: &str) {
-    let Ok(socket_addr) = addr.parse::<std::net::SocketAddr>() else { return };
-    let Ok(mut stream) = TcpStream::connect_timeout(&socket_addr, SEND_TIMEOUT) else { return };
+/// Returns which of the steps was reached, for the log line the caller writes.
+fn send_status(addr: &str, line: &str) -> &'static str {
+    let Ok(socket_addr) = addr.parse::<std::net::SocketAddr>() else {
+        return "bad-listener-address";
+    };
+    let Ok(mut stream) = TcpStream::connect_timeout(&socket_addr, SEND_TIMEOUT) else {
+        return "connect-failed";
+    };
     let _ = stream.set_write_timeout(Some(SEND_TIMEOUT));
-    let _ = stream.write_all(line.as_bytes());
+    match stream.write_all(line.as_bytes()) {
+        Ok(()) => "sent",
+        Err(_) => "write-failed",
+    }
 }
 
 /// The fields the shim cares about from a hook event's stdin JSON.
@@ -505,11 +624,30 @@ mod tests {
 
     #[test]
     fn env_for_carries_addr_token_and_pane_id() {
-        let ipc = StatusIpc { addr: "127.0.0.1:5000".into(), token: "tok".into() };
+        let ipc = StatusIpc {
+            addr: "127.0.0.1:5000".into(),
+            token: "tok".into(),
+            log_path: "/tmp/status-hook.log".into(),
+        };
         let env = ipc.env_for(42);
         assert!(env.contains(&(ENV_ADDR.to_string(), "127.0.0.1:5000".to_string())));
         assert!(env.contains(&(ENV_TOKEN.to_string(), "tok".to_string())));
         assert!(env.contains(&(ENV_PANE_ID.to_string(), "42".to_string())));
+        assert!(env.contains(&(ENV_LOG.to_string(), "/tmp/status-hook.log".to_string())));
+    }
+
+    #[test]
+    fn env_for_omits_the_log_path_when_it_could_not_be_resolved() {
+        // app_data_dir() failing must not cost a pane its status env — the
+        // listener is what panes depend on, the log is only diagnostic.
+        let ipc = StatusIpc {
+            addr: "127.0.0.1:5000".into(),
+            token: "tok".into(),
+            log_path: String::new(),
+        };
+        let env = ipc.env_for(42);
+        assert!(env.iter().all(|(name, _)| name != ENV_LOG));
+        assert_eq!(env.len(), 3);
     }
 
     #[test]
@@ -532,11 +670,12 @@ mod tests {
             listener.local_addr().unwrap()
         };
         let start = std::time::Instant::now();
-        send_status(&addr.to_string(), "token\t1\tstatus\tactive");
+        let outcome = send_status(&addr.to_string(), "token\t1\tstatus\tactive");
         assert!(
             start.elapsed() < std::time::Duration::from_secs(2),
             "send_status must not block waiting on a dead listener"
         );
+        assert_eq!(outcome, "connect-failed");
     }
 
     #[test]
@@ -544,7 +683,62 @@ mod tests {
         // Not a valid SocketAddr; must return immediately rather than panic or
         // attempt a connect.
         let start = std::time::Instant::now();
-        send_status("not-an-address", "token\t1\tstatus\tactive");
+        let outcome = send_status("not-an-address", "token\t1\tstatus\tactive");
         assert!(start.elapsed() < std::time::Duration::from_millis(50));
+        assert_eq!(outcome, "bad-listener-address");
+    }
+
+    #[test]
+    fn log_line_carries_every_field_a_report_needs() {
+        assert_eq!(
+            hook_log_line("2026-08-10T11:22:33.444+0800", Some("codex"), "active", "7", "sent"),
+            "2026-08-10T11:22:33.444+0800 pane=7 agent=codex state=active sent"
+        );
+    }
+
+    #[test]
+    fn log_line_marks_missing_fields_rather_than_leaving_gaps() {
+        // An older hook entry carries no agent, and the no-listener-address
+        // case is logged before the pane id is read. Both must still produce a
+        // line whose columns line up, or the log stops being greppable.
+        assert_eq!(
+            hook_log_line("t", None, "idle", "", "no-listener-address"),
+            "t pane=- agent=- state=idle no-listener-address"
+        );
+    }
+
+    fn log_test_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir()
+            .join(format!("tempoterm-hooklog-{}-{name}", std::process::id()))
+            .join("status-hook.log")
+    }
+
+    #[test]
+    fn appends_successive_events_and_creates_the_directory() {
+        let path = log_test_path("append");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+
+        // The app data dir may not exist yet on a first run, so the first write
+        // has to create it rather than silently do nothing.
+        append_capped(&path, "first", 1024);
+        append_capped(&path, "second", 1024);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "first\nsecond\n");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn starts_the_log_over_once_it_outgrows_the_cap() {
+        let path = log_test_path("cap");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+
+        // The shim runs on every hook event of every session, so the file must
+        // not grow without bound. Past the cap it restarts rather than rotating
+        // — the recent lines are the ones a report needs.
+        append_capped(&path, "0123456789", 8);
+        append_capped(&path, "after", 8);
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "after\n");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }
