@@ -9,6 +9,7 @@
 ### fix
 
 - 修正整個視窗模式下終端機重複套用遮罩的問題 (#305)
+- 修正 macOS 上 `Ctrl+T`、`Ctrl+P`、`Ctrl+,`、`Ctrl+D` 會誤觸應用程式功能的問題。這幾組在終端機裡是控制碼，先前按一次會同時送出控制碼並執行應用程式動作，例如 `Ctrl+D` 送出 EOF 的同時把窗格分割掉；現在一律留給終端機，應用程式快捷鍵維持用 `Cmd` (#317)
 
 ### 貢獻者
 
@@ -26,6 +27,7 @@
 ### fix
 
 - Fix duplicate terminal wallpaper masks in whole-window mode (#305)
+- Fix `Ctrl+T`, `Ctrl+P`, `Ctrl+,` and `Ctrl+D` firing app actions on macOS. They are terminal control codes, so a single press used to send the byte and run the app action together — `Ctrl+D` sent EOF to the shell while splitting the pane. They now belong to the terminal; the app's shortcuts stay on `Cmd` (#317)
 
 ### Contributors
 
