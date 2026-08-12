@@ -47,12 +47,26 @@ const LINE_HIGHLIGHT: Record<string, string> = {
   "solarized-light": "#eee8d5",
 };
 
-/** 統一的當前行高亮 wrapper，不論底層套件是否自己處理 .cm-activeLine 都生效。 */
+/**
+ * 統一的當前行高亮 wrapper，不論底層套件是否自己處理 .cm-activeLine 都生效。
+ *
+ * 選取反白畫在內容層後面，不透明的行高亮會把它整行蓋住，所以有選取時隱藏
+ * 行高亮（行號的高亮保留），選取取消才恢復。用
+ * editorAttributes 掛 class（CM 自己管理的屬性，不會像手動加在 view.dom 上
+ * 那樣被洗掉）；透明規則的 selector 特異度高於各主題套件自己的 activeLine
+ * 規則，不受主題掛載順序影響。
+ */
 function activeLine(color: string): Extension {
-  return EditorView.theme({
-    ".cm-activeLine": { backgroundColor: color },
-    ".cm-activeLineGutter": { backgroundColor: color },
-  });
+  return [
+    EditorView.editorAttributes.compute(["selection"], (state) => ({
+      class: state.selection.ranges.some((range) => !range.empty) ? "cm-has-selection" : "",
+    })),
+    EditorView.theme({
+      ".cm-activeLine": { backgroundColor: color },
+      ".cm-activeLineGutter": { backgroundColor: color },
+      "&.cm-has-selection .cm-activeLine": { backgroundColor: "transparent" },
+    }),
+  ];
 }
 
 const vitesseDarkEditor: Extension = [
