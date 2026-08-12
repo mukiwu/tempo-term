@@ -81,7 +81,15 @@ export function attachProxyScrollbars({
 
   // Cache the applied geometry so scroll handlers can call refresh every
   // frame without causing style churn.
-  const last = { left: NaN, width: NaN, bottom: NaN, hSpacer: NaN, vSpacer: NaN, hShown: true };
+  const last = {
+    left: NaN,
+    width: NaN,
+    bottom: NaN,
+    hSpacer: NaN,
+    vSpacer: NaN,
+    hShown: true,
+    vShown: true,
+  };
   const refresh = () => {
     // Re-assert the host class: React rewrites className when e.g. the theme
     // class on the editor wrapper changes, wiping foreign classes.
@@ -132,6 +140,15 @@ export function attachProxyScrollbars({
       h.spacer.style.width = `${hSpacer}px`;
     }
     if (v) {
+      // Hide outright when nothing really overflows: layout heights are
+      // fractional but the spacer is set from the integer scrollHeight, and
+      // that sub-pixel difference alone is enough to make the browser draw
+      // a (pointless, full-thumb) scrollbar.
+      const vShown = vOverflow;
+      if (vShown !== last.vShown) {
+        last.vShown = vShown;
+        v.strip.style.display = vShown ? "" : "none";
+      }
       const vSpacer = scroller.scrollHeight;
       if (vSpacer !== last.vSpacer) {
         last.vSpacer = vSpacer;
