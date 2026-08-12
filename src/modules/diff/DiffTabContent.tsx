@@ -10,6 +10,7 @@ import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { gitFileAtRev, gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { loadLanguageExtension } from "@/modules/editor/lib/language";
+import { attachProxyScrollbars, type ProxyScrollbarsHandle } from "@/lib/proxyScrollbar";
 import { dirname, relativePath } from "@/modules/explorer/lib/paths";
 import { editorSyntaxTheme } from "@/themes/editorTheme";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
@@ -169,6 +170,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       return;
     }
     let view: MergeView | null = null;
+    let scrollbars: ProxyScrollbarsHandle[] = [];
     let cancelled = false;
     // A failed grammar load falls back to plain text instead of leaving the
     // tab stuck without a MergeView.
@@ -205,6 +207,13 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
         collapseUnchanged: { margin: 3, minSize: 5 },
       });
       mergeViewRef.current = view;
+      // Pin a bottom horizontal scrollbar per side (the native one lives at
+      // the bottom of the full-height document, out of sight). Vertical
+      // scrolling stays on the outer .cm-mergeView, so "x" only.
+      scrollbars = [
+        attachProxyScrollbars({ scroller: view.a.scrollDOM, host: parent, axes: "x" }),
+        attachProxyScrollbars({ scroller: view.b.scrollDOM, host: parent, axes: "x" }),
+      ];
       // Re-anchor comments whose line shifted while the docs were reloading,
       // then let the dispatch effect below render them into the new editors.
       const store = useDiffCommentStore.getState();
@@ -227,6 +236,9 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     return () => {
       cancelled = true;
       mergeViewRef.current = null;
+      for (const bar of scrollbars) {
+        bar.destroy();
+      }
       view?.destroy();
     };
   }, [docs, path, themeId, fontFamily, wordWrap]);
@@ -404,7 +416,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       {error ? (
         <p className="px-3 py-2 text-xs text-danger">{t("diffLoadError")}</p>
       ) : (
-        <div ref={containerRef} className="diff-merge-view min-h-0 flex-1 overflow-hidden" />
+        <div ref={containerRef} className="diff-merge-view relative min-h-0 flex-1 overflow-hidden" />
       )}
       {!hintSeen && !error && (
         // One-time pointer at the review-comment loop, anchored under the

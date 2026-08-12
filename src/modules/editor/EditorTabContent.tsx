@@ -6,6 +6,7 @@ import { Compartment } from "@codemirror/state";
 import { editorSyntaxTheme } from "@/themes/editorTheme";
 import { isMarkdownPath, languageLabel, loadLanguageExtension } from "./lib/language";
 import { inlineCompletion, type CompletionRequest } from "./lib/inlineCompletion";
+import { proxyScrollbars } from "@/lib/proxyScrollbar";
 import { useEditorStore } from "./store/editorStore";
 import { aiChat } from "@/modules/ai/lib/aiBridge";
 import { providerById, resolveBaseUrl } from "@/modules/ai/lib/providers";
@@ -125,6 +126,7 @@ export function EditorTabContent({
         "&": { height: "100%", fontSize: `${fontSize}px` },
         ".cm-content, .cm-gutters, .cm-scroller": { fontFamily },
       }),
+      proxyScrollbars(),
       ...(wordWrap ? [CMView.lineWrapping] : []),
       languageCompartment.current.of([]),
     ];

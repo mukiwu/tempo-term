@@ -147,6 +147,46 @@ body {
  */
 
 /*
+ * Editor/diff proxy scrollbars (Windows only, where classic scrollbars are
+ * always-on): the scroller's own bars are hidden and replaced with thin
+ * overflow strips that the browser renders real native scrollbars for,
+ * positioned VS Code style — the horizontal bar pinned to the pane's bottom
+ * starting after the line-number gutter, the vertical one at the right edge.
+ * attachProxyScrollbars (lib/proxyScrollbar.ts) creates the strips and keeps
+ * them two-way synced with the editor's scroller.
+ */
+.proxy-scrollbar-host {
+  /* The strips anchor to the host (the editor's wrapper), which is a plain
+     unpositioned div in the editor tab. */
+  position: relative;
+}
+.proxy-scrollbar-host .cm-scroller {
+  scrollbar-width: none;
+}
+.proxy-scrollbar {
+  position: absolute;
+  z-index: 10;
+}
+.proxy-scrollbar.horizontal {
+  bottom: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.proxy-scrollbar.horizontal > div {
+  height: 1px;
+}
+.proxy-scrollbar.vertical {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.proxy-scrollbar.vertical > div {
+  width: 1px;
+}
+
+/*
  * The terminal is different: xterm 6.0 ships its own VS Code-style scrollbar
  * (.xterm-scrollable-element) instead of using the native overlay one, so the
  * policy above never reaches it. Its width is JS-measured, and on macOS overlay
