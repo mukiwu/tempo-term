@@ -11,6 +11,7 @@ import { gitFileAtRev, gitResolveRepo } from "@/modules/source-control/lib/gitBr
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { loadLanguageExtension } from "@/modules/editor/lib/language";
 import { attachProxyScrollbars, type ProxyScrollbarsHandle } from "@/lib/proxyScrollbar";
+import { linkHorizontalScroll } from "./lib/linkScroll";
 import { dirname, relativePath } from "@/modules/explorer/lib/paths";
 import { editorSyntaxTheme } from "@/themes/editorTheme";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
@@ -171,6 +172,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     }
     let view: MergeView | null = null;
     let scrollbars: ProxyScrollbarsHandle[] = [];
+    let unlinkScroll: (() => void) | null = null;
     let cancelled = false;
     // A failed grammar load falls back to plain text instead of leaving the
     // tab stuck without a MergeView.
@@ -214,6 +216,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
         attachProxyScrollbars({ scroller: view.a.scrollDOM, host: parent, axes: "x" }),
         attachProxyScrollbars({ scroller: view.b.scrollDOM, host: parent, axes: "x" }),
       ];
+      unlinkScroll = linkHorizontalScroll(view.a.scrollDOM, view.b.scrollDOM);
       // Re-anchor comments whose line shifted while the docs were reloading,
       // then let the dispatch effect below render them into the new editors.
       const store = useDiffCommentStore.getState();
@@ -236,6 +239,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     return () => {
       cancelled = true;
       mergeViewRef.current = null;
+      unlinkScroll?.();
       for (const bar of scrollbars) {
         bar.destroy();
       }
