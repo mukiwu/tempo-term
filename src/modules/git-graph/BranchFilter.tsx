@@ -8,7 +8,7 @@ export interface BranchFilterLabels {
   showAll: string;
   searchPlaceholder: string;
   /** Badge text marking the checked-out branch (e.g. "current"). */
-  head: string;
+  currentBadge: string;
 }
 
 interface BranchFilterProps {
@@ -19,7 +19,7 @@ interface BranchFilterProps {
   /** Selected branch names; empty means "show all". */
   selected: string[];
   /** The checked-out branch, marked with the current-branch badge in the list. */
-  headName?: string;
+  currentBranch?: string;
   onChange: (selected: string[]) => void;
   labels: BranchFilterLabels;
 }
@@ -35,7 +35,7 @@ export function BranchFilter({
   locals,
   remotes,
   selected,
-  headName,
+  currentBranch,
   onChange,
   labels,
 }: BranchFilterProps) {
@@ -141,7 +141,7 @@ export function BranchFilter({
               <FilterRow
                 key={name}
                 name={name}
-                badge={name === headName ? labels.head : undefined}
+                badge={name === currentBranch ? labels.currentBadge : undefined}
                 checked={selected.includes(name)}
                 onSelect={() => toggleBranch(name)}
               />
