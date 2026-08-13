@@ -7,7 +7,7 @@ export interface BranchFilterLabels {
   /** The exclusive "no filter" entry (e.g. "Show All"). */
   showAll: string;
   searchPlaceholder: string;
-  /** Badge text marking the checked-out branch (e.g. "HEAD"). */
+  /** Badge text marking the checked-out branch (e.g. "current"). */
   head: string;
 }
 
@@ -18,7 +18,7 @@ interface BranchFilterProps {
   remotes: string[];
   /** Selected branch names; empty means "show all". */
   selected: string[];
-  /** The checked-out branch, marked with a HEAD badge in the list. */
+  /** The checked-out branch, marked with the current-branch badge in the list. */
   headName?: string;
   onChange: (selected: string[]) => void;
   labels: BranchFilterLabels;
@@ -169,7 +169,7 @@ function FilterRow({
   onSelect,
 }: {
   name: string;
-  /** Small marker after the name (the HEAD badge); ✓ is taken by "picked". */
+  /** Small marker after the name (the current-branch badge); ✓ is taken by "picked". */
   badge?: string;
   checked: boolean;
   onSelect: () => void;

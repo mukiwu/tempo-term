@@ -424,6 +424,7 @@ export function GitGraphTabContent() {
     branches: t("toolbar.branches"),
     showAll: t("toolbar.showAll"),
     filterPlaceholder: t("toolbar.filterPlaceholder"),
+    currentBadge: t("toolbar.currentBadge"),
     showRemoteBranches: t("toolbar.showRemoteBranches"),
     search: t("toolbar.search"),
     searchPlaceholder: t("toolbar.searchPlaceholder"),

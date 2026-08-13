@@ -42,6 +42,7 @@ const labels: GitGraphToolbarLabels = {
   branches: "Branches",
   showAll: "Show All",
   filterPlaceholder: "Search branches",
+  currentBadge: "current",
   showRemoteBranches: "Show Remote Branches",
   search: "Search commits",
   searchPlaceholder: "Search message, author, hash",
@@ -362,17 +363,19 @@ describe("GitGraphToolbar branch filter", () => {
     renderToolbar({ includeRemotes: false });
     openFilter();
 
-    // The default currentBranch is "master", so its row carries the HEAD badge.
-    expect(screen.getByRole("option", { name: `master ${labels.head}` })).toBeInTheDocument();
+    // The default currentBranch is "master", so its row carries the current badge.
+    expect(
+      screen.getByRole("option", { name: `master ${labels.currentBadge}` }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "origin/master" })).not.toBeInTheDocument();
   });
 
-  it("marks the checked-out branch with a HEAD badge", () => {
+  it("marks the checked-out branch with a current badge", () => {
     renderToolbar({ currentBranch: "dev" });
     openFilter();
 
-    const row = screen.getByRole("option", { name: `dev ${labels.head}` });
-    expect(within(row).getByText(labels.head)).toBeInTheDocument();
+    const row = screen.getByRole("option", { name: `dev ${labels.currentBadge}` });
+    expect(within(row).getByText(labels.currentBadge)).toBeInTheDocument();
     // The others carry no badge.
     expect(screen.getByRole("option", { name: "master" })).toBeInTheDocument();
   });

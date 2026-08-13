@@ -55,6 +55,10 @@ export interface GitGraphToolbarLabels {
   branches: string;
   showAll: string;
   filterPlaceholder: string;
+  /** Badge marking the checked-out branch in the filter list. Deliberately NOT
+   * "HEAD": the graph rows already show an `origin/HEAD` ref chip, and two
+   * HEAD-ish labels with different meanings read as the same thing. */
+  currentBadge: string;
   showRemoteBranches: string;
   search: string;
   searchPlaceholder: string;
@@ -255,7 +259,7 @@ export function GitGraphToolbar({
                 ariaLabel: labels.branches,
                 showAll: labels.showAll,
                 searchPlaceholder: labels.filterPlaceholder,
-                head: labels.head,
+                head: labels.currentBadge,
               }}
             />
           </div>
