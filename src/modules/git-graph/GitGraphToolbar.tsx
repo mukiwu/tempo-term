@@ -11,6 +11,7 @@ import {
 import { Combobox } from "@/components/Combobox";
 import { Tooltip } from "@/components/Tooltip";
 import { basename } from "@/modules/explorer/lib/paths";
+import { BranchFilter } from "./BranchFilter";
 import type { WorktreeItem } from "./lib/gitGraphBridge";
 import type { Branch, CommitOrder } from "./types";
 
@@ -53,6 +54,7 @@ function samePath(a: string, b: string): boolean {
 export interface GitGraphToolbarLabels {
   branches: string;
   showAll: string;
+  filterPlaceholder: string;
   showRemoteBranches: string;
   search: string;
   searchPlaceholder: string;
@@ -74,8 +76,9 @@ export interface GitGraphToolbarLabels {
 
 interface GitGraphToolbarProps {
   branches: Branch[];
-  selectedBranch: string | null;
-  onSelectBranch: (branch: string | null) => void;
+  /** Branch names the graph is filtered to; empty means Show All. */
+  selectedBranches: string[];
+  onSelectBranches: (branches: string[]) => void;
   includeRemotes: boolean;
   onToggleRemotes: (value: boolean) => void;
   includeTags: boolean;
@@ -102,8 +105,8 @@ interface GitGraphToolbarProps {
 
 export function GitGraphToolbar({
   branches,
-  selectedBranch,
-  onSelectBranch,
+  selectedBranches,
+  onSelectBranches,
   includeRemotes,
   onToggleRemotes,
   includeTags,
@@ -154,15 +157,6 @@ export function GitGraphToolbar({
 
   const locals = branches.filter((b) => !b.isRemote);
   const remotes = branches.filter((b) => b.isRemote);
-
-  // Combobox takes a flat string list. "Show All" doubles as the sentinel that
-  // maps back to null; remote names already carry their "origin/" prefix so the
-  // two groups stay distinguishable without optgroup headers.
-  const branchOptions = [
-    labels.showAll,
-    ...locals.map((b) => b.name),
-    ...(includeRemotes ? remotes.map((b) => b.name) : []),
-  ];
 
   // Toggles render either as the gear popover (roomy) or rows in the overflow
   // menu (compact). Remote-branches lives here too once the toolbar is compact.
@@ -241,13 +235,16 @@ export function GitGraphToolbar({
         {showBranchControls && (
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
             <span className="shrink-0">{labels.branches}:</span>
-            <Combobox
-              value={selectedBranch ?? labels.showAll}
-              options={branchOptions}
-              onChange={(v) => onSelectBranch(v === labels.showAll ? null : v)}
-              ariaLabel={labels.branches}
-              textClassName="text-[13px]"
-              noTruncate
+            <BranchFilter
+              locals={locals.map((b) => b.name)}
+              remotes={includeRemotes ? remotes.map((b) => b.name) : []}
+              selected={selectedBranches}
+              onChange={onSelectBranches}
+              labels={{
+                ariaLabel: labels.branches,
+                showAll: labels.showAll,
+                searchPlaceholder: labels.filterPlaceholder,
+              }}
             />
           </div>
         )}

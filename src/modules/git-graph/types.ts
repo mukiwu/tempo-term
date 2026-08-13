@@ -44,9 +44,9 @@ export interface Branch {
  */
 export type CommitOrder = "date" | "topo";
 
-/** Display options sent to the backend graph log. `branch` null means Show All. */
+/** Display options sent to the backend graph log. Empty `branches` means Show All. */
 export interface GraphOptions {
-  branch: string | null;
+  branches: string[];
   includeRemotes: boolean;
   includeTags: boolean;
   includeStashes: boolean;

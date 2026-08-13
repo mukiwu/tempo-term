@@ -41,6 +41,7 @@ afterEach(() => {
 const labels: GitGraphToolbarLabels = {
   branches: "Branches",
   showAll: "Show All",
+  filterPlaceholder: "Search branches",
   showRemoteBranches: "Show Remote Branches",
   search: "Search commits",
   searchPlaceholder: "Search message, author, hash",
@@ -69,8 +70,8 @@ const branches: Branch[] = [
 function renderToolbar(overrides: Partial<Parameters<typeof GitGraphToolbar>[0]> = {}) {
   const props = {
     branches,
-    selectedBranch: null,
-    onSelectBranch: vi.fn(),
+    selectedBranches: [] as string[],
+    onSelectBranches: vi.fn(),
     includeRemotes: false,
     onToggleRemotes: vi.fn(),
     includeTags: false,
@@ -299,6 +300,81 @@ describe("GitGraphToolbar worktree selector", () => {
     });
 
     expect(screen.getAllByLabelText(labels.worktree)[0]).toHaveTextContent("/a/repo");
+  });
+});
+
+describe("GitGraphToolbar branch filter", () => {
+  function openFilter() {
+    fireEvent.click(screen.getAllByLabelText(labels.branches)[0]);
+  }
+
+  it("shows Show All on the trigger when nothing is picked", () => {
+    renderToolbar();
+    expect(screen.getAllByLabelText(labels.branches)[0]).toHaveTextContent(labels.showAll);
+  });
+
+  it("summarizes multiple picks as the first name plus a count", () => {
+    renderToolbar({ selectedBranches: ["master", "dev"] });
+    expect(screen.getAllByLabelText(labels.branches)[0]).toHaveTextContent("master +1");
+  });
+
+  it("toggles a branch into the selection without closing the list", () => {
+    const props = renderToolbar({ selectedBranches: ["master"] });
+    openFilter();
+
+    fireEvent.click(screen.getByRole("option", { name: "dev" }));
+    expect(props.onSelectBranches).toHaveBeenCalledWith(["master", "dev"]);
+    // Multi-select keeps the list open for further picks.
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("toggles an already-picked branch back out", () => {
+    const props = renderToolbar({ selectedBranches: ["master", "dev"] });
+    openFilter();
+
+    fireEvent.click(screen.getByRole("option", { name: "dev" }));
+    expect(props.onSelectBranches).toHaveBeenCalledWith(["master"]);
+  });
+
+  it("Show All is exclusive: it clears the picks and closes the list", () => {
+    const props = renderToolbar({ selectedBranches: ["master", "dev"] });
+    openFilter();
+
+    fireEvent.click(screen.getByRole("option", { name: labels.showAll }));
+    expect(props.onSelectBranches).toHaveBeenCalledWith([]);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("filters the branch list as the search box is typed into", () => {
+    renderToolbar({ includeRemotes: true });
+    openFilter();
+
+    fireEvent.change(screen.getByPlaceholderText(labels.filterPlaceholder), {
+      target: { value: "dev" },
+    });
+
+    expect(screen.getByRole("option", { name: "dev" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "master" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "origin/master" })).not.toBeInTheDocument();
+  });
+
+  it("lists remote branches only while Show Remote Branches is on", () => {
+    renderToolbar({ includeRemotes: false });
+    openFilter();
+
+    expect(screen.getByRole("option", { name: "master" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "origin/master" })).not.toBeInTheDocument();
+  });
+
+  it("marks picked branches and Show All with their selected state", () => {
+    renderToolbar({ selectedBranches: ["dev"] });
+    openFilter();
+
+    expect(screen.getByRole("option", { name: "dev" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("option", { name: labels.showAll })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
   });
 });
 

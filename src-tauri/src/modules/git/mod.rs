@@ -98,7 +98,8 @@ pub enum CommitOrder {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct GraphOptions {
-    pub branch: Option<String>,
+    /// 篩選用的分支清單；空清單代表「全部分支」。
+    pub branches: Vec<String>,
     pub include_remotes: bool,
     pub include_tags: bool,
     pub include_stashes: bool,
@@ -114,17 +115,20 @@ fn order_flag(order: CommitOrder) -> &'static str {
 }
 
 /// 把顯示選項翻成 git log 的 ref 範圍參數。純函式方便測試。
-/// 指定分支時只給該分支——remote/tag/stash 開關不再疊加，否則 `--remotes`
-/// 會把所有遠端分支的歷史聯集進來，預設開關全開時篩選形同失效；
-/// 沒指定分支才用 --branches 含全部本地分支，並依開關疊加其他 ref 範圍。
+/// 指定分支時只給那些分支（多選為聯集）——remote/tag/stash 開關不再疊加，
+/// 否則 `--remotes` 會把所有遠端分支的歷史聯集進來，預設開關全開時篩選
+/// 形同失效；沒指定分支才用 --branches 含全部本地分支，並依開關疊加其他
+/// ref 範圍。
 fn build_log_refs(options: &GraphOptions) -> Vec<String> {
-    let branch = options
-        .branch
-        .as_deref()
-        .map(str::trim)
-        .filter(|b| !b.is_empty());
-    if let Some(name) = branch {
-        return vec![name.to_string()];
+    let picked: Vec<String> = options
+        .branches
+        .iter()
+        .map(|b| b.trim())
+        .filter(|b| !b.is_empty())
+        .map(str::to_string)
+        .collect();
+    if !picked.is_empty() {
+        return picked;
     }
     let mut refs: Vec<String> = vec!["--branches".to_string()];
     if options.include_remotes {
@@ -1309,13 +1313,11 @@ pub fn graph_log(
     let skip_arg = format!("--skip={skip}");
 
     // 指定分支會當成位置參數傳給 git，先擋掉開頭是 - 的值。
-    if let Some(branch) = options
-        .branch
-        .as_deref()
-        .map(str::trim)
-        .filter(|b| !b.is_empty())
-    {
-        ensure_not_flag(branch)?;
+    for branch in &options.branches {
+        let branch = branch.trim();
+        if !branch.is_empty() {
+            ensure_not_flag(branch)?;
+        }
     }
 
     let ref_args = build_log_refs(options);
@@ -2855,7 +2857,7 @@ mod tests {
     #[test]
     fn build_log_refs_specific_branch() {
         let options = GraphOptions {
-            branch: Some("main".to_string()),
+            branches: vec!["main".to_string()],
             ..GraphOptions::default()
         };
         assert_eq!(build_log_refs(&options), vec!["main".to_string()]);
@@ -2866,7 +2868,7 @@ mod tests {
         // 顯示開關預設全開；若還疊加 --remotes/--tags，選了分支的圖
         // 仍會畫出所有遠端分支的歷史，篩選形同失效。
         let options = GraphOptions {
-            branch: Some("main".to_string()),
+            branches: vec!["main".to_string()],
             include_remotes: true,
             include_tags: true,
             include_stashes: true,
@@ -2876,9 +2878,31 @@ mod tests {
     }
 
     #[test]
+    fn build_log_refs_multiple_branches_union() {
+        let options = GraphOptions {
+            branches: vec!["main".to_string(), "origin/feature".to_string()],
+            include_remotes: true,
+            ..GraphOptions::default()
+        };
+        assert_eq!(
+            build_log_refs(&options),
+            vec!["main".to_string(), "origin/feature".to_string()]
+        );
+    }
+
+    #[test]
+    fn build_log_refs_blank_entries_fall_back_to_show_all() {
+        let options = GraphOptions {
+            branches: vec!["   ".to_string(), "".to_string()],
+            ..GraphOptions::default()
+        };
+        assert_eq!(build_log_refs(&options), vec!["--branches".to_string()]);
+    }
+
+    #[test]
     fn build_log_refs_toggles_stack() {
         let options = GraphOptions {
-            branch: None,
+            branches: Vec::new(),
             include_remotes: true,
             include_tags: true,
             include_stashes: true,
@@ -2895,14 +2919,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn build_log_refs_blank_branch_is_show_all() {
-        let options = GraphOptions {
-            branch: Some("   ".to_string()),
-            ..GraphOptions::default()
-        };
-        assert_eq!(build_log_refs(&options), vec!["--branches".to_string()]);
-    }
 
     #[test]
     fn order_flag_maps_each_commit_order() {

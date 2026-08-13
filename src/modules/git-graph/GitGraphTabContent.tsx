@@ -89,7 +89,8 @@ export function GitGraphTabContent() {
   const [modal, setModal] = useState<ModalState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  // Branch names the graph is filtered to; empty means Show All.
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [includeRemotes, setIncludeRemotes] = useState(true);
   const [includeTags, setIncludeTags] = useState(true);
   const [includeStashes, setIncludeStashes] = useState(false);
@@ -103,7 +104,7 @@ export function GitGraphTabContent() {
   const [busy, setBusy] = useState(false);
 
   const options: GraphOptions = {
-    branch: selectedBranch,
+    branches: selectedBranches,
     includeRemotes,
     includeTags,
     includeStashes,
@@ -204,13 +205,13 @@ export function GitGraphTabContent() {
     }
     setLimit(PAGE_SIZE);
     void reload(repo, PAGE_SIZE, {
-      branch: selectedBranch,
+      branches: selectedBranches,
       includeRemotes,
       includeTags,
       includeStashes,
       order: commitOrder,
     });
-  }, [repo, selectedBranch, includeRemotes, includeTags, includeStashes, commitOrder, reload]);
+  }, [repo, selectedBranches, includeRemotes, includeTags, includeStashes, commitOrder, reload]);
 
   // Run an action then refresh the graph; surface any failure inline.
   const runAction = useCallback(
@@ -234,7 +235,7 @@ export function GitGraphTabContent() {
         setBusy(false);
       }
     },
-    [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes, options.order],
+    [repo, limit, reload, options.branches, options.includeRemotes, options.includeTags, options.includeStashes, options.order],
   );
 
   const loadMore = useCallback(() => {
@@ -244,7 +245,7 @@ export function GitGraphTabContent() {
     const next = limit + PAGE_SIZE;
     setLimit(next);
     void reload(repo, next, options);
-  }, [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes, options.order]);
+  }, [repo, limit, reload, options.branches, options.includeRemotes, options.includeTags, options.includeStashes, options.order]);
 
   // Plain click/arrow-nav selects one commit. Shift+click while a commit is
   // already selected (single or as the "to" side of an existing compare)
@@ -355,19 +356,22 @@ export function GitGraphTabContent() {
     }
   }, [pendingHash, commits, visibleCommits, loadMore]);
 
-  // Turning remotes off hides remote branches; if one was selected, fall back
-  // to Show All so the dropdown value and selectedBranch stay in sync.
+  // Turning remotes off hides remote branches; drop any of them from the
+  // filter so the dropdown's picks and the graphed refs stay in sync.
   const handleToggleRemotes = useCallback(
     (value: boolean) => {
       setIncludeRemotes(value);
       if (!value) {
-        const current = branches.find((b) => b.name === selectedBranch);
-        if (current?.isRemote) {
-          setSelectedBranch(null);
-        }
+        const remoteNames = new Set(
+          branches.filter((b) => b.isRemote).map((b) => b.name),
+        );
+        setSelectedBranches((prev) => {
+          const next = prev.filter((name) => !remoteNames.has(name));
+          return next.length === prev.length ? prev : next;
+        });
       }
     },
-    [branches, selectedBranch],
+    [branches],
   );
 
   // Remember the chosen order so it survives reopening the graph tab.
@@ -390,7 +394,7 @@ export function GitGraphTabContent() {
     } finally {
       setFetching(false);
     }
-  }, [repo, limit, reload, options.branch, options.includeRemotes, options.includeTags, options.includeStashes, options.order]);
+  }, [repo, limit, reload, options.branches, options.includeRemotes, options.includeTags, options.includeStashes, options.order]);
 
   // Shared by the ref context menu and the toolbar's branch menu: prompt for a
   // local name, then create the tracking branch.
@@ -419,6 +423,7 @@ export function GitGraphTabContent() {
   const toolbarLabels: GitGraphToolbarLabels = {
     branches: t("toolbar.branches"),
     showAll: t("toolbar.showAll"),
+    filterPlaceholder: t("toolbar.filterPlaceholder"),
     showRemoteBranches: t("toolbar.showRemoteBranches"),
     search: t("toolbar.search"),
     searchPlaceholder: t("toolbar.searchPlaceholder"),
@@ -620,8 +625,8 @@ export function GitGraphTabContent() {
       <div className="mb-2">
         <GitGraphToolbar
           branches={branches}
-          selectedBranch={selectedBranch}
-          onSelectBranch={setSelectedBranch}
+          selectedBranches={selectedBranches}
+          onSelectBranches={setSelectedBranches}
           includeRemotes={includeRemotes}
           onToggleRemotes={handleToggleRemotes}
           includeTags={includeTags}

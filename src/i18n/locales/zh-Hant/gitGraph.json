@@ -10,6 +10,7 @@
   "toolbar": {
     "branches": "分支",
     "showAll": "全部分支",
+    "filterPlaceholder": "搜尋分支…",
     "showRemoteBranches": "顯示遠端分支",
     "search": "搜尋提交",
     "searchPlaceholder": "搜尋訊息、作者、hash…",
