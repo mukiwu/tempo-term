@@ -158,6 +158,16 @@ export function GitGraphToolbar({
   const locals = branches.filter((b) => !b.isRemote);
   const remotes = branches.filter((b) => b.isRemote);
 
+  // The filter list puts recently-active branches first — with hundreds of
+  // branches the one being looked for is almost always fresh. Name breaks
+  // timestamp ties so the order stays stable.
+  const byRecency = (a: Branch, b: Branch) =>
+    (b.lastCommitAt ?? 0) - (a.lastCommitAt ?? 0) || a.name.localeCompare(b.name);
+  const filterLocals = [...locals].sort(byRecency).map((b) => b.name);
+  const filterRemotes = includeRemotes
+    ? [...remotes].sort(byRecency).map((b) => b.name)
+    : [];
+
   // Toggles render either as the gear popover (roomy) or rows in the overflow
   // menu (compact). Remote-branches lives here too once the toolbar is compact.
   const toggles: ToggleRowProps[] = [
@@ -236,8 +246,8 @@ export function GitGraphToolbar({
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
             <span className="shrink-0">{labels.branches}:</span>
             <BranchFilter
-              locals={locals.map((b) => b.name)}
-              remotes={includeRemotes ? remotes.map((b) => b.name) : []}
+              locals={filterLocals}
+              remotes={filterRemotes}
               selected={selectedBranches}
               onChange={onSelectBranches}
               labels={{

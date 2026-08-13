@@ -366,6 +366,23 @@ describe("GitGraphToolbar branch filter", () => {
     expect(screen.queryByRole("option", { name: "origin/master" })).not.toBeInTheDocument();
   });
 
+  it("orders the branch list by most recent commit first", () => {
+    renderToolbar({
+      branches: [
+        { name: "old-branch", isRemote: false, lastCommitAt: 100 } as Branch,
+        { name: "fresh-branch", isRemote: false, lastCommitAt: 900 } as Branch,
+        { name: "mid-branch", isRemote: false, lastCommitAt: 500 } as Branch,
+      ],
+    });
+    openFilter();
+
+    const names = screen
+      .getAllByRole("option")
+      .map((o) => o.textContent?.trim())
+      .filter((n) => n !== labels.showAll);
+    expect(names).toEqual(["fresh-branch", "mid-branch", "old-branch"]);
+  });
+
   it("marks picked branches and Show All with their selected state", () => {
     renderToolbar({ selectedBranches: ["dev"] });
     openFilter();

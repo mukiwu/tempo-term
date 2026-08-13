@@ -35,6 +35,8 @@ export interface Branch {
   name: string;
   isCurrent: boolean;
   isRemote: boolean;
+  /** Unix seconds of the branch tip's committer time; 0 when unresolvable. */
+  lastCommitAt: number;
 }
 
 /**
