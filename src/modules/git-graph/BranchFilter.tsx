@@ -7,6 +7,8 @@ export interface BranchFilterLabels {
   /** The exclusive "no filter" entry (e.g. "Show All"). */
   showAll: string;
   searchPlaceholder: string;
+  /** Badge text marking the checked-out branch (e.g. "HEAD"). */
+  head: string;
 }
 
 interface BranchFilterProps {
@@ -16,6 +18,8 @@ interface BranchFilterProps {
   remotes: string[];
   /** Selected branch names; empty means "show all". */
   selected: string[];
+  /** The checked-out branch, marked with a HEAD badge in the list. */
+  headName?: string;
   onChange: (selected: string[]) => void;
   labels: BranchFilterLabels;
 }
@@ -27,7 +31,14 @@ interface BranchFilterProps {
  * together. The trigger keeps its width no matter how long the picked branch
  * names are — long values truncate instead of reflowing the toolbar.
  */
-export function BranchFilter({ locals, remotes, selected, onChange, labels }: BranchFilterProps) {
+export function BranchFilter({
+  locals,
+  remotes,
+  selected,
+  headName,
+  onChange,
+  labels,
+}: BranchFilterProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -130,6 +141,7 @@ export function BranchFilter({ locals, remotes, selected, onChange, labels }: Br
               <FilterRow
                 key={name}
                 name={name}
+                badge={name === headName ? labels.head : undefined}
                 checked={selected.includes(name)}
                 onSelect={() => toggleBranch(name)}
               />
@@ -152,10 +164,13 @@ export function BranchFilter({ locals, remotes, selected, onChange, labels }: Br
 
 function FilterRow({
   name,
+  badge,
   checked,
   onSelect,
 }: {
   name: string;
+  /** Small marker after the name (the HEAD badge); ✓ is taken by "picked". */
+  badge?: string;
   checked: boolean;
   onSelect: () => void;
 }) {
@@ -166,11 +181,16 @@ function FilterRow({
         role="option"
         aria-selected={checked}
         onClick={onSelect}
-        className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-xs ${
+        className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs ${
           checked ? "bg-bg text-fg" : "text-fg-muted hover:bg-bg hover:text-fg"
         }`}
       >
-        <span className="truncate">{name}</span>
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        {badge && (
+          <span className="shrink-0 rounded border border-success/40 bg-success/15 px-1 font-mono text-[10px] text-success">
+            {badge}
+          </span>
+        )}
         {checked && <Check size={13} className="shrink-0 text-accent" />}
       </button>
     </li>

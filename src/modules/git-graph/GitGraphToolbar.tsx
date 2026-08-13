@@ -249,11 +249,13 @@ export function GitGraphToolbar({
               locals={filterLocals}
               remotes={filterRemotes}
               selected={selectedBranches}
+              headName={currentBranch}
               onChange={onSelectBranches}
               labels={{
                 ariaLabel: labels.branches,
                 showAll: labels.showAll,
                 searchPlaceholder: labels.filterPlaceholder,
+                head: labels.head,
               }}
             />
           </div>

@@ -362,8 +362,19 @@ describe("GitGraphToolbar branch filter", () => {
     renderToolbar({ includeRemotes: false });
     openFilter();
 
-    expect(screen.getByRole("option", { name: "master" })).toBeInTheDocument();
+    // The default currentBranch is "master", so its row carries the HEAD badge.
+    expect(screen.getByRole("option", { name: `master ${labels.head}` })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "origin/master" })).not.toBeInTheDocument();
+  });
+
+  it("marks the checked-out branch with a HEAD badge", () => {
+    renderToolbar({ currentBranch: "dev" });
+    openFilter();
+
+    const row = screen.getByRole("option", { name: `dev ${labels.head}` });
+    expect(within(row).getByText(labels.head)).toBeInTheDocument();
+    // The others carry no badge.
+    expect(screen.getByRole("option", { name: "master" })).toBeInTheDocument();
   });
 
   it("orders the branch list by most recent commit first", () => {
