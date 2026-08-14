@@ -125,7 +125,14 @@ function SessionRow({ session, selected, onRequestDelete }: SessionRowProps) {
   const canResume = resumeCommand(session.agent, session.id) !== null;
 
   return (
-    <div role="listitem" className="group">
+    // The highlight sits on the whole row, not on the select-session button
+    // inside it: the button only spans the row's left part, so highlighting
+    // there left the action strip that hover reveals sitting on bare
+    // background, reading as a detached block instead of part of the row.
+    <div
+      role="listitem"
+      className={`group ${selected ? "bg-bg-elevated" : "hover:bg-bg-elevated"}`}
+    >
       <div className="flex items-center">
         <button
           type="button"
@@ -134,9 +141,7 @@ function SessionRow({ session, selected, onRequestDelete }: SessionRowProps) {
             select(session.id);
             openSessionsTab();
           }}
-          className={`flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left ${
-            selected ? "bg-bg-elevated" : "hover:bg-bg-elevated"
-          }`}
+          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left"
         >
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
@@ -192,7 +197,13 @@ function SessionRow({ session, selected, onRequestDelete }: SessionRowProps) {
             </div>
           </div>
         </button>
-        <div className="flex shrink-0 items-center opacity-0 pr-2 group-hover:opacity-100">
+        {/* Collapsed to zero width instead of `opacity-0`: the panel is
+            narrow, and an invisible-but-present action strip still reserved
+            its width on every row, so titles truncated against a permanent
+            blank gutter. Width (not `hidden`) keeps the buttons focusable, and
+            `group-focus-within` expands the strip when one is tabbed to — with
+            `display: none` they'd drop out of the tab order entirely. */}
+        <div className="flex w-0 shrink-0 items-center overflow-hidden group-hover:w-auto group-hover:pr-2 group-focus-within:w-auto group-focus-within:pr-2">
           {canResume && (
             <Tooltip label={resumeLabel}>
               <button
