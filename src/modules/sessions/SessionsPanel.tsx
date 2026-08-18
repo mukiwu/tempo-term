@@ -129,9 +129,13 @@ function SessionRow({ session, selected, onRequestDelete }: SessionRowProps) {
     // inside it: the button only spans the row's left part, so highlighting
     // there left the action strip that hover reveals sitting on bare
     // background, reading as a detached block instead of part of the row.
+    // `focus-within` gets the same fill: tabbing to an action button reveals
+    // the strip exactly like hover does, so it needs the row behind it too.
     <div
       role="listitem"
-      className={`group ${selected ? "bg-bg-elevated" : "hover:bg-bg-elevated"}`}
+      className={`group ${
+        selected ? "bg-bg-elevated" : "hover:bg-bg-elevated focus-within:bg-bg-elevated"
+      }`}
     >
       <div className="flex items-center">
         <button
@@ -202,8 +206,13 @@ function SessionRow({ session, selected, onRequestDelete }: SessionRowProps) {
             its width on every row, so titles truncated against a permanent
             blank gutter. Width (not `hidden`) keeps the buttons focusable, and
             `group-focus-within` expands the strip when one is tabbed to — with
-            `display: none` they'd drop out of the tab order entirely. */}
-        <div className="flex w-0 shrink-0 items-center overflow-hidden group-hover:w-auto group-hover:pr-2 group-focus-within:w-auto group-focus-within:pr-2">
+            `display: none` they'd drop out of the tab order entirely.
+            Clipping is only needed while collapsed, so it lifts on expand: the
+            buttons sit flush with the strip's box, and the global
+            `:focus-visible` outline (2px, 1px offset, index.css) is painted
+            outside that box — left clipped it, cutting the ring off a
+            tabbed-to button. */}
+        <div className="flex w-0 shrink-0 items-center overflow-hidden group-hover:w-auto group-hover:overflow-visible group-hover:pr-2 group-focus-within:w-auto group-focus-within:overflow-visible group-focus-within:pr-2">
           {canResume && (
             <Tooltip label={resumeLabel}>
               <button
