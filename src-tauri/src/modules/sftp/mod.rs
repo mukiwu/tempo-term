@@ -93,3 +93,11 @@ pub async fn sftp_rename(
 pub fn sftp_close(state: State<'_, SftpState>, id: u32) {
     session::close(&state, id)
 }
+
+#[tauri::command]
+pub fn sftp_list_owned(
+    window: tauri::WebviewWindow,
+    state: State<'_, SftpState>,
+) -> Vec<session::SftpBinding> {
+    session::list_owned(&state, window.label())
+}

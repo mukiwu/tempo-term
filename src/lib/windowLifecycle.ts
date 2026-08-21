@@ -1,48 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isMainWindow } from "@/lib/window";
 import { IS_WINDOWS } from "@/lib/platform";
-import { closeLocalSessions } from "@/modules/terminal/lib/pty-bridge";
-
-/**
- * In a secondary window, intercept the close: shut down this window's PTY
- * sessions, then destroy the window. The main window keeps its default close
- * behavior (its sessions die with the process on quit). Returns an unlisten
- * function, or null when nothing was registered.
- */
-export async function registerSecondaryWindowCleanup(): Promise<(() => void) | null> {
-  if (isMainWindow()) {
-    return null;
-  }
-  const win = getCurrentWindow();
-  let cleaning = false;
-  return win.onCloseRequested(async (event) => {
-    if (cleaning) {
-      // A second request (double Cmd+W, rapid clicks) while the first cleanup is
-      // in flight must also be prevented, or Tauri's default close races the
-      // in-progress closeLocalSessions and orphans its PTYs.
-      event.preventDefault();
-      return;
-    }
-    cleaning = true;
-    event.preventDefault();
-    try {
-      // Session cleanup is best-effort: the close is already prevented, so a
-      // closeLocalSessions failure must not skip destroy or the window is
-      // stranded open with no way to close it.
-      try {
-        await closeLocalSessions();
-      } catch {
-        // fall through to destroy
-      }
-      await win.destroy();
-    } catch (error) {
-      // destroy failed: reset so the user can try closing again instead of being
-      // stuck with a permanently un-closeable window.
-      cleaning = false;
-      throw error;
-    }
-  });
-}
 
 /**
  * On Windows, WebView2 does not restore DOM focus to the previously-focused

@@ -323,6 +323,7 @@ fn is_valid_clipboard_file_path(path: &str) -> bool {
     path.starts_with('/') && !path.contains(':')
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 fn unique_paths(paths: Vec<String>) -> Vec<String> {
     let mut unique = Vec::new();
     for path in paths {

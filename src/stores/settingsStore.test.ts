@@ -26,6 +26,7 @@ describe("settingsStore", () => {
       backgroundImageTextColor: null,
       terminalPadding: initialState.terminalPadding,
       wordWrap: initialState.wordWrap,
+      confirmCloseWithRunningTerminals: true,
       workspaceCard: { status: true, branch: true, cwd: true, pr: true },
       prSource: "auto",
       claudeFlags: initialState.claudeFlags,
@@ -248,5 +249,14 @@ describe("settingsStore", () => {
     expect(useSettingsStore.getState().customShellPath).toBe("");
     useSettingsStore.getState().setCustomShellPath("/opt/homebrew/bin/pwsh");
     expect(useSettingsStore.getState().customShellPath).toBe("/opt/homebrew/bin/pwsh");
+  });
+
+  it("defaults terminal close confirmation on and persists an opt-out", () => {
+    expect(useSettingsStore.getState().confirmCloseWithRunningTerminals).toBe(true);
+    useSettingsStore.getState().setConfirmCloseWithRunningTerminals(false);
+    expect(useSettingsStore.getState().confirmCloseWithRunningTerminals).toBe(false);
+    expect(localStorage.getItem("tempoterm-settings")).toContain(
+      '"confirmCloseWithRunningTerminals":false',
+    );
   });
 });

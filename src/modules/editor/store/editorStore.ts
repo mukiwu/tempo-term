@@ -18,6 +18,7 @@ interface EditorState {
   forget: (path: string) => void;
   isDirty: (path: string) => boolean;
   contentOf: (path: string) => string;
+  restoreBuffers: (buffers: Array<{ path: string; content: string; baseline: string }>) => void;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -66,4 +67,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   contentOf: (path) => get().buffers[path]?.content ?? "",
+  restoreBuffers: (buffers) =>
+    set((state) => ({
+      buffers: {
+        ...state.buffers,
+        ...Object.fromEntries(buffers.map(({ path, content, baseline }) => [path, { content, baseline }])),
+      },
+    })),
 }));

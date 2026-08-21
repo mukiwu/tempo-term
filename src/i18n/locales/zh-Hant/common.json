@@ -40,6 +40,12 @@
     "disconnected": "已斷線，點擊重新連線",
     "reconnect": "重新連線"
   },
+  "exitGuard": {
+    "title": "仍有終端機正在執行",
+    "message": "目前仍有 {{count}} 個終端或 SSH 工作階段。關閉視窗會中止這些工作階段，確定要關閉嗎？",
+    "confirm": "仍要關閉",
+    "cancel": "取消"
+  },
   "nav": {
     "workspaces": "群組",
     "terminal": "終端機",
@@ -126,6 +132,7 @@
     "zoomIn": "放大",
     "zoomOut": "縮小",
     "resetZoom": "重設縮放",
+    "reloadWorkspace": "重新整理工作區",
     "splitRight": "向右分割",
     "splitDown": "向下分割",
     "cyclePane": "切換面板",

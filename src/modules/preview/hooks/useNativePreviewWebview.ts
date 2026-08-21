@@ -7,6 +7,7 @@ import { debounce } from "@/lib/debounce";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { resolvePreviewSrc } from "../lib/resolvePreviewSrc";
 import { previewWebviewLabel } from "../lib/previewWebview";
+import { useWindowActive } from "@/lib/windowActivity";
 
 interface Rect {
   x: number;
@@ -114,6 +115,7 @@ function sameRect(a: Rect | null, b: Rect | null): boolean {
  * Returns the host ref plus navigate/reload/back/forward controls.
  */
 export function useNativePreviewWebview({ url, leafId, visible, onNavigate, onTitle }: Options) {
+  const windowActive = useWindowActive();
   const hostRef = useRef<HTMLDivElement>(null);
   const webviewRef = useRef<Webview | null>(null);
   const visibleRef = useRef(visible);
@@ -132,7 +134,7 @@ export function useNativePreviewWebview({ url, leafId, visible, onNavigate, onTi
   const onNavigateRef = useRef(onNavigate);
   const onTitleRef = useRef(onTitle);
 
-  visibleRef.current = visible;
+  visibleRef.current = visible && windowActive;
   zoomRef.current = uiZoom;
   onNavigateRef.current = onNavigate;
   onTitleRef.current = onTitle;
@@ -187,7 +189,7 @@ export function useNativePreviewWebview({ url, leafId, visible, onNavigate, onTi
   useEffect(() => {
     lastRectRef.current = null;
     sync();
-  }, [uiZoom, sync]);
+  }, [uiZoom, windowActive, sync]);
 
   // Create the webview once per pane. A url change navigates it (below) rather
   // than recreating, so its history survives. StrictMode-safe via the module

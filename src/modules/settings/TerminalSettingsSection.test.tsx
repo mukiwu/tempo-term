@@ -25,4 +25,14 @@ describe("TerminalSettingsSection custom shell", () => {
     fireEvent.change(input, { target: { value: "/opt/homebrew/bin/pwsh" } });
     expect(useSettingsStore.getState().customShellPath).toBe("/opt/homebrew/bin/pwsh");
   });
+
+  it("shows the close warning enabled by default and persists an opt-out", () => {
+    render(<TerminalSettingsSection />);
+    const checkbox = screen.getByLabelText(
+      "Confirm before closing running terminals",
+    );
+    expect(checkbox).toBeChecked();
+    fireEvent.click(checkbox);
+    expect(useSettingsStore.getState().confirmCloseWithRunningTerminals).toBe(false);
+  });
 });

@@ -41,7 +41,7 @@ import { installStatusHook, installCodexStatusHook } from "@/modules/claude-prog
 import { installSessionNotifications } from "@/modules/claude-progress/lib/sessionNotifications";
 import { ensureNotificationPermission } from "@/modules/claude-progress/lib/notify";
 import { useWatchNotes } from "@/modules/notes/lib/useWatchNotes";
-import { registerSecondaryWindowCleanup, restoreFocusOnWindowRefocus } from "@/lib/windowLifecycle";
+import { restoreFocusOnWindowRefocus } from "@/lib/windowLifecycle";
 import { SshPromptDialog } from "@/modules/ssh/SshPromptDialog";
 import { SetupWizard } from "@/modules/setup/SetupWizard";
 import { detectTools, isToolReady } from "@/modules/setup/lib/setupTools";
@@ -53,6 +53,7 @@ import { useForwardStatusListener } from "@/modules/ssh/lib/useForwardStatus";
 import { sftpSessionStore } from "@/modules/ssh/lib/sftpSessionStore";
 import { enforceLogRetention } from "@/modules/logs/lib/sessionLog";
 import { InputContextMenu } from "@/components/InputContextMenu";
+import { reloadWorkspace, syncRecoverySnapshot } from "@/lib/recovery";
 
 /**
  * The 1-9 a number-row key represents, read from `code` rather than `key` so it
@@ -293,18 +294,6 @@ function App() {
     void enforceLogRetention(30).catch(() => {});
   }, []);
 
-  // In a secondary window, close this window's PTY sessions before it is
-  // destroyed so no background shells leak. No-op in the main window.
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    void registerSecondaryWindowCleanup()
-      .then((off) => {
-        unlisten = off;
-      })
-      .catch(() => {});
-    return () => unlisten?.();
-  }, []);
-
   // On Windows, WebView2 drops DOM focus when the window regains focus, so
   // keyboard input dies until the user clicks (issue #205). Restore it. No-op
   // off Windows, where WKWebView already does this natively. `disposed` guards
@@ -329,10 +318,37 @@ function App() {
     };
   }, []);
 
+  // Mirror the persisted opt-out and language into Rust. Rust owns app-level
+  // ExitRequested handling (Cmd+Q / OS quit), including when the WebView is
+  // unresponsive, so it cannot depend on reading browser localStorage then.
+  useEffect(() => {
+    const sync = () => {
+      const settings = useSettingsStore.getState();
+      void invoke("exit_guard_configure", {
+        enabled: settings.confirmCloseWithRunningTerminals,
+        language: settings.language,
+      }).catch(() => {});
+    };
+    sync();
+    return useSettingsStore.subscribe((state, previous) => {
+      if (
+        state.confirmCloseWithRunningTerminals !==
+          previous.confirmCloseWithRunningTerminals ||
+        state.language !== previous.language
+      ) {
+        sync();
+      }
+    });
+  }, []);
+
   // Close any open SFTP connections when this window goes away so no remote
   // connection leaks.
   useEffect(() => {
-    return () => sftpSessionStore.getState().closeAll();
+    return () => {
+      if (sessionStorage.getItem("tempoterm-recovery-reload") !== "1") {
+        sftpSessionStore.getState().closeAll();
+      }
+    };
   }, []);
 
   // Session hooks power both visible status tracking and exact crash/relaunch
@@ -553,6 +569,11 @@ function App() {
         return;
       }
       const key = e.key.toLowerCase();
+      if (key === "r" && e.shiftKey) {
+        e.preventDefault();
+        void reloadWorkspace().catch(() => {});
+        return;
+      }
       if (key === "t") {
         e.preventDefault();
         // ⇧⌘T opens a terminal straight away; ⌘T opens the launcher.
@@ -673,6 +694,12 @@ function App() {
       }),
       listenWebview("menu:zoom-reset", () => {
         useSettingsStore.getState().resetZoom();
+      }),
+      listenWebview("menu:reload-workspace", () => {
+        void reloadWorkspace().catch(() => {});
+      }),
+      listenWebview("recovery-prepare", () => {
+        void syncRecoverySnapshot().catch(() => {});
       }),
       listenWebview("menu:split-right", () => {
         useTabsStore.getState().splitActivePane("row");

@@ -4,9 +4,13 @@ mod known_hosts;
 mod prompt;
 mod session;
 
-pub use prompt::PromptReply;
-pub use session::SshState;
 pub(crate) use client::{connect_authenticated, AuthedConnectArgs, PromptRegistryHandle};
+pub use prompt::PromptReply;
+pub(crate) use session::recovery_stats as ssh_recovery_stats;
+pub use session::SshState;
+pub(crate) use session::{
+    close_owned as close_owned_sessions, owned_count as owned_session_count, session_count,
+};
 
 use tauri::ipc::{Channel, Response};
 use tauri::{AppHandle, State};
@@ -70,17 +74,32 @@ pub fn ssh_open(
 }
 
 #[tauri::command]
+pub fn ssh_attach(
+    window: tauri::WebviewWindow,
+    state: State<'_, SshState>,
+    id: u32,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
+) -> Result<bool, String> {
+    session::attach(&state, id, window.label(), on_data, on_exit)
+}
+
+#[tauri::command]
+pub fn ssh_set_window_active(
+    window: tauri::WebviewWindow,
+    state: State<'_, SshState>,
+    active: bool,
+) {
+    session::set_window_active(&state, window.label(), active);
+}
+
+#[tauri::command]
 pub fn ssh_write(state: State<'_, SshState>, id: u32, data: String) -> Result<(), String> {
     session::write_input(&state, id, data.into_bytes())
 }
 
 #[tauri::command]
-pub fn ssh_resize(
-    state: State<'_, SshState>,
-    id: u32,
-    cols: u16,
-    rows: u16,
-) -> Result<(), String> {
+pub fn ssh_resize(state: State<'_, SshState>, id: u32, cols: u16, rows: u16) -> Result<(), String> {
     session::resize(&state, id, cols, rows)
 }
 

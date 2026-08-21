@@ -3,7 +3,11 @@
 mod session;
 pub mod shell;
 
+pub(crate) use session::recovery_stats as pty_recovery_stats;
 pub use session::PtyState;
+pub(crate) use session::{
+    close_owned as close_owned_sessions, owned_count as owned_session_count, session_count,
+};
 
 use tauri::ipc::{Channel, Response};
 use tauri::State;
@@ -12,6 +16,7 @@ use tauri::State;
 #[allow(clippy::too_many_arguments)]
 pub fn pty_open(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     state: State<'_, PtyState>,
     cols: u16,
     rows: u16,
@@ -29,9 +34,30 @@ pub fn pty_open(
         suggestions,
         shell_override,
         &app,
+        window.label().to_string(),
         on_data,
         on_exit,
     )
+}
+
+#[tauri::command]
+pub fn pty_attach(
+    window: tauri::WebviewWindow,
+    state: State<'_, PtyState>,
+    id: u32,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
+) -> Result<bool, String> {
+    session::attach(&state, id, window.label(), on_data, on_exit)
+}
+
+#[tauri::command]
+pub fn pty_set_window_active(
+    window: tauri::WebviewWindow,
+    state: State<'_, PtyState>,
+    active: bool,
+) {
+    session::set_window_active(&state, window.label(), active);
 }
 
 #[tauri::command]
@@ -40,12 +66,7 @@ pub fn pty_write(state: State<'_, PtyState>, id: u32, data: String) -> Result<()
 }
 
 #[tauri::command]
-pub fn pty_resize(
-    state: State<'_, PtyState>,
-    id: u32,
-    cols: u16,
-    rows: u16,
-) -> Result<(), String> {
+pub fn pty_resize(state: State<'_, PtyState>, id: u32, cols: u16, rows: u16) -> Result<(), String> {
     session::resize(&state, id, cols, rows)
 }
 

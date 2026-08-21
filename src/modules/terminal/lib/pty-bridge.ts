@@ -10,6 +10,12 @@ export interface PtySession {
   foregroundCommand: () => Promise<string | null>;
 }
 
+export interface PtyAttachOptions {
+  id: number;
+  onData: (bytes: Uint8Array) => void;
+  onExit: (code: number) => void;
+}
+
 export interface OpenPtyOptions {
   cols: number;
   rows: number;
@@ -68,6 +74,28 @@ export async function openPty(opts: OpenPtyOptions): Promise<PtySession> {
     cwd: () => invoke<string | null>("pty_cwd", { id }),
     foregroundCommand: () => invoke<string | null>("pty_foreground_command", { id }),
   };
+}
+
+function sessionHandle(id: number): PtySession {
+  localSessions.add(id);
+  return {
+    id,
+    write: (data) => invoke("pty_write", { id, data }),
+    resize: (cols, rows) => invoke("pty_resize", { id, cols, rows }),
+    close: () => { localSessions.delete(id); return invoke("pty_close", { id }); },
+    cwd: () => invoke<string | null>("pty_cwd", { id }),
+    foregroundCommand: () => invoke<string | null>("pty_foreground_command", { id }),
+  };
+}
+
+/** Replace a dead renderer Channel and replay the bounded Rust-side backlog. */
+export async function attachPty(opts: PtyAttachOptions): Promise<PtySession> {
+  const onData = new Channel<unknown>();
+  onData.onmessage = (message) => opts.onData(toBytes(message));
+  const onExit = new Channel<number>();
+  onExit.onmessage = opts.onExit;
+  await invoke<boolean>("pty_attach", { id: opts.id, onData, onExit });
+  return sessionHandle(opts.id);
 }
 
 /**

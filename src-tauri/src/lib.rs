@@ -2,76 +2,82 @@ mod modules;
 
 use tauri::Manager;
 
-use modules::appearance::{
-    appearance_remove_background_image, appearance_save_background_image,
+use modules::ai::ai_chat;
+use modules::appearance::{appearance_remove_background_image, appearance_save_background_image};
+use modules::claude_progress::{
+    claude_progress_unwatch, claude_progress_watch, claude_session_title, ClaudeProgressState,
+};
+use modules::claude_status_hook::{
+    claude_status_hook_cleanup_legacy, claude_status_hook_install, claude_status_hook_uninstall,
+};
+use modules::clipboard::{
+    terminal_clipboard_image_paths, terminal_clipboard_paths, terminal_clipboard_text,
+    terminal_prepare_clipboard_image_attachment, terminal_save_dropped_image,
+};
+use modules::codex_progress::{codex_session_title, CodexProgressState};
+use modules::codex_status_hook::{
+    codex_status_hook_cleanup_legacy, codex_status_hook_install, codex_status_hook_uninstall,
+};
+use modules::editor_watch::{editor_watch_set, EditorWatchState};
+use modules::exit_guard::{
+    exit_guard_configure, terminal_close_window_sessions, terminal_window_session_count,
+    ExitGuardState,
 };
 use modules::fonts::fonts_report;
 use modules::fs::{
     fs_create_dir, fs_create_file, fs_delete, fs_grep, fs_home_dir, fs_is_file, fs_list_files,
     fs_read_dir, fs_read_file, fs_rename, fs_reveal, fs_write_file,
 };
-use modules::ai::ai_chat;
-use modules::claude_progress::{
-    claude_progress_unwatch, claude_progress_watch, claude_session_title, ClaudeProgressState,
-};
-use modules::codex_progress::{codex_session_title, CodexProgressState};
-use modules::claude_status_hook::{
-    claude_status_hook_cleanup_legacy, claude_status_hook_install, claude_status_hook_uninstall,
-};
-use modules::codex_status_hook::{
-    codex_status_hook_cleanup_legacy, codex_status_hook_install, codex_status_hook_uninstall,
-};
-use modules::notes::{notes_unwatch, notes_watch, NotesWatchState};
-use modules::clipboard::{
-    terminal_clipboard_image_paths, terminal_clipboard_paths, terminal_clipboard_text,
-    terminal_prepare_clipboard_image_attachment, terminal_save_dropped_image,
-};
 use modules::git::{
     git_branch_checkout, git_branch_checkout_track, git_branch_create_at, git_branch_delete,
     git_branches, git_cherry_pick, git_commit, git_commit_details, git_commit_file_diff,
-    git_commit_range_file_diff, git_commit_range_files, git_commits_in_range, git_diff,
-    git_fetch, git_file_at_rev, git_graph_log, git_log, git_merge, git_pull, git_push,
-    git_push_delete, git_rebase, git_reset, git_resolve_repo, git_restore_file, git_revert,
-    git_stage, git_status, git_tag_create, git_tag_delete, git_unstage, git_worktree_add,
+    git_commit_range_file_diff, git_commit_range_files, git_commits_in_range, git_diff, git_fetch,
+    git_file_at_rev, git_graph_log, git_log, git_merge, git_pull, git_push, git_push_delete,
+    git_rebase, git_reset, git_resolve_repo, git_restore_file, git_revert, git_stage, git_status,
+    git_tag_create, git_tag_delete, git_unstage, git_worktree_add, git_worktree_copy_local_files,
     git_worktree_dirty_count, git_worktree_disk_size, git_worktree_info, git_worktree_list,
-    git_worktree_copy_local_files, git_worktree_list_detailed, git_worktree_prune,
-    git_worktree_remove,
+    git_worktree_list_detailed, git_worktree_prune, git_worktree_remove,
 };
+use modules::locale::set_app_languages;
+use modules::menu::set_native_menu;
+use modules::notes::{notes_unwatch, notes_watch, NotesWatchState};
+use modules::ports::{kill_port_process, list_ports, PortsState};
 use modules::pr::{gh_available, pr_via_api, pr_via_gh};
 use modules::preview::{
     preview_close, preview_create, preview_history_back, preview_history_forward, preview_navigate,
     preview_reload, preview_set_bounds,
 };
+use modules::pty::{
+    pty_attach, pty_close, pty_close_all, pty_cwd, pty_foreground_command, pty_open, pty_resize,
+    pty_set_window_active, pty_shell_name, pty_write, PtyState,
+};
+use modules::recovery::{
+    recovery_dismiss_notice, recovery_reload_window, recovery_reveal_log,
+    recovery_sync_editor_snapshot, recovery_take_editor_snapshot, recovery_take_notice,
+    runtime_instance_id, RecoveryState,
+};
 use modules::secrets::{
     secrets_delete_key, secrets_has_key, secrets_set_key, ssh_secret_delete, ssh_secret_set,
 };
-use modules::pty::{
-    pty_close, pty_close_all, pty_cwd, pty_foreground_command, pty_open, pty_resize,
-    pty_shell_name, pty_write, PtyState,
-};
-use modules::ssh::{
-    ssh_close, ssh_forward_start, ssh_forward_stop, ssh_open, ssh_prompt_reply, ssh_resize,
-    ssh_write, SshState,
-};
-use modules::sftp::{
-    sftp_close, sftp_create_dir, sftp_create_file, sftp_delete, sftp_home, sftp_read_dir,
-    sftp_read_file, sftp_rename, sftp_start, sftp_write_file, SftpState,
-};
-use modules::terminal_history::{
-    terminal_history_clear, terminal_history_delete, terminal_history_load,
-    terminal_history_prune, terminal_history_save,
-};
 use modules::session_log::session_logs_enforce_retention;
-use modules::sysmon::{system_stats, SysinfoState};
-use modules::ports::{kill_port_process, list_ports, PortsState};
-use modules::editor_watch::{editor_watch_set, EditorWatchState};
 use modules::sessions_index::{
-    sessions_delete, sessions_export, sessions_get, sessions_index_start, sessions_list, sessions_pin,
-    sessions_project_stats, sessions_stats, SessionsIndexState,
+    sessions_delete, sessions_export, sessions_get, sessions_index_start, sessions_list,
+    sessions_pin, sessions_project_stats, sessions_stats, SessionsIndexState,
 };
 use modules::setup::{detect_tools, install_tool};
-use modules::locale::set_app_languages;
-use modules::menu::set_native_menu;
+use modules::sftp::{
+    sftp_close, sftp_create_dir, sftp_create_file, sftp_delete, sftp_home, sftp_list_owned,
+    sftp_read_dir, sftp_read_file, sftp_rename, sftp_start, sftp_write_file, SftpState,
+};
+use modules::ssh::{
+    ssh_attach, ssh_close, ssh_forward_start, ssh_forward_stop, ssh_open, ssh_prompt_reply,
+    ssh_resize, ssh_set_window_active, ssh_write, SshState,
+};
+use modules::sysmon::{system_stats, SysinfoState};
+use modules::terminal_history::{
+    terminal_history_clear, terminal_history_delete, terminal_history_load, terminal_history_prune,
+    terminal_history_save,
+};
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -128,7 +134,26 @@ pub fn run() {
         return;
     }
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_web_content_process_terminate(|webview| {
+        // Installing a custom handler replaces Tauri's default auto-reload, so
+        // reload explicitly. Preview children are isolated; a main renderer
+        // termination records a recoverable incident before loading the UI.
+        if webview.label().starts_with("preview-") {
+            let _ = webview.reload();
+            return;
+        }
+        let window = webview.window();
+        let app = window.app_handle();
+        if let Some(state) = app.try_state::<RecoveryState>() {
+            state.record_incident(window.label(), "web-content-terminated");
+        }
+        modules::recovery::close_owned_previews(app, window.label());
+        let _ = webview.reload();
+    });
+
+    let app = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -147,6 +172,8 @@ pub fn run() {
                 .build(),
         )
         .manage(PtyState::new())
+        .manage(ExitGuardState::new())
+        .manage(RecoveryState::new())
         .manage(SshState::new())
         .manage(SftpState::new())
         .manage(ClaudeProgressState::new())
@@ -184,12 +211,17 @@ pub fn run() {
                 modules::secrets::init_store_path(dir.join("secrets.enc"));
                 // Prepare the wrapper ZDOTDIR that loads the bundled
                 // zsh-autosuggestions plugin, if the resource resolves.
-                if let Ok(plugin) = app
-                    .path()
-                    .resolve("resources/zsh-autosuggestions.zsh", tauri::path::BaseDirectory::Resource)
-                {
+                if let Ok(plugin) = app.path().resolve(
+                    "resources/zsh-autosuggestions.zsh",
+                    tauri::path::BaseDirectory::Resource,
+                ) {
                     modules::pty::shell::init_autosuggest_zdotdir(&dir, &plugin);
                 }
+            }
+            if let (Some(state), Ok(dir)) =
+                (app.try_state::<RecoveryState>(), app.path().app_log_dir())
+            {
+                state.init_log_path(dir.join("recovery-incidents.jsonl"));
             }
             // Claude/Codex session status arrives over a loopback socket (#155,
             // ported to all platforms in #181): bind the listener now, before
@@ -219,6 +251,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             pty_open,
+            pty_attach,
+            pty_set_window_active,
             pty_write,
             pty_resize,
             pty_shell_name,
@@ -227,6 +261,16 @@ pub fn run() {
             pty_close,
             pty_close_all,
             app_build_info,
+            exit_guard_configure,
+            terminal_window_session_count,
+            terminal_close_window_sessions,
+            runtime_instance_id,
+            recovery_sync_editor_snapshot,
+            recovery_take_editor_snapshot,
+            recovery_take_notice,
+            recovery_dismiss_notice,
+            recovery_reload_window,
+            recovery_reveal_log,
             open_new_window,
             appearance_save_background_image,
             appearance_remove_background_image,
@@ -321,6 +365,8 @@ pub fn run() {
             notes_watch,
             notes_unwatch,
             ssh_open,
+            ssh_attach,
+            ssh_set_window_active,
             ssh_write,
             ssh_resize,
             ssh_close,
@@ -337,6 +383,7 @@ pub fn run() {
             sftp_delete,
             sftp_rename,
             sftp_close,
+            sftp_list_owned,
             ssh_secret_set,
             ssh_secret_delete,
             system_stats,
@@ -354,6 +401,10 @@ pub fn run() {
             detect_tools,
             install_tool
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        modules::exit_guard::handle_run_event(app_handle, &event);
+    });
 }

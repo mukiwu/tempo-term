@@ -1,7 +1,7 @@
 //! PTY session lifecycle: spawn a shell, stream its output to the frontend,
 //! and forward input, resize and close requests back to it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -21,6 +21,145 @@ pub struct Session {
     master: Mutex<Box<dyn MasterPty + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     pub shell_name: String,
+    owner_label: Mutex<Option<String>>,
+    output: Mutex<Option<Arc<OutputHub>>>,
+}
+
+const OUTPUT_BACKLOG_CAP: usize = 1_000_000;
+const OUTPUT_SEND_CHUNK: usize = 64 * 1024;
+
+struct OutputSink {
+    data: Channel<Response>,
+    exit: Channel<i32>,
+    cursor: u64,
+}
+
+struct OutputHubInner {
+    backlog: VecDeque<u8>,
+    truncated: bool,
+    sink: Option<OutputSink>,
+    exit_code: Option<i32>,
+    start_seq: u64,
+    next_seq: u64,
+    active: bool,
+}
+
+/// Renderer-independent PTY output. A WKWebView can be suspended or replaced
+/// while its shell remains alive; failed Channels are detached and the rolling
+/// backlog is replayed to a newly attached renderer instead of stopping the
+/// PTY reader (which previously orphaned the shell after a reload).
+struct OutputHub(Mutex<OutputHubInner>);
+
+impl OutputHub {
+    fn new(data: Channel<Response>, exit: Channel<i32>) -> Self {
+        Self(Mutex::new(OutputHubInner {
+            backlog: VecDeque::new(),
+            truncated: false,
+            sink: Some(OutputSink {
+                data,
+                exit,
+                cursor: 0,
+            }),
+            exit_code: None,
+            start_seq: 0,
+            next_seq: 0,
+            active: true,
+        }))
+    }
+
+    fn publish(&self, bytes: Vec<u8>) {
+        let mut inner = self.0.lock().unwrap();
+        inner.backlog.extend(bytes.iter().copied());
+        inner.next_seq = inner.next_seq.saturating_add(bytes.len() as u64);
+        while inner.backlog.len() > OUTPUT_BACKLOG_CAP {
+            inner.backlog.pop_front();
+            inner.start_seq = inner.start_seq.saturating_add(1);
+            inner.truncated = true;
+        }
+        if inner.active {
+            let next = inner.next_seq;
+            if let Some(sink) = inner.sink.as_mut() {
+                if sink.data.send(Response::new(bytes)).is_err() {
+                    inner.sink = None;
+                } else {
+                    sink.cursor = next;
+                }
+            }
+        }
+    }
+
+    fn finish(&self, code: i32) {
+        let mut inner = self.0.lock().unwrap();
+        inner.exit_code = Some(code);
+        if let Some(sink) = inner.sink.take() {
+            let _ = sink.exit.send(code);
+        }
+    }
+
+    fn attach(&self, data: Channel<Response>, exit: Channel<i32>) -> bool {
+        let mut inner = self.0.lock().unwrap();
+        if !inner.active {
+            let cursor = inner.start_seq;
+            inner.sink = Some(OutputSink { data, exit, cursor });
+            return inner.truncated;
+        }
+        let mut replay = Vec::with_capacity(inner.backlog.len() + 96);
+        if inner.truncated {
+            replay.extend_from_slice(
+                b"\r\n\x1b[33m[TempoTerm: earlier recovery output was truncated]\x1b[0m\r\n",
+            );
+        }
+        replay.extend(inner.backlog.iter().copied());
+        for chunk in replay.chunks(OUTPUT_SEND_CHUNK) {
+            if data.send(Response::new(chunk.to_vec())).is_err() {
+                inner.sink = None;
+                return inner.truncated;
+            }
+        }
+        if let Some(code) = inner.exit_code {
+            let _ = exit.send(code);
+        } else {
+            let cursor = inner.next_seq;
+            inner.sink = Some(OutputSink { data, exit, cursor });
+        }
+        inner.truncated
+    }
+
+    fn set_active(&self, active: bool) {
+        let mut inner = self.0.lock().unwrap();
+        if inner.active == active {
+            return;
+        }
+        inner.active = active;
+        if !active {
+            return;
+        }
+        let start_seq = inner.start_seq;
+        let next_seq = inner.next_seq;
+        let backlog: Vec<u8> = inner.backlog.iter().copied().collect();
+        if let Some(sink) = inner.sink.as_mut() {
+            let was_truncated = sink.cursor < start_seq;
+            let offset = sink.cursor.max(start_seq).saturating_sub(start_seq) as usize;
+            let mut pending = Vec::new();
+            if was_truncated {
+                pending.extend_from_slice(
+                    b"\r\n\x1b[33m[TempoTerm: background output was truncated]\x1b[0m\r\n",
+                );
+            }
+            pending.extend_from_slice(&backlog[offset.min(backlog.len())..]);
+            for chunk in pending.chunks(OUTPUT_SEND_CHUNK) {
+                if sink.data.send(Response::new(chunk.to_vec())).is_err() {
+                    inner.sink = None;
+                    return;
+                }
+            }
+            sink.cursor = next_seq;
+        }
+    }
+
+    fn is_truncated(&self) -> bool {
+        self.0.lock().unwrap().truncated
+    }
 }
 
 /// Tauri-managed registry of every open session. The map is behind an `Arc`
@@ -182,6 +321,8 @@ pub fn spawn_with_sinks(
         master: Mutex::new(pair.master),
         killer: Mutex::new(killer),
         shell_name,
+        owner_label: Mutex::new(None),
+        output: Mutex::new(None),
     });
 
     state.sessions.write().unwrap().insert(id, session);
@@ -292,6 +433,7 @@ pub fn spawn(
     suggestions: bool,
     shell_override: Option<String>,
     app: &tauri::AppHandle,
+    owner_label: String,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
@@ -316,7 +458,10 @@ pub fn spawn(
         .ok()
         .map(|h| h.tx);
 
-    spawn_with_sinks(
+    let hub = Arc::new(OutputHub::new(on_data, on_exit));
+    let output_hub = Arc::clone(&hub);
+    let exit_hub = Arc::clone(&hub);
+    let result = spawn_with_sinks(
         state,
         id,
         cols,
@@ -328,12 +473,97 @@ pub fn spawn(
                 // Drop on a full channel rather than stall the reader thread.
                 let _ = tx.try_send(bytes.clone());
             }
-            on_data.send(Response::new(bytes)).is_ok()
+            output_hub.publish(bytes);
+            true
         },
         move |code| {
-            let _ = on_exit.send(code);
+            exit_hub.finish(code);
         },
-    )
+    );
+    if result.is_ok() {
+        let session = state.get(id)?;
+        *session.owner_label.lock().unwrap() = Some(owner_label);
+        *session.output.lock().unwrap() = Some(hub);
+    }
+    result
+}
+
+pub fn attach(
+    state: &PtyState,
+    id: u32,
+    owner_label: &str,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
+) -> Result<bool, String> {
+    let session = state.get(id)?;
+    if session.owner_label.lock().unwrap().as_deref() != Some(owner_label) {
+        return Err("pty session belongs to another window".to_string());
+    }
+    let hub = session
+        .output
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "pty session is not attachable".to_string())?;
+    Ok(hub.attach(on_data, on_exit))
+}
+
+pub fn set_window_active(state: &PtyState, owner_label: &str, active: bool) {
+    let sessions: Vec<Arc<Session>> = state.sessions.read().unwrap().values().cloned().collect();
+    for session in sessions {
+        if session.owner_label.lock().unwrap().as_deref() == Some(owner_label) {
+            if let Some(hub) = session.output.lock().unwrap().clone() {
+                hub.set_active(active);
+            }
+        }
+    }
+}
+
+pub fn recovery_stats(state: &PtyState, owner_label: &str) -> (usize, bool) {
+    let sessions: Vec<Arc<Session>> = state.sessions.read().unwrap().values().cloned().collect();
+    let mut count = 0;
+    let mut truncated = false;
+    for session in sessions {
+        if session.owner_label.lock().unwrap().as_deref() == Some(owner_label) {
+            count += 1;
+            truncated |= session
+                .output
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|hub| hub.is_truncated());
+        }
+    }
+    (count, truncated)
+}
+
+pub fn session_count(state: &PtyState) -> usize {
+    state.sessions.read().unwrap().len()
+}
+
+pub fn owned_count(state: &PtyState, owner_label: &str) -> usize {
+    state
+        .sessions
+        .read()
+        .unwrap()
+        .values()
+        .filter(|session| session.owner_label.lock().unwrap().as_deref() == Some(owner_label))
+        .count()
+}
+
+pub fn close_owned(state: &PtyState, owner_label: &str) {
+    let ids: Vec<u32> = state
+        .sessions
+        .read()
+        .unwrap()
+        .iter()
+        .filter_map(|(id, session)| {
+            (session.owner_label.lock().unwrap().as_deref() == Some(owner_label)).then_some(*id)
+        })
+        .collect();
+    for id in ids {
+        close(state, id);
+    }
 }
 
 pub fn write_input(state: &PtyState, id: u32, data: &[u8]) -> Result<(), String> {
@@ -489,16 +719,61 @@ pub fn close_all(state: &PtyState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::ipc::InvokeResponseBody;
+
+    fn test_channels() -> (Channel<Response>, Channel<i32>, Arc<Mutex<Vec<Vec<u8>>>>) {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let captured = messages.clone();
+        let data = Channel::new(move |body| {
+            if let InvokeResponseBody::Raw(bytes) = body {
+                captured.lock().unwrap().push(bytes);
+            }
+            Ok(())
+        });
+        let exit = Channel::new(|_| Ok(()));
+        (data, exit, messages)
+    }
+
+    #[test]
+    fn output_hub_mutes_background_ipc_and_flushes_in_order() {
+        let (data, exit, messages) = test_channels();
+        let hub = OutputHub::new(data, exit);
+        hub.publish(b"before".to_vec());
+        hub.set_active(false);
+        hub.publish(b"during-1".to_vec());
+        hub.publish(b"during-2".to_vec());
+        assert_eq!(messages.lock().unwrap().concat(), b"before");
+        hub.set_active(true);
+        assert_eq!(messages.lock().unwrap().concat(), b"beforeduring-1during-2");
+    }
+
+    #[test]
+    fn output_hub_attach_replaces_sink_and_replays_backlog() {
+        let (first_data, first_exit, first) = test_channels();
+        let hub = OutputHub::new(first_data, first_exit);
+        hub.publish(b"one".to_vec());
+        let (second_data, second_exit, second) = test_channels();
+        assert!(!hub.attach(second_data, second_exit));
+        hub.publish(b"two".to_vec());
+        assert_eq!(first.lock().unwrap().concat(), b"one");
+        assert_eq!(second.lock().unwrap().concat(), b"onetwo");
+    }
+
+    #[test]
+    fn output_hub_backlog_is_bounded_and_marks_truncation() {
+        let (data, exit, _) = test_channels();
+        let hub = OutputHub::new(data, exit);
+        hub.publish(vec![b'x'; OUTPUT_BACKLOG_CAP + 17]);
+        let inner = hub.0.lock().unwrap();
+        assert_eq!(inner.backlog.len(), OUTPUT_BACKLOG_CAP);
+        assert!(inner.truncated);
+        assert_eq!(inner.start_seq, 17);
+    }
     use std::sync::mpsc;
     use std::time::Duration;
 
-    fn collect_command_output(program: &str, args: &[&str]) -> String {
+    fn collect_builder_output(cmd: CommandBuilder) -> (String, i32) {
         let state = PtyState::new();
-        let mut cmd = CommandBuilder::new(program);
-        for arg in args {
-            cmd.arg(arg);
-        }
-
         let collected = Arc::new(Mutex::new(Vec::<u8>::new()));
         let sink = collected.clone();
         let (exit_tx, exit_rx) = mpsc::channel::<i32>();
@@ -520,12 +795,20 @@ mod tests {
         )
         .expect("spawn should succeed");
 
-        exit_rx
+        let code = exit_rx
             .recv_timeout(Duration::from_secs(10))
             .expect("command should exit within timeout");
 
         let bytes = collected.lock().unwrap().clone();
-        String::from_utf8_lossy(&bytes).into_owned()
+        (String::from_utf8_lossy(&bytes).into_owned(), code)
+    }
+
+    fn collect_command_output(program: &str, args: &[&str]) -> String {
+        let mut cmd = CommandBuilder::new(program);
+        for arg in args {
+            cmd.arg(arg);
+        }
+        collect_builder_output(cmd).0
     }
 
     #[test]
@@ -550,8 +833,17 @@ mod tests {
     fn registers_session_in_state() {
         let state = PtyState::new();
         let cmd = CommandBuilder::new("/bin/echo");
-        let id = spawn_with_sinks(&state, state.alloc_id(), 80, 24, cmd, "echo".to_string(), |_| true, |_| {})
-            .expect("spawn should succeed");
+        let id = spawn_with_sinks(
+            &state,
+            state.alloc_id(),
+            80,
+            24,
+            cmd,
+            "echo".to_string(),
+            |_| true,
+            |_| {},
+        )
+        .expect("spawn should succeed");
         assert!(state.get(id).is_ok());
     }
 
@@ -588,13 +880,164 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn preserves_command_environment_and_working_directory() {
+        // macOS exposes the temp directory through `/var`, while the shell's
+        // `PWD` resolves the same directory through `/private/var`.
+        let expected_cwd = std::env::temp_dir()
+            .canonicalize()
+            .expect("canonicalize temp directory");
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.args(["-c", "printf '%s|%s' \"$TEMPOTERM_PTY_TEST\" \"$PWD\""]);
+        cmd.cwd(&expected_cwd);
+        cmd.env("TEMPOTERM_PTY_TEST", "環境正常");
+
+        let (output, code) = collect_builder_output(cmd);
+
+        assert_eq!(code, 0);
+        assert!(
+            output.contains(&format!("環境正常|{}", expected_cwd.display())),
+            "expected cwd and environment in PTY output, got: {output:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resize_reaches_the_child_terminal() {
+        let state = PtyState::new();
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.args(["-c", "read _line; stty size"]);
+        let collected = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let sink = Arc::clone(&collected);
+        let (exit_tx, exit_rx) = mpsc::channel::<i32>();
+        let id = spawn_with_sinks(
+            &state,
+            state.alloc_id(),
+            80,
+            24,
+            cmd,
+            "sh".to_string(),
+            move |bytes| {
+                sink.lock().unwrap().extend_from_slice(&bytes);
+                true
+            },
+            move |code| {
+                let _ = exit_tx.send(code);
+            },
+        )
+        .expect("spawn shell");
+
+        resize(&state, id, 132, 43).expect("resize PTY");
+        write_input(&state, id, b"continue\r").expect("release child after resize");
+        assert_eq!(
+            exit_rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("resized shell should exit"),
+            0
+        );
+        let output = String::from_utf8_lossy(&collected.lock().unwrap()).into_owned();
+        assert!(
+            output.contains("43 132"),
+            "child should observe 43 rows and 132 columns, got: {output:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ctrl_c_reaches_the_foreground_process_group() {
+        use std::time::Instant;
+
+        let state = PtyState::new();
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.args([
+            "-c",
+            "trap 'printf interrupted; exit 42' INT; printf ready; while :; do sleep 1; done",
+        ]);
+        let collected = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let sink = Arc::clone(&collected);
+        let (exit_tx, exit_rx) = mpsc::channel::<i32>();
+        let id = spawn_with_sinks(
+            &state,
+            state.alloc_id(),
+            80,
+            24,
+            cmd,
+            "sh".to_string(),
+            move |bytes| {
+                sink.lock().unwrap().extend_from_slice(&bytes);
+                true
+            },
+            move |code| {
+                let _ = exit_tx.send(code);
+            },
+        )
+        .expect("spawn signal test shell");
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !collected.lock().unwrap().windows(5).any(|w| w == b"ready") {
+            assert!(Instant::now() < deadline, "shell did not become ready");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        write_input(&state, id, &[3]).expect("send Ctrl+C");
+
+        assert_eq!(
+            exit_rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("interrupted shell should exit"),
+            42
+        );
+        let output = String::from_utf8_lossy(&collected.lock().unwrap()).into_owned();
+        assert!(
+            output.contains("interrupted"),
+            "trap output missing: {output:?}"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn repeatedly_spawns_ptys_while_other_threads_churn_memory_and_fds() {
+        use std::fs::File;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let running = Arc::new(AtomicBool::new(true));
+        let churn_flag = Arc::clone(&running);
+        let churn = std::thread::spawn(move || {
+            while churn_flag.load(Ordering::Relaxed) {
+                let bytes = vec![0x5a_u8; 16 * 1024];
+                std::hint::black_box(&bytes);
+                let _ = File::open("/dev/null");
+            }
+        });
+
+        let mut failure = None;
+        for iteration in 0..100 {
+            // Keep the child alive for one scheduler tick. The dedicated
+            // single-spawn tests cover instant `/bin/echo`; this stress case
+            // is about repeatedly crossing fork/exec while sibling threads
+            // are actively touching allocator and descriptor state.
+            let output = collect_command_output("/bin/sh", &["-c", "printf pty-ok; sleep 0.01"]);
+            if !output.contains("pty-ok") {
+                failure = Some(format!("PTY spawn {iteration} lost output: {output:?}"));
+                break;
+            }
+        }
+
+        running.store(false, Ordering::Relaxed);
+        churn.join().expect("churn thread should stop cleanly");
+        assert!(failure.is_none(), "{}", failure.unwrap_or_default());
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn decodes_lsof_escaped_non_ascii_back_to_utf8() {
         // lsof -Fn prints non-ASCII bytes as literal \xHH; decode them back.
         assert_eq!(decode_lsof_name("/a/\\xe6\\x96\\x87"), "/a/文");
         // Plain ASCII paths are unchanged; an escaped backslash becomes one.
-        assert_eq!(decode_lsof_name("/Users/muki/Documents"), "/Users/muki/Documents");
+        assert_eq!(
+            decode_lsof_name("/Users/muki/Documents"),
+            "/Users/muki/Documents"
+        );
         assert_eq!(decode_lsof_name("/a/b\\\\c"), "/a/b\\c");
         // Standard C escapes for control characters are decoded too.
         assert_eq!(decode_lsof_name("/a/b\\tc"), "/a/b\tc");

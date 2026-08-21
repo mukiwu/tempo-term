@@ -55,6 +55,8 @@ interface SettingsState {
   wordWrap: boolean;
   /** Persist each terminal's scrollback and restore it on next launch. */
   restoreTerminalHistory: boolean;
+  /** Ask before closing a window or app that still owns live PTY/SSH sessions. */
+  confirmCloseWithRunningTerminals: boolean;
   /** Folder that backs global notes; null until the user picks one. */
   notesFolderPath: string | null;
   /** Which info blocks the workspace cards show. */
@@ -123,6 +125,7 @@ interface SettingsState {
   setTerminalPadding: (padding: number) => void;
   toggleWordWrap: () => void;
   setRestoreTerminalHistory: (value: boolean) => void;
+  setConfirmCloseWithRunningTerminals: (value: boolean) => void;
   setNotesFolderPath: (path: string | null) => void;
   setWorkspaceCardBlock: (key: keyof WorkspaceCardBlocks, value: boolean) => void;
   setPrSource: (source: WorkspacePrSource) => void;
@@ -194,6 +197,7 @@ export const useSettingsStore = create<SettingsState>()(
       terminalPadding: DEFAULT_TERMINAL_PADDING,
       wordWrap: false,
       restoreTerminalHistory: true,
+      confirmCloseWithRunningTerminals: true,
       notesFolderPath: null,
       workspaceCard: DEFAULT_WORKSPACE_CARD,
       prSource: "auto",
@@ -240,6 +244,8 @@ export const useSettingsStore = create<SettingsState>()(
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
       toggleWordWrap: () => set((s) => ({ wordWrap: !s.wordWrap })),
       setRestoreTerminalHistory: (value) => set({ restoreTerminalHistory: value }),
+      setConfirmCloseWithRunningTerminals: (value) =>
+        set({ confirmCloseWithRunningTerminals: value }),
       setNotesFolderPath: (path) => set({ notesFolderPath: path }),
       setWorkspaceCardBlock: (key, value) =>
         set((state) => ({ workspaceCard: { ...state.workspaceCard, [key]: value } })),
@@ -284,6 +290,10 @@ export const useSettingsStore = create<SettingsState>()(
           backgroundImageTextColor: normalizeBackgroundImageTextColor(
             stored.backgroundImageTextColor,
           ),
+          confirmCloseWithRunningTerminals:
+            typeof stored.confirmCloseWithRunningTerminals === "boolean"
+              ? stored.confirmCloseWithRunningTerminals
+              : current.confirmCloseWithRunningTerminals,
         };
       },
     },

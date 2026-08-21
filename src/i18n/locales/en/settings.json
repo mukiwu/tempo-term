@@ -166,6 +166,8 @@
     "previewText": "$ tempo --version\nTempoTerm terminal padding preview",
     "restoreHistory": "Restore terminal history on relaunch",
     "restoreHistoryHint": "Reopen each terminal with its previous output (read-only), unless its shell was exited or the pane was closed",
+    "confirmClose": "Confirm before closing running terminals",
+    "confirmCloseHint": "Show a confirmation before closing a window or quitting the app while local terminal or SSH sessions are still running (enabled by default)",
     "suggestions": "Suggest previous commands",
     "suggestionsHint": "Show a dim completion from your shell history as you type; press → to accept",
     "actionLinks": "Hover action cards",

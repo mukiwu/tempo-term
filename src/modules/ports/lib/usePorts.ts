@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchPorts, type PortInfo } from "./portsBridge";
+import { useWindowActive } from "@/lib/windowActivity";
 
 /** Default cadence; callers poll slower while the panel is closed. */
 const DEFAULT_POLL_INTERVAL_MS = 5000;
@@ -12,6 +13,7 @@ const DEFAULT_POLL_INTERVAL_MS = 5000;
  */
 export function usePorts(showAll: boolean, intervalMs: number = DEFAULT_POLL_INTERVAL_MS): PortInfo[] | null {
   const [ports, setPorts] = useState<PortInfo[] | null>(null);
+  const windowActive = useWindowActive();
 
   useEffect(() => {
     let active = true;
@@ -30,13 +32,14 @@ export function usePorts(showAll: boolean, intervalMs: number = DEFAULT_POLL_INT
           // A failed poll leaves the previous list on screen.
         });
     };
+    if (!windowActive) return;
     poll();
     const interval = setInterval(poll, intervalMs);
     return () => {
       active = false;
       clearInterval(interval);
     };
-  }, [showAll, intervalMs]);
+  }, [showAll, intervalMs, windowActive]);
 
   return ports;
 }

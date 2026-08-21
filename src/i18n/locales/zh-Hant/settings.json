@@ -166,6 +166,8 @@
     "previewText": "$ tempo --version\nTempoTerm 終端機間距預覽",
     "restoreHistory": "重新啟動時還原終端機歷史",
     "restoreHistoryHint": "重開時把每個終端機的上次輸出以唯讀方式還原,除非該 shell 已結束或分頁已關閉",
+    "confirmClose": "關閉時確認仍在執行的終端機",
+    "confirmCloseHint": "關閉視窗或結束 App 前，若仍有本機終端或 SSH 工作階段，先顯示確認提示（預設開啟）",
     "suggestions": "提示曾經輸入過的指令",
     "suggestionsHint": "輸入時根據 shell 歷史以灰色顯示補完建議，按 → 接受",
     "actionLinks": "滑鼠懸停動作卡片",

@@ -15,10 +15,13 @@ import { consumeFreshSshLeaf } from "@/modules/ssh/lib/freshSshLeaves";
 import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { createOutputWriter } from "./lib/outputWriter";
 import { SearchBar } from "./SearchBar";
-import { openPty, type PtySession } from "./lib/pty-bridge";
-import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
+import { attachPty, openPty, type PtySession } from "./lib/pty-bridge";
+import type { BackendSessionBinding } from "./lib/terminalLayout";
+import { RECOVERY_RELOAD_MARKER, runtimeInstanceId } from "@/lib/recovery";
+import { attachSsh, openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
 import { liveSessionsStore } from "@/modules/ssh/lib/liveSessionsStore";
+import { isWindowActive, useWindowActive } from "@/lib/windowActivity";
 
 /** Narrows a session to PtySession (which has cwd/foregroundCommand). */
 function isPtySession(s: PtySession | SshSession): s is PtySession {
@@ -146,11 +149,13 @@ interface TerminalViewProps {
   leafId?: string;
   /** Persisted local AI conversation to resume exactly after an app relaunch. */
   aiSession?: AiSessionBinding;
+  backend?: BackendSessionBinding;
   onExit?: () => void;
   /** Report the shell's current directory so it can be restored next launch. */
   onCwdChange?: (cwd: string) => void;
   /** Persist or clear the exact local AI conversation bound to this pane. */
   onAiSessionChange?: (session: AiSessionBinding | null) => void;
+  onBackendChange?: (binding: BackendSessionBinding | null) => void;
   /** Alt+click on a file path in the output opens it (with the resolved abs path). */
   onOpenFile?: (absolutePath: string) => void;
   /** Open a localhost/IP URL from a terminal action card in the in-app preview. */
@@ -165,12 +170,15 @@ export function TerminalView({
   ssh,
   leafId,
   aiSession,
+  backend,
   onExit,
   onCwdChange,
   onAiSessionChange,
+  onBackendChange,
   onOpenFile,
   onOpenPreview,
 }: TerminalViewProps) {
+  const windowActive = useWindowActive();
   const leafIdRef = useRef(leafId);
   leafIdRef.current = leafId;
   const activeRef = useRef(active);
@@ -198,6 +206,10 @@ export function TerminalView({
   onAiSessionChangeRef.current = onAiSessionChange;
   const aiSessionRef = useRef(aiSession);
   aiSessionRef.current = aiSession;
+  const backendRef = useRef(backend);
+  backendRef.current = backend;
+  const onBackendChangeRef = useRef(onBackendChange);
+  onBackendChangeRef.current = onBackendChange;
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
   const onOpenPreviewRef = useRef(onOpenPreview);
@@ -927,6 +939,28 @@ export function TerminalView({
     const openSession = async (): Promise<PtySession | SshSession> => {
       const paneSsh = sshRef.current;
       if (paneSsh) {
+        const onSshExit = (_code: number) => {
+          onBackendChangeRef.current?.(null);
+          if (!disposed) {
+            const sshSession = sessionRef.current as SshSession | null;
+            void sessionRef.current?.close();
+            if (sshSession) {
+              useForwardStatusStore.getState().clearSession(sshSession.id);
+              liveSessionsStore.getState().unregister(sshSession.id);
+            }
+            setSshDisconnected(true);
+            setConnecting(false);
+          }
+        };
+        const runtimeId = await runtimeInstanceId();
+        const binding = backendRef.current;
+        if (binding?.kind === "ssh" && binding.runtimeId === runtimeId) {
+          try {
+            return await attachSsh(binding.sessionId, (bytes) => outputWriter.push(bytes), onSshExit);
+          } catch {
+            onBackendChangeRef.current?.(null);
+          }
+        }
         const conn = useConnectionsStore.getState().getConnection(paneSsh.connectionId);
         if (!conn) {
           throw new Error(`SSH connection "${paneSsh.connectionId}" not found — it may have been deleted.`);
@@ -940,7 +974,7 @@ export function TerminalView({
             destHost: pf.destHost,
             destPort: pf.destPort,
           }));
-        return openSsh({
+        const opened = await openSsh({
           connectionId: conn.id,
           host: conn.host,
           port: conn.port,
@@ -953,23 +987,32 @@ export function TerminalView({
           onData: (bytes) => outputWriter.push(bytes),
           // Only treat an exit as user-facing when we did not tear the session
           // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
-          onExit: (_code) => {
-            if (!disposed) {
-              // Do NOT call onExitRef (which closes the pane). Instead, show the
-              // Reconnect card so the user can retry after a failed/dropped connection.
-              const sshSession = sessionRef.current as SshSession | null;
-              void sessionRef.current?.close();
-              if (sshSession) {
-                useForwardStatusStore.getState().clearSession(sshSession.id);
-                liveSessionsStore.getState().unregister(sshSession.id);
-              }
-              setSshDisconnected(true);
-              setConnecting(false);
-            }
-          },
+          onExit: onSshExit,
         });
+        onBackendChangeRef.current?.({ runtimeId, kind: "ssh", sessionId: opened.id });
+        return opened;
       }
-      return openPty({
+      const onLocalExit = () => {
+        onBackendChangeRef.current?.(null);
+        if (!disposed) {
+          onExitRef.current?.();
+          if (leafIdRef.current) void deleteTerminalHistory(leafIdRef.current);
+        }
+      };
+      const runtimeId = await runtimeInstanceId();
+      const binding = backendRef.current;
+      if (binding?.kind === "pty" && binding.runtimeId === runtimeId) {
+        try {
+          return await attachPty({
+            id: binding.sessionId,
+            onData: (bytes) => outputWriter.push(bytes),
+            onExit: onLocalExit,
+          });
+        } catch {
+          onBackendChangeRef.current?.(null);
+        }
+      }
+      const opened = await openPty({
         cols: term.cols,
         rows: term.rows,
         cwd: cwdRef.current,
@@ -980,18 +1023,10 @@ export function TerminalView({
         onData: (bytes) => outputWriter.push(bytes),
         // Only treat an exit as user-facing when we did not tear the session
         // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
-        onExit: () => {
-          if (!disposed) {
-            onExitRef.current?.();
-            // The shell ended while the app is running (e.g. the user typed
-            // `exit`), so its history is no longer wanted. An app teardown sets
-            // `disposed` first, so that path keeps the history for next launch.
-            if (leafIdRef.current) {
-              void deleteTerminalHistory(leafIdRef.current);
-            }
-          }
-        },
+        onExit: onLocalExit,
       });
+      onBackendChangeRef.current?.({ runtimeId, kind: "pty", sessionId: opened.id });
+      return opened;
     };
 
     // History restore remains independent from AI conversation recovery: when
@@ -1070,7 +1105,7 @@ export function TerminalView({
       startSession();
     };
 
-    void Promise.all([beforeOpen, initialFit]).then(() => {
+    void Promise.all([beforeOpen, initialFit]).then(async () => {
       if (disposed) {
         return;
       }
@@ -1078,6 +1113,12 @@ export function TerminalView({
       // session (i.e. the user just clicked "Connect"). Restored panes after a
       // relaunch will not be in the set, so they show the Reconnect UI instead.
       if (sshRef.current) {
+        const binding = backendRef.current;
+        const runtimeId = await runtimeInstanceId().catch(() => "");
+        if (binding?.kind === "ssh" && binding.runtimeId === runtimeId) {
+          startSession();
+          return;
+        }
         const isFresh = leafIdRef.current
           ? consumeFreshSshLeaf(leafIdRef.current)
           : false;
@@ -1100,6 +1141,7 @@ export function TerminalView({
       dirty = true;
     });
     const snapshot = () => {
+      if (!isWindowActive()) return;
       const leafId = leafIdRef.current;
       if (!leafId || !dirty || !useSettingsStore.getState().restoreTerminalHistory) {
         return;
@@ -1171,7 +1213,11 @@ export function TerminalView({
         useForwardStatusStore.getState().clearSession(closingSession.id);
         liveSessionsStore.getState().unregister(closingSession.id);
       }
-      void sessionRef.current?.close();
+      const recovering = sessionStorage.getItem(RECOVERY_RELOAD_MARKER) === "1";
+      if (!recovering) {
+        onBackendChangeRef.current?.(null);
+        void sessionRef.current?.close();
+      }
       term.dispose();
       handleRef.current = null;
       sessionRef.current = null;
@@ -1205,6 +1251,23 @@ export function TerminalView({
     });
     return () => cancelAnimationFrame(frame);
   }, [active, isActiveTab]);
+
+  // Committing a fresh terminal frame on foreground return helps WebKit leave
+  // a stale volatile layer behind, and SIGWINCH asks full-screen TUIs to repaint.
+  useEffect(() => {
+    if (!windowActive) return;
+    const frame = requestAnimationFrame(() => {
+      const handle = handleRef.current;
+      const container = containerRef.current;
+      if (!handle || !container || container.clientWidth <= 0 || container.clientHeight <= 0) return;
+      try {
+        handle.fit.fit();
+        handle.term.refresh(0, Math.max(0, handle.term.rows - 1));
+      } catch { /* transient zero-size */ }
+      void sessionRef.current?.resize(handle.term.cols, handle.term.rows);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [windowActive]);
 
   // Apply live font changes from the settings panel to an already-open terminal.
   useEffect(() => {
@@ -1272,7 +1335,7 @@ export function TerminalView({
   // the file explorer tracks `cd`. SSH panes take a different path below — no
   // cwd() or foregroundCommand() methods, so they ride OSC 7 reports instead.
   useEffect(() => {
-    if (!cwdTracking) {
+    if (!cwdTracking || !windowActive) {
       return;
     }
     const paneSsh = sshRef.current;
@@ -1428,7 +1491,7 @@ export function TerminalView({
       }
       unsubscribe();
     };
-  }, [cwdTracking]);
+  }, [cwdTracking, windowActive]);
 
   // Snapshot the cwd when this pane stops being active (e.g. switching tabs), so
   // its last directory is saved between polls. SSH panes skip this — no cwd() method.

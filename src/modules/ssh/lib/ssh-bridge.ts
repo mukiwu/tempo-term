@@ -61,6 +61,28 @@ export async function openSsh(opts: OpenSshOptions): Promise<SshSession> {
   };
 }
 
+function sshHandle(id: number): SshSession {
+  return {
+    id,
+    write: (data) => invoke("ssh_write", { id, data }),
+    resize: (cols, rows) => invoke("ssh_resize", { id, cols, rows }),
+    close: () => invoke("ssh_close", { id }),
+  };
+}
+
+export async function attachSsh(
+  id: number,
+  onDataMessage: (bytes: Uint8Array) => void,
+  onExitMessage: (code: number) => void,
+): Promise<SshSession> {
+  const onData = new Channel<unknown>();
+  onData.onmessage = (message) => onDataMessage(toBytes(message));
+  const onExit = new Channel<number>();
+  onExit.onmessage = onExitMessage;
+  await invoke<boolean>("ssh_attach", { id, onData, onExit });
+  return sshHandle(id);
+}
+
 export function startForward(sessionId: number, forward: ForwardInput): Promise<void> {
   return invoke("ssh_forward_start", { id: sessionId, forward });
 }

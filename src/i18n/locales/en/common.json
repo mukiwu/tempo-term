@@ -40,6 +40,12 @@
     "disconnected": "Disconnected — click to reconnect",
     "reconnect": "Reconnect"
   },
+  "exitGuard": {
+    "title": "Terminal sessions are still running",
+    "message": "{{count}} terminal or SSH session(s) are still running. Closing this window will stop them. Do you want to close it?",
+    "confirm": "Close Anyway",
+    "cancel": "Cancel"
+  },
   "nav": {
     "workspaces": "Groups",
     "terminal": "Terminal",
@@ -126,6 +132,7 @@
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out",
     "resetZoom": "Reset Zoom",
+    "reloadWorkspace": "Reload Workspace",
     "splitRight": "Split Right",
     "splitDown": "Split Down",
     "cyclePane": "Cycle Pane",

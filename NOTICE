@@ -3,3 +3,10 @@ Copyright 2026 MUKi (TZU YING WU)
 
 This product is licensed under the Apache License, Version 2.0.
 The TempoTerm name and logo are not licensed for use by derivative works.
+
+Third-party software
+
+portable-pty 0.9.0
+Copyright (c) Wez Furlong
+Licensed under the MIT License. The full license text is included at
+src-tauri/vendor/portable-pty/LICENSE.md.

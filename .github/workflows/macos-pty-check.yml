@@ -1,0 +1,87 @@
+name: macOS PTY Check
+
+# Guard the Apple Silicon fork/pre-exec path that creates every local terminal.
+# macos-26 is an arm64 GitHub-hosted runner and matches the OS generation from
+# the original TempoTerm crash report.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-pty-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pty-regression:
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Test vendored portable-pty patch
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo test --manifest-path src-tauri/vendor/portable-pty/Cargo.toml --lib
+
+      - name: Test TempoTerm PTY module
+        working-directory: src-tauri
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: "cargo test modules::pty:: --lib"
+
+      - name: Cargo check (warnings as errors)
+        working-directory: src-tauri
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo check
+
+  linux-regression:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Test TempoTerm PTY module
+        working-directory: src-tauri
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: "cargo test modules::pty:: --lib"
+
+      - name: Cargo check (warnings as errors)
+        working-directory: src-tauri
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo check

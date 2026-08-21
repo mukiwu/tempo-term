@@ -14,6 +14,12 @@ export function TerminalSettingsSection() {
   const setTerminalPadding = useSettingsStore((s) => s.setTerminalPadding);
   const restoreTerminalHistory = useSettingsStore((s) => s.restoreTerminalHistory);
   const setRestoreTerminalHistory = useSettingsStore((s) => s.setRestoreTerminalHistory);
+  const confirmCloseWithRunningTerminals = useSettingsStore(
+    (s) => s.confirmCloseWithRunningTerminals,
+  );
+  const setConfirmCloseWithRunningTerminals = useSettingsStore(
+    (s) => s.setConfirmCloseWithRunningTerminals,
+  );
   const terminalSuggestions = useSettingsStore((s) => s.terminalSuggestions);
   const setTerminalSuggestions = useSettingsStore((s) => s.setTerminalSuggestions);
   const customShellPath = useSettingsStore((s) => s.customShellPath);
@@ -77,6 +83,21 @@ export function TerminalSettingsSection() {
           className="w-full max-w-md rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent"
         />
         <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.customShellHint")}</p>
+      </div>
+
+      <div className="mb-6">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
+          <input
+            type="checkbox"
+            checked={confirmCloseWithRunningTerminals}
+            onChange={(e) => setConfirmCloseWithRunningTerminals(e.target.checked)}
+            className="accent-accent"
+          />
+          {t("terminalSettings.confirmClose")}
+        </label>
+        <p className="mt-1 text-xs text-fg-muted">
+          {t("terminalSettings.confirmCloseHint")}
+        </p>
       </div>
 
       <div className="mb-6">

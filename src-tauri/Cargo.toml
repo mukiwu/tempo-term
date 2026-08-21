@@ -80,3 +80,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+
+# portable-pty 0.9.0 enumerates `/dev/fd` from a `pre_exec` callback. On
+# multi-threaded macOS apps that is not async-signal-safe and can crash the
+# forked child before exec. Keep this local patch until upstream ships the
+# equivalent fix and the PTY regression suite passes against that release.
+[patch.crates-io]
+portable-pty = { path = "vendor/portable-pty" }
