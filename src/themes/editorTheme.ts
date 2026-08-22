@@ -58,13 +58,18 @@ const LINE_HIGHLIGHT: Record<string, string> = {
 };
 
 /**
- * 統一的當前行高亮 wrapper，不論底層套件是否自己處理 .cm-activeLine 都生效。
+ * 當前行高亮，外加「有選取時讓位」的行為。
+ *
+ * 這裡的 .cm-activeLine 規則並不會蓋過各主題套件自己的設定：CodeMirror 掛載
+ * 樣式前會把 styleModule 反轉，排在前面的 extension 才勝出，而 activeLine 一律
+ * 接在主題後面。兩邊的顏色都取自 LINE_HIGHLIGHT[id]，結果才會一致，所以這條
+ * 規則實際的作用是替沒有自帶 activeLine 的主題墊底。
  *
  * 選取反白畫在內容層後面，不透明的行高亮會把它整行蓋住，所以有選取時隱藏
- * 行高亮（行號的高亮保留），選取取消才恢復。用
- * editorAttributes 掛 class（CM 自己管理的屬性，不會像手動加在 view.dom 上
- * 那樣被洗掉）；透明規則的 selector 特異度高於各主題套件自己的 activeLine
- * 規則，不受主題掛載順序影響。
+ * 行高亮（行號的高亮保留），選取取消才恢復。用 editorAttributes 掛 class（CM
+ * 自己管理的屬性，不會像手動加在 view.dom 上那樣被洗掉）。透明那條規則帶 &
+ * 前綴，產生的 selector 是 .生成class.cm-has-selection .cm-activeLine，特異度
+ * 0,3,0 高於各套件的 0,2,0，所以它不靠掛載順序也贏。
  */
 function activeLine(color: string): Extension {
   return [

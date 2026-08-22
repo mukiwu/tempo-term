@@ -99,8 +99,11 @@ pub enum CommitOrder {
     Topo,
 }
 
+/// `deny_unknown_fields` 是刻意的：搭配 `default`，一個拼錯或過時的欄位名
+/// （例如改名前的 `branch`）會安靜地取預設值，篩選就變成「全部分支」而且不
+/// 報錯。寧可讓它在反序列化階段就失敗、把錯誤送回前端。
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct GraphOptions {
     /// 篩選用的分支清單；空清單代表「全部分支」。
     pub branches: Vec<String>,
@@ -1316,10 +1319,29 @@ pub fn graph_log(
     let max_count = format!("--max-count={}", limit + 1);
     let skip_arg = format!("--skip={skip}");
 
+    // 分支清單是從前端的選單挑出來的，正常不會有幾百筆。設上限的理由是超長的
+    // argv 會讓 spawn 直接失敗，而 graph_log 的錯誤被呼叫端 unwrap_or_default
+    // 吞成一張空圖，使用者只看到「沒有 commit」卻不知道原因；擋在這裡至少會回
+    // 一個說得出原因的錯誤。
+    const MAX_BRANCH_FILTERS: usize = 256;
+    const MAX_BRANCH_NAME_LEN: usize = 255;
+    if options.branches.len() > MAX_BRANCH_FILTERS {
+        return Err(format!(
+            "too many branch filters: {} (max {MAX_BRANCH_FILTERS})",
+            options.branches.len()
+        ));
+    }
+
     // 指定分支會當成位置參數傳給 git，先擋掉開頭是 - 的值。
     for branch in &options.branches {
         let branch = branch.trim();
         if !branch.is_empty() {
+            if branch.len() > MAX_BRANCH_NAME_LEN {
+                return Err(format!(
+                    "branch name too long: {} bytes (max {MAX_BRANCH_NAME_LEN})",
+                    branch.len()
+                ));
+            }
             ensure_not_flag(branch)?;
         }
     }
@@ -1362,10 +1384,12 @@ pub fn branches(repo_path: &str) -> Result<Vec<BranchInfo>, String> {
         .map_err(|e| e.message().to_string())?;
     for entry in local {
         let (branch, _) = entry.map_err(|e| e.message().to_string())?;
-        let last_commit_at = branch_tip_time(&branch);
         if let Some(name) = branch.name().map_err(|e| e.message().to_string())? {
             let name = name.to_string();
             let is_current = Some(&name) == head_name.as_ref();
+            // 取 tip 時間要讀一次 object，所以放在名字的 guard 之後，別為了會被
+            // 丟掉的 entry 白跑一趟。
+            let last_commit_at = branch_tip_time(&branch);
             out.push(BranchInfo {
                 name,
                 is_current,
@@ -1380,12 +1404,13 @@ pub fn branches(repo_path: &str) -> Result<Vec<BranchInfo>, String> {
         .map_err(|e| e.message().to_string())?;
     for entry in remote {
         let (branch, _) = entry.map_err(|e| e.message().to_string())?;
-        let last_commit_at = branch_tip_time(&branch);
         if let Some(name) = branch.name().map_err(|e| e.message().to_string())? {
-            // 跳過 origin/HEAD 這種 symbolic ref，它只是指向預設分支。
+            // 跳過 origin/HEAD 這種 symbolic ref，它只是指向預設分支。每個設好的
+            // remote 都有一個，所以這個 continue 擺在讀 tip 時間之前才划算。
             if name.ends_with("/HEAD") {
                 continue;
             }
+            let last_commit_at = branch_tip_time(&branch);
             out.push(BranchInfo {
                 name: name.to_string(),
                 is_current: false,
@@ -2908,6 +2933,37 @@ mod tests {
             build_log_refs(&options),
             vec!["main".to_string(), "origin/feature".to_string()]
         );
+    }
+
+    #[test]
+    fn graph_log_rejects_an_oversized_branch_filter() {
+        // 上限擋在 git 執行之前，所以這裡用不存在的路徑也測得到。超長 argv 會讓
+        // spawn 失敗，而那個錯誤會被呼叫端吞成一張空圖，使用者看不出原因。
+        let options = GraphOptions {
+            branches: vec!["main".to_string(); 257],
+            ..GraphOptions::default()
+        };
+        let err = graph_log("/nonexistent-repo", 100, 0, &options).unwrap_err();
+        assert!(err.contains("too many branch filters"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn graph_log_rejects_an_overlong_branch_name() {
+        let options = GraphOptions {
+            branches: vec!["b".repeat(256)],
+            ..GraphOptions::default()
+        };
+        let err = graph_log("/nonexistent-repo", 100, 0, &options).unwrap_err();
+        assert!(err.contains("branch name too long"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn graph_options_rejects_the_pre_rename_branch_field() {
+        // `branches` 改名前叫 `branch`。沒有 deny_unknown_fields 的話，送舊欄位
+        // 會安靜取到預設值，篩選變成「全部分支」而且不報錯。
+        let err = serde_json::from_str::<GraphOptions>(r#"{"branch":"main"}"#)
+            .expect_err("the old field name must not deserialize");
+        assert!(err.to_string().contains("branch"), "unexpected: {err}");
     }
 
     #[test]
