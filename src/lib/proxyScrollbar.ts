@@ -225,8 +225,12 @@ export function proxyScrollbars(): Extension {
     // bars). The wrapper only exists once the view is appended, so attach
     // lazily.
     let handle: ProxyScrollbarsHandle | null = null;
+    // A reconfigure can swap this plugin out before the queued microtask runs.
+    // destroy() has no handle to release at that point, so without this flag
+    // the microtask would go on to attach strips nothing owns any more.
+    let destroyed = false;
     const ensure = () => {
-      if (!handle && view.dom.parentElement) {
+      if (!destroyed && !handle && view.dom.parentElement) {
         handle = attachProxyScrollbars({
           scroller: view.scrollDOM,
           host: view.dom.parentElement,
@@ -243,6 +247,7 @@ export function proxyScrollbars(): Extension {
         }
       },
       destroy() {
+        destroyed = true;
         handle?.destroy();
       },
     };

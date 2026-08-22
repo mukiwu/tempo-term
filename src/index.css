@@ -51,6 +51,13 @@
   --color-bg: #222222;
   --color-bg-elevated: #292929;
   --color-bg-inset: #222222;
+  /*
+   * The editor's line-number gutter is sticky inside the horizontal scroller,
+   * so it needs an opaque backdrop or code slides through beneath the numbers.
+   * It gets its own token because that backdrop has to give way under a
+   * wallpaper: see the .wallpaper-surface override below.
+   */
+  --color-editor-gutter-bg: var(--color-bg);
   --color-border: #333333;
   --color-border-strong: #454545;
   --color-fg: #dbd7ca;
@@ -98,6 +105,17 @@ body {
     var(--color-bg-solid) var(--wallpaper-surface-alpha, 82%),
     transparent
   );
+  /*
+   * The gutter backdrop goes away under a wallpaper. The editor's wrapper
+   * already paints one --color-bg layer; a second one on the gutter composites
+   * to ~97% opacity against the wrapper's ~82%, showing up as a darker stripe
+   * down the line numbers. Same compounding this file guards against for
+   * TabsArea and PaneTabContent below. Transparent here falls back to the
+   * wrapper's own tint, so the gutter matches the code beside it and the
+   * horizontal-scroll bleed returns only in wallpaper mode, where it was the
+   * behaviour before the gutter got a backdrop at all.
+   */
+  --color-editor-gutter-bg: transparent;
   --color-bg-inset: color-mix(
     in srgb,
     var(--color-bg-inset-solid) var(--wallpaper-surface-alpha, 82%),

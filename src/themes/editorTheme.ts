@@ -33,10 +33,16 @@ import { DEFAULT_THEME_ID } from "./themes";
  * 各主題的 bg-elevated，讓游標所在行融入 app 的明暗階層。
  *
  * 行號 gutter 例外：它在橫向捲動時是 sticky 固定在左側的，若透明，程式碼與
- * diff 變更行的底色會從行號底下滑過去，所以改用 app 背景 token 畫一層不透明
- * 底——顏色與透明時完全相同，只是擋住底下捲動的內容。
+ * diff 變更行的底色會從行號底下滑過去，所以畫一層底把捲動的內容擋住。用
+ * --color-editor-gutter-bg 而不是直接用 --color-bg：沒有背景圖時兩者同值，
+ * 有背景圖時 --color-bg 是半透明的，編輯器外層已經塗過一層，gutter 再塗一層
+ * 會疊成一條明顯更深的直帶，所以那個 token 在背景圖模式下會退回透明
+ * （見 index.css 的 .wallpaper-surface）。
  */
-const SURFACE = { background: "transparent", gutterBackground: "var(--color-bg)" } as const;
+const SURFACE = {
+  background: "transparent",
+  gutterBackground: "var(--color-editor-gutter-bg)",
+} as const;
 
 /** 各主題的當前行高亮色（= themes.ts 的 bgElevated）。 */
 const LINE_HIGHLIGHT: Record<string, string> = {

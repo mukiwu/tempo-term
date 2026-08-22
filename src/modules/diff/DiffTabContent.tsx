@@ -420,7 +420,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       {error ? (
         <p className="px-3 py-2 text-xs text-danger">{t("diffLoadError")}</p>
       ) : (
-        <div ref={containerRef} className="diff-merge-view relative min-h-0 flex-1 overflow-hidden" />
+        <div ref={containerRef} className="diff-merge-view min-h-0 flex-1 overflow-hidden" />
       )}
       {!hintSeen && !error && (
         // One-time pointer at the review-comment loop, anchored under the
