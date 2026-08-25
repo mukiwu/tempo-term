@@ -17,6 +17,7 @@
   "menu": {
     "open": "Open in Split Pane",
     "openInNewTab": "Open in New Tab",
+    "openInBrowser": "Open in Browser",
     "reveal": "Reveal in Finder",
     "openInTerminal": "Open in Terminal",
     "newFile": "New File",

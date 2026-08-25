@@ -941,6 +941,58 @@ describe("openHtmlPreview", () => {
   });
 });
 
+describe("openPreviewFromSidebar", () => {
+  beforeEach(reset);
+
+  it("opens a preview tab when nothing is open yet", () => {
+    const result = useTabsStore.getState().openPreviewFromSidebar("/proj/index.html");
+    expect(result).toEqual({ status: "opened" });
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].title).toBe("index.html");
+    expect(firstLeafContent(tabs[0])).toEqual({
+      kind: "preview",
+      url: "file:///proj/index.html",
+    });
+  });
+
+  it("splits beside the active tab instead of stealing the whole window", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/proj/main.ts");
+    useTabsStore.getState().openPreviewFromSidebar("/proj/index.html");
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    const tab = tabs.find((t) => t.id === tabId)!;
+    expect(tab.paneTree.kind).toBe("split");
+    const kinds = leafIds(tab.paneTree).map((id) => findPaneContent(tab.paneTree, id)?.kind);
+    expect(kinds).toEqual(expect.arrayContaining(["editor", "preview"]));
+  });
+
+  it("reuses the tab's existing preview pane rather than opening a second one", () => {
+    const tabId = useTabsStore.getState().openEditorTab("/proj/main.ts");
+    useTabsStore.getState().openPreviewFromSidebar("/proj/a.html");
+    useTabsStore.getState().openPreviewFromSidebar("/proj/b.html");
+    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)!;
+    const previews = leafIds(tab.paneTree)
+      .map((id) => findPaneContent(tab.paneTree, id))
+      .filter((c) => c?.kind === "preview");
+    expect(previews).toEqual([{ kind: "preview", url: "file:///proj/b.html" }]);
+  });
+
+  it("replaces a launcher tab instead of splitting into its ignored paneTree", () => {
+    // TabsArea renders LauncherPanel for a launcher tab and never looks at its
+    // paneTree, so a preview split into it would be invisible.
+    const launcherId = useTabsStore.getState().openLauncherTab();
+    useTabsStore.getState().openPreviewFromSidebar("/proj/index.html");
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].id).not.toBe(launcherId);
+    expect(firstLeafContent(tabs[0])).toEqual({
+      kind: "preview",
+      url: "file:///proj/index.html",
+    });
+  });
+});
+
 describe("splitPaneWith", () => {
   beforeEach(reset);
 

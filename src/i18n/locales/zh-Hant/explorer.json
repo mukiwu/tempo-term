@@ -17,6 +17,7 @@
   "menu": {
     "open": "在分割面板開啟",
     "openInNewTab": "在新分頁開啟",
+    "openInBrowser": "在瀏覽器開啟",
     "reveal": "在 Finder 中顯示",
     "openInTerminal": "從終端機開啟",
     "newFile": "新增檔案",

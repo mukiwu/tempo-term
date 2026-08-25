@@ -342,6 +342,53 @@ describe("FileTree context menu: open in new tab", () => {
   });
 });
 
+describe("FileTree context menu: open in browser", () => {
+  beforeEach(() => {
+    useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+  });
+
+  it("opens a previewable file in the built-in browser, not an editor pane", () => {
+    const entries = [{ name: "index.html", path: "/p/index.html", is_dir: false, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+
+    fireEvent.contextMenu(screen.getByText("index.html"));
+    fireEvent.click(screen.getByText("menu.openInBrowser"));
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    const pane = tabs[0].paneTree;
+    expect(pane.kind === "leaf" && pane.pane).toEqual({
+      kind: "preview",
+      url: "file:///p/index.html",
+    });
+  });
+
+  it("hides the item for files the built-in browser cannot render", () => {
+    const entries = [{ name: "main.ts", path: "/p/main.ts", is_dir: false, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+
+    fireEvent.contextMenu(screen.getByText("main.ts"));
+
+    expect(screen.queryByText("menu.openInBrowser")).not.toBeInTheDocument();
+  });
+
+  it("hides the item for a remote (SFTP) file, which the asset protocol cannot reach", () => {
+    const entries = [
+      {
+        name: "index.html",
+        path: "ssh://conn-1/srv/index.html",
+        is_dir: false,
+        size: 0,
+      },
+    ];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+
+    fireEvent.contextMenu(screen.getByText("index.html"));
+
+    expect(screen.queryByText("menu.openInBrowser")).not.toBeInTheDocument();
+  });
+});
+
 describe("FileTree rename", () => {
   // fsRename is a shared mock across both tests below; vitest does not clear
   // call history between tests in the same file (no clearMocks/restoreMocks

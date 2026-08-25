@@ -9,6 +9,7 @@ import {
   FilePlus,
   FolderOpen,
   FolderPlus,
+  Globe,
   MessageSquarePlus,
   Pencil,
   SquarePlus,
@@ -29,6 +30,7 @@ import {
 import { dirname, joinPath, relativePath } from "./lib/paths";
 import { beginEntryDrag, consumeDragClick } from "./lib/dragEntry";
 import { isRemoteUri } from "@/modules/ssh/lib/remotePath";
+import { isBrowserPreviewable } from "@/modules/preview/lib/previewableFile";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InfoDialog } from "@/components/InfoDialog";
@@ -135,6 +137,7 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
 
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const openInNewTab = useTabsStore((s) => s.openInNewTab);
+  const openPreviewFromSidebar = useTabsStore((s) => s.openPreviewFromSidebar);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const activatePanel = useUiStore((s) => s.activatePanel);
   const attachPath = useChatStore((s) => s.attachPath);
@@ -287,6 +290,24 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
             icon: SquarePlus,
             group: 0,
             onSelect: () => openInNewTab({ kind: "editor", path: entry.path }),
+          } satisfies ContextMenuItem,
+        ]
+      : []),
+    // Only for files the built-in browser can actually render, and only for
+    // local ones: the preview loads through Tauri's asset protocol, which has
+    // no way to reach a file that lives on an SFTP host.
+    ...(!entry.is_dir && !isRemoteUri(entry.path) && isBrowserPreviewable(entry.path)
+      ? [
+          {
+            id: "openInBrowser",
+            label: t("menu.openInBrowser"),
+            icon: Globe,
+            group: 0,
+            onSelect: () => {
+              if (openPreviewFromSidebar(entry.path).status === "at-capacity") {
+                setAtCapacity(true);
+              }
+            },
           } satisfies ContextMenuItem,
         ]
       : []),

@@ -129,6 +129,14 @@ interface TabsState {
    * else open/reuse a per-space preview tab.
    */
   openHtmlPreview: (tabId: string, fromLeafId: string, filePath: string) => void;
+  /**
+   * Open a local file in the built-in browser from the sidebar, where there is
+   * no owning tab/pane to anchor on. Delegates to openHtmlPreview's smart
+   * target when there is a real active tab, and falls back to openFromSidebar
+   * when there is none or it is a Launcher tab (whose paneTree TabsArea
+   * ignores, so splitting into it would render nothing).
+   */
+  openPreviewFromSidebar: (filePath: string) => OpenFromSidebarResult;
   setTabTitle: (id: string, title: string) => void;
   /** Update a terminal tab's title to follow its cwd, unless the user renamed it. */
   syncTabTitleToCwd: (id: string, cwd: string) => void;
@@ -877,6 +885,18 @@ export const useTabsStore = create<TabsState>()(
       paneOrder: [paneId],
     };
     set((state) => ({ tabs: [...state.tabs, newTab], activeId: id }));
+  },
+
+  openPreviewFromSidebar: (filePath) => {
+    const activeTab = get().tabs.find((t) => t.id === get().activeId);
+    if (!activeTab || activeTab.kind === "launcher") {
+      return get().openFromSidebar(
+        { kind: "preview", url: fileUrl(filePath) },
+        basename(filePath) || "preview",
+      );
+    }
+    get().openHtmlPreview(activeTab.id, activeTab.activeLeafId, filePath);
+    return { status: "opened" };
   },
 
   setTabTitle: (id, title) =>
