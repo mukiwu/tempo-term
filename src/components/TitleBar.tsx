@@ -500,7 +500,8 @@ function WindowMenuBar() {
  * (`decorations(false)`): a self-drawn text menu bar sits on the left, a
  * draggable region fills the middle, and the minimize / maximize-restore / close
  * controls sit on the right — each control group is kept non-draggable so clicks
- * aren't swallowed by the drag region. On macOS this renders nothing: the
+ * aren't swallowed by the drag region, and stacked above the app's modal
+ * backdrops so a dialog can never cover them. On macOS this renders nothing: the
  * native menu bar owns the menus (menu.rs) and TabBar is the window's first
  * row, reserving the traffic-light overlay space with its own left padding.
  */
@@ -547,7 +548,12 @@ export function TitleBar() {
         </span>
       </div>
       <WindowMenuBar />
-      <div className="flex h-full shrink-0 items-center">
+      {/* Above every modal backdrop (the tallest is CommitInputModal's z-195),
+          so minimize / maximize / close stay clickable while a dialog is open —
+          the native controls they replace always are. Only this group is
+          lifted: the menu bar beside it stays under the backdrop, or a dialog
+          could be dismissed-by-menu from behind its own overlay. */}
+      <div className="relative z-[300] flex h-full shrink-0 items-center">
         <Tooltip label={t("titleBar.minimize")} side="bottom">
           <button
             type="button"

@@ -124,6 +124,22 @@ describe("TitleBar", () => {
     expect(closeWindow).toHaveBeenCalledOnce();
   });
 
+  it("stacks the window controls above every modal backdrop", () => {
+    render(<TitleBar />);
+    // Backdrops are `fixed inset-0` and the title bar is not positioned, so
+    // without this the tallest of them (CommitInputModal, z-195) covers the
+    // controls and eats the click that should minimize or close the window.
+    const HIGHEST_BACKDROP_Z = 195;
+    let node = screen.getByLabelText("Minimize").parentElement;
+    let z: number | null = null;
+    while (node && z === null) {
+      const match = /(?:^|\s)z-\[(\d+)\]/.exec(node.className);
+      z = match ? Number(match[1]) : null;
+      node = node.parentElement;
+    }
+    expect(z).toBeGreaterThan(HIGHEST_BACKDROP_Z);
+  });
+
   it("marks the brand mark as a deep drag region so the icon and title drag the window", () => {
     render(<TitleBar />);
     const brand = screen.getByText("TempoTerm").closest("[data-tauri-drag-region]");
