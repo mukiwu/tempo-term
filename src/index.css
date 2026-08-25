@@ -165,6 +165,35 @@ body {
  */
 
 /*
+ * The one exception, and a deliberate one: the tab strip. Windows (and Linux)
+ * would draw a classic bar into a 36px row and squash every tab to fit it; the
+ * alternative, hiding the bar outright, leaves no sign that tabs continue past
+ * the edge. A 3px hairline costs almost nothing and reads the way VS Code's
+ * does.
+ *
+ * Keyed off the attribute's value, which TabBar only sets to "hairline" off
+ * macOS. WKWebView's overlay scrollbars are already thin, transient and free of
+ * layout cost; a ::-webkit-scrollbar rule is exactly what would trade them for
+ * an always-present bar that takes height.
+ */
+[data-tab-strip="hairline"]::-webkit-scrollbar {
+  height: 3px;
+}
+
+[data-tab-strip="hairline"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-tab-strip="hairline"]::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 999px;
+}
+
+[data-tab-strip="hairline"]:hover::-webkit-scrollbar-thumb {
+  background: var(--color-fg-subtle);
+}
+
+/*
  * Editor/diff proxy scrollbars (Windows only, where classic scrollbars are
  * always-on): the scroller's own bars are hidden and replaced with thin
  * overflow strips that the browser renders real native scrollbars for,

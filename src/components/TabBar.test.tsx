@@ -11,6 +11,16 @@ import { useSshDragStore } from "@/modules/ssh/lib/sshDrag";
 import { useUiStore } from "@/stores/uiStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
+// IS_MAC is a module-load const; expose it through a getter so a test can flip
+// the platform without re-importing the module.
+const platformMock = vi.hoisted(() => ({ isMac: false }));
+vi.mock("@/lib/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/platform")>()),
+  get IS_MAC() {
+    return platformMock.isMac;
+  },
+}));
+
 beforeEach(() => {
   useTabsStore.setState({
     spaces: [{ id: "s1", name: "One" }],
@@ -182,34 +192,183 @@ describe("TabBar insertion line", () => {
   it("renders the insertion line immediately before the tab named by insertBeforeId", () => {
     useEntryDragStore.setState({ tabBarHover: { insertBeforeId: "t2" } });
     render(<TabBar />);
-    const tabBar = document.querySelector("[data-tab-bar]");
-    expect(tabBar).not.toBeNull();
-    const children = Array.from(tabBar!.children);
+    const strip = document.querySelector("[data-tab-strip]");
+    expect(strip).not.toBeNull();
+    const children = Array.from(strip!.children);
     const lineIndex = children.findIndex((el) => el.getAttribute("data-testid") === "tab-insertion-line");
     const t2Index = children.findIndex((el) => el.getAttribute("data-tab-id") === "t2");
     expect(lineIndex).toBeGreaterThanOrEqual(0);
     expect(lineIndex).toBe(t2Index - 1);
   });
 
-  it("renders the insertion line after the last tab and before the add-tab button when insertBeforeId is null", () => {
+  it("renders the insertion line after the last tab when insertBeforeId is null", () => {
     useNoteDragStore.setState({ tabBarHover: { insertBeforeId: null } });
     render(<TabBar />);
-    const tabBar = document.querySelector("[data-tab-bar]");
-    expect(tabBar).not.toBeNull();
-    const children = Array.from(tabBar!.children);
+    const strip = document.querySelector("[data-tab-strip]");
+    expect(strip).not.toBeNull();
+    const children = Array.from(strip!.children);
     const lineIndex = children.findIndex((el) => el.getAttribute("data-testid") === "tab-insertion-line");
-    // The add-tab button sits inside its Tooltip wrapper, so match the child
-    // that contains it rather than the button element itself.
-    const addButtonIndex = children.findIndex(
-      (el) => el.querySelector('[aria-label="Add tab"]') !== null,
-    );
+    // Last thing in the strip: the add-tab button lives outside it now, so
+    // there is nothing left for the line to sit in front of.
     expect(lineIndex).toBeGreaterThanOrEqual(0);
-    expect(lineIndex).toBe(addButtonIndex - 1);
+    expect(lineIndex).toBe(children.length - 1);
+    expect(children[lineIndex - 1].getAttribute("data-tab-id")).toBe("t2");
   });
 
   it("falls back through the entry, note, and ssh drag stores in that order", () => {
     useSshDragStore.setState({ tabBarHover: { insertBeforeId: "t1" } });
     render(<TabBar />);
     expect(screen.getByTestId("tab-insertion-line")).toBeInTheDocument();
+  });
+});
+
+describe("TabBar overflow scrolling", () => {
+  function addTab(id: string, title: string) {
+    useTabsStore.setState((state) => ({
+      tabs: [
+        ...state.tabs,
+        {
+          id,
+          spaceId: "s1",
+          title,
+          kind: "terminal" as const,
+          paneTree: leaf(`p-${id}`, { kind: "terminal" as const }),
+          activeLeafId: `p-${id}`,
+          paneOrder: [`p-${id}`],
+        },
+      ],
+    }));
+  }
+
+  it("asks for the hairline scrollbar on the platforms that draw a classic one", () => {
+    render(<TabBar />);
+    const strip = document.querySelector("[data-tab-strip]");
+    expect(strip?.className).toContain("overflow-x-auto");
+    // index.css keys its ::-webkit-scrollbar rule off this value.
+    expect(strip?.getAttribute("data-tab-strip")).toBe("hairline");
+  });
+
+  it("keeps the window drag region off the scrolling strip", () => {
+    render(<TabBar />);
+    const strip = document.querySelector<HTMLElement>("[data-tab-strip]")!;
+
+    // Tauri swallows mousedown on a drag region to move the window, and the
+    // scrollbar belongs to this element, so a drag region here means the thumb
+    // can never be dragged. The slack beside the strip carries it instead.
+    expect(strip.hasAttribute("data-tauri-drag-region")).toBe(false);
+    const slack = strip.parentElement?.querySelector("[data-tauri-drag-region]");
+    expect(slack).not.toBeNull();
+  });
+
+  it("leaves macOS its native overlay scrollbar", () => {
+    platformMock.isMac = true;
+    try {
+      render(<TabBar />);
+      // A ::-webkit-scrollbar rule would swap WKWebView's thin, transient,
+      // zero-height overlay bar for an always-present one that takes height.
+      expect(document.querySelector("[data-tab-strip]")?.getAttribute("data-tab-strip")).toBe("");
+    } finally {
+      platformMock.isMac = false;
+    }
+  });
+
+  it("blocks the autoscroll that would eat middle-click-to-close", () => {
+    render(<TabBar />);
+    const strip = document.querySelector<HTMLElement>("[data-tab-strip]")!;
+    const tab = document.querySelector<HTMLElement>('[data-tab-id="t1"]')!;
+
+    // A scrolling strip is a scroll container, and Chromium opens autoscroll on
+    // a middle-click there instead of delivering the auxclick the close gesture
+    // listens for. Cancelled on the strip, so tabs and empty space both count.
+    for (const target of [strip, tab]) {
+      const middle = fireEvent.mouseDown(target, { button: 1, bubbles: true, cancelable: true });
+      expect(middle).toBe(false);
+    }
+    // Left-clicks are untouched — dragging a tab still has to work.
+    expect(fireEvent.mouseDown(tab, { button: 0, bubbles: true, cancelable: true })).toBe(true);
+  });
+
+  it("scrolls the strip sideways on a plain wheel", () => {
+    render(<TabBar />);
+    const strip = document.querySelector<HTMLElement>("[data-tab-strip]")!;
+
+    fireEvent.wheel(strip, { deltaY: 120 });
+
+    expect(strip.scrollLeft).toBe(120);
+  });
+
+  it("steps through the tabs on shift+wheel, stopping at the ends", () => {
+    addTab("t2", "Terminal 2");
+    render(<TabBar />);
+    const strip = document.querySelector<HTMLElement>("[data-tab-strip]")!;
+
+    fireEvent.wheel(strip, { deltaY: 100, shiftKey: true });
+    expect(useTabsStore.getState().activeId).toBe("t2");
+    // Last tab: nothing to step onto, and the strip must not scroll instead.
+    fireEvent.wheel(strip, { deltaY: 100, shiftKey: true });
+    expect(useTabsStore.getState().activeId).toBe("t2");
+    expect(strip.scrollLeft).toBe(0);
+
+    fireEvent.wheel(strip, { deltaY: -100, shiftKey: true });
+    expect(useTabsStore.getState().activeId).toBe("t1");
+  });
+
+  it("ignores a shift+wheel too small to count as a step", () => {
+    addTab("t2", "Terminal 2");
+    render(<TabBar />);
+    const strip = document.querySelector<HTMLElement>("[data-tab-strip]")!;
+
+    // A trackpad's fine deltas accumulate rather than stepping on every event.
+    for (let i = 0; i < 4; i++) {
+      fireEvent.wheel(strip, { deltaY: 20, shiftKey: true });
+    }
+    expect(useTabsStore.getState().activeId).toBe("t1");
+    fireEvent.wheel(strip, { deltaY: 20, shiftKey: true });
+    expect(useTabsStore.getState().activeId).toBe("t2");
+  });
+
+  it("keeps the add-tab button out of the scrolling strip", () => {
+    render(<TabBar />);
+    const add = screen.getByLabelText("Add tab");
+
+    // Outside the strip, so overflowing tabs scroll past it rather than over
+    // it — and it needs no backdrop of its own, which over a background image
+    // would only compound the row's tint into a visible patch.
+    expect(add.closest("[data-tab-strip]")).toBeNull();
+    // Still inside the drop target the drag stores resolve against.
+    expect(add.closest("[data-tab-bar]")).not.toBeNull();
+  });
+
+  it("brings a newly activated tab into view", () => {
+    addTab("t2", "Terminal 2");
+    render(<TabBar />);
+    const strip = document.querySelector<HTMLElement>("[data-tab-strip]")!;
+    const tab = document.querySelector<HTMLElement>('[data-tab-id="t2"]')!;
+    // jsdom does no layout: the strip shows 0-200 and t2 sits at 260-360.
+    strip.getBoundingClientRect = () => ({ left: 0, right: 200 }) as DOMRect;
+    tab.getBoundingClientRect = () => ({ left: 260, right: 360 }) as DOMRect;
+
+    act(() => {
+      useTabsStore.setState({ activeId: "t2" });
+    });
+
+    // Scrolled by exactly what it took to make t2's right edge flush, no more.
+    expect(strip.scrollLeft).toBe(160);
+  });
+
+  it("leaves the strip alone when the activated tab is already visible", () => {
+    addTab("t2", "Terminal 2");
+    render(<TabBar />);
+    const strip = document.querySelector<HTMLElement>("[data-tab-strip]")!;
+    const tab = document.querySelector<HTMLElement>('[data-tab-id="t2"]')!;
+    strip.scrollLeft = 40;
+    strip.getBoundingClientRect = () => ({ left: 0, right: 200 }) as DOMRect;
+    tab.getBoundingClientRect = () => ({ left: 90, right: 190 }) as DOMRect;
+
+    act(() => {
+      useTabsStore.setState({ activeId: "t2" });
+    });
+
+    expect(strip.scrollLeft).toBe(40);
   });
 });
