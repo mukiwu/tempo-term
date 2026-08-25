@@ -114,8 +114,17 @@ body {
    * wrapper's own tint, so the gutter matches the code beside it and the
    * horizontal-scroll bleed returns only in wallpaper mode, where it was the
    * behaviour before the gutter got a backdrop at all.
+   *
+   * Transparent alone would let horizontally scrolled code slide through from
+   * beneath the numbers, so the gutter paints its own copy of the wallpaper
+   * plus the same tint instead: opaque enough to hide the code, identical to
+   * what sits beside it, and static, unlike anything that has to chase
+   * scrollLeft from JS. BackgroundImageLayer measures the two values it is
+   * pinned with; see gutterWallpaper in themes/editorTheme.ts.
    */
   --color-editor-gutter-bg: transparent;
+  --cm-gutter-bg-image: linear-gradient(var(--color-bg), var(--color-bg)),
+    var(--wallpaper-image);
   --color-bg-inset: color-mix(
     in srgb,
     var(--color-bg-inset-solid) var(--wallpaper-surface-alpha, 82%),

@@ -34,6 +34,38 @@ describe("BackgroundImageLayer", () => {
     expect(screen.queryByTestId("background-image-window")).toBeNull();
   });
 
+  it("publishes where the image landed so the gutter can pin the same copy", () => {
+    useSettingsStore.setState({
+      backgroundImagePath: "/app-data/appearance/background.png",
+      backgroundImageOpacity: 20,
+      backgroundImageScope: "workspace",
+    });
+    const { unmount } = render(<BackgroundImageLayer scope="workspace" />);
+    const image = screen.getByTestId("background-image-workspace");
+    Object.defineProperty(image, "naturalWidth", { value: 200, configurable: true });
+    Object.defineProperty(image, "naturalHeight", { value: 100, configurable: true });
+    image.getBoundingClientRect = () =>
+      ({ left: 40, top: 20, width: 400, height: 400 }) as DOMRect;
+
+    act(() => {
+      image.dispatchEvent(new Event("load"));
+    });
+
+    // cover on a 400x400 box scales the 200x100 source by 4, so it overflows
+    // 200px to each side of a box that itself starts 40px into the viewport.
+    const root = document.documentElement.style;
+    expect(root.getPropertyValue("--wallpaper-fixed-size")).toBe("800px 400px");
+    expect(root.getPropertyValue("--wallpaper-fixed-pos")).toBe("-160px 20px");
+    expect(root.getPropertyValue("--wallpaper-image")).toBe(
+      'url("/app-data/appearance/background.png")',
+    );
+
+    unmount();
+    expect(root.getPropertyValue("--wallpaper-image")).toBe("");
+    expect(root.getPropertyValue("--wallpaper-fixed-size")).toBe("");
+    expect(root.getPropertyValue("--wallpaper-fixed-pos")).toBe("");
+  });
+
   it("does not mount an invisible or unconfigured image", () => {
     const { rerender } = render(<BackgroundImageLayer scope="workspace" />);
     expect(screen.queryByRole("img", { hidden: true })).toBeNull();
