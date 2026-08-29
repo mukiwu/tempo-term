@@ -55,7 +55,7 @@ describe("GitGraphTabContent pending commit selection", () => {
     await waitFor(() => expect(screen.getByText("msg bbb2222")).toBeInTheDocument());
     // Selecting opens the details panel, which fetches this commit's details.
     await waitFor(() => expect(screen.getAllByText("bbb2222").length).toBeGreaterThan(0));
-    expect(usePendingGraphSelectionStore.getState().hash).toBeNull();
+    await waitFor(() => expect(usePendingGraphSelectionStore.getState().hash).toBeNull());
   });
 
   it("loads more pages to find a pending commit not on the first page, up to a cap", async () => {
@@ -67,7 +67,7 @@ describe("GitGraphTabContent pending commit selection", () => {
     render(<GitGraphTabContent />);
 
     await waitFor(() => expect(screen.getByText("msg ccc3333")).toBeInTheDocument());
-    expect(usePendingGraphSelectionStore.getState().hash).toBeNull();
+    await waitFor(() => expect(usePendingGraphSelectionStore.getState().hash).toBeNull());
   });
 
   it("gives up silently once retries are exhausted and the hash is never found", async () => {
@@ -153,7 +153,7 @@ describe("GitGraphTabContent pending commit selection", () => {
     usePendingGraphSelectionStore.getState().request("eee5555");
 
     await waitFor(() => expect(screen.getAllByText("eee5555").length).toBeGreaterThan(0));
-    expect(usePendingGraphSelectionStore.getState().hash).toBeNull();
+    await waitFor(() => expect(usePendingGraphSelectionStore.getState().hash).toBeNull());
   });
 
   it("does not burn retries or stack loads on re-renders while a page load is in flight", async () => {
