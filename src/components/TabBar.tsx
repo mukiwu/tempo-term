@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   FileCode,
@@ -81,8 +81,14 @@ function TabItem({ id }: { id: string }) {
   const activeId = useTabsStore((s) => s.activeId);
   const setActive = useTabsStore((s) => s.setActive);
   const setTabTitle = useTabsStore((s) => s.setTabTitle);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
   const { dirty, requestClose, confirmCloseDialog } = useTabCloseRequest(tab);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -115,7 +121,9 @@ function TabItem({ id }: { id: string }) {
     <div
       ref={setNodeRef}
       style={{
-        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        transform: transform
+          ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+          : undefined,
         transition,
       }}
       {...attributes}
@@ -147,11 +155,16 @@ function TabItem({ id }: { id: string }) {
       // font, so a bold/regular swap would jostle tab widths on every
       // activation.
       className={`group relative flex cursor-pointer items-center gap-2 px-3 text-xs transition-colors ${
-        active ? "bg-accent/10 text-fg" : "text-fg-muted hover:bg-bg-elevated/60"
+        active
+          ? "bg-accent/10 text-fg"
+          : "text-fg-muted hover:bg-bg-elevated/60"
       } ${isDragging ? "opacity-40" : ""}`}
     >
       {active && (
-        <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-[2px] bg-accent" />
+        <span
+          aria-hidden="true"
+          className="absolute inset-x-0 bottom-0 h-[2px] bg-accent"
+        />
       )}
       <Icon size={13} className="shrink-0" />
       {editing ? (
@@ -181,7 +194,10 @@ function TabItem({ id }: { id: string }) {
         all, with no undo — hovered to plain grey. The weight now matches the
         cost, and the tooltip names which is which.
       */}
-      <Tooltip label={dirty ? t("editor:unsaved") : t("actions.closeTab")} side="bottom">
+      <Tooltip
+        label={dirty ? t("editor:unsaved") : t("actions.closeTab")}
+        side="bottom"
+      >
         <button
           type="button"
           aria-label={dirty ? t("editor:unsaved") : t("actions.closeTab")}
@@ -244,9 +260,30 @@ function TabOverlay({ tab }: { tab: Tab }) {
   );
 }
 
+/**
+ * Wheel distance, in pixels, that steps one tab across with Shift held. One
+ * mouse notch is 100 on both platforms, so a notch is a tab; a trackpad's finer
+ * deltas accumulate up to it, walking the tabs one at a time instead of flying
+ * past them.
+ */
+const TAB_STEP_DELTA = 100;
+
+/** A wheel event's delta in pixels, whatever unit the device reports it in. */
+function wheelPixels(event: WheelEvent, viewport: number): number {
+  const delta = event.deltaY !== 0 ? event.deltaY : event.deltaX;
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+    return delta * 16;
+  }
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    return delta * viewport;
+  }
+  return delta;
+}
+
 export function TabBar() {
   const { t } = useTranslation();
   const tabs = useTabsStore((s) => s.tabs);
+  const activeId = useTabsStore((s) => s.activeId);
   const activeSpaceId = useTabsStore((s) => s.activeSpaceId);
   const visibleTabs = tabs.filter((tab) => tab.spaceId === activeSpaceId);
   const openLauncherTab = useTabsStore((s) => s.openLauncherTab);
@@ -260,10 +297,100 @@ export function TabBar() {
   const entryTabBarHover = useEntryDragStore((s) => s.tabBarHover);
   const noteTabBarHover = useNoteDragStore((s) => s.tabBarHover);
   const sshTabBarHover = useSshDragStore((s) => s.tabBarHover);
-  const tabBarHover = entryTabBarHover ?? noteTabBarHover ?? sshTabBarHover ?? null;
+  const tabBarHover =
+    entryTabBarHover ?? noteTabBarHover ?? sshTabBarHover ?? null;
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
   const draggingTab = visibleTabs.find((tab) => tab.id === draggingId);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // The strip's own scrollbar is hidden, so a tab past either edge would be
+  // reachable by the wheel alone. Activating one — Ctrl+Tab, a new tab, a file
+  // opened from the explorer — brings it in, by the shortest distance that
+  // makes it whole, leaving an already-visible tab exactly where it is.
+  //
+  // Positioned by hand rather than with scrollIntoView: WKWebView's is
+  // unreliable inside nested scroll containers (see NoteToc), and it would also
+  // be free to scroll ancestors, which here means yanking the whole shell
+  // sideways. Rects, not offsetLeft — the strip is not a positioned ancestor.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip || !activeId) {
+      return;
+    }
+    const tab = strip.querySelector<HTMLElement>(
+      `[data-tab-id="${CSS.escape(activeId)}"]`,
+    );
+    if (!tab) {
+      return;
+    }
+    const stripBox = strip.getBoundingClientRect();
+    const tabBox = tab.getBoundingClientRect();
+    if (tabBox.left < stripBox.left) {
+      strip.scrollLeft -= stripBox.left - tabBox.left;
+    } else if (tabBox.right > stripBox.right) {
+      strip.scrollLeft += tabBox.right - stripBox.right;
+    }
+  }, [activeId]);
+
+  // A plain wheel scrolls the strip sideways — the browser only does that by
+  // itself once the strip can scroll nothing else, and here it can (the tabs
+  // stretch it to the row's full height), so it is done explicitly. Shift+wheel
+  // steps through the tabs instead, which is worth more on a bar than the
+  // sideways scroll Shift normally means.
+  //
+  // Registered by hand because React marks wheel listeners passive, and both
+  // branches have to cancel the default. Tab state is read at event time, so
+  // this attaches once instead of on every tab change.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) {
+      return;
+    }
+    let pending = 0;
+    const step = (direction: 1 | -1) => {
+      const state = useTabsStore.getState();
+      const spaceTabs = state.tabs.filter(
+        (tab) => tab.spaceId === state.activeSpaceId,
+      );
+      const index = spaceTabs.findIndex((tab) => tab.id === state.activeId);
+      const next = index === -1 ? undefined : spaceTabs[index + direction];
+      // Stops at either end rather than wrapping: a wheel has no detent to
+      // tell you that you just crossed from the last tab back to the first.
+      if (next) {
+        state.setActive(next.id);
+      }
+    };
+    const onWheel = (event: WheelEvent) => {
+      const delta = wheelPixels(event, strip.clientWidth);
+      if (delta === 0) {
+        return;
+      }
+      if (event.shiftKey) {
+        event.preventDefault();
+        // Reset on a reversal so a direction change takes effect immediately
+        // instead of first paying off the distance built up the other way.
+        pending =
+          Math.sign(pending) === -Math.sign(delta) ? delta : pending + delta;
+        // Direction comes from the accumulated distance, not from what is left
+        // after a step is paid out — a leftover of 0 would read as forwards.
+        const direction = pending > 0 ? 1 : -1;
+        while (Math.abs(pending) >= TAB_STEP_DELTA) {
+          pending -= direction * TAB_STEP_DELTA;
+          step(direction);
+        }
+        return;
+      }
+      // A trackpad's own sideways swipe already arrives as deltaX; leave it be.
+      if (event.deltaX !== 0) {
+        return;
+      }
+      event.preventDefault();
+      strip.scrollLeft += delta;
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
 
   function handleDragStart(event: DragStartEvent) {
     setDraggingId(String(event.active.id));
@@ -288,7 +415,11 @@ export function TabBar() {
         IS_MAC ? "pl-20" : "pl-3"
       }`}
     >
-      <Tooltip label={t("workspace.toggleSidebar")} side="bottom" className="shrink-0">
+      <Tooltip
+        label={t("workspace.toggleSidebar")}
+        side="bottom"
+        className="shrink-0"
+      >
         <button
           type="button"
           aria-label={t("workspace.toggleSidebar")}
@@ -310,27 +441,79 @@ export function TabBar() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
+        {/* data-tab-bar is the drop target the drag stores resolve against, so
+            it spans the strip and the slack beside it, exactly as it did when
+            the strip filled the row. The strip itself only takes the width its
+            tabs need, which leaves the add button sitting right after the last
+            one until they overflow — then the strip shrinks and scrolls
+            underneath, and the button stays put without needing a backdrop of
+            its own to hide them behind. */}
         <div
           data-tab-bar
-          data-tauri-drag-region
-          // self-stretch + items-stretch let tabs fill the bar's content
-          // height, so the active fill and underline sit flush against the
-          // bar's bottom border.
-          className="flex min-w-0 flex-1 items-stretch gap-1 self-stretch overflow-x-auto"
+          className="flex min-w-0 flex-1 items-stretch gap-1 self-stretch"
         >
-          <SortableContext
-            items={visibleTabs.map((tab) => tab.id)}
-            strategy={horizontalListSortingStrategy}
+          <div
+            ref={stripRef}
+            // The hairline scrollbar in index.css keys off this value, and only
+            // the platforms that draw classic scrollbars get it: Windows, where
+            // a bar with real height squashing a 36px row was the bug, and
+            // Linux, which draws them the same way. macOS is left alone — its
+            // overlay scrollbar is already thin, transient and free of layout
+            // cost, and a ::-webkit-scrollbar rule would trade that for an
+            // always-present bar that takes height, making things worse there
+            // to fix something it never had.
+            data-tab-strip={IS_MAC ? "" : "hairline"}
+            // No data-tauri-drag-region here, unlike before: Tauri swallows
+            // mousedown on a drag region to start moving the window, and the
+            // strip's own scrollbar is part of this element, so its thumb could
+            // never be dragged. The slack beside the strip carries the drag
+            // region instead, which is the part of the row that was ever worth
+            // grabbing — the tabs themselves were never draggable-by-window.
+            onMouseDown={(e) => {
+              // Once the strip overflows it is a scroll container, and Chromium
+              // answers a middle-click on one with autoscroll — swallowing the
+              // auxclick a tab's close-on-middle-click needs. Cancelling the
+              // default here covers the tabs and the empty space alike; auxclick
+              // fires on mouseup, so it still arrives.
+              if (e.button === 1) {
+                e.preventDefault();
+              }
+            }}
+            // items-stretch, inside a parent that stretches too, lets tabs fill
+            // the bar's content height, so the active fill and underline sit
+            // flush against the bar's bottom border.
+            //
+            // Windows renders a classic scrollbar here, which takes real height
+            // out of a 36px row and squashes every tab to make room — the same
+            // reason the editor and diff views proxy their scrollbars (#327).
+            // index.css restyles this one strip down to a 3px hairline (the
+            // data-tab-strip attribute is the hook). The wheel scrolls it too: a
+            // vertical wheel over a horizontally-only scrollable box scrolls it
+            // sideways.
+            className="flex min-w-0 shrink items-stretch gap-1 overflow-x-auto"
           >
-            {visibleTabs.map((tab) => (
-              <Fragment key={tab.id}>
-                {tabBarHover?.insertBeforeId === tab.id && <TabInsertionLine />}
-                <TabItem id={tab.id} />
-              </Fragment>
-            ))}
-          </SortableContext>
-          {tabBarHover !== null && tabBarHover.insertBeforeId === null && <TabInsertionLine />}
-          <Tooltip label={t("workspace.addTab")} side="bottom" className="shrink-0 self-center">
+            <SortableContext
+              items={visibleTabs.map((tab) => tab.id)}
+              strategy={horizontalListSortingStrategy}
+            >
+              {visibleTabs.map((tab) => (
+                <Fragment key={tab.id}>
+                  {tabBarHover?.insertBeforeId === tab.id && (
+                    <TabInsertionLine />
+                  )}
+                  <TabItem id={tab.id} />
+                </Fragment>
+              ))}
+            </SortableContext>
+            {tabBarHover !== null && tabBarHover.insertBeforeId === null && (
+              <TabInsertionLine />
+            )}
+          </div>
+          <Tooltip
+            label={t("workspace.addTab")}
+            side="bottom"
+            className="shrink-0 self-center"
+          >
             <button
               type="button"
               aria-label={t("workspace.addTab")}
@@ -340,10 +523,19 @@ export function TabBar() {
               <Plus size={16} />
             </button>
           </Tooltip>
+          {/* The slack the strip used to hold: still part of the drop target,
+            still a place to grab the window by. */}
+          <div data-tauri-drag-region className="min-w-0 flex-1 self-stretch" />
         </div>
-        <DragOverlay>{draggingTab ? <TabOverlay tab={draggingTab} /> : null}</DragOverlay>
+        <DragOverlay>
+          {draggingTab ? <TabOverlay tab={draggingTab} /> : null}
+        </DragOverlay>
       </DndContext>
-      <Tooltip label={t("explorer:findFiles")} side="bottom" className="shrink-0">
+      <Tooltip
+        label={t("explorer:findFiles")}
+        side="bottom"
+        className="shrink-0"
+      >
         <button
           type="button"
           aria-label={t("explorer:findFiles")}
@@ -354,7 +546,11 @@ export function TabBar() {
           <Search size={15} />
         </button>
       </Tooltip>
-      <Tooltip label={t("workspace.toggleRightSidebar")} side="bottom" className="shrink-0">
+      <Tooltip
+        label={t("workspace.toggleRightSidebar")}
+        side="bottom"
+        className="shrink-0"
+      >
         <button
           type="button"
           aria-label={t("workspace.toggleRightSidebar")}

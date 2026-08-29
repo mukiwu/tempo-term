@@ -114,8 +114,17 @@ body {
    * wrapper's own tint, so the gutter matches the code beside it and the
    * horizontal-scroll bleed returns only in wallpaper mode, where it was the
    * behaviour before the gutter got a backdrop at all.
+   *
+   * Transparent alone would let horizontally scrolled code slide through from
+   * beneath the numbers, so the gutter paints its own copy of the wallpaper
+   * plus the same tint instead: opaque enough to hide the code, identical to
+   * what sits beside it, and static, unlike anything that has to chase
+   * scrollLeft from JS. BackgroundImageLayer measures the two values it is
+   * pinned with; see gutterWallpaper in themes/editorTheme.ts.
    */
   --color-editor-gutter-bg: transparent;
+  --cm-gutter-bg-image: linear-gradient(var(--color-bg), var(--color-bg)),
+    var(--wallpaper-image);
   --color-bg-inset: color-mix(
     in srgb,
     var(--color-bg-inset-solid) var(--wallpaper-surface-alpha, 82%),
@@ -163,6 +172,35 @@ body {
  * "show scroll bars when scrolling" mode. Falling back to the system overlay
  * keeps scrollbars hidden until you scroll and off the text.
  */
+
+/*
+ * The one exception, and a deliberate one: the tab strip. Windows (and Linux)
+ * would draw a classic bar into a 36px row and squash every tab to fit it; the
+ * alternative, hiding the bar outright, leaves no sign that tabs continue past
+ * the edge. A 3px hairline costs almost nothing and reads the way VS Code's
+ * does.
+ *
+ * Keyed off the attribute's value, which TabBar only sets to "hairline" off
+ * macOS. WKWebView's overlay scrollbars are already thin, transient and free of
+ * layout cost; a ::-webkit-scrollbar rule is exactly what would trade them for
+ * an always-present bar that takes height.
+ */
+[data-tab-strip="hairline"]::-webkit-scrollbar {
+  height: 3px;
+}
+
+[data-tab-strip="hairline"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-tab-strip="hairline"]::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 999px;
+}
+
+[data-tab-strip="hairline"]:hover::-webkit-scrollbar-thumb {
+  background: var(--color-fg-subtle);
+}
 
 /*
  * Editor/diff proxy scrollbars (Windows only, where classic scrollbars are

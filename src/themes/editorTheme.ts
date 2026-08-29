@@ -37,7 +37,8 @@ import { DEFAULT_THEME_ID } from "./themes";
  * --color-editor-gutter-bg 而不是直接用 --color-bg：沒有背景圖時兩者同值，
  * 有背景圖時 --color-bg 是半透明的，編輯器外層已經塗過一層，gutter 再塗一層
  * 會疊成一條明顯更深的直帶，所以那個 token 在背景圖模式下會退回透明
- * （見 index.css 的 .wallpaper-surface）。
+ * （見 index.css 的 .wallpaper-surface）。那樣 gutter 就擋不住從底下滑過去的
+ * 內容，所以背景圖模式改成讓 gutter 自己畫一份對齊的桌布，見 gutterWallpaper。
  */
 const SURFACE = {
   background: "transparent",
@@ -56,6 +57,34 @@ const LINE_HIGHLIGHT: Record<string, string> = {
   "gruvbox-dark": "#32302f",
   "solarized-light": "#eee8d5",
 };
+
+/**
+ * 背景圖模式下，gutter 自己畫一份和底下完全對齊的桌布。
+ *
+ * gutter 是 sticky 固定在左側的，橫向捲動時程式碼與 diff 變更行的底色會滑到
+ * 行號底下。沒有背景圖時 gutter 有自己的不透明底色，擋得住；有背景圖時 #342
+ * 把那層底色拿掉了（它會疊在編輯器外層的 tint 上，變成一條更深的直帶），內容
+ * 就直接透出來和行號疊在一起。
+ *
+ * 補一層純色會把那條直帶帶回來，改用 JS 追 scrollLeft 去裁掉捲過去的內容則會
+ * 抖——捲動是 compositor 在做的，JS 拿到 scroll 事件時畫面已經動過了。所以這裡
+ * 讓 gutter 畫「桌布 + 同一層 tint」：不透明，擋得住內容，看起來又和旁邊一模
+ * 一樣，而且完全靜態，沒有任何東西需要跟著捲動更新。
+ *
+ * 對齊靠 background-attachment: fixed（定位原點是 viewport，不受 gutter 自己
+ * 被捲到哪影響）配上 BackgroundImageLayer 量好的尺寸與位置。沒有背景圖時
+ * --cm-gutter-bg-image 沒有定義，整條規則就是 none，gutter 維持原本的底色。
+ */
+const gutterWallpaper: Extension = EditorView.theme({
+  ".cm-gutters": {
+    backgroundImage: "var(--cm-gutter-bg-image, none)",
+    backgroundRepeat: "no-repeat",
+    // 第一層是 tint，跟著 gutter 走；第二層是桌布，釘在 viewport 上。
+    backgroundAttachment: "scroll, fixed",
+    backgroundSize: "auto, var(--wallpaper-fixed-size, cover)",
+    backgroundPosition: "0 0, var(--wallpaper-fixed-pos, center)",
+  },
+});
 
 /**
  * 當前行高亮，外加「有選取時讓位」的行為。
@@ -180,7 +209,7 @@ const oneLightEditor: Extension = [
   activeLine(LINE_HIGHLIGHT["one-light"]),
 ];
 
-const EDITOR_THEMES: Record<string, Extension> = {
+const SYNTAX_THEMES: Record<string, Extension> = {
   "vitesse-dark": vitesseDarkEditor,
   "vitesse-light": vitesseLightEditor,
   "github-dark": githubDarkEditor,
@@ -191,6 +220,11 @@ const EDITOR_THEMES: Record<string, Extension> = {
   "gruvbox-dark": gruvboxDarkEditor,
   "solarized-light": solarizedLightEditor,
 };
+
+/** 語法主題配上所有主題共用的編輯器行為（目前是 gutter 的桌布層）。 */
+const EDITOR_THEMES: Record<string, Extension> = Object.fromEntries(
+  Object.entries(SYNTAX_THEMES).map(([id, syntax]) => [id, [gutterWallpaper, syntax]]),
+);
 
 /** 依 app 主題 id 挑選對應的編輯器語法高亮主題；未知 id 回退到預設主題。 */
 export function editorSyntaxTheme(themeId: string): Extension {
