@@ -500,8 +500,8 @@ function WindowMenuBar() {
  * (`decorations(false)`): a self-drawn text menu bar sits on the left, a
  * draggable region fills the middle, and the minimize / maximize-restore / close
  * controls sit on the right — each control group is kept non-draggable so clicks
- * aren't swallowed by the drag region, and stacked above the app's modal
- * backdrops so a dialog can never cover them. On macOS this renders nothing: the
+ * aren't swallowed by the drag region. The controls render through a portal
+ * to document.body so no dialog can cover them. On macOS this renders nothing: the
  * native menu bar owns the menus (menu.rs) and TabBar is the window's first
  * row, reserving the traffic-light overlay space with its own left padding.
  */
@@ -532,59 +532,74 @@ export function TitleBar() {
   }
 
   return (
-    <div className="flex h-8 shrink-0 items-center border-b border-border bg-bg-inset">
-      {/* Brand mark, and the window's drag handle. "deep" (not a bare
-          data-tauri-drag-region) makes clicks anywhere in the subtree drag the
-          window — a bare attribute is "self mode" and only drags on direct hits
-          of this div, so grabbing the icon or the title text (both children)
-          would do nothing. shrink-0 keeps it from being squeezed by the menu. */}
-      <div
-        data-tauri-drag-region="deep"
-        className="flex h-full shrink-0 select-none items-center gap-1.5 pl-2.5 pr-1"
-      >
-        <img src="/icon.png" alt="" className="h-4 w-4 rounded-sm" draggable={false} />
-        <span className="whitespace-nowrap text-[13px] font-semibold text-fg">
-          {t("appName")}
-        </span>
+    <>
+      <div className="flex h-8 shrink-0 items-center border-b border-border bg-bg-inset">
+        {/* Brand mark, and the window's drag handle. "deep" (not a bare
+            data-tauri-drag-region) makes clicks anywhere in the subtree drag the
+            window — a bare attribute is "self mode" and only drags on direct hits
+            of this div, so grabbing the icon or the title text (both children)
+            would do nothing. shrink-0 keeps it from being squeezed by the menu. */}
+        <div
+          data-tauri-drag-region="deep"
+          className="flex h-full shrink-0 select-none items-center gap-1.5 pl-2.5 pr-1"
+        >
+          <img src="/icon.png" alt="" className="h-4 w-4 rounded-sm" draggable={false} />
+          <span className="whitespace-nowrap text-[13px] font-semibold text-fg">
+            {t("appName")}
+          </span>
+        </div>
+        <WindowMenuBar />
+        {/* Layout stand-in for the window controls, which render through the
+            portal below: it keeps the menu bar's overflow math and the drag slack
+            exactly as wide as if the three w-11 buttons sat here. */}
+        <div aria-hidden className="h-full w-[132px] shrink-0" />
       </div>
-      <WindowMenuBar />
-      {/* Above every modal backdrop (the tallest is CommitInputModal's z-195),
-          so minimize / maximize / close stay clickable while a dialog is open —
-          the native controls they replace always are. Only this group is
-          lifted: the menu bar beside it stays under the backdrop, or a dialog
-          could be dismissed-by-menu from behind its own overlay. */}
-      <div className="relative z-[300] flex h-full shrink-0 items-center">
-        <Tooltip label={t("titleBar.minimize")} side="bottom">
-          <button
-            type="button"
-            aria-label={t("titleBar.minimize")}
-            onClick={() => void minimizeWindow()}
-            className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
-          >
-            <Minus size={15} />
-          </button>
-        </Tooltip>
-        <Tooltip label={isMaximized ? t("titleBar.restore") : t("titleBar.maximize")} side="bottom">
-          <button
-            type="button"
-            aria-label={isMaximized ? t("titleBar.restore") : t("titleBar.maximize")}
-            onClick={() => void toggleMaximizeWindow()}
-            className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
-          >
-            {isMaximized ? <RestoreIcon size={11} /> : <Square size={12} />}
-          </button>
-        </Tooltip>
-        <Tooltip label={t("titleBar.close")} side="bottom">
-          <button
-            type="button"
-            aria-label={t("titleBar.close")}
-            onClick={() => void closeWindow()}
-            className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-danger hover:text-white"
-          >
-            <X size={16} />
-          </button>
-        </Tooltip>
-      </div>
-    </div>
+      {/* The controls live outside the app tree on purpose. A z-index only
+          competes inside its own stacking context, and App's root is `isolate`
+          (it needs to be, for the wallpaper's -z-10). CommitInputModal and the
+          tab-close ConfirmDialog portal their `fixed inset-0` backdrops to
+          document.body — outside that context — so a raised z-index inside the
+          tree can never climb above them. Portalled to body and pinned to the
+          top-right, at z-300, the controls out-rank every backdrop wherever it is
+          mounted, so minimize / maximize / close stay clickable while a dialog is
+          open — the native controls they replace always are. Only the controls
+          are lifted: the menu bar stays under the backdrop, or a dialog could be
+          dismissed-by-menu from behind its own overlay. */}
+      {createPortal(
+        <div className="fixed right-0 top-0 z-[300] flex h-8 items-center">
+          <Tooltip label={t("titleBar.minimize")} side="bottom">
+            <button
+              type="button"
+              aria-label={t("titleBar.minimize")}
+              onClick={() => void minimizeWindow()}
+              className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
+            >
+              <Minus size={15} />
+            </button>
+          </Tooltip>
+          <Tooltip label={isMaximized ? t("titleBar.restore") : t("titleBar.maximize")} side="bottom">
+            <button
+              type="button"
+              aria-label={isMaximized ? t("titleBar.restore") : t("titleBar.maximize")}
+              onClick={() => void toggleMaximizeWindow()}
+              className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
+            >
+              {isMaximized ? <RestoreIcon size={11} /> : <Square size={12} />}
+            </button>
+          </Tooltip>
+          <Tooltip label={t("titleBar.close")} side="bottom">
+            <button
+              type="button"
+              aria-label={t("titleBar.close")}
+              onClick={() => void closeWindow()}
+              className="flex h-8 w-11 items-center justify-center text-fg-subtle transition-colors hover:bg-danger hover:text-white"
+            >
+              <X size={16} />
+            </button>
+          </Tooltip>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
