@@ -12,6 +12,7 @@
 ### 貢獻者
 
 - @yw-chan (#348, #350)
+- @oberonlai (#347)
 
 ## English
 
@@ -27,3 +28,4 @@
 ### Contributors
 
 - @yw-chan (#348, #350)
+- @oberonlai (#347)
