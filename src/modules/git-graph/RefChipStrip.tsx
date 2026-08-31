@@ -152,15 +152,24 @@ function OverflowChips({
         close();
       }
     }
+    function onScroll(event: Event) {
+      // Capture-phase scroll on window sees every descendant's scrolling,
+      // including the list's own overflow-y-auto box — and closing on that
+      // would put the tail of a long list permanently out of reach.
+      if (listRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      close();
+    }
     document.addEventListener("mousedown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
     // The list is anchored to a row that scrolls away underneath it.
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", close, true);
     return () => {
       document.removeEventListener("mousedown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", close, true);
     };
   }, [open]);

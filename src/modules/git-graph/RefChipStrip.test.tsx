@@ -148,6 +148,61 @@ describe("RefChipStrip", () => {
     expect(chipOf("refs/notes/commits").className).not.toContain("hover:");
   });
 
+  it("stays open while its own list scrolls, and closes when anything else does", () => {
+    render(
+      <RefChipStrip
+        refs={[
+          ref("branch", "one"),
+          ref("branch", "two"),
+          ref("branch", "three"),
+          ref("branch", "four"),
+          ref("branch", "five"),
+        ]}
+        options={OPTIONS}
+        labels={LABELS}
+      />,
+    );
+    fireEvent.click(screen.getByText("+2"));
+    const list = screen.getByText("five").closest("div") as HTMLElement;
+
+    // The list itself is max-h + overflow-y-auto: reading past its fold is a
+    // scroll event whose target is the list. Capture-phase listeners on window
+    // see it too, and closing on it would make the tail unreachable.
+    fireEvent.scroll(list);
+    expect(screen.queryByText("five")).not.toBeNull();
+
+    // The graph scrolling underneath is what the dismissal is for.
+    fireEvent.scroll(document);
+    expect(screen.queryByText("five")).toBeNull();
+  });
+
+  it("closes on Escape and on a click outside, but not on a click inside", () => {
+    render(
+      <RefChipStrip
+        refs={[
+          ref("branch", "one"),
+          ref("branch", "two"),
+          ref("branch", "three"),
+          ref("branch", "four"),
+        ]}
+        options={OPTIONS}
+        labels={LABELS}
+      />,
+    );
+    const opener = screen.getByText("+1");
+
+    fireEvent.click(opener);
+    fireEvent.mouseDown(screen.getByText("four"));
+    expect(screen.queryByText("four")).not.toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("four")).toBeNull();
+
+    fireEvent.click(opener);
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByText("four")).toBeNull();
+  });
+
   it("leaves every ref on the row when the user turns the options off", () => {
     render(
       <RefChipStrip
