@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Clock, GitBranch, Tag, User } from "lucide-react";
+import { Clock, GitBranch, User } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import type { CommitNode, CommitRef, GraphSelection } from "./types";
+import { RefChipStrip } from "./RefChipStrip";
+import { DEFAULT_REF_CHIP_OPTIONS, type RefChipOptions } from "./lib/refChips";
 import {
   computeGraphLayout,
   DEFAULT_GEOMETRY,
@@ -18,6 +20,7 @@ export interface GitGraphLabels {
   emptyHint: string;
   loadMore: string;
   refHint: string;
+  moreRefs: string;
 }
 
 interface GitGraphProps {
@@ -25,21 +28,19 @@ interface GitGraphProps {
   selection: GraphSelection | null;
   onSelectCommit: (commit: CommitNode, options: { shiftKey: boolean }) => void;
   onCommitContextMenu?: (commit: CommitNode, x: number, y: number) => void;
-  onRefContextMenu?: (ref: CommitRef, x: number, y: number) => void;
+  onRefContextMenu?: (
+    ref: CommitRef,
+    /** Remote refs folded into the clicked chip; empty for an unmerged one. */
+    remotes: CommitRef[],
+    x: number,
+    y: number,
+  ) => void;
+  /** How ref chips are condensed; defaults to the shipped defaults. */
+  refChipOptions?: RefChipOptions;
   hasMore?: boolean;
   onLoadMore?: () => void;
   labels: GitGraphLabels;
 }
-
-// Decoration chip styles per ref kind, built from semantic tokens.
-const REF_CHIP_STYLES: Record<string, string> = {
-  head: "border-success/40 bg-success/15 text-success",
-  branch: "border-accent/40 bg-accent/15 text-accent",
-  tag: "border-warning/40 bg-warning/15 text-warning",
-  remote: "border-border-strong bg-bg-inset text-fg-subtle",
-  stash: "border-purple-500/40 bg-purple-500/15 text-purple-500",
-  unknown: "border-border bg-bg-inset text-fg-subtle",
-};
 
 const NODE_RADIUS = 6;
 const ROW_HEIGHT = DEFAULT_GEOMETRY.rowHeight;
@@ -51,6 +52,7 @@ export function GitGraph({
   onSelectCommit,
   onCommitContextMenu,
   onRefContextMenu,
+  refChipOptions = DEFAULT_REF_CHIP_OPTIONS,
   hasMore = false,
   onLoadMore,
   labels,
@@ -346,43 +348,12 @@ export function GitGraph({
                       {commit.hash}
                     </span>
 
-                    {commit.refs.map((ref) => {
-                      // head / branch / tag / remote are actionable; unknown
-                      // refs stay read-only with no context menu.
-                      const interactive =
-                        ref.kind === "tag" ||
-                        ref.kind === "branch" ||
-                        ref.kind === "head" ||
-                        ref.kind === "remote";
-                      const chip = REF_CHIP_STYLES[ref.kind] ?? REF_CHIP_STYLES.branch;
-                      return (
-                        <Tooltip
-                          key={`${ref.kind}:${ref.name}`}
-                          label={interactive ? labels.refHint.replace("{{name}}", ref.name) : ref.name}
-                          className="shrink-0"
-                        >
-                          <span
-                            onClick={(e) => e.stopPropagation()}
-                            onContextMenu={
-                              interactive
-                                ? (e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    onRefContextMenu?.(ref, e.clientX, e.clientY);
-                                  }
-                                : undefined
-                            }
-                            className={`flex select-none items-center space-x-0.5 rounded border px-1.5 py-0.5 text-[12px] font-medium ${chip} ${
-                              interactive ? "cursor-context-menu" : ""
-                            }`}
-                          >
-                            {ref.kind === "tag" && <Tag className="h-2.5 w-2.5" />}
-                            {ref.kind === "head" && <Check className="h-2.5 w-2.5" />}
-                            <span>{ref.name}</span>
-                          </span>
-                        </Tooltip>
-                      );
-                    })}
+                    <RefChipStrip
+                      refs={commit.refs}
+                      options={refChipOptions}
+                      labels={labels}
+                      onRefContextMenu={onRefContextMenu}
+                    />
 
                     <span className="truncate font-sans text-[13px] font-medium text-fg">
                       {commit.message}

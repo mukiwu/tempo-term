@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { ContextMenuItem } from "@/components/ContextMenu";
 import type { CommitRef } from "../types";
+import { splitRemoteRef } from "./remoteRef";
 
 /**
  * Pure assembly of the git graph's right-click menus. Labels are passed in
@@ -129,6 +130,9 @@ export interface RefMenuLabels {
   deleteRemote: string;
   copyBranchName: string;
   openWorktree: string;
+  /** Names the remote, for a merged chip where the label alone is ambiguous. */
+  pullFrom: (remote: string) => string;
+  deleteRemoteOn: (remote: string) => string;
 }
 
 export interface RefMenuActions {
@@ -138,16 +142,23 @@ export interface RefMenuActions {
   onDeleteTag: () => void;
   onCheckoutRemote: () => void;
   onMergeRemote: () => void;
-  onPull: () => void;
-  onDeleteRemote: () => void;
+  /** Take the full remote ref name ("origin/master") — a merged chip has several. */
+  onPull: (remoteRef: string) => void;
+  onDeleteRemote: (remoteRef: string) => void;
   onCopyBranchName: () => void;
   onOpenWorktree: () => void;
 }
 
+/**
+ * `remotes` are the remote refs folded into this chip by `buildRefChips`. They
+ * turn the local chip's menu into the one place both halves of a branch are
+ * operated on, so the user no longer has to know which chip owns pull.
+ */
 export function buildRefMenu(
   ref: CommitRef,
   labels: RefMenuLabels,
   actions: RefMenuActions,
+  remotes: CommitRef[] = [],
 ): ContextMenuItem[] {
   if (ref.kind === "tag") {
     return [
@@ -162,34 +173,75 @@ export function buildRefMenu(
     ];
   }
 
-  if (ref.kind === "branch") {
-    return [
-      {
-        id: "checkout",
-        label: labels.checkout,
-        icon: GitBranch,
-        group: 0,
-        onSelect: actions.onCheckout,
-      },
-      { id: "merge", label: labels.merge, icon: GitMerge, group: 0, onSelect: actions.onMerge },
-      {
-        // Branch off without leaving what you are doing: unlike checkout, this
-        // touches neither the current working tree nor whatever is running in it.
-        id: "openWorktree",
-        label: labels.openWorktree,
-        icon: FolderGit2,
-        group: 0,
-        onSelect: actions.onOpenWorktree,
-      },
-      {
+  if (ref.kind === "branch" || ref.kind === "head") {
+    // A merged chip owns both halves of the branch, so its menu runs
+    // checkout/merge, then pull, then the deletions, then copy.
+    const isBranch = ref.kind === "branch";
+    const items: ContextMenuItem[] = [];
+    if (isBranch) {
+      items.push(
+        {
+          id: "checkout",
+          label: labels.checkout,
+          icon: GitBranch,
+          group: 0,
+          onSelect: actions.onCheckout,
+        },
+        { id: "merge", label: labels.merge, icon: GitMerge, group: 0, onSelect: actions.onMerge },
+        {
+          // Branch off without leaving what you are doing: unlike checkout, this
+          // touches neither the current working tree nor whatever is running in it.
+          id: "openWorktree",
+          label: labels.openWorktree,
+          icon: FolderGit2,
+          group: 0,
+          onSelect: actions.onOpenWorktree,
+        },
+      );
+    }
+    // The current branch with nothing folded in has no applicable actions.
+    if (remotes.length === 0 && !isBranch) {
+      return items;
+    }
+    for (const remote of remotes) {
+      items.push({
+        id: `pull:${remote.name}`,
+        label: labels.pullFrom(splitRemoteRef(remote.name).remote),
+        icon: DownloadCloud,
+        group: 1,
+        onSelect: () => actions.onPull(remote.name),
+      });
+    }
+    if (isBranch) {
+      items.push({
         id: "deleteBranch",
         label: labels.deleteBranch,
         icon: Trash2,
-        group: 1,
+        group: 2,
         danger: true,
         onSelect: actions.onDeleteBranch,
-      },
-    ];
+      });
+    }
+    for (const remote of remotes) {
+      items.push({
+        id: `deleteRemote:${remote.name}`,
+        label: labels.deleteRemoteOn(splitRemoteRef(remote.name).remote),
+        icon: Trash2,
+        group: 2,
+        danger: true,
+        onSelect: () => actions.onDeleteRemote(remote.name),
+      });
+    }
+    if (remotes.length > 0) {
+      items.push({
+        id: "copyBranchName",
+        label: labels.copyBranchName,
+        icon: Copy,
+        group: 3,
+        onSelect: actions.onCopyBranchName,
+      });
+    }
+    return items;
   }
 
   if (ref.kind === "remote") {
@@ -213,7 +265,7 @@ export function buildRefMenu(
         label: labels.pull,
         icon: DownloadCloud,
         group: 0,
-        onSelect: actions.onPull,
+        onSelect: () => actions.onPull(ref.name),
       },
       {
         id: "deleteRemote",
@@ -221,7 +273,7 @@ export function buildRefMenu(
         icon: Trash2,
         group: 1,
         danger: true,
-        onSelect: actions.onDeleteRemote,
+        onSelect: () => actions.onDeleteRemote(ref.name),
       },
       {
         id: "copyBranchName",
@@ -233,6 +285,6 @@ export function buildRefMenu(
     ];
   }
 
-  // head (current branch) and unknown refs have no applicable actions.
+  // Stash and unknown refs have no applicable actions.
   return [];
 }

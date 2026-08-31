@@ -36,6 +36,8 @@ import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore"
 import { filterCommits } from "./lib/filterCommits";
 import { buildCommitMenu, buildRefMenu } from "./lib/contextMenuItems";
 import { splitRemoteRef } from "./lib/remoteRef";
+import type { RefChipOptions } from "./lib/refChips";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { withMinDuration } from "@/lib/withMinDuration";
 import type { Branch, CommitNode, CommitRef, CommitOrder, GraphOptions, GraphSelection } from "./types";
 
@@ -46,7 +48,7 @@ const MIN_BUSY_MS = 400;
 
 type MenuTarget =
   | { type: "commit"; commit: CommitNode; x: number; y: number }
-  | { type: "ref"; ref: CommitRef; x: number; y: number };
+  | { type: "ref"; ref: CommitRef; remotes: CommitRef[]; x: number; y: number };
 
 interface ModalState {
   title: string;
@@ -70,6 +72,7 @@ function getErrorMessage(error: unknown): string {
 export function GitGraphTabContent() {
   const { t } = useTranslation("gitGraph");
   const rootPath = useWorkspaceStore((s) => s.rootPath);
+  const gitGraphRefs = useSettingsStore((s) => s.gitGraphRefs);
 
   const [repo, setRepo] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
@@ -451,11 +454,19 @@ export function GitGraphTabContent() {
     );
   }, []);
 
+  // The user's Git Graph display settings, in the shape buildRefChips wants.
+  const refChipOptions: RefChipOptions = {
+    mergeLocalRemote: gitGraphRefs.mergeLocalRemote,
+    hideOriginHead: gitGraphRefs.hideOriginHead,
+    collapseAfter: gitGraphRefs.collapseExtraRefs ? gitGraphRefs.refLimit : null,
+  };
+
   const labels: GitGraphLabels = {
     emptyTitle: t("empty.title"),
     emptyHint: t("empty.hint"),
     loadMore: t("loadMore"),
     refHint: t("refHint"),
+    moreRefs: t("moreRefs"),
   };
 
   const detailsLabels: CommitDetailsLabels = {
@@ -550,7 +561,9 @@ export function GitGraphTabContent() {
     );
 
   // Build the right-click menu for a branch / tag / remote / HEAD decoration.
-  const refMenuItems = (ref: CommitRef): ContextMenuItem[] =>
+  // `remotes` are the remote refs merged into the chip, so one menu covers both
+  // the local branch and every remote that has it at this commit.
+  const refMenuItems = (ref: CommitRef, remotes: CommitRef[]): ContextMenuItem[] =>
     buildRefMenu(
       ref,
       {
@@ -564,6 +577,8 @@ export function GitGraphTabContent() {
         deleteRemote: t("menu.deleteRemote"),
         copyBranchName: t("menu.copyBranchName"),
         openWorktree: t("menu.openWorktree"),
+        pullFrom: (remote: string) => t("menu.pullFrom", { remote }),
+        deleteRemoteOn: (remote: string) => t("menu.deleteRemoteOn", { remote }),
       },
       {
         onCheckout: () => void runAction(() => gitBranchCheckout(repo!, ref.name)),
@@ -572,15 +587,15 @@ export function GitGraphTabContent() {
         onDeleteTag: () => void runAction(() => gitTagDelete(repo!, ref.name)),
         onCheckoutRemote: () => openCheckoutRemoteModal(ref.name),
         onMergeRemote: () => void runAction(() => gitMerge(repo!, ref.name)),
-        onPull: () => {
-          const { remote, branch } = splitRemoteRef(ref.name);
+        onPull: (remoteRef) => {
+          const { remote, branch } = splitRemoteRef(remoteRef);
           void runAction(() => gitPull(repo!, remote, branch));
         },
-        onDeleteRemote: () => {
-          const { remote, branch } = splitRemoteRef(ref.name);
+        onDeleteRemote: (remoteRef) => {
+          const { remote, branch } = splitRemoteRef(remoteRef);
           setModal({
             title: t("modal.deleteRemote.title"),
-            message: t("modal.deleteRemote.message", { name: ref.name }),
+            message: t("modal.deleteRemote.message", { name: remoteRef }),
             confirmLabel: t("modal.deleteRemote.confirm"),
             confirmDanger: true,
             fields: [],
@@ -597,6 +612,7 @@ export function GitGraphTabContent() {
           }
         },
       },
+      remotes,
     );
 
   if (resolved && !repo) {
@@ -662,7 +678,10 @@ export function GitGraphTabContent() {
             onCommitContextMenu={(commit, x, y) =>
               setMenu({ type: "commit", commit, x, y })
             }
-            onRefContextMenu={(ref, x, y) => setMenu({ type: "ref", ref, x, y })}
+            onRefContextMenu={(ref, remotes, x, y) =>
+              setMenu({ type: "ref", ref, remotes, x, y })
+            }
+            refChipOptions={refChipOptions}
             hasMore={hasMore}
             onLoadMore={loadMore}
             labels={labels}
@@ -694,9 +713,10 @@ export function GitGraphTabContent() {
           const items =
             menu.type === "commit"
               ? commitMenuItems(menu.commit)
-              : refMenuItems(menu.ref);
-          // The current branch (kind "head") has no applicable actions; skip the
-          // menu rather than flashing an empty one.
+              : refMenuItems(menu.ref, menu.remotes);
+          // The current branch (kind "head") with no remote folded into its chip
+          // has no applicable actions; skip the menu rather than flashing an
+          // empty one.
           if (items.length === 0) {
             return null;
           }

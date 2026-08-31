@@ -20,6 +20,8 @@ const refLabels: RefMenuLabels = {
   deleteRemote: "Delete remote branch",
   copyBranchName: "Copy branch name",
   openWorktree: "Open worktree for this branch",
+  pullFrom: (remote: string) => `Pull from ${remote}`,
+  deleteRemoteOn: (remote: string) => `Delete branch on ${remote}`,
 };
 
 function refActions(): RefMenuActions {
@@ -98,9 +100,61 @@ describe("buildRefMenu", () => {
     expect(items.find((i) => i.id === "deleteBranch")?.danger).toBe(true);
   });
 
-  it("offers nothing for the current branch (head)", () => {
+  it("offers nothing for the current branch (head) with no remote folded in", () => {
     const ref: CommitRef = { name: "main", kind: "head" };
     expect(buildRefMenu(ref, refLabels, refActions())).toEqual([]);
+  });
+
+  it("covers local and remote actions in one menu for a merged chip", () => {
+    const ref: CommitRef = { name: "master", kind: "branch" };
+    const remotes: CommitRef[] = [{ name: "origin/master", kind: "remote" }];
+    const items = buildRefMenu(ref, refLabels, refActions(), remotes);
+    expect(ids(items)).toEqual([
+      "checkout",
+      "merge",
+      "openWorktree",
+      "pull:origin/master",
+      "deleteBranch",
+      "deleteRemote:origin/master",
+      "copyBranchName",
+    ]);
+    // Both deletions sit in the same group so one divider fences them off.
+    expect(items.find((i) => i.id === "deleteBranch")?.group).toBe(2);
+    expect(items.find((i) => i.id === "deleteRemote:origin/master")?.group).toBe(2);
+    expect(items.find((i) => i.id === "deleteRemote:origin/master")?.danger).toBe(true);
+  });
+
+  it("gives the current branch its remotes' actions once they are merged in", () => {
+    const ref: CommitRef = { name: "master", kind: "head" };
+    const remotes: CommitRef[] = [
+      { name: "origin/master", kind: "remote" },
+      { name: "upstream/master", kind: "remote" },
+    ];
+    const items = buildRefMenu(ref, refLabels, refActions(), remotes);
+    expect(ids(items)).toEqual([
+      "pull:origin/master",
+      "pull:upstream/master",
+      "deleteRemote:origin/master",
+      "deleteRemote:upstream/master",
+      "copyBranchName",
+    ]);
+    // With several remotes the label has to say which one it acts on.
+    expect(items[0].label).toBe("Pull from origin");
+    expect(items[1].label).toBe("Pull from upstream");
+  });
+
+  it("passes each merged remote's own ref name to pull and delete", () => {
+    const actions = refActions();
+    const ref: CommitRef = { name: "master", kind: "head" };
+    const remotes: CommitRef[] = [
+      { name: "origin/master", kind: "remote" },
+      { name: "upstream/master", kind: "remote" },
+    ];
+    const items = buildRefMenu(ref, refLabels, actions, remotes);
+    items.find((i) => i.id === "pull:upstream/master")?.onSelect();
+    items.find((i) => i.id === "deleteRemote:origin/master")?.onSelect();
+    expect(actions.onPull).toHaveBeenCalledWith("upstream/master");
+    expect(actions.onDeleteRemote).toHaveBeenCalledWith("origin/master");
   });
 
   it("wires the remote actions to their callbacks", () => {
@@ -113,8 +167,8 @@ describe("buildRefMenu", () => {
     items.find((i) => i.id === "deleteRemote")?.onSelect();
     expect(actions.onCopyBranchName).toHaveBeenCalledTimes(1);
     expect(actions.onCheckoutRemote).toHaveBeenCalledTimes(1);
-    expect(actions.onPull).toHaveBeenCalledTimes(1);
-    expect(actions.onDeleteRemote).toHaveBeenCalledTimes(1);
+    expect(actions.onPull).toHaveBeenCalledWith("origin/feat/x");
+    expect(actions.onDeleteRemote).toHaveBeenCalledWith("origin/feat/x");
   });
 });
 

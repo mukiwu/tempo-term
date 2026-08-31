@@ -3,6 +3,7 @@
   "loadMore": "Load more",
   "dismiss": "Dismiss",
   "refHint": "{{name}} — right-click for options",
+  "moreRefs": "{{count}} more refs — click to list them",
   "empty": {
     "title": "No commits yet",
     "hint": "Make a commit to start building history, and it will appear here."
@@ -70,6 +71,8 @@
     "checkoutRemote": "Checkout branch… (git checkout --track)",
     "pull": "Pull into current branch (git pull)",
     "deleteRemote": "Delete remote branch… (git push --delete)",
+    "pullFrom": "Pull from {{remote}} (git pull)",
+    "deleteRemoteOn": "Delete branch on {{remote}}… (git push --delete)",
     "copyBranchName": "Copy branch name",
     "openWorktree": "Open worktree for this branch"
   },

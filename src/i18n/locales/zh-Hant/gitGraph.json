@@ -3,6 +3,7 @@
   "loadMore": "載入更多",
   "dismiss": "關閉",
   "refHint": "{{name}}，按右鍵開啟選單",
+  "moreRefs": "另有 {{count}} 個 ref，點擊展開",
   "empty": {
     "title": "還沒有任何提交",
     "hint": "做一次提交開始建立歷史紀錄，之後就會顯示在這裡。"
@@ -70,6 +71,8 @@
     "checkoutRemote": "建立本地分支並切換… (git checkout --track)",
     "pull": "拉取到目前分支 (git pull)",
     "deleteRemote": "刪除遠端分支… (git push --delete)",
+    "pullFrom": "從 {{remote}} 拉取 (git pull)",
+    "deleteRemoteOn": "刪除 {{remote}} 上的分支… (git push --delete)",
     "copyBranchName": "複製分支名稱",
     "openWorktree": "為這個分支開 worktree"
   },

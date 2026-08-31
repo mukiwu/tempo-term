@@ -6,8 +6,20 @@
     "fonts": "字體",
     "ai": "AI",
     "workspace": "群組",
+    "gitGraph": "Git Graph",
     "shortcuts": "快捷鍵",
     "about": "關於"
+  },
+  "gitGraph": {
+    "refsTitle": "分支標籤",
+    "refsDescription": "Git Graph 在 commit 列上如何精簡分支與標籤 chip。",
+    "mergeLocalRemoteLabel": "同名的本地與遠端分支合併成一顆",
+    "mergeLocalRemoteHint": "本地分支與帶著它的每個遠端，在同一顆 chip 上各佔一塊，右鍵選單一次涵蓋本地與遠端操作。超前／落後的遠端分支仍保有自己的 origin/… chip。",
+    "hideOriginHeadLabel": "隱藏 origin/HEAD",
+    "hideOriginHeadHint": "它只是遠端預設分支的符號連結，指向的 commit 已經有自己的分支 chip 標著了。",
+    "collapseLabel": "超量的標籤收合成 +N",
+    "refLimitLabel": "列上顯示幾顆",
+    "collapseHint": "超過上限的收進 +N chip，點開即可列出其餘標籤，commit 訊息因此保有可視空間。"
   },
   "workspace": {
     "blocksTitle": "卡片資訊",

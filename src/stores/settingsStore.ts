@@ -30,6 +30,29 @@ export interface WorkspaceCardBlocks {
 /** Where PR data comes from; "auto" detects gh, else falls back to a token. */
 export type WorkspacePrSource = "auto" | "gh" | "token" | "off";
 
+export const MIN_GIT_GRAPH_REF_LIMIT = 1;
+export const MAX_GIT_GRAPH_REF_LIMIT = 10;
+export const DEFAULT_GIT_GRAPH_REF_LIMIT = 3;
+
+/** How the Git Graph condenses the ref chips on a commit row. */
+export interface GitGraphRefSettings {
+  /** Fold `origin/x` into the local `x` chip when both point at the commit. */
+  mergeLocalRemote: boolean;
+  /** Drop `origin/HEAD`, a symbolic link with no information of its own. */
+  hideOriginHead: boolean;
+  /** Collapse the chips past `refLimit` into a single `+N`. */
+  collapseExtraRefs: boolean;
+  /** How many chips stay on the row before `+N` takes over. */
+  refLimit: number;
+}
+
+const DEFAULT_GIT_GRAPH_REFS: GitGraphRefSettings = {
+  mergeLocalRemote: true,
+  hideOriginHead: true,
+  collapseExtraRefs: true,
+  refLimit: DEFAULT_GIT_GRAPH_REF_LIMIT,
+};
+
 const DEFAULT_WORKSPACE_CARD: WorkspaceCardBlocks = {
   status: true,
   branch: true,
@@ -59,6 +82,8 @@ interface SettingsState {
   notesFolderPath: string | null;
   /** Which info blocks the workspace cards show. */
   workspaceCard: WorkspaceCardBlocks;
+  /** How the Git Graph condenses a commit row's ref chips. */
+  gitGraphRefs: GitGraphRefSettings;
   /** Where workspace cards source PR data. */
   prSource: WorkspacePrSource;
   /** Default flags appended to the `claude` command when launched from the launcher. */
@@ -125,6 +150,7 @@ interface SettingsState {
   setRestoreTerminalHistory: (value: boolean) => void;
   setNotesFolderPath: (path: string | null) => void;
   setWorkspaceCardBlock: (key: keyof WorkspaceCardBlocks, value: boolean) => void;
+  setGitGraphRefs: (patch: Partial<GitGraphRefSettings>) => void;
   setPrSource: (source: WorkspacePrSource) => void;
   setClaudeFlags: (flags: string) => void;
   setCodexFlags: (flags: string) => void;
@@ -149,6 +175,24 @@ function clampPadding(value: number): number {
     return DEFAULT_TERMINAL_PADDING;
   }
   return Math.min(MAX_TERMINAL_PADDING, Math.max(MIN_TERMINAL_PADDING, Math.round(value)));
+}
+
+/**
+ * Coerce a persisted (or patched) Git Graph ref block back into shape: a store
+ * written by an older build has no block at all, and a hand-edited one can
+ * carry a nonsense limit that would hide every chip behind `+N`.
+ */
+function normalizeGitGraphRefs(value: Partial<GitGraphRefSettings> | undefined): GitGraphRefSettings {
+  const stored = value ?? {};
+  const limit = Number(stored.refLimit);
+  return {
+    mergeLocalRemote: stored.mergeLocalRemote ?? DEFAULT_GIT_GRAPH_REFS.mergeLocalRemote,
+    hideOriginHead: stored.hideOriginHead ?? DEFAULT_GIT_GRAPH_REFS.hideOriginHead,
+    collapseExtraRefs: stored.collapseExtraRefs ?? DEFAULT_GIT_GRAPH_REFS.collapseExtraRefs,
+    refLimit: Number.isFinite(limit)
+      ? Math.min(MAX_GIT_GRAPH_REF_LIMIT, Math.max(MIN_GIT_GRAPH_REF_LIMIT, Math.round(limit)))
+      : DEFAULT_GIT_GRAPH_REF_LIMIT,
+  };
 }
 
 function clampZoom(value: number): number {
@@ -196,6 +240,7 @@ export const useSettingsStore = create<SettingsState>()(
       restoreTerminalHistory: true,
       notesFolderPath: null,
       workspaceCard: DEFAULT_WORKSPACE_CARD,
+      gitGraphRefs: DEFAULT_GIT_GRAPH_REFS,
       prSource: "auto",
       claudeFlags: "",
       codexFlags: "",
@@ -243,6 +288,10 @@ export const useSettingsStore = create<SettingsState>()(
       setNotesFolderPath: (path) => set({ notesFolderPath: path }),
       setWorkspaceCardBlock: (key, value) =>
         set((state) => ({ workspaceCard: { ...state.workspaceCard, [key]: value } })),
+      setGitGraphRefs: (patch) =>
+        set((state) => ({
+          gitGraphRefs: normalizeGitGraphRefs({ ...state.gitGraphRefs, ...patch }),
+        })),
       setPrSource: (prSource) => set({ prSource }),
       setClaudeFlags: (claudeFlags) => set({ claudeFlags }),
       setCodexFlags: (codexFlags) => set({ codexFlags }),
@@ -284,6 +333,7 @@ export const useSettingsStore = create<SettingsState>()(
           backgroundImageTextColor: normalizeBackgroundImageTextColor(
             stored.backgroundImageTextColor,
           ),
+          gitGraphRefs: normalizeGitGraphRefs(stored.gitGraphRefs),
         };
       },
     },

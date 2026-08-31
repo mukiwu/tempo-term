@@ -12,11 +12,20 @@ import { FontsSettingsSection } from "./FontsSettingsSection";
 import { TerminalSettingsSection } from "./TerminalSettingsSection";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
+import { GitGraphSettingsSection } from "./GitGraphSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 import { AboutSettingsSection } from "./AboutSettingsSection";
 import { BackgroundImageSettingsSection } from "./BackgroundImageSettingsSection";
 
-const SECTIONS = ["appearance", "terminal", "ai", "workspace", "shortcuts", "about"] as const;
+const SECTIONS = [
+  "appearance",
+  "terminal",
+  "ai",
+  "workspace",
+  "gitGraph",
+  "shortcuts",
+  "about",
+] as const;
 type SectionId = typeof SECTIONS[number];
 
 function isSectionId(value: string): value is SectionId {
@@ -246,6 +255,7 @@ export function SettingsView() {
           {section === "terminal" && <TerminalSettingsSection />}
           {section === "ai" && <AiSettingsSection />}
           {section === "workspace" && <WorkspaceSettingsSection />}
+          {section === "gitGraph" && <GitGraphSettingsSection />}
           {section === "shortcuts" && <ShortcutsSettingsSection />}
           {section === "about" && <AboutSettingsSection />}
         </div>

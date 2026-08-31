@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_TERMINAL_BACKGROUND_IMAGE_OPACITY,
+  DEFAULT_GIT_GRAPH_REF_LIMIT,
   DEFAULT_TERMINAL_PADDING,
   MAX_BACKGROUND_IMAGE_OPACITY,
+  MAX_GIT_GRAPH_REF_LIMIT,
   MAX_TERMINAL_PADDING,
   MIN_BACKGROUND_IMAGE_OPACITY,
   MIN_TERMINAL_PADDING,
@@ -32,6 +34,7 @@ describe("settingsStore", () => {
       codexFlags: initialState.codexFlags,
       autoResumeAiSessions: initialState.autoResumeAiSessions,
       customShellPath: initialState.customShellPath,
+      gitGraphRefs: initialState.gitGraphRefs,
     });
   });
 
@@ -126,6 +129,47 @@ describe("settingsStore", () => {
       terminalBackgroundImageOpacity: DEFAULT_TERMINAL_BACKGROUND_IMAGE_OPACITY,
       backgroundImageScope: "workspace",
       backgroundImageTextColor: null,
+    });
+  });
+
+  it("defaults every Git Graph ref option on, collapsing past three chips", () => {
+    expect(useSettingsStore.getState().gitGraphRefs).toEqual({
+      mergeLocalRemote: true,
+      hideOriginHead: true,
+      collapseExtraRefs: true,
+      refLimit: DEFAULT_GIT_GRAPH_REF_LIMIT,
+    });
+  });
+
+  it("patches one Git Graph ref option without touching the others", () => {
+    useSettingsStore.getState().setGitGraphRefs({ hideOriginHead: false });
+    expect(useSettingsStore.getState().gitGraphRefs).toMatchObject({
+      hideOriginHead: false,
+      mergeLocalRemote: true,
+      collapseExtraRefs: true,
+    });
+  });
+
+  it("clamps the ref limit so a stray value cannot hide every chip behind +N", () => {
+    useSettingsStore.getState().setGitGraphRefs({ refLimit: 99 });
+    expect(useSettingsStore.getState().gitGraphRefs.refLimit).toBe(MAX_GIT_GRAPH_REF_LIMIT);
+    useSettingsStore.getState().setGitGraphRefs({ refLimit: 0 });
+    expect(useSettingsStore.getState().gitGraphRefs.refLimit).toBe(1);
+  });
+
+  it("fills in the Git Graph ref block a store written by an older build lacks", async () => {
+    localStorage.setItem(
+      "tempoterm-settings",
+      JSON.stringify({ state: { language: "en" }, version: 0 }),
+    );
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().gitGraphRefs).toEqual({
+      mergeLocalRemote: true,
+      hideOriginHead: true,
+      collapseExtraRefs: true,
+      refLimit: DEFAULT_GIT_GRAPH_REF_LIMIT,
     });
   });
 

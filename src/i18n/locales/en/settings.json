@@ -6,8 +6,20 @@
     "fonts": "Fonts",
     "ai": "AI",
     "workspace": "Groups",
+    "gitGraph": "Git Graph",
     "shortcuts": "Shortcuts",
     "about": "About"
+  },
+  "gitGraph": {
+    "refsTitle": "Branch labels",
+    "refsDescription": "How the Git Graph condenses the branch and tag chips on a commit row.",
+    "mergeLocalRemoteLabel": "Merge a branch with its remotes",
+    "mergeLocalRemoteHint": "The branch and each remote carrying it become blocks of a single chip, with one right-click menu for both. A remote that is ahead or behind keeps its own origin/… chip.",
+    "hideOriginHeadLabel": "Hide origin/HEAD",
+    "hideOriginHeadHint": "A symbolic link to the remote's default branch — the same commit its own branch chip already marks.",
+    "collapseLabel": "Collapse extra labels into +N",
+    "refLimitLabel": "Labels shown",
+    "collapseHint": "Anything past the limit hides behind a +N chip that lists the rest, so the commit message keeps its room."
   },
   "workspace": {
     "blocksTitle": "Card details",
