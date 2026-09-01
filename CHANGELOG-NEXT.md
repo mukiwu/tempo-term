@@ -2,6 +2,7 @@
 
 ### feat
 
+- 設定頁的背景圖片區塊改為全寬直排：拖放卡片在上方全寬（21:9、高度封頂），設定項改成兩欄（顯示範圍｜介面文字顏色、兩支透明度拉桿並排），按鈕列橫跨底部，段落間以水平線分隔。卡片本身即是選擇器，點擊或鍵盤即可開啟檔案挑選，已設圖片時替換與移除移到卡片角落；檔案上限的標示由 20 MiB 改為 20 MB (#370)
 - Source Control 面板的檔案列動作（加入、取消、放棄變更）改為滑過時展開，長路徑不再被常駐按鈕擠到截斷；區段與資料夾標題的動作維持常駐。目前開在前景的 diff 檔案會保持高亮並常駐動作列，part-staged 的檔案只標記實際開著的那一側；Staged changes 標題新增 Unstage all，與 Stage all 對等 (#364)
 - Git Graph 的 branch 與 tag 標籤右鍵一律可複製名稱：還沒推上遠端的本地分支、目前所在的分支都有「複製分支名稱」，tag 則多了「複製標籤名稱」；先前只有帶遠端的標籤才能複製，在目前分支上按右鍵甚至是空選單 (#360)
 - Git Graph 每列的 ref 標籤改依閱讀重要性排序：HEAD 所在的分支最前，接著本地分支、tag、沒有本地對應的遠端分支，唯讀裝飾最後；+N 收合的因此是最不重要的那些，合併標籤內的區塊也改以 origin 領先，不再跟著 git 的反向列舉順序 (#361)
@@ -28,6 +29,7 @@
 
 ### feat
 
+- The settings page's background-image section is restacked into full-width bands: the drop-zone card on top (21:9, capped height), the controls in a two-column grid (scope | text color, the two opacity sliders side by side), and the action row across the bottom, with horizontal rules between bands. The card itself is now the picker — click or keyboard opens the file dialog, and Replace/Remove sit on a corner overlay once an image is set; the size limit is labeled 20 MB instead of 20 MiB (#370)
 - Source Control file-row actions (stage, unstage, discard) now reveal on hover, so long paths are no longer truncated against a permanent button gutter; section and folder header actions stay always visible. The file whose diff is in the foreground keeps its highlight and actions, a part-staged file is only marked on the side actually on screen, and the Staged changes header gains Unstage all as Stage all's counterpart (#364)
 - Every branch and tag chip in the Git Graph can copy its name from the context menu: a local-only branch and the checked-out branch gain Copy branch name, and tags gain Copy tag name; previously only chips with a remote folded in offered it, and right-clicking the current branch showed nothing at all (#360)
 - A commit row's ref chips are now ordered by what the row is read for: the checked-out branch first, then local branches, tags, remotes with no local twin, and read-only decorations last; the +N overflow therefore hides the least important chips, and origin leads the blocks inside a merged chip instead of following git's reversed enumeration order (#361)
