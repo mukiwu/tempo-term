@@ -33,7 +33,7 @@ impl fmt::Display for AppearanceError {
         let message = match self {
             Self::InvalidFile => "The selected image could not be read.",
             Self::UnsupportedFormat => "Choose a PNG, JPEG, or WebP image.",
-            Self::FileTooLarge => "Choose an image no larger than 20 MiB.",
+            Self::FileTooLarge => "Choose an image no larger than 20 MB.",
             Self::StorageUnavailable => "The background image could not be saved.",
         };
         formatter.write_str(message)
