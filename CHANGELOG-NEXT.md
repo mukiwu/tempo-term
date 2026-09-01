@@ -2,6 +2,7 @@
 
 ### feat
 
+- Source Control 面板的檔案列動作（加入、取消、放棄變更）改為滑過時展開，長路徑不再被常駐按鈕擠到截斷；區段與資料夾標題的動作維持常駐。目前開在前景的 diff 檔案會保持高亮並常駐動作列，part-staged 的檔案只標記實際開著的那一側；Staged changes 標題新增 Unstage all，與 Stage all 對等 (#364)
 - Git Graph 的 branch 與 tag 標籤右鍵一律可複製名稱：還沒推上遠端的本地分支、目前所在的分支都有「複製分支名稱」，tag 則多了「複製標籤名稱」；先前只有帶遠端的標籤才能複製，在目前分支上按右鍵甚至是空選單 (#360)
 - Git Graph 每列的 ref 標籤改依閱讀重要性排序：HEAD 所在的分支最前，接著本地分支、tag、沒有本地對應的遠端分支，唯讀裝飾最後；+N 收合的因此是最不重要的那些，合併標籤內的區塊也改以 origin 領先，不再跟著 git 的反向列舉順序 (#361)
 - Git Graph 的 ref 標籤整併：同名的本地分支與其遠端摺成同一顆標籤、不再各佔一格，origin/HEAD 不再顯示，超出行寬上限的標籤收進 +N 清單，點開後每顆仍可右鍵操作；合併後的標籤右鍵選單同時帶本地與各遠端的操作，不必再記哪顆標籤管哪半邊 (#357)
@@ -18,13 +19,14 @@
 ### 貢獻者
 
 - @mark22013333 (#355, #356)
-- @yw-chan (#348, #349, #350, #357, #360, #361)
+- @yw-chan (#348, #349, #350, #357, #360, #361, #364)
 - @oberonlai (#347)
 
 ## English
 
 ### feat
 
+- Source Control file-row actions (stage, unstage, discard) now reveal on hover, so long paths are no longer truncated against a permanent button gutter; section and folder header actions stay always visible. The file whose diff is in the foreground keeps its highlight and actions, a part-staged file is only marked on the side actually on screen, and the Staged changes header gains Unstage all as Stage all's counterpart (#364)
 - Every branch and tag chip in the Git Graph can copy its name from the context menu: a local-only branch and the checked-out branch gain Copy branch name, and tags gain Copy tag name; previously only chips with a remote folded in offered it, and right-clicking the current branch showed nothing at all (#360)
 - A commit row's ref chips are now ordered by what the row is read for: the checked-out branch first, then local branches, tags, remotes with no local twin, and read-only decorations last; the +N overflow therefore hides the least important chips, and origin leads the blocks inside a merged chip instead of following git's reversed enumeration order (#361)
 - Git Graph ref chips are consolidated: a local branch and its same-named remotes fold into one chip instead of taking a slot each, origin/HEAD is no longer drawn, and chips past the row's limit collapse into a +N chip whose list keeps every chip right-clickable; a merged chip's context menu carries the local and each remote's operations, so there is no need to remember which chip owns which half (#357)
@@ -41,5 +43,5 @@
 ### Contributors
 
 - @mark22013333 (#355, #356)
-- @yw-chan (#348, #349, #350, #357, #360, #361)
+- @yw-chan (#348, #349, #350, #357, #360, #361, #364)
 - @oberonlai (#347)
