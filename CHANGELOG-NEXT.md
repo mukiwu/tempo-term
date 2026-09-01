@@ -2,6 +2,8 @@
 
 ### feat
 
+- Git Graph 的 branch 與 tag 標籤右鍵一律可複製名稱：還沒推上遠端的本地分支、目前所在的分支都有「複製分支名稱」，tag 則多了「複製標籤名稱」；先前只有帶遠端的標籤才能複製，在目前分支上按右鍵甚至是空選單 (#360)
+- Git Graph 每列的 ref 標籤改依閱讀重要性排序：HEAD 所在的分支最前，接著本地分支、tag、沒有本地對應的遠端分支，唯讀裝飾最後；+N 收合的因此是最不重要的那些，合併標籤內的區塊也改以 origin 領先，不再跟著 git 的反向列舉順序 (#361)
 - Git Graph 的 ref 標籤整併：同名的本地分支與其遠端摺成同一顆標籤、不再各佔一格，origin/HEAD 不再顯示，超出行寬上限的標籤收進 +N 清單，點開後每顆仍可右鍵操作；合併後的標籤右鍵選單同時帶本地與各遠端的操作，不必再記哪顆標籤管哪半邊 (#357)
 - 檔案總管的右鍵選單新增「在瀏覽器開啟」，用內建的網頁預覽開啟檔案，不必先把它開進編輯器再按工具列那顆預覽鈕。開啟位置沿用既有的規則：分頁裡已經有預覽面板就換掉它的內容，單面板分頁就在旁邊分割，已經分割的分頁則使用專屬的預覽分頁。只有內建瀏覽器渲染得出來的檔案才會出現這個選項（HTML、SVG、PDF、圖片與影音），遠端 (SSH) 檔案則不適用 (#347)
 
@@ -16,13 +18,15 @@
 ### 貢獻者
 
 - @mark22013333 (#355, #356)
-- @yw-chan (#348, #349, #350, #357)
+- @yw-chan (#348, #349, #350, #357, #360, #361)
 - @oberonlai (#347)
 
 ## English
 
 ### feat
 
+- Every branch and tag chip in the Git Graph can copy its name from the context menu: a local-only branch and the checked-out branch gain Copy branch name, and tags gain Copy tag name; previously only chips with a remote folded in offered it, and right-clicking the current branch showed nothing at all (#360)
+- A commit row's ref chips are now ordered by what the row is read for: the checked-out branch first, then local branches, tags, remotes with no local twin, and read-only decorations last; the +N overflow therefore hides the least important chips, and origin leads the blocks inside a merged chip instead of following git's reversed enumeration order (#361)
 - Git Graph ref chips are consolidated: a local branch and its same-named remotes fold into one chip instead of taking a slot each, origin/HEAD is no longer drawn, and chips past the row's limit collapse into a +N chip whose list keeps every chip right-clickable; a merged chip's context menu carries the local and each remote's operations, so there is no need to remember which chip owns which half (#357)
 - The explorer's context menu gains "Open in Browser", which opens a file in the built-in web preview instead of making you open it in the editor first and reach for the toolbar's preview button. Where it lands follows the existing rule: replace a preview pane the tab already has, split beside a single-pane tab, or use the dedicated preview tab when the tab is already split. The item only appears for files the built-in browser can actually render (HTML, SVG, PDF, images and media), and never for remote (SSH) files (#347)
 
@@ -37,5 +41,5 @@
 ### Contributors
 
 - @mark22013333 (#355, #356)
-- @yw-chan (#348, #349, #350, #357)
+- @yw-chan (#348, #349, #350, #357, #360, #361)
 - @oberonlai (#347)
