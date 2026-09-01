@@ -88,17 +88,28 @@ function compareChips(a: RefChip, b: RefChip): number {
       return rankA - rankB;
     }
     if (remoteA !== remoteB) {
-      return remoteA.localeCompare(remoteB);
+      return byCodepoint(remoteA, remoteB);
     }
   }
-  return a.ref.name.localeCompare(b.ref.name);
+  return byCodepoint(a.ref.name, b.ref.name);
 }
 
 /** Same rule inside a merged chip: origin's block first, then the rest by name. */
 function compareRemotes(a: CommitRef, b: CommitRef): number {
   const [rankA, remoteA] = remoteRank(a.name);
   const [rankB, remoteB] = remoteRank(b.name);
-  return rankA - rankB || remoteA.localeCompare(remoteB);
+  return rankA - rankB || byCodepoint(remoteA, remoteB);
+}
+
+/**
+ * Deterministic name tiebreak. `localeCompare` follows the runtime's default
+ * collator, which differs between Node (tests) and WKWebView (the app) and
+ * between users' systems — the same repo could paint rows in different orders.
+ * Plain codepoint order is stable everywhere, and ref names are ASCII enough
+ * that nothing linguistic is lost.
+ */
+function byCodepoint(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function isOriginHead(ref: CommitRef): boolean {
