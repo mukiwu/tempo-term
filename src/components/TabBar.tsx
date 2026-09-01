@@ -454,15 +454,18 @@ export function TabBar() {
         >
           <div
             ref={stripRef}
-            // The hairline scrollbar in index.css keys off this value, and only
-            // the platforms that draw classic scrollbars get it: Windows, where
-            // a bar with real height squashing a 36px row was the bug, and
-            // Linux, which draws them the same way. macOS is left alone — its
-            // overlay scrollbar is already thin, transient and free of layout
-            // cost, and a ::-webkit-scrollbar rule would trade that for an
-            // always-present bar that takes height, making things worse there
-            // to fix something it never had.
-            data-tab-strip={IS_MAC ? "" : "hairline"}
+            // The hairline scrollbar in index.css keys off this value, and
+            // every platform gets it. Windows and Linux draw a classic bar with
+            // real height that squashed a 36px row, which is what the hairline
+            // replaced. macOS was left on its native overlay bar because that
+            // one is thin, transient and free of layout cost — but only in the
+            // default "show scroll bars when scrolling" mode. Set the system
+            // preference to "Always" and WKWebView draws the same classic bar
+            // this rule exists to avoid, parked under the tab labels. The
+            // hairline is the thinner answer in both modes: WKWebView keeps
+            // fading it in and out with the overlay behaviour, and the
+            // always-on mode gets 3px instead of a full-height bar.
+            data-tab-strip="hairline"
             // No data-tauri-drag-region here, unlike before: Tauri swallows
             // mousedown on a drag region to start moving the window, and the
             // strip's own scrollbar is part of this element, so its thumb could

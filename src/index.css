@@ -180,10 +180,13 @@ body {
  * the edge. A 3px hairline costs almost nothing and reads the way VS Code's
  * does.
  *
- * Keyed off the attribute's value, which TabBar only sets to "hairline" off
- * macOS. WKWebView's overlay scrollbars are already thin, transient and free of
- * layout cost; a ::-webkit-scrollbar rule is exactly what would trade them for
- * an always-present bar that takes height.
+ * Keyed off the attribute's value, which TabBar now sets on every platform.
+ * macOS was the exception at first, on the grounds that WKWebView's overlay
+ * scrollbar is already thin, transient and free of layout cost — true, but only
+ * while "Show scroll bars" is left on the default. Set it to "Always" and macOS
+ * draws the very bar this rule exists to avoid, right under the tab labels.
+ * The hairline is the thinner answer either way: the overlay fade still applies
+ * to it, and the always-on mode gets 3px instead of a full-height bar.
  */
 [data-tab-strip="hairline"]::-webkit-scrollbar {
   height: 3px;

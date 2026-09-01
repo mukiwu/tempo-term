@@ -240,7 +240,7 @@ describe("TabBar overflow scrolling", () => {
     }));
   }
 
-  it("asks for the hairline scrollbar on the platforms that draw a classic one", () => {
+  it("asks for the hairline scrollbar off macOS", () => {
     render(<TabBar />);
     const strip = document.querySelector("[data-tab-strip]");
     expect(strip?.className).toContain("overflow-x-auto");
@@ -260,13 +260,17 @@ describe("TabBar overflow scrolling", () => {
     expect(slack).not.toBeNull();
   });
 
-  it("leaves macOS its native overlay scrollbar", () => {
+  it("asks for the hairline on macOS too", () => {
     platformMock.isMac = true;
     try {
       render(<TabBar />);
-      // A ::-webkit-scrollbar rule would swap WKWebView's thin, transient,
-      // zero-height overlay bar for an always-present one that takes height.
-      expect(document.querySelector("[data-tab-strip]")?.getAttribute("data-tab-strip")).toBe("");
+      // WKWebView's overlay bar is thin and transient only while "Show scroll
+      // bars" is on its default; set to "Always" it draws a classic bar under
+      // the tab labels. The hairline is thinner in that mode and still fades
+      // with the overlay behaviour in the other.
+      expect(document.querySelector("[data-tab-strip]")?.getAttribute("data-tab-strip")).toBe(
+        "hairline",
+      );
     } finally {
       platformMock.isMac = false;
     }
