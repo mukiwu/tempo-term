@@ -56,7 +56,7 @@ describe("BackgroundImageSettingsSection", () => {
     openMock.mockResolvedValue(null);
     render(<BackgroundImageSettingsSection />);
 
-    fireEvent.click(screen.getByRole("button", { name: "background.choose" }));
+    fireEvent.click(screen.getByRole("button", { name: "background.dropZoneLabel" }));
 
     await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
     expect(invokeMock).not.toHaveBeenCalled();
@@ -68,7 +68,7 @@ describe("BackgroundImageSettingsSection", () => {
     invokeMock.mockResolvedValue("/app-data/appearance/background-1.png");
     render(<BackgroundImageSettingsSection />);
 
-    fireEvent.click(screen.getByRole("button", { name: "background.choose" }));
+    fireEvent.click(screen.getByRole("button", { name: "background.dropZoneLabel" }));
 
     expect(await screen.findByRole("img", { name: "background.previewAlt" })).toHaveAttribute(
       "src",
@@ -109,7 +109,7 @@ describe("BackgroundImageSettingsSection", () => {
     openMock.mockResolvedValue("/pictures/preview.webp");
     render(<BackgroundImageSettingsSection />);
 
-    fireEvent.click(screen.getByRole("button", { name: "background.choose" }));
+    fireEvent.click(screen.getByRole("button", { name: "background.dropZoneLabel" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "background.previewActual" }),
     );

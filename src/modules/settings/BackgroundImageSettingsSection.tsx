@@ -125,11 +125,27 @@ export function BackgroundImageSettingsSection() {
 
       <div className="flex flex-col gap-5">
         <div>
+          {/* The card is the picker: click (or Enter/Space) opens the file
+              dialog, drag-and-drop keeps working, and when an image is set the
+              corner overlay carries replace/remove. Source-selection actions
+              live here; the footer row keeps only the draft-lifecycle ones. */}
           <div
             ref={previewRef}
             data-testid="background-image-preview"
+            role="button"
+            tabIndex={busy ? -1 : 0}
             aria-label={t("background.dropZoneLabel")}
-            className={`relative aspect-[21/9] max-h-80 min-h-48 w-full overflow-hidden rounded-xl border bg-bg-inset transition-[border-color,box-shadow] ${
+            onClick={() => {
+              if (!busy) void chooseImage();
+            }}
+            onKeyDown={(event) => {
+              if (busy) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                void chooseImage();
+              }
+            }}
+            className={`relative aspect-[21/9] max-h-80 min-h-48 w-full cursor-pointer overflow-hidden rounded-xl border bg-bg-inset transition-[border-color,box-shadow] hover:border-accent/50 ${
               dragActive
                 ? "border-accent shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_20%,transparent)]"
                 : "border-border-strong"
@@ -194,6 +210,32 @@ export function BackgroundImageSettingsSection() {
                 {t("background.dropHint")}
               </div>
             )}
+            {draft.path && !draft.imageFailed && !dragActive && !busy && (
+              <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void chooseImage();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-bg-elevated/90 px-2 py-1 text-[11px] text-fg shadow-sm transition-colors hover:border-accent/60"
+                >
+                  <RefreshCw size={12} />
+                  {t("background.replace")}
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    stageRemoval();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-bg-elevated/90 px-2 py-1 text-[11px] text-fg-muted shadow-sm transition-colors hover:border-danger/60 hover:text-danger"
+                >
+                  <Trash2 size={12} />
+                  {t("background.remove")}
+                </button>
+              </div>
+            )}
             {busy && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-bg-elevated/85">
                 <div className="inline-flex items-center gap-2 rounded-lg border border-border-strong bg-bg-elevated px-3 py-2 text-sm text-fg shadow-lg">
@@ -222,15 +264,6 @@ export function BackgroundImageSettingsSection() {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={busy}
-                onClick={() => void chooseImage()}
-                className="inline-flex items-center gap-1.5 rounded-md border border-accent bg-bg-elevated px-3 py-1.5 text-xs font-medium text-fg transition-[background-color,transform] hover:bg-bg-inset active:scale-[0.98] disabled:opacity-50"
-              >
-                {draft.path ? <RefreshCw size={14} /> : <ImagePlus size={14} />}
-                {draft.path ? t("background.replace") : t("background.choose")}
-              </button>
-              <button
-                type="button"
                 disabled={!canPreview || busy}
                 onClick={enterPreview}
                 className="inline-flex items-center gap-1.5 rounded-md border border-accent bg-bg-elevated px-3 py-1.5 text-xs font-semibold text-accent transition-[background-color,transform] hover:bg-bg-inset active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
@@ -256,17 +289,6 @@ export function BackgroundImageSettingsSection() {
                 <RotateCcw size={14} />
                 {t("background.cancelChanges")}
               </button>
-              {draft.path && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={stageRemoval}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-fg-muted transition-colors hover:border-danger/60 hover:text-danger disabled:opacity-50"
-                >
-                  <Trash2 size={14} />
-                  {t("background.remove")}
-                </button>
-              )}
             </div>
             {previewIsPending && (
               <p className="mt-2 text-[11px] text-accent">

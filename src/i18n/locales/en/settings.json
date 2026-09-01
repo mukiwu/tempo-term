@@ -113,7 +113,7 @@
     "sourceImageHint": "This card only identifies the source. Use the live workspace preview to judge the real interface result.",
     "previewSourceError": "This file cannot be previewed. Choose another PNG, JPEG, or WebP image.",
     "dropZoneLabel": "Background image drop zone",
-    "dropHint": "Drop an image here",
+    "dropHint": "Click or drop an image",
     "dropAdd": "Drop to add this background",
     "dropReplace": "Drop to replace the background",
     "dropSingleError": "Drop one image at a time.",

@@ -113,7 +113,7 @@
     "sourceImageHint": "這張卡片只用來確認圖片來源；請進入實際工作區預覽判斷真正的介面效果。",
     "previewSourceError": "無法預覽這個檔案，請選擇其他 PNG、JPEG 或 WebP 圖片。",
     "dropZoneLabel": "背景圖片拖放區",
-    "dropHint": "拖曳圖片至此",
+    "dropHint": "點擊或拖曳圖片",
     "dropAdd": "放開以加入背景圖片",
     "dropReplace": "放開以替換背景圖片",
     "dropSingleError": "請一次只拖入一張圖片。",
