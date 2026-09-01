@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { CommitDetailsPanel } from "./CommitDetailsPanel";
 import {
@@ -49,6 +49,10 @@ const COMMIT: CommitNode = {
 };
 
 describe("CommitDetailsPanel changed-files tree", () => {
+  // The flat/folder toggle is remembered, so one test's choice must not
+  // leak into the next.
+  beforeEach(() => localStorage.clear());
+
   it("nests dist/aaa and dist/bbb under one dist folder in tree mode", async () => {
     vi.mocked(gitCommitDetails).mockResolvedValue({
       message: "feat: x",
@@ -72,6 +76,31 @@ describe("CommitDetailsPanel changed-files tree", () => {
     await waitFor(() => expect(screen.getAllByText("dist")).toHaveLength(1));
     expect(screen.getByText("aaa")).toBeInTheDocument();
     expect(screen.getByText("x.ts")).toBeInTheDocument();
+  });
+
+  it("remembers the flat/folder view mode across remounts", async () => {
+    vi.mocked(gitCommitDetails).mockResolvedValue({
+      message: "feat: x",
+      files: [{ status: "M", path: "dist/aaa/x.ts" }],
+    });
+    const panel = () => (
+      <CommitDetailsPanel
+        repo="/repo"
+        selection={{ mode: "single", commit: COMMIT }}
+        onClose={() => {}}
+        labels={LABELS}
+      />
+    );
+    const first = render(panel());
+    await screen.findByText("dist/aaa/x.ts");
+    fireEvent.click(screen.getByRole("button", { name: "Group by folder" }));
+    await screen.findByText("x.ts");
+    first.unmount();
+
+    render(panel());
+
+    expect(await screen.findByText("x.ts")).toBeInTheDocument();
+    expect(screen.queryByText("dist/aaa/x.ts")).not.toBeInTheDocument();
   });
 
   it("collapsing a folder in tree mode hides its files", async () => {
@@ -122,6 +151,10 @@ describe("CommitDetailsPanel changed-files tree", () => {
 });
 
 describe("CommitDetailsPanel compare mode", () => {
+  // The flat/folder toggle is remembered, so one test's choice must not
+  // leak into the next.
+  beforeEach(() => localStorage.clear());
+
   const OTHER: CommitNode = {
     hash: "def5678",
     parents: [],

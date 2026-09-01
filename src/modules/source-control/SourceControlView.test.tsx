@@ -35,6 +35,7 @@ const STATUS_ONE_MODIFIED: GitStatus = {
 describe("SourceControlView row interactions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.mocked(gitBridge.gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitBridge.gitLog).mockResolvedValue([]);
     vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
@@ -149,6 +150,7 @@ describe("SourceControlView row interactions", () => {
 describe("SourceControlView collapsible sections", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.mocked(gitBridge.gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitBridge.gitLog).mockResolvedValue([]);
     vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
@@ -226,6 +228,51 @@ describe("SourceControlView collapsible sections", () => {
     expect(after[1].closest("li")).not.toHaveAttribute("aria-current");
   });
 
+  it("keeps Recent commits pinned outside the scrolling area in both states", async () => {
+    vi.mocked(gitBridge.gitLog).mockResolvedValue([
+      { id: "abc1234", summary: "feat: x", author: "a", timestamp: 1, parents: [] },
+    ]);
+    render(<SourceControlView />);
+    await screen.findByText("feat: x");
+
+    // The header must never live inside the Changes scroller, or expanding it
+    // would drop it into that scroll flow and carry it out of view.
+    const scroller = screen.getByRole("button", { name: "Changes" }).closest("section")
+      ?.parentElement;
+    const history = () => screen.getByRole("button", { name: "Recent commits" });
+    expect(scroller).not.toBeNull();
+    expect(scroller!.contains(history())).toBe(false);
+
+    fireEvent.click(history());
+    expect(screen.queryByText("feat: x")).not.toBeInTheDocument();
+    expect(scroller!.contains(history())).toBe(false);
+  });
+
+  it("remembers which sections are collapsed across remounts", async () => {
+    const first = render(<SourceControlView />);
+    await screen.findByText("src/a.ts");
+    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+    expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
+    first.unmount();
+
+    render(<SourceControlView />);
+    const header = await screen.findByRole("button", { name: "Changes" });
+    expect(header).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("remembers the flat/folder view mode across remounts", async () => {
+    const first = render(<SourceControlView />);
+    await screen.findByText("src/a.ts");
+    // The button offers the mode you'd switch *to*, so "Group by folder" means
+    // the panel is flat right now.
+    fireEvent.click(screen.getByRole("button", { name: "Group by folder" }));
+    expect(screen.getByRole("button", { name: "Flat view" })).toBeInTheDocument();
+    first.unmount();
+
+    render(<SourceControlView />);
+    expect(await screen.findByRole("button", { name: "Flat view" })).toBeInTheDocument();
+  });
+
   it("unstages every staged file from the staged section header", async () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue({
       branch: "main",
@@ -249,6 +296,7 @@ describe("SourceControlView collapsible sections", () => {
 describe("SourceControlView folder view", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.mocked(gitBridge.gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitBridge.gitLog).mockResolvedValue([]);
     vi.mocked(gitBridge.gitStage).mockResolvedValue(undefined);
@@ -329,6 +377,7 @@ describe("SourceControlView folder view", () => {
 describe("SourceControlView nested folder tree", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.mocked(gitBridge.gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitBridge.gitLog).mockResolvedValue([]);
     vi.mocked(gitBridge.gitStatus).mockResolvedValue({
@@ -400,6 +449,7 @@ describe("SourceControlView nested folder tree", () => {
 describe("SourceControlView refresh feedback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.mocked(gitBridge.gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitBridge.gitLog).mockResolvedValue([]);
     useWorkspaceStore.setState({ rootPath: "/root" });
@@ -438,6 +488,7 @@ describe("SourceControlView refresh feedback", () => {
 describe("SourceControlView commit jump", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.mocked(gitBridge.gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitBridge.gitStatus).mockResolvedValue({ branch: "main", staged: [], unstaged: [] });
     vi.mocked(gitBridge.gitLog).mockResolvedValue([
@@ -470,6 +521,7 @@ describe("SourceControlView commit jump", () => {
 describe("SourceControlView commit graph", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.mocked(gitBridge.gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitBridge.gitStatus).mockResolvedValue({ branch: "main", staged: [], unstaged: [] });
     useWorkspaceStore.getState().setRoot("/repo");
