@@ -8,7 +8,15 @@ import { useBackgroundImageDraftStore } from "@/stores/backgroundImageDraftStore
 import { useSettingsStore } from "@/stores/settingsStore";
 import { getTheme } from "@/themes/themes";
 
-export function BackgroundImageDraftControls({ compact = false }: { compact?: boolean }) {
+export function BackgroundImageDraftControls({
+  compact = false,
+  columns = false,
+}: {
+  compact?: boolean;
+  /** Two-column grid used by the settings section's full-width layout; the
+   *  preview panel keeps the single vertical stack. */
+  columns?: boolean;
+}) {
   const { t } = useTranslation("settings");
   const draft = useBackgroundImageDraftStore((state) => state.draft);
   const update = useBackgroundImageDraftStore((state) => state.update);
@@ -18,10 +26,14 @@ export function BackgroundImageDraftControls({ compact = false }: { compact?: bo
 
   const disabled = !draft.path || draft.imageFailed;
   const scopeOptions: BackgroundImageScope[] = ["workspace", "window"];
-  const sectionGap = compact ? "space-y-4" : "space-y-5";
+  const sectionLayout = columns
+    ? "grid gap-x-8 gap-y-5 sm:grid-cols-2"
+    : compact
+      ? "space-y-4"
+      : "space-y-5";
 
   return (
-    <div className={sectionGap}>
+    <div className={sectionLayout}>
       <div>
         <label className="mb-2 block text-xs font-medium text-fg">
           {t("background.scopeLabel")}
@@ -45,24 +57,6 @@ export function BackgroundImageDraftControls({ compact = false }: { compact?: bo
           ))}
         </div>
       </div>
-
-      <OpacityControl
-        id={compact ? "preview-background-opacity" : "background-image-opacity"}
-        label={t("background.opacity")}
-        hint={compact ? undefined : t("background.opacityHint")}
-        value={draft.opacity}
-        disabled={disabled}
-        onChange={(opacity) => update({ opacity })}
-      />
-
-      <OpacityControl
-        id={compact ? "preview-terminal-opacity" : "terminal-background-image-opacity"}
-        label={t("background.terminalOpacity")}
-        hint={compact ? undefined : t("background.terminalOpacityHint")}
-        value={draft.terminalOpacity}
-        disabled={disabled}
-        onChange={(terminalOpacity) => update({ terminalOpacity })}
-      />
 
       <div>
         <label
@@ -98,6 +92,24 @@ export function BackgroundImageDraftControls({ compact = false }: { compact?: bo
           </p>
         )}
       </div>
+      <OpacityControl
+        id={compact ? "preview-background-opacity" : "background-image-opacity"}
+        label={t("background.opacity")}
+        hint={compact ? undefined : t("background.opacityHint")}
+        value={draft.opacity}
+        disabled={disabled}
+        onChange={(opacity) => update({ opacity })}
+      />
+
+      <OpacityControl
+        id={compact ? "preview-terminal-opacity" : "terminal-background-image-opacity"}
+        label={t("background.terminalOpacity")}
+        hint={compact ? undefined : t("background.terminalOpacityHint")}
+        value={draft.terminalOpacity}
+        disabled={disabled}
+        onChange={(terminalOpacity) => update({ terminalOpacity })}
+      />
+
     </div>
   );
 }

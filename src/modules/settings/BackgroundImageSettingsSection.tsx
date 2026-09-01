@@ -123,13 +123,13 @@ export function BackgroundImageSettingsSection() {
         </p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(240px,0.65fr)]">
+      <div className="flex flex-col gap-5">
         <div>
           <div
             ref={previewRef}
             data-testid="background-image-preview"
             aria-label={t("background.dropZoneLabel")}
-            className={`relative aspect-video min-h-48 overflow-hidden rounded-xl border bg-bg-inset transition-[border-color,box-shadow] ${
+            className={`relative aspect-[21/9] max-h-80 min-h-48 w-full overflow-hidden rounded-xl border bg-bg-inset transition-[border-color,box-shadow] ${
               dragActive
                 ? "border-accent shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_20%,transparent)]"
                 : "border-border-strong"
@@ -208,9 +208,11 @@ export function BackgroundImageSettingsSection() {
           </p>
         </div>
 
-        <div className="flex min-w-0 flex-col justify-between gap-5">
-          <BackgroundImageDraftControls />
+        <div className="border-t border-border pt-5">
+          <BackgroundImageDraftControls columns />
+        </div>
 
+        <div className="border-t border-border pt-5">
           <div>
             {(dropError || errorKey) && (
               <p role="alert" className="mb-2 text-xs leading-relaxed text-danger">
