@@ -141,6 +141,7 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
             "event_msg" => {
                 let etype = payload.get("type").and_then(Value::as_str).unwrap_or("");
                 match etype {
+                    // Legacy rollouts (pre 2026-08) carry the user's turns here.
                     "user_message" => {
                         let text = payload.get("message").and_then(Value::as_str).map(str::trim).unwrap_or("");
                         if text.is_empty() {
@@ -148,8 +149,33 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
                         }
                         message_count += 1;
                         user_message_count += 1;
-                        if title.is_none() {
+                        // Injected context (file mentions etc.) counts as a turn
+                        // but never titles the session.
+                        if title.is_none()
+                            && !crate::modules::codex_progress::is_injected_user_text(text)
+                        {
                             title = Some(text.chars().take(MAX_TITLE_CHARS).collect());
+                        }
+                        if let Some(ts) = ts {
+                            bump_message_bucket(&mut buckets, ts, true);
+                        }
+                    }
+                    // 2026-08+ rollouts dropped `user_message`; the user's turns
+                    // arrive as completed UserMessage items instead.
+                    "item_completed" => {
+                        let Some(item) =
+                            crate::modules::codex_progress::item_completed_user_item(payload)
+                        else {
+                            continue;
+                        };
+                        message_count += 1;
+                        user_message_count += 1;
+                        if title.is_none() {
+                            if let Some(text) =
+                                crate::modules::codex_progress::user_item_typed_text(item)
+                            {
+                                title = Some(text.chars().take(MAX_TITLE_CHARS).collect());
+                            }
                         }
                         if let Some(ts) = ts {
                             bump_message_bucket(&mut buckets, ts, true);
@@ -253,12 +279,26 @@ pub fn parse_codex_transcript(path: &Path) -> Vec<TranscriptMessage> {
 
         match type_ {
             "event_msg" => {
+                // Legacy user turns; new-format ones arrive as item_completed
+                // UserMessage items below. An image-only turn has nothing
+                // typed to render, so it gets no row (it still counts in meta).
                 if payload.get("type").and_then(Value::as_str) == Some("user_message") {
                     let text = payload.get("message").and_then(Value::as_str).map(str::trim).unwrap_or("");
                     if !text.is_empty() {
                         out.push(TranscriptMessage {
                             role: "user".to_string(),
                             text: text.to_string(),
+                            timestamp: ts,
+                            tool_name: None,
+                        });
+                    }
+                } else if let Some(item) =
+                    crate::modules::codex_progress::item_completed_user_item(payload)
+                {
+                    if let Some(text) = crate::modules::codex_progress::user_item_typed_text(item) {
+                        out.push(TranscriptMessage {
+                            role: "user".to_string(),
+                            text,
                             timestamp: ts,
                             tool_name: None,
                         });
@@ -335,6 +375,49 @@ mod tests {
         let path = dir.join("rollout-x.jsonl");
         std::fs::write(&path, contents).unwrap();
         path
+    }
+
+    // 2026-08+ Codex rollouts stopped emitting event_msg/user_message; the
+    // user's turns arrive as event_msg/item_completed with item.type
+    // "UserMessage", whose content mixes typed text with injected pieces
+    // (file mentions, AGENTS.md, XML wrappers).
+    const NEW_ROLLOUT: &str = concat!(
+        r#"{"timestamp":"2026-09-01T02:00:00.000Z","type":"session_meta","payload":{"id":"codex-2","cwd":"/p/gamma"}}"#, "\n",
+        r##"{"timestamp":"2026-09-01T02:00:01.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"# Files mentioned by the user:\n\n## shot.png: /tmp/shot.png"},{"type":"local_image","text":""}]}}}"##, "\n",
+        r#"{"timestamp":"2026-09-01T02:00:02.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u2","content":[{"type":"text","text":"fix the codex title"}]}}}"#, "\n",
+        r#"{"timestamp":"2026-09-01T02:00:03.000Z","type":"turn_context","payload":{"model":"gpt-5.2-codex"}}"#, "\n",
+        r#"{"timestamp":"2026-09-01T02:00:04.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}"#, "\n",
+        r#"{"timestamp":"2026-09-01T02:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":7}}}}"#, "\n",
+    );
+
+    #[test]
+    fn new_format_user_turns_title_counts_and_transcript() {
+        let path = write_fixture("newfmt", NEW_ROLLOUT);
+        let meta = parse_codex_meta(&path).unwrap();
+        // The title skips the injected file-mention turn and lands on the
+        // first text the user actually typed.
+        assert_eq!(meta.title, "fix the codex title");
+        // Both user turns count (an image-only turn is still a message).
+        assert_eq!(meta.user_message_count, 2);
+        assert_eq!(meta.message_count, 3);
+        assert_eq!(meta.model.as_deref(), Some("gpt-5.2-codex"));
+
+        let t = parse_codex_transcript(&path);
+        let roles: Vec<&str> = t.iter().map(|m| m.role.as_str()).collect();
+        // The injected-only turn has nothing typed to render.
+        assert_eq!(roles, vec!["user", "assistant"]);
+        assert_eq!(t[0].text, "fix the codex title");
+    }
+
+    #[test]
+    fn legacy_title_skips_injected_file_mentions() {
+        let contents = concat!(
+            r#"{"timestamp":"2026-07-06T02:00:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"\n# Files mentioned by the user:\n\n## shot.png"}}"#, "\n",
+            r#"{"timestamp":"2026-07-06T02:00:02.000Z","type":"event_msg","payload":{"type":"user_message","message":"real question"}}"#, "\n",
+        );
+        let meta = parse_codex_meta(&write_fixture("legacyinj", contents)).unwrap();
+        assert_eq!(meta.title, "real question");
+        assert_eq!(meta.user_message_count, 2);
     }
 
     #[test]

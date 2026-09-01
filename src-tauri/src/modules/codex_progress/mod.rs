@@ -58,12 +58,58 @@ fn parse_session_meta(first_line: &str) -> Option<SessionMeta> {
 /// Longest session title we keep; longer text is truncated for display.
 const MAX_TITLE_CHARS: usize = 80;
 
-/// Derive a title for a Codex session from a reader over its rollout JSONL: the
-/// first `user_message` event's text, trimmed and truncated. The session opens
-/// with injected `response_item` context (environment, instructions); the user's
-/// own first turn arrives as an `event_msg`/`user_message`, so that is what we
-/// use. Reads lazily and stops at the first match, so a long rollout is not fully
-/// loaded. Returns None when the rollout has no user message yet.
+/// Injected context Codex prepends to a user turn (file/image mentions,
+/// AGENTS.md instructions, XML-wrapped environment blocks). Never a title.
+pub(crate) fn is_injected_user_text(text: &str) -> bool {
+    let t = text.trim_start();
+    t.starts_with('<')
+        || t.starts_with("# Files mentioned by the user")
+        || t.starts_with("# AGENTS.md instructions")
+}
+
+/// The `item` of an `event_msg`/`item_completed` payload when it is a user
+/// turn. 2026-08+ rollouts stopped emitting `event_msg`/`user_message`; this
+/// is where the user's turns live in the new format.
+pub(crate) fn item_completed_user_item(payload: &Value) -> Option<&Value> {
+    if payload.get("type").and_then(Value::as_str) != Some("item_completed") {
+        return None;
+    }
+    let item = payload.get("item")?;
+    if item.get("type").and_then(Value::as_str) != Some("UserMessage") {
+        return None;
+    }
+    Some(item)
+}
+
+/// What the user actually typed in a UserMessage item: its text pieces joined,
+/// injected pieces skipped. None for e.g. an image-only turn.
+pub(crate) fn user_item_typed_text(item: &Value) -> Option<String> {
+    let pieces = item.get("content").and_then(Value::as_array)?;
+    let mut out = String::new();
+    for piece in pieces {
+        if piece.get("type").and_then(Value::as_str) != Some("text") {
+            continue;
+        }
+        let Some(text) = piece.get("text").and_then(Value::as_str) else { continue };
+        let text = text.trim();
+        if text.is_empty() || is_injected_user_text(text) {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(text);
+    }
+    if out.is_empty() { None } else { Some(out) }
+}
+
+/// Derive a title for a Codex session from a reader over its rollout JSONL:
+/// the first text the user actually typed, trimmed and truncated. Legacy
+/// rollouts carry user turns as `event_msg`/`user_message`; 2026-08+ rollouts
+/// carry them as `event_msg`/`item_completed` UserMessage items. Injected
+/// context (file mentions, AGENTS.md, XML wrappers) never titles a session.
+/// Reads lazily and stops at the first match, so a long rollout is not fully
+/// loaded. Returns None when the rollout has no typed user text yet.
 pub fn extract_codex_title<R: BufRead>(reader: R) -> Option<String> {
     for line in reader.lines() {
         let line = match line {
@@ -85,12 +131,18 @@ pub fn extract_codex_title<R: BufRead>(reader: R) -> Option<String> {
             Some(payload) => payload,
             None => continue,
         };
+        if let Some(item) = item_completed_user_item(payload) {
+            if let Some(text) = user_item_typed_text(item) {
+                return Some(text.chars().take(MAX_TITLE_CHARS).collect());
+            }
+            continue;
+        }
         if payload.get("type").and_then(Value::as_str) != Some("user_message") {
             continue;
         }
         if let Some(text) = payload.get("message").and_then(Value::as_str) {
             let trimmed = text.trim();
-            if !trimmed.is_empty() {
+            if !trimmed.is_empty() && !is_injected_user_text(trimmed) {
                 return Some(trimmed.chars().take(MAX_TITLE_CHARS).collect());
             }
         }
@@ -357,6 +409,20 @@ pub async fn codex_session_title(
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
+    #[test]
+    fn extract_title_from_new_format_item_completed() {
+        let rollout = concat!(
+            r##"{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":"# Files mentioned by the user:\n\n## a.png"}]}}}"##, "\n",
+            r#"{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":"rename this session"}]}}}"#, "\n",
+        );
+        assert_eq!(
+            extract_codex_title(Cursor::new(rollout)),
+            Some("rename this session".to_string())
+        );
+    }
+
     use super::*;
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime};
