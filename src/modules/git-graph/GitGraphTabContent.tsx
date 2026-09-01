@@ -576,6 +576,7 @@ export function GitGraphTabContent() {
         pull: t("menu.pull"),
         deleteRemote: t("menu.deleteRemote"),
         copyBranchName: t("menu.copyBranchName"),
+        copyTagName: t("menu.copyTagName"),
         openWorktree: t("menu.openWorktree"),
         pullFrom: (remote: string) => t("menu.pullFrom", { remote }),
         deleteRemoteOn: (remote: string) => t("menu.deleteRemoteOn", { remote }),
@@ -602,7 +603,7 @@ export function GitGraphTabContent() {
             onConfirm: () => void runAction(() => gitPushDelete(repo!, remote, branch)),
           });
         },
-        onCopyBranchName: () => void navigator.clipboard.writeText(ref.name),
+        onCopyRefName: () => void navigator.clipboard.writeText(ref.name),
         // The branch already exists, so this checks it out into a worktree of
         // its own rather than cutting a new one — unlike checkout, it leaves
         // the current working tree and whatever is running in it alone.
@@ -714,9 +715,8 @@ export function GitGraphTabContent() {
             menu.type === "commit"
               ? commitMenuItems(menu.commit)
               : refMenuItems(menu.ref, menu.remotes);
-          // The current branch (kind "head") with no remote folded into its chip
-          // has no applicable actions; skip the menu rather than flashing an
-          // empty one.
+          // A detached HEAD, a stash and an unknown ref have no applicable
+          // actions; skip the menu rather than flashing an empty one.
           if (items.length === 0) {
             return null;
           }

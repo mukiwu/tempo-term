@@ -129,6 +129,7 @@ export interface RefMenuLabels {
   pull: string;
   deleteRemote: string;
   copyBranchName: string;
+  copyTagName: string;
   openWorktree: string;
   /** Names the remote, for a merged chip where the label alone is ambiguous. */
   pullFrom: (remote: string) => string;
@@ -145,7 +146,8 @@ export interface RefMenuActions {
   /** Take the full remote ref name ("origin/master") — a merged chip has several. */
   onPull: (remoteRef: string) => void;
   onDeleteRemote: (remoteRef: string) => void;
-  onCopyBranchName: () => void;
+  /** Copies the ref's own name — the branch, the remote ref, or the tag. */
+  onCopyRefName: () => void;
   onOpenWorktree: () => void;
 }
 
@@ -170,6 +172,13 @@ export function buildRefMenu(
         danger: true,
         onSelect: actions.onDeleteTag,
       },
+      {
+        id: "copyTagName",
+        label: labels.copyTagName,
+        icon: Copy,
+        group: 1,
+        onSelect: actions.onCopyRefName,
+      },
     ];
   }
 
@@ -177,6 +186,11 @@ export function buildRefMenu(
     // A merged chip owns both halves of the branch, so its menu runs
     // checkout/merge, then pull, then the deletions, then copy.
     const isBranch = ref.kind === "branch";
+    // A detached HEAD is not a branch: none of these act on it, and its name is
+    // the literal "HEAD", which is not worth copying.
+    if (!isBranch && ref.name === "HEAD") {
+      return [];
+    }
     const items: ContextMenuItem[] = [];
     if (isBranch) {
       items.push(
@@ -198,10 +212,6 @@ export function buildRefMenu(
           onSelect: actions.onOpenWorktree,
         },
       );
-    }
-    // The current branch with nothing folded in has no applicable actions.
-    if (remotes.length === 0 && !isBranch) {
-      return items;
     }
     for (const remote of remotes) {
       items.push({
@@ -232,15 +242,15 @@ export function buildRefMenu(
         onSelect: () => actions.onDeleteRemote(remote.name),
       });
     }
-    if (remotes.length > 0) {
-      items.push({
-        id: "copyBranchName",
-        label: labels.copyBranchName,
-        icon: Copy,
-        group: 3,
-        onSelect: actions.onCopyBranchName,
-      });
-    }
+    // Every branch chip can be copied, remote twin or not — the branch you are
+    // standing on is the name most often wanted, and it never has one.
+    items.push({
+      id: "copyBranchName",
+      label: labels.copyBranchName,
+      icon: Copy,
+      group: 3,
+      onSelect: actions.onCopyRefName,
+    });
     return items;
   }
 
@@ -280,7 +290,7 @@ export function buildRefMenu(
         label: labels.copyBranchName,
         icon: Copy,
         group: 2,
-        onSelect: actions.onCopyBranchName,
+        onSelect: actions.onCopyRefName,
       },
     ];
   }

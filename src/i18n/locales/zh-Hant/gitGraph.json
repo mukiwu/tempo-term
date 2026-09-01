@@ -74,6 +74,7 @@
     "pullFrom": "從 {{remote}} 拉取 (git pull)",
     "deleteRemoteOn": "刪除 {{remote}} 上的分支… (git push --delete)",
     "copyBranchName": "複製分支名稱",
+    "copyTagName": "複製標籤名稱",
     "openWorktree": "為這個分支開 worktree"
   },
   "modal": {

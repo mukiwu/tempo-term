@@ -74,6 +74,7 @@
     "pullFrom": "Pull from {{remote}} (git pull)",
     "deleteRemoteOn": "Delete branch on {{remote}}… (git push --delete)",
     "copyBranchName": "Copy branch name",
+    "copyTagName": "Copy tag name",
     "openWorktree": "Open worktree for this branch"
   },
   "modal": {

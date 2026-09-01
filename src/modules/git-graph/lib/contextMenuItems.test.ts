@@ -19,6 +19,7 @@ const refLabels: RefMenuLabels = {
   pull: "Pull into current branch",
   deleteRemote: "Delete remote branch",
   copyBranchName: "Copy branch name",
+  copyTagName: "Copy tag name",
   openWorktree: "Open worktree for this branch",
   pullFrom: (remote: string) => `Pull from ${remote}`,
   deleteRemoteOn: (remote: string) => `Delete branch on ${remote}`,
@@ -34,7 +35,7 @@ function refActions(): RefMenuActions {
     onMergeRemote: vi.fn(),
     onPull: vi.fn(),
     onDeleteRemote: vi.fn(),
-    onCopyBranchName: vi.fn(),
+    onCopyRefName: vi.fn(),
     onOpenWorktree: vi.fn(),
   };
 }
@@ -86,22 +87,46 @@ describe("buildRefMenu", () => {
     expect(items.find((i) => i.id === "copyBranchName")?.danger).toBeFalsy();
   });
 
-  it("offers only delete for a tag, in the danger colour", () => {
+  it("offers delete in the danger colour, then copy, for a tag", () => {
+    const actions = refActions();
     const ref: CommitRef = { name: "v1.0.0", kind: "tag" };
-    const items = buildRefMenu(ref, refLabels, refActions());
-    expect(ids(items)).toEqual(["deleteTag"]);
+    const items = buildRefMenu(ref, refLabels, actions);
+    expect(ids(items)).toEqual(["deleteTag", "copyTagName"]);
     expect(items[0].danger).toBe(true);
+    const copy = items[1];
+    expect(copy.danger).toBeFalsy();
+    // The delete sits in its own group so a divider fences it off from copy.
+    expect(copy.group).not.toBe(items[0].group);
+    copy.onSelect();
+    expect(actions.onCopyRefName).toHaveBeenCalledTimes(1);
   });
 
-  it("offers checkout, merge and delete for a local branch", () => {
+  it("offers copy on a local branch that has no remote yet", () => {
     const ref: CommitRef = { name: "feature", kind: "branch" };
     const items = buildRefMenu(ref, refLabels, refActions());
-    expect(ids(items)).toEqual(["checkout", "merge", "openWorktree", "deleteBranch"]);
+    expect(ids(items)).toEqual([
+      "checkout",
+      "merge",
+      "openWorktree",
+      "deleteBranch",
+      "copyBranchName",
+    ]);
     expect(items.find((i) => i.id === "deleteBranch")?.danger).toBe(true);
   });
 
-  it("offers nothing for the current branch (head) with no remote folded in", () => {
+  it("offers copy on the current branch (head) with no remote folded in", () => {
+    const actions = refActions();
     const ref: CommitRef = { name: "main", kind: "head" };
+    const items = buildRefMenu(ref, refLabels, actions);
+    // Checkout, merge and delete do not apply to the branch already checked
+    // out, but its name is the one most often wanted.
+    expect(ids(items)).toEqual(["copyBranchName"]);
+    items[0].onSelect();
+    expect(actions.onCopyRefName).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers nothing for a detached HEAD", () => {
+    const ref: CommitRef = { name: "HEAD", kind: "head" };
     expect(buildRefMenu(ref, refLabels, refActions())).toEqual([]);
   });
 
@@ -165,7 +190,7 @@ describe("buildRefMenu", () => {
     items.find((i) => i.id === "checkoutRemote")?.onSelect();
     items.find((i) => i.id === "pull")?.onSelect();
     items.find((i) => i.id === "deleteRemote")?.onSelect();
-    expect(actions.onCopyBranchName).toHaveBeenCalledTimes(1);
+    expect(actions.onCopyRefName).toHaveBeenCalledTimes(1);
     expect(actions.onCheckoutRemote).toHaveBeenCalledTimes(1);
     expect(actions.onPull).toHaveBeenCalledWith("origin/feat/x");
     expect(actions.onDeleteRemote).toHaveBeenCalledWith("origin/feat/x");
