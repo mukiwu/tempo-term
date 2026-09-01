@@ -16,6 +16,7 @@
 
 ### fix
 
+- WebView 重新載入或 WebContent 終止後可重新附掛既有 PTY／SSH 工作階段，保留有界輸出緩衝、SFTP 綁定與未儲存的編輯器內容，並提供原生「重新整理工作區」復原入口 (#383)
 - 關閉視窗或退出的確認框只在有終端機「正在執行工作」時出現：閒置在提示符的 shell 直接關、不再問（後端 session 照樣清理），跑著 vim、build、長時間指令才確認，與 Terminal.app 的行為一致；SSH 連線一律視為執行中，確認框顯示的數字也改為忙碌中的數量 (#376)
 - 接續 #372：升級索引 schema 版本，強制重掃所有已被舊 parser 快取成空標題的 Codex 對話；compacted 續用檔沒有任何打字紀錄時，標題改從 replay 的使用者發言撈取（僅取標題、不計入訊息數） (#374)
 - 修正新版 Codex 對話在 AI 對話側邊欄沒有標題、使用者訊息數為零、對話內容看不到使用者發言的問題。新版 rollout 改用 item_completed 事件記錄使用者輸入，索引、對話檢視與即時追蹤三處都補上新格式；注入的脈絡（檔案提及、AGENTS.md 等）不再被拿來當標題，舊格式同樣受惠 (#372)
@@ -29,7 +30,7 @@
 
 ### 貢獻者
 
-- @mark22013333 (#355, #356, #369)
+- @mark22013333 (#355, #356, #369, #383)
 - @yw-chan (#348, #349, #350, #357, #360, #361, #364)
 - @oberonlai (#347, #362)
 
@@ -51,6 +52,7 @@
 
 ### fix
 
+- Recover from a WebView reload or WebContent termination by reattaching live PTY/SSH sessions, retaining bounded output, SFTP bindings and unsaved editor buffers, with a native Reload Workspace entry point (#383)
 - The close/quit confirmation now only appears when a terminal is actually running a job: shells sitting idle at their prompt close without asking (their backend sessions are still cleaned up), while vim, builds and long-running commands prompt, matching Terminal.app; SSH connections always count as busy, and the dialog reports the busy count (#376)
 - Follow-up to #372: bump the index schema version so Codex sessions the old parser had cached with empty titles are re-parsed, and title compacted continuations from their replayed user turns when no typed turn exists (title only, never counted as messages) (#374)
 - Fix new-format Codex sessions listing untitled in the AI sessions sidebar, with zero user messages and no user bubbles in the transcript. Newer rollouts record user turns as item_completed events; the index, the transcript viewer and the live tracker all parse the new shape, and injected context (file mentions, AGENTS.md) no longer titles a session on either format (#372)
@@ -64,6 +66,6 @@
 
 ### Contributors
 
-- @mark22013333 (#355, #356, #369)
+- @mark22013333 (#355, #356, #369, #383)
 - @yw-chan (#348, #349, #350, #357, #360, #361, #364)
 - @oberonlai (#347, #362)

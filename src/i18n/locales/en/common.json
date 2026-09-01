@@ -126,6 +126,7 @@
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out",
     "resetZoom": "Reset Zoom",
+    "reloadWorkspace": "Reload Workspace",
     "splitRight": "Split Right",
     "splitDown": "Split Down",
     "cyclePane": "Cycle Pane",
@@ -421,5 +422,17 @@
     "tabMessage": "A terminal in this tab is running a job; closing will interrupt it. Continue?",
     "paneMessage": "This pane's terminal is running a job; closing will interrupt it. Continue?",
     "confirm": "Close anyway"
+  },
+  "recovery": {
+    "restored": "The renderer recovered and reconnected {{pty}} terminal and {{ssh}} SSH sessions.",
+    "truncated": "Some earlier background output exceeded the 1 MB recovery buffer.",
+    "incident": "Incident: {{id}}",
+    "reloadAgain": "Reload again",
+    "dismiss": "Dismiss recovery notice",
+    "errorTitle": "The workspace renderer encountered an error",
+    "errorMessage": "Running terminal and SSH sessions are preserved. You can safely reload the workspace.",
+    "reload": "Reload workspace",
+    "revealLog": "Reveal diagnostics log",
+    "reloadFailed": "The workspace cannot be reloaded safely right now. Save any large unsaved files and try again."
   }
 }

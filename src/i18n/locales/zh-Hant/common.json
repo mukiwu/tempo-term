@@ -126,6 +126,7 @@
     "zoomIn": "放大",
     "zoomOut": "縮小",
     "resetZoom": "重設縮放",
+    "reloadWorkspace": "重新整理工作區",
     "splitRight": "向右分割",
     "splitDown": "向下分割",
     "cyclePane": "切換面板",
@@ -421,5 +422,17 @@
     "tabMessage": "這個分頁有終端機正在執行工作，關閉會中止它，確定要繼續嗎？",
     "paneMessage": "這個面板的終端機正在執行工作，關閉會中止它，確定要繼續嗎？",
     "confirm": "仍要關閉"
+  },
+  "recovery": {
+    "restored": "顯示程序已恢復，{{pty}} 個終端與 {{ssh}} 個 SSH 工作階段已重新連線。",
+    "truncated": "部分較早的背景輸出已超過 1 MB 復原緩衝上限。",
+    "incident": "事件編號：{{id}}",
+    "reloadAgain": "再次重新整理",
+    "dismiss": "關閉復原提示",
+    "errorTitle": "工作區顯示發生錯誤",
+    "errorMessage": "執行中的終端與 SSH 工作階段會保留，你可以安全地重新整理工作區。",
+    "reload": "重新整理工作區",
+    "revealLog": "顯示診斷紀錄",
+    "reloadFailed": "目前無法安全地重新整理工作區，請先儲存較大的未儲存檔案後再試一次。"
   }
 }

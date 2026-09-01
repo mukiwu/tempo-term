@@ -197,6 +197,11 @@ interface TabsState {
     leafId: string,
     session: AiSessionBinding | null,
   ) => void;
+  setTerminalBackend: (
+    tabId: string,
+    leafId: string,
+    backend: import("@/modules/terminal/lib/terminalLayout").BackendSessionBinding | null,
+  ) => void;
   closePane: (tabId: string, leafId: string) => void;
 }
 
@@ -1192,6 +1197,7 @@ export const useTabsStore = create<TabsState>()(
                   cwd,
                   ssh: current.ssh,
                   aiSession: current.aiSession,
+                  backend: current.backend,
                 }),
               }
             : t,
@@ -1222,6 +1228,7 @@ export const useTabsStore = create<TabsState>()(
         kind: "terminal",
         cwd: current.cwd,
         ...(session ? { aiSession: session } : {}),
+        backend: current.backend,
       };
       return {
         tabs: state.tabs.map((t) =>
@@ -1231,6 +1238,23 @@ export const useTabsStore = create<TabsState>()(
         ),
       };
     }),
+
+  setTerminalBackend: (tabId, leafId, backend) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) => {
+        if (tab.id !== tabId) return tab;
+        const current = findPaneContent(tab.paneTree, leafId);
+        if (!current || current.kind !== "terminal") return tab;
+        const { backend: _previousBackend, ...withoutBackend } = current;
+        return {
+          ...tab,
+          paneTree: setLeafPane(tab.paneTree, leafId, {
+            ...withoutBackend,
+            ...(backend ? { backend } : {}),
+          }),
+        };
+      }),
+    })),
 
   closePane: (tabId, leafId) =>
     set((state) => {
@@ -1267,7 +1291,9 @@ export const useTabsStore = create<TabsState>()(
     {
       name: TABS_STORAGE_KEY,
       storage: createJSONStorage(() => perWindowStorage()),
-      version: 2,
+      // v3 documents the persisted backend binding. Its runtimeId already
+      // invalidates bindings from earlier app processes; no data rewrite needed.
+      version: 3,
       migrate: migratePersistedTabs,
       partialize: (state) => ({
         spaces: state.spaces,

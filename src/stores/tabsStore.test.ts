@@ -603,6 +603,29 @@ describe("tabsStore", () => {
     });
   });
 
+  it("persists a backend binding across cwd and AI-session updates", () => {
+    const id = useTabsStore.getState().newTerminalTab("/work");
+    const leafId = activeTab().activeLeafId;
+    const backend = { runtimeId: "runtime-1", kind: "pty" as const, sessionId: 42 };
+
+    useTabsStore.getState().setTerminalBackend(id, leafId, backend);
+    useTabsStore.getState().setTerminalCwd(id, leafId, "/work/subdir");
+    useTabsStore
+      .getState()
+      .setTerminalAiSession(id, leafId, { agent: "codex", sessionId: "conversation-1" });
+
+    expect(findPaneContent(activeTab().paneTree, leafId)).toEqual({
+      kind: "terminal",
+      cwd: "/work/subdir",
+      aiSession: { agent: "codex", sessionId: "conversation-1" },
+      backend,
+    });
+    expect(localStorage.getItem(TABS_STORAGE_KEY)).toContain('"runtimeId":"runtime-1"');
+
+    useTabsStore.getState().setTerminalBackend(id, leafId, null);
+    expect(findPaneContent(activeTab().paneTree, leafId)).not.toHaveProperty("backend");
+  });
+
   it("never binds a local AI session to an SSH pane", () => {
     const id = useTabsStore.getState().openSshTab("connection-1", "server");
     const leafId = activeTab().activeLeafId;
@@ -807,6 +830,33 @@ describe("migratePersistedTabs", () => {
     expect(tab.paneTree).toBe(multiLeafTree);
     expect(tab.activeLeafId).toBe("e1");
     expect(tab.paneOrder).toEqual(leafIds(multiLeafTree));
+  });
+
+  it("preserves a v2 terminal backend binding when migrating to v3", () => {
+    const paneTree = leaf("p1", {
+      kind: "terminal",
+      backend: { runtimeId: "runtime-1", kind: "ssh", sessionId: 9 },
+    });
+    const persisted = {
+      spaces: [{ id: "s1", name: "W" }],
+      activeSpaceId: "s1",
+      activeId: "t1",
+      tabs: [{
+        id: "t1",
+        spaceId: "s1",
+        kind: "terminal",
+        title: "SSH",
+        paneTree,
+        activeLeafId: "p1",
+        paneOrder: ["p1"],
+      }],
+    };
+
+    const migrated = migratePersistedTabs(persisted, 2) as { tabs: Tab[] };
+    expect(findPaneContent(migrated.tabs[0]!.paneTree, "p1")).toEqual({
+      kind: "terminal",
+      backend: { runtimeId: "runtime-1", kind: "ssh", sessionId: 9 },
+    });
   });
 });
 

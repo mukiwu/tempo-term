@@ -65,24 +65,12 @@ export function onWindowResized(handler: () => void): Promise<UnlistenFn> {
   return getCurrentWindow().onResized(() => handler());
 }
 
-// Private to this webview, so each secondary window gets its own isolated copy
-// and never touches localStorage (which is shared across windows of the origin).
-const memoryBacking = new Map<string, string>();
-const memoryStorage: StateStorage = {
-  getItem: (name) => memoryBacking.get(name) ?? null,
-  setItem: (name, value) => {
-    memoryBacking.set(name, value);
-  },
-  removeItem: (name) => {
-    memoryBacking.delete(name);
-  },
-};
-
 /**
  * Where a window's persisted content state lives: localStorage for the main
- * window (unchanged behavior), in-memory for secondary windows (fresh on open,
- * dropped on close, never shared).
+ * window (unchanged behavior), sessionStorage for secondary windows. Browser
+ * session storage is isolated per browsing context and survives a WebView
+ * reload, unlike the old module-level Map.
  */
 export function perWindowStorage(): StateStorage {
-  return isMainWindow() ? localStorage : memoryStorage;
+  return isMainWindow() ? localStorage : sessionStorage;
 }

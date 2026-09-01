@@ -10,6 +10,7 @@ interface SftpSessionState {
   ensure: (connectionId: string) => Promise<number>;
   closeFor: (connectionId: string) => void;
   closeAll: () => void;
+  restore: (bindings: Array<{ connectionId: string; sessionId: number }>) => void;
 }
 
 export const sftpSessionStore = create<SftpSessionState>()((set, get) => ({
@@ -96,4 +97,8 @@ export const sftpSessionStore = create<SftpSessionState>()((set, get) => ({
     }
     set({ sessions: {}, pending: {} });
   },
+  restore: (bindings) => set({
+    sessions: Object.fromEntries(bindings.map((binding) => [binding.connectionId, binding.sessionId])),
+    pending: {},
+  }),
 }));

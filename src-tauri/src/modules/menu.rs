@@ -56,6 +56,8 @@ struct NativeMenuState {
 #[cfg(target_os = "macos")]
 pub const NATIVE_MENU_EVENT: &str = "native-menu-click";
 #[cfg(target_os = "macos")]
+pub const RECOVERY_MENU_ID: &str = "reload-workspace";
+#[cfg(target_os = "macos")]
 pub const QUIT_MENU_ID: &str = "quit-tempoterm";
 
 /// Build the App submenu (About/Services/Hide/Quit): the one macOS requires to
@@ -99,9 +101,18 @@ fn quit_menu_title(app_name: &str, language: &str) -> String {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn reload_workspace_title(language: &str) -> &'static str {
+    if language.starts_with("zh") {
+        "重新整理工作區"
+    } else {
+        "Reload Workspace"
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn rebuild_fallback_menu(app: &AppHandle, language: &str) -> tauri::Result<()> {
-    use tauri::menu::{MenuBuilder, SubmenuBuilder};
+    use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 
     let app_menu = build_app_submenu(app, language)?;
     let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -113,8 +124,17 @@ fn rebuild_fallback_menu(app: &AppHandle, language: &str) -> tauri::Result<()> {
         .paste()
         .select_all()
         .build()?;
+    let recovery_item = MenuItemBuilder::with_id(
+        RECOVERY_MENU_ID,
+        reload_workspace_title(language),
+    )
+    .accelerator("Cmd+Shift+R")
+    .build(app)?;
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(&recovery_item)
+        .build()?;
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &edit_menu])
+        .items(&[&app_menu, &edit_menu, &view_menu])
         .build()?;
     app.set_menu(menu)?;
     Ok(())
@@ -159,6 +179,19 @@ pub fn init(app: &mut App) -> tauri::Result<()> {
             }
             if let Some(win) = app.get_focused_window() {
                 let id = event.id().0.clone();
+                if id == RECOVERY_MENU_ID {
+                    if let Some(webview_window) = app.get_webview_window(win.label()) {
+                        // Give a responsive renderer a brief chance to force its
+                        // dirty-buffer snapshot. If it is wedged, the native
+                        // path still proceeds using the latest 250 ms snapshot.
+                        let _ = webview_window.emit("recovery-prepare", ());
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(750));
+                            let _ = crate::modules::recovery::reload_workspace(&webview_window);
+                        });
+                    }
+                    return;
+                }
                 let _ = win.emit_to(win.label(), NATIVE_MENU_EVENT, id);
             }
         });
@@ -379,6 +412,12 @@ mod tests {
         assert_eq!(quit_menu_title("TempoTerm", "en"), "Quit TempoTerm");
         assert_eq!(quit_menu_title("TempoTerm", "zh-TW"), "結束 TempoTerm");
         assert_eq!(quit_menu_title("TempoTerm", "zh-Hant"), "結束 TempoTerm");
+    }
+
+    #[test]
+    fn reload_workspace_title_follows_language() {
+        assert_eq!(reload_workspace_title("en"), "Reload Workspace");
+        assert_eq!(reload_workspace_title("zh-TW"), "重新整理工作區");
     }
 
     #[test]

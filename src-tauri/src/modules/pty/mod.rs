@@ -3,6 +3,7 @@
 mod session;
 pub mod shell;
 
+pub(crate) use session::recovery_stats as pty_recovery_stats;
 pub use session::PtyState;
 pub(crate) use session::{
     busy_owned_count as busy_owned_session_count, busy_total_count as busy_session_count,
@@ -33,11 +34,31 @@ pub fn pty_open(
         cwd,
         suggestions,
         shell_override,
-        window.label().to_string(),
         &app,
+        window.label().to_string(),
         on_data,
         on_exit,
     )
+}
+
+#[tauri::command]
+pub fn pty_attach(
+    window: tauri::WebviewWindow,
+    state: State<'_, PtyState>,
+    id: u32,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
+) -> Result<(), String> {
+    session::attach(&state, id, window.label(), on_data, on_exit)
+}
+
+#[tauri::command]
+pub fn pty_set_window_active(
+    window: tauri::WebviewWindow,
+    state: State<'_, PtyState>,
+    active: bool,
+) {
+    session::set_window_active(&state, window.label(), active);
 }
 
 #[tauri::command]
@@ -46,12 +67,7 @@ pub fn pty_write(state: State<'_, PtyState>, id: u32, data: String) -> Result<()
 }
 
 #[tauri::command]
-pub fn pty_resize(
-    state: State<'_, PtyState>,
-    id: u32,
-    cols: u16,
-    rows: u16,
-) -> Result<(), String> {
+pub fn pty_resize(state: State<'_, PtyState>, id: u32, cols: u16, rows: u16) -> Result<(), String> {
     session::resize(&state, id, cols, rows)
 }
 

@@ -1,7 +1,7 @@
 //! PTY session lifecycle: spawn a shell, stream its output to the frontend,
 //! and forward input, resize and close requests back to it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -26,6 +26,157 @@ pub struct Session {
     master: Mutex<Box<dyn MasterPty + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     pub shell_name: String,
+    output: Mutex<Option<Arc<OutputHub>>>,
+}
+
+const OUTPUT_BACKLOG_CAP: usize = 1_000_000;
+const OUTPUT_SEND_CHUNK: usize = 64 * 1024;
+
+struct OutputSink {
+    data: Channel<Response>,
+    exit: Channel<i32>,
+    cursor: u64,
+    needs_truncation_notice: bool,
+}
+
+struct OutputHubInner {
+    backlog: VecDeque<u8>,
+    truncated: bool,
+    sink: Option<OutputSink>,
+    exit_code: Option<i32>,
+    start_seq: u64,
+    next_seq: u64,
+    active: bool,
+}
+
+/// Renderer-independent PTY output. A WKWebView can be suspended or replaced
+/// while its shell remains alive; failed Channels are detached and the rolling
+/// backlog is replayed to a newly attached renderer instead of stopping the
+/// PTY reader (which previously orphaned the shell after a reload).
+struct OutputHub(Mutex<OutputHubInner>);
+
+impl OutputHub {
+    fn new(data: Channel<Response>, exit: Channel<i32>) -> Self {
+        Self(Mutex::new(OutputHubInner {
+            backlog: VecDeque::new(),
+            truncated: false,
+            sink: Some(OutputSink {
+                data,
+                exit,
+                cursor: 0,
+                needs_truncation_notice: false,
+            }),
+            exit_code: None,
+            start_seq: 0,
+            next_seq: 0,
+            active: true,
+        }))
+    }
+
+    fn publish(&self, bytes: Vec<u8>) {
+        let mut inner = self.0.lock().unwrap();
+        inner.backlog.extend(bytes.iter().copied());
+        inner.next_seq = inner.next_seq.saturating_add(bytes.len() as u64);
+        while inner.backlog.len() > OUTPUT_BACKLOG_CAP {
+            inner.backlog.pop_front();
+            inner.start_seq = inner.start_seq.saturating_add(1);
+            inner.truncated = true;
+        }
+        if inner.active {
+            let next = inner.next_seq;
+            if let Some(sink) = inner.sink.as_mut() {
+                if sink.data.send(Response::new(bytes)).is_err() {
+                    inner.sink = None;
+                } else {
+                    sink.cursor = next;
+                }
+            }
+        }
+    }
+
+    fn finish(&self, code: i32) {
+        let mut inner = self.0.lock().unwrap();
+        inner.exit_code = Some(code);
+        if let Some(sink) = inner.sink.take() {
+            let _ = sink.exit.send(code);
+        }
+    }
+
+    fn attach(&self, data: Channel<Response>, exit: Channel<i32>) {
+        let mut inner = self.0.lock().unwrap();
+        if !inner.active {
+            let cursor = inner.start_seq;
+            let needs_truncation_notice = inner.truncated;
+            inner.sink = Some(OutputSink {
+                data,
+                exit,
+                cursor,
+                needs_truncation_notice,
+            });
+            return;
+        }
+        let mut replay = Vec::with_capacity(inner.backlog.len() + 96);
+        if inner.truncated {
+            replay.extend_from_slice(
+                b"\r\n\x1b[33m[TempoTerm: earlier recovery output was truncated]\x1b[0m\r\n",
+            );
+        }
+        replay.extend(inner.backlog.iter().copied());
+        for chunk in replay.chunks(OUTPUT_SEND_CHUNK) {
+            if data.send(Response::new(chunk.to_vec())).is_err() {
+                inner.sink = None;
+                return;
+            }
+        }
+        if let Some(code) = inner.exit_code {
+            let _ = exit.send(code);
+        } else {
+            let cursor = inner.next_seq;
+            inner.sink = Some(OutputSink {
+                data,
+                exit,
+                cursor,
+                needs_truncation_notice: false,
+            });
+        }
+    }
+
+    fn set_active(&self, active: bool) {
+        let mut inner = self.0.lock().unwrap();
+        if inner.active == active {
+            return;
+        }
+        inner.active = active;
+        if !active {
+            return;
+        }
+        let start_seq = inner.start_seq;
+        let next_seq = inner.next_seq;
+        let backlog: Vec<u8> = inner.backlog.iter().copied().collect();
+        if let Some(sink) = inner.sink.as_mut() {
+            let was_truncated = sink.needs_truncation_notice || sink.cursor < start_seq;
+            let offset = sink.cursor.max(start_seq).saturating_sub(start_seq) as usize;
+            let mut pending = Vec::new();
+            if was_truncated {
+                pending.extend_from_slice(
+                    b"\r\n\x1b[33m[TempoTerm: background output was truncated]\x1b[0m\r\n",
+                );
+            }
+            pending.extend_from_slice(&backlog[offset.min(backlog.len())..]);
+            for chunk in pending.chunks(OUTPUT_SEND_CHUNK) {
+                if sink.data.send(Response::new(chunk.to_vec())).is_err() {
+                    inner.sink = None;
+                    return;
+                }
+            }
+            sink.cursor = next_seq;
+            sink.needs_truncation_notice = false;
+        }
+    }
+
+    fn is_truncated(&self) -> bool {
+        self.0.lock().unwrap().truncated
+    }
 }
 
 /// Tauri-managed registry of every open session. The map is behind an `Arc`
@@ -158,7 +309,7 @@ fn build_shell_command(
 /// Core spawn used by both the Tauri command and tests. Runs `cmd` in a fresh
 /// PTY, streams every output chunk through `on_bytes` (returning `false` stops
 /// reading) and reports the exit code through `on_exit`.
-pub fn spawn_with_sinks(
+fn spawn_with_sinks(
     state: &PtyState,
     id: u32,
     cols: u16,
@@ -166,6 +317,7 @@ pub fn spawn_with_sinks(
     cmd: CommandBuilder,
     shell_name: String,
     owner_label: Option<String>,
+    output: Option<Arc<OutputHub>>,
     on_bytes: impl Fn(Vec<u8>) -> bool + Send + 'static,
     on_exit: impl FnOnce(i32) + Send + 'static,
 ) -> Result<u32, String> {
@@ -191,6 +343,7 @@ pub fn spawn_with_sinks(
         master: Mutex::new(pair.master),
         killer: Mutex::new(killer),
         shell_name,
+        output: Mutex::new(output),
     });
 
     state.sessions.write().unwrap().insert(id, session);
@@ -300,8 +453,8 @@ pub fn spawn(
     cwd: Option<String>,
     suggestions: bool,
     shell_override: Option<String>,
-    owner_label: String,
     app: &tauri::AppHandle,
+    owner_label: String,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
@@ -326,6 +479,9 @@ pub fn spawn(
         .ok()
         .map(|h| h.tx);
 
+    let hub = Arc::new(OutputHub::new(on_data, on_exit));
+    let output_hub = Arc::clone(&hub);
+    let exit_hub = Arc::clone(&hub);
     spawn_with_sinks(
         state,
         id,
@@ -334,17 +490,69 @@ pub fn spawn(
         cmd,
         shell_name,
         Some(owner_label),
+        Some(Arc::clone(&hub)),
         move |bytes| {
             if let Some(tx) = &log_tx {
                 // Drop on a full channel rather than stall the reader thread.
                 let _ = tx.try_send(bytes.clone());
             }
-            on_data.send(Response::new(bytes)).is_ok()
+            output_hub.publish(bytes);
+            true
         },
         move |code| {
-            let _ = on_exit.send(code);
+            exit_hub.finish(code);
         },
     )
+}
+
+pub fn attach(
+    state: &PtyState,
+    id: u32,
+    owner_label: &str,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
+) -> Result<(), String> {
+    let session = state.get(id)?;
+    if session.owner_label.lock().unwrap().as_deref() != Some(owner_label) {
+        return Err("pty session belongs to another window".to_string());
+    }
+    let hub = session
+        .output
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "pty session is not attachable".to_string())?;
+    hub.attach(on_data, on_exit);
+    Ok(())
+}
+
+pub fn set_window_active(state: &PtyState, owner_label: &str, active: bool) {
+    let sessions: Vec<Arc<Session>> = state.sessions.read().unwrap().values().cloned().collect();
+    for session in sessions {
+        if session.owner_label.lock().unwrap().as_deref() == Some(owner_label) {
+            if let Some(hub) = session.output.lock().unwrap().clone() {
+                hub.set_active(active);
+            }
+        }
+    }
+}
+
+pub fn recovery_stats(state: &PtyState, owner_label: &str) -> (usize, bool) {
+    let sessions: Vec<Arc<Session>> = state.sessions.read().unwrap().values().cloned().collect();
+    let mut count = 0;
+    let mut truncated = false;
+    for session in sessions {
+        if session.owner_label.lock().unwrap().as_deref() == Some(owner_label) {
+            count += 1;
+            truncated |= session
+                .output
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|hub| hub.is_truncated());
+        }
+    }
+    (count, truncated)
 }
 
 pub fn write_input(state: &PtyState, id: u32, data: &[u8]) -> Result<(), String> {
@@ -592,20 +800,78 @@ pub fn close_owned(state: &PtyState, owner_label: &str) {
         close(state, id);
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::ipc::InvokeResponseBody;
+
+    fn test_channels() -> (Channel<Response>, Channel<i32>, Arc<Mutex<Vec<Vec<u8>>>>) {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let captured = messages.clone();
+        let data = Channel::new(move |body| {
+            if let InvokeResponseBody::Raw(bytes) = body {
+                captured.lock().unwrap().push(bytes);
+            }
+            Ok(())
+        });
+        let exit = Channel::new(|_| Ok(()));
+        (data, exit, messages)
+    }
+
+    #[test]
+    fn output_hub_mutes_background_ipc_and_flushes_in_order() {
+        let (data, exit, messages) = test_channels();
+        let hub = OutputHub::new(data, exit);
+        hub.publish(b"before".to_vec());
+        hub.set_active(false);
+        hub.publish(b"during-1".to_vec());
+        hub.publish(b"during-2".to_vec());
+        assert_eq!(messages.lock().unwrap().concat(), b"before");
+        hub.set_active(true);
+        assert_eq!(messages.lock().unwrap().concat(), b"beforeduring-1during-2");
+    }
+
+    #[test]
+    fn output_hub_attach_replaces_sink_and_replays_backlog() {
+        let (first_data, first_exit, first) = test_channels();
+        let hub = OutputHub::new(first_data, first_exit);
+        hub.publish(b"one".to_vec());
+        let (second_data, second_exit, second) = test_channels();
+        hub.attach(second_data, second_exit);
+        hub.publish(b"two".to_vec());
+        assert_eq!(first.lock().unwrap().concat(), b"one");
+        assert_eq!(second.lock().unwrap().concat(), b"onetwo");
+    }
+
+    #[test]
+    fn output_hub_backlog_is_bounded_and_marks_truncation() {
+        let (data, exit, _) = test_channels();
+        let hub = OutputHub::new(data, exit);
+        hub.publish(vec![b'x'; OUTPUT_BACKLOG_CAP + 17]);
+        let inner = hub.0.lock().unwrap();
+        assert_eq!(inner.backlog.len(), OUTPUT_BACKLOG_CAP);
+        assert!(inner.truncated);
+        assert_eq!(inner.start_seq, 17);
+    }
+
+    #[test]
+    fn hidden_attach_preserves_truncation_notice_until_activation() {
+        let (data, exit, _) = test_channels();
+        let hub = OutputHub::new(data, exit);
+        hub.set_active(false);
+        hub.publish(vec![b'x'; OUTPUT_BACKLOG_CAP + 1]);
+        let (attached_data, attached_exit, attached) = test_channels();
+        hub.attach(attached_data, attached_exit);
+        assert!(attached.lock().unwrap().is_empty());
+        hub.set_active(true);
+        let output = attached.lock().unwrap().concat();
+        assert!(String::from_utf8_lossy(&output).contains("background output was truncated"));
+    }
     use std::sync::mpsc;
     use std::time::Duration;
 
-    fn collect_command_output(program: &str, args: &[&str]) -> String {
+    fn collect_builder_output(cmd: CommandBuilder) -> (String, i32) {
         let state = PtyState::new();
-        let mut cmd = CommandBuilder::new(program);
-        for arg in args {
-            cmd.arg(arg);
-        }
-
         let collected = Arc::new(Mutex::new(Vec::<u8>::new()));
         let sink = collected.clone();
         let (exit_tx, exit_rx) = mpsc::channel::<i32>();
@@ -618,6 +884,7 @@ mod tests {
             cmd,
             "test".to_string(),
             None,
+            None,
             move |bytes| {
                 sink.lock().unwrap().extend_from_slice(&bytes);
                 true
@@ -628,12 +895,20 @@ mod tests {
         )
         .expect("spawn should succeed");
 
-        exit_rx
+        let code = exit_rx
             .recv_timeout(Duration::from_secs(10))
             .expect("command should exit within timeout");
 
         let bytes = collected.lock().unwrap().clone();
-        String::from_utf8_lossy(&bytes).into_owned()
+        (String::from_utf8_lossy(&bytes).into_owned(), code)
+    }
+
+    fn collect_command_output(program: &str, args: &[&str]) -> String {
+        let mut cmd = CommandBuilder::new(program);
+        for arg in args {
+            cmd.arg(arg);
+        }
+        collect_builder_output(cmd).0
     }
 
     #[test]
@@ -657,20 +932,24 @@ mod tests {
     #[test]
     fn registers_session_in_state() {
         let state = PtyState::new();
-        let cmd = CommandBuilder::new("/bin/echo");
+        // Keep the child alive until after the assertion. `/bin/echo` could
+        // exit and let the waiter prune the registry before this thread ran.
+        let cmd = CommandBuilder::new("/bin/cat");
         let id = spawn_with_sinks(
             &state,
             state.alloc_id(),
             80,
             24,
             cmd,
-            "echo".to_string(),
+            "cat".to_string(),
+            None,
             None,
             |_| true,
             |_| {},
         )
         .expect("spawn should succeed");
         assert!(state.get(id).is_ok());
+        close(&state, id);
     }
 
     #[test]
@@ -690,6 +969,7 @@ mod tests {
             24,
             cmd,
             "echo".to_string(),
+            None,
             None,
             |_| true,
             move |code| {
@@ -754,6 +1034,7 @@ mod tests {
             cmd,
             "zsh".to_string(),
             Some("main".to_string()),
+            None,
             |_| true,
             |_| {},
         )
@@ -792,6 +1073,7 @@ mod tests {
             cmd,
             "cat".to_string(),
             Some("secondary".to_string()),
+            None,
             |_| true,
             |_| {},
         )
@@ -807,7 +1089,10 @@ mod tests {
         // lsof -Fn prints non-ASCII bytes as literal \xHH; decode them back.
         assert_eq!(decode_lsof_name("/a/\\xe6\\x96\\x87"), "/a/文");
         // Plain ASCII paths are unchanged; an escaped backslash becomes one.
-        assert_eq!(decode_lsof_name("/Users/muki/Documents"), "/Users/muki/Documents");
+        assert_eq!(
+            decode_lsof_name("/Users/muki/Documents"),
+            "/Users/muki/Documents"
+        );
         assert_eq!(decode_lsof_name("/a/b\\\\c"), "/a/b\\c");
         // Standard C escapes for control characters are decoded too.
         assert_eq!(decode_lsof_name("/a/b\\tc"), "/a/b\tc");

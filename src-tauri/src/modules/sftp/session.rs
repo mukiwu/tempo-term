@@ -66,6 +66,8 @@ pub enum SftpControl {
 
 struct SftpHandle {
     control: mpsc::UnboundedSender<SftpControl>,
+    owner_label: String,
+    connection_id: String,
 }
 
 /// Inbound connection parameters, mirroring `SshOpenRequest` minus the
@@ -111,11 +113,14 @@ pub fn start(
 ) -> Result<u32, String> {
     let id = state.alloc_id();
     let (tx, rx) = mpsc::unbounded_channel::<SftpControl>();
-    state
-        .sessions
-        .lock()
-        .unwrap()
-        .insert(id, SftpHandle { control: tx });
+    state.sessions.lock().unwrap().insert(
+        id,
+        SftpHandle {
+            control: tx,
+            owner_label: window_label.clone(),
+            connection_id: req.connection_id.clone(),
+        },
+    );
 
     let registry = ssh_state.registry.clone();
     let app = app.clone();
@@ -137,11 +142,40 @@ pub fn start(
                 return;
             }
         };
-        rt.block_on(run(app, window_label, registry, known_hosts_path, req, id, rx));
+        rt.block_on(run(
+            app,
+            window_label,
+            registry,
+            known_hosts_path,
+            req,
+            id,
+            rx,
+        ));
         remove_session(&cleanup_app, id);
     });
 
     Ok(id)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpBinding {
+    pub connection_id: String,
+    pub session_id: u32,
+}
+
+pub fn list_owned(state: &SftpState, owner: &str) -> Vec<SftpBinding> {
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, handle)| handle.owner_label == owner)
+        .map(|(id, handle)| SftpBinding {
+            connection_id: handle.connection_id.clone(),
+            session_id: *id,
+        })
+        .collect()
 }
 
 async fn run(
@@ -211,17 +245,17 @@ async fn run(
                 let _ = reply.send(create_file(&sftp, &path).await);
             }
             SftpControl::CreateDir { path, reply } => {
-                let _ = reply.send(
-                    sftp.create_dir(path).await.map_err(|e| e.to_string()),
-                );
+                let _ = reply.send(sftp.create_dir(path).await.map_err(|e| e.to_string()));
             }
-            SftpControl::Delete { path, is_dir, reply } => {
+            SftpControl::Delete {
+                path,
+                is_dir,
+                reply,
+            } => {
                 let _ = reply.send(delete(&sftp, &path, is_dir).await);
             }
             SftpControl::Rename { from, to, reply } => {
-                let _ = reply.send(
-                    sftp.rename(from, to).await.map_err(|e| e.to_string()),
-                );
+                let _ = reply.send(sftp.rename(from, to).await.map_err(|e| e.to_string()));
             }
             SftpControl::Close => break,
         }
@@ -286,9 +320,14 @@ async fn read_dir(sftp: &SftpSession, path: &str) -> Result<Vec<SftpEntry>, Stri
 
 async fn read_file(sftp: &SftpSession, path: &str) -> Result<String, String> {
     use tokio::io::AsyncReadExt;
-    let mut file = sftp.open(path.to_string()).await.map_err(|e| e.to_string())?;
+    let mut file = sftp
+        .open(path.to_string())
+        .await
+        .map_err(|e| e.to_string())?;
     let mut buf = Vec::new();
-    file.read_to_end(&mut buf).await.map_err(|e| e.to_string())?;
+    file.read_to_end(&mut buf)
+        .await
+        .map_err(|e| e.to_string())?;
     String::from_utf8(buf).map_err(|_| "file is not valid UTF-8".to_string())
 }
 
@@ -328,9 +367,13 @@ async fn create_file(sftp: &SftpSession, path: &str) -> Result<(), String> {
 /// it already knows from the DirEntry it is deleting.
 async fn delete(sftp: &SftpSession, path: &str, is_dir: bool) -> Result<(), String> {
     if is_dir {
-        sftp.remove_dir(path.to_string()).await.map_err(|e| e.to_string())
+        sftp.remove_dir(path.to_string())
+            .await
+            .map_err(|e| e.to_string())
     } else {
-        sftp.remove_file(path.to_string()).await.map_err(|e| e.to_string())
+        sftp.remove_file(path.to_string())
+            .await
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -417,7 +460,15 @@ pub async fn delete_cmd(
     is_dir: bool,
 ) -> Result<(), String> {
     let (tx, rx) = oneshot::channel();
-    send(state, id, SftpControl::Delete { path, is_dir, reply: tx })?;
+    send(
+        state,
+        id,
+        SftpControl::Delete {
+            path,
+            is_dir,
+            reply: tx,
+        },
+    )?;
     rx.await.map_err(|_| "sftp session closed".to_string())?
 }
 
@@ -428,7 +479,15 @@ pub async fn rename_cmd(
     to: String,
 ) -> Result<(), String> {
     let (tx, rx) = oneshot::channel();
-    send(state, id, SftpControl::Rename { from, to, reply: tx })?;
+    send(
+        state,
+        id,
+        SftpControl::Rename {
+            from,
+            to,
+            reply: tx,
+        },
+    )?;
     rx.await.map_err(|_| "sftp session closed".to_string())?
 }
 

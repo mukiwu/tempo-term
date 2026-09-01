@@ -13,6 +13,12 @@ export interface AiSessionBinding {
   sessionId: string;
 }
 
+export interface BackendSessionBinding {
+  runtimeId: string;
+  kind: "pty" | "ssh";
+  sessionId: number;
+}
+
 /**
  * What a leaf pane shows: a terminal, an open file, a note, a preview, the git
  * graph, a file's uncommitted diff, the AI sessions browser, or the launcher
@@ -25,6 +31,8 @@ export type PaneContent =
       ssh?: { connectionId: string };
       /** Last live local AI conversation. Persisted so relaunch can resume it exactly. */
       aiSession?: AiSessionBinding;
+      /** Live Rust session retained across a renderer-only reload. */
+      backend?: BackendSessionBinding;
     }
   | { kind: "editor"; path: string }
   | { kind: "note"; noteId: string }
