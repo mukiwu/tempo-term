@@ -10,7 +10,10 @@ use rusqlite::{params, Connection};
 
 use super::types::{ParsedSession, SessionSummary};
 
-pub const SCHEMA_VERSION: &str = "1";
+// "2": Codex titles/counts re-derived for the item_completed rollout format
+// (#372) plus the replayed-turn title fallback — a bump drops and rebuilds the
+// tables so files the old parser already fingerprinted get re-parsed.
+pub const SCHEMA_VERSION: &str = "2";
 
 pub struct Index {
     pub(crate) conn: Connection,

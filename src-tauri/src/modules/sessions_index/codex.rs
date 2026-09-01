@@ -93,6 +93,7 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
     let mut id: Option<String> = None;
     let mut project_cwd: Option<String> = None;
     let mut title: Option<String> = None;
+    let mut replay_title: Option<String> = None;
     let mut message_count: i64 = 0;
     let mut user_message_count: i64 = 0;
     let mut output_tokens: Option<i64> = None;
@@ -207,6 +208,12 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
             "response_item" => {
                 let rtype = payload.get("type").and_then(Value::as_str).unwrap_or("");
                 if rtype == "message" {
+                    // A compacted continuation's only record of the user's
+                    // asks is the replayed turn: title fallback, never a count.
+                    if replay_title.is_none() {
+                        replay_title =
+                            crate::modules::codex_progress::replayed_user_text(payload);
+                    }
                     // Only the assistant's own turns count. The rollout also
                     // replays the user's turn as a response_item with
                     // role:"user" (already counted via event_msg above), and
@@ -242,7 +249,9 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
 
     let id = id.unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
     let project_cwd = project_cwd.unwrap_or_default();
-    let title = title.unwrap_or_default();
+    let title = title
+        .or_else(|| replay_title.map(|t| t.chars().take(MAX_TITLE_CHARS).collect()))
+        .unwrap_or_default();
 
     let mut activity: Vec<ActivityBucket> = buckets.into_values().collect();
     activity.sort_by(|a, b| (a.date.as_str(), a.hour).cmp(&(b.date.as_str(), b.hour)));
@@ -418,6 +427,22 @@ mod tests {
         let meta = parse_codex_meta(&write_fixture("legacyinj", contents)).unwrap();
         assert_eq!(meta.title, "real question");
         assert_eq!(meta.user_message_count, 2);
+    }
+
+    // A compacted continuation replays prior history as response_item
+    // user turns and may hold no typed UserMessage item at all; the title
+    // falls back to the replayed turn (which never counts as a message).
+    #[test]
+    fn compacted_continuation_titles_from_replayed_user_turn() {
+        let contents = concat!(
+            r#"{"timestamp":"2026-08-31T02:00:00.000Z","type":"session_meta","payload":{"id":"codex-3","cwd":"/p/delta"}}"#, "\n",
+            r#"{"timestamp":"2026-08-31T02:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>x</environment_context>"},{"type":"input_text","text":"why is the root cause untouched"}]}}"#, "\n",
+            r#"{"timestamp":"2026-08-31T02:00:02.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"looking"}]}}"#, "\n",
+        );
+        let meta = parse_codex_meta(&write_fixture("compacted", contents)).unwrap();
+        assert_eq!(meta.title, "why is the root cause untouched");
+        assert_eq!(meta.user_message_count, 0);
+        assert_eq!(meta.message_count, 1);
     }
 
     #[test]

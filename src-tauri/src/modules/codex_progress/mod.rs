@@ -84,10 +84,31 @@ pub(crate) fn item_completed_user_item(payload: &Value) -> Option<&Value> {
 /// What the user actually typed in a UserMessage item: its text pieces joined,
 /// injected pieces skipped. None for e.g. an image-only turn.
 pub(crate) fn user_item_typed_text(item: &Value) -> Option<String> {
-    let pieces = item.get("content").and_then(Value::as_array)?;
+    typed_text_from_content(item.get("content"))
+}
+
+/// The typed text of a replayed user turn (`response_item`/`message` with
+/// role "user") — a compacted continuation's only record of what the user
+/// asked. Same injected-piece filter; None for any other payload.
+pub(crate) fn replayed_user_text(payload: &Value) -> Option<String> {
+    if payload.get("type").and_then(Value::as_str) != Some("message")
+        || payload.get("role").and_then(Value::as_str) != Some("user")
+    {
+        return None;
+    }
+    typed_text_from_content(payload.get("content"))
+}
+
+/// Join a content array's user-typed text pieces ("text" in UserMessage
+/// items, "input_text" in replayed response_items), skipping injected ones.
+fn typed_text_from_content(content: Option<&Value>) -> Option<String> {
+    let pieces = content.and_then(Value::as_array)?;
     let mut out = String::new();
     for piece in pieces {
-        if piece.get("type").and_then(Value::as_str) != Some("text") {
+        if !matches!(
+            piece.get("type").and_then(Value::as_str),
+            Some("text") | Some("input_text")
+        ) {
             continue;
         }
         let Some(text) = piece.get("text").and_then(Value::as_str) else { continue };
@@ -111,6 +132,9 @@ pub(crate) fn user_item_typed_text(item: &Value) -> Option<String> {
 /// Reads lazily and stops at the first match, so a long rollout is not fully
 /// loaded. Returns None when the rollout has no typed user text yet.
 pub fn extract_codex_title<R: BufRead>(reader: R) -> Option<String> {
+    // A compacted continuation may only carry the user's turns as replayed
+    // response_items; an event-based title always wins over this fallback.
+    let mut fallback: Option<String> = None;
     for line in reader.lines() {
         let line = match line {
             Ok(line) => line,
@@ -124,13 +148,20 @@ pub fn extract_codex_title<R: BufRead>(reader: R) -> Option<String> {
             Ok(value) => value,
             Err(_) => continue,
         };
-        if value.get("type").and_then(Value::as_str) != Some("event_msg") {
+        let line_type = value.get("type").and_then(Value::as_str).unwrap_or("");
+        if line_type != "event_msg" && line_type != "response_item" {
             continue;
         }
         let payload = match value.get("payload") {
             Some(payload) => payload,
             None => continue,
         };
+        if line_type == "response_item" {
+            if fallback.is_none() {
+                fallback = replayed_user_text(payload);
+            }
+            continue;
+        }
         if let Some(item) = item_completed_user_item(payload) {
             if let Some(text) = user_item_typed_text(item) {
                 return Some(text.chars().take(MAX_TITLE_CHARS).collect());
@@ -147,7 +178,7 @@ pub fn extract_codex_title<R: BufRead>(reader: R) -> Option<String> {
             }
         }
     }
-    None
+    fallback.map(|t| t.chars().take(MAX_TITLE_CHARS).collect())
 }
 
 /// `~/.codex/sessions` (or under the CODEX_HOME override).
@@ -410,6 +441,18 @@ pub async fn codex_session_title(
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+
+    #[test]
+    fn extract_title_falls_back_to_replayed_user_turn() {
+        let rollout = concat!(
+            r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>x</environment_context>"},{"type":"input_text","text":"replayed question"}]}}"#, "\n",
+            r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}}"#, "\n",
+        );
+        assert_eq!(
+            extract_codex_title(Cursor::new(rollout)),
+            Some("replayed question".to_string())
+        );
+    }
 
     #[test]
     fn extract_title_from_new_format_item_completed() {
