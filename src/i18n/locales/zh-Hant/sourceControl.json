@@ -6,6 +6,7 @@
   "changes": "變更",
   "noChanges": "沒有變更",
   "stageAll": "全部暫存",
+  "unstageAll": "取消全部暫存",
   "stage": "暫存",
   "unstage": "取消暫存",
   "viewFolder": "依資料夾分組",

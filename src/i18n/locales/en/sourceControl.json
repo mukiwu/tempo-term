@@ -6,6 +6,7 @@
   "changes": "Changes",
   "noChanges": "No changes",
   "stageAll": "Stage all",
+  "unstageAll": "Unstage all",
   "stage": "Stage",
   "unstage": "Unstage",
   "viewFolder": "Group by folder",
