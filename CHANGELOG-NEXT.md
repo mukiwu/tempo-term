@@ -10,6 +10,7 @@
 
 ### fix
 
+- Ports 面板結束程序失敗時，錯誤訊息改用 app 自己的對話框顯示，不再跳原生警告框；這是全庫盤點後最後一處原生警告，檔案挑選器與關閉確認的原生對話框則屬刻意保留 (#367)
 - 修正 Windows 上開啟任何對話框時，自訂標題列右上角的最小化、最大化、關閉按鈕被遮罩蓋住而點不到的問題。三顆按鈕改為固定在視窗右上、永遠位於對話框之上；選單列維持被遮罩蓋住，避免隔著遮罩操作選單 (#349)
 - 關閉仍有本機終端或 SSH 工作階段的視窗／App 前顯示可停用的原生確認提示，支援 macOS 與 Windows (#356)
 - 避免 macOS 在建立 PTY 的 fork 後子行程中掃描檔案描述符。這項非 async-signal-safe 操作依程式碼分析理論上可能造成崩潰，但目前實機測試未重現 (#355)
@@ -35,6 +36,7 @@
 
 ### fix
 
+- When killing a port's process fails, the Ports panel now reports the error in the app's own dialog instead of a native alert — the last such surface found in an audit; file pickers and the close-confirmation prompt stay native by design (#367)
 - Fix the custom title bar's minimize, maximize and close controls on Windows being covered and made unclickable by any dialog's backdrop. The controls are now pinned to the window's top-right above every dialog, while the menu bar deliberately stays under the backdrop so a dialog cannot be operated from behind its own overlay (#349)
 - Add an optional native confirmation before closing a window or quitting the app with live terminal or SSH sessions on macOS and Windows (#356)
 - Avoid scanning file descriptors in the post-fork macOS PTY child. Code analysis shows this non-async-signal-safe operation could theoretically crash, although hardware testing has not reproduced it (#355)
