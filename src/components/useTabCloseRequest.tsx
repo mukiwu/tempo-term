@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useEditorStore } from "@/modules/editor/store/editorStore";
 import { useTabsStore, tabHasDirtyEditor, type Tab } from "@/stores/tabsStore";
+import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
+import { guardPaneClose } from "@/modules/terminal/lib/paneSessions";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface TabCloseRequest {
@@ -28,14 +30,21 @@ export function useTabCloseRequest(tab: Tab | undefined): TabCloseRequest {
     tab ? tabHasDirtyEditor(tab, s.buffers) : false,
   );
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [busyConfirmOpen, setBusyConfirmOpen] = useState(false);
 
   const requestClose = () => {
     if (!tab) return;
     if (dirty) {
+      // Unsaved editor work outranks the terminal question; its dialog's
+      // confirm already means "close the tab, losses accepted".
       setConfirmOpen(true);
-    } else {
-      closeTab(tab.id);
+      return;
     }
+    guardPaneClose(
+      computeLayout(tab.paneTree),
+      () => closeTab(tab.id),
+      () => setBusyConfirmOpen(true),
+    );
   };
 
   // Portal the dialog so consumers can place {confirmCloseDialog} inside any
@@ -57,7 +66,22 @@ export function useTabCloseRequest(tab: Tab | undefined): TabCloseRequest {
           />,
           document.body,
         )
-      : null;
+      : busyConfirmOpen && tab
+        ? createPortal(
+            <ConfirmDialog
+              title={t("closeBusy.title")}
+              message={t("closeBusy.tabMessage")}
+              confirmLabel={t("closeBusy.confirm")}
+              cancelLabel={t("actions.cancel")}
+              onConfirm={() => {
+                setBusyConfirmOpen(false);
+                closeTab(tab.id);
+              }}
+              onCancel={() => setBusyConfirmOpen(false)}
+            />,
+            document.body,
+          )
+        : null;
 
   return { dirty, requestClose, confirmCloseDialog };
 }

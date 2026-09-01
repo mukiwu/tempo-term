@@ -77,6 +77,14 @@ pub async fn pty_cwd(state: State<'_, PtyState>, id: u32) -> Result<Option<Strin
     session::cwd(&state, id)
 }
 
+/// Whether any of these sessions is running a foreground job (#366's busy
+/// rule); the tab/pane close confirmation asks this before closing. Async so
+/// the Windows process scan stays off the GUI thread.
+#[tauri::command]
+pub async fn pty_sessions_busy(state: State<'_, PtyState>, ids: Vec<u32>) -> Result<bool, String> {
+    Ok(session::sessions_busy(&state, &ids))
+}
+
 #[tauri::command]
 pub fn pty_close(state: State<'_, PtyState>, id: u32) {
     session::close(&state, id);

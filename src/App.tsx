@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TabBar } from "@/components/TabBar";
 import { TitleBar } from "@/components/TitleBar";
+import { guardPaneClose } from "@/modules/terminal/lib/paneSessions";
 import { DockShell } from "@/components/dock/DockShell";
 import { StatusBar } from "@/components/StatusBar";
 import { WorktreesModal } from "@/modules/worktrees/WorktreesModal";
@@ -171,6 +172,7 @@ function App() {
   const setFileFinderOpen = useUiStore((s) => s.setFileFinderOpen);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const [pendingCloseAction, setPendingCloseAction] = useState<(() => void) | null>(null);
+  const [pendingBusyClose, setPendingBusyClose] = useState<(() => void) | null>(null);
 
   // Cmd/Ctrl+P with no open folder (or a remote one) sets fileFinderOpen with
   // nowhere to render it — left alone, that flag would survive until the user
@@ -197,7 +199,11 @@ function App() {
       if (tabHasDirtyEditor(tab, buffers)) {
         setPendingCloseAction(() => () => tabsState.closeTab(tab.id));
       } else {
-        tabsState.closePaneOrTab();
+        guardPaneClose(
+          panes,
+          () => useTabsStore.getState().closePaneOrTab(),
+          () => setPendingBusyClose(() => () => useTabsStore.getState().closePaneOrTab()),
+        );
       }
     } else {
       // Close the currently focused pane; fall back to the bottom-right
@@ -214,7 +220,11 @@ function App() {
       if (targetDirty) {
         setPendingCloseAction(() => () => tabsState.closePane(tab.id, target.id));
       } else {
-        tabsState.closePane(tab.id, target.id);
+        guardPaneClose(
+          [target],
+          () => useTabsStore.getState().closePane(tab.id, target.id),
+          () => setPendingBusyClose(() => () => useTabsStore.getState().closePane(tab.id, target.id)),
+        );
       }
     }
   }, []);
@@ -768,6 +778,19 @@ function App() {
         <NotifyToast />
         <SshPromptDialog />
         <InputContextMenu />
+        {pendingBusyClose && (
+          <ConfirmDialog
+            title={t("closeBusy.title")}
+            message={t("closeBusy.paneMessage")}
+            confirmLabel={t("closeBusy.confirm")}
+            cancelLabel={t("actions.cancel")}
+            onConfirm={() => {
+              pendingBusyClose();
+              setPendingBusyClose(null);
+            }}
+            onCancel={() => setPendingBusyClose(null)}
+          />
+        )}
         {pendingCloseAction && (
           <ConfirmDialog
             title={t("editor:closeUnsavedTitle")}

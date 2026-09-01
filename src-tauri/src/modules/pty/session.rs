@@ -560,6 +560,14 @@ pub fn busy_total_count(state: &PtyState) -> usize {
         .count()
 }
 
+/// Any of these sessions busy? Ids that no longer exist are simply not busy:
+/// the tab-close guard races normal pane teardown by design.
+pub fn sessions_busy(state: &PtyState, ids: &[u32]) -> bool {
+    let sessions = state.sessions.read().unwrap();
+    ids.iter()
+        .any(|id| sessions.get(id).map(|s| session_is_busy(s)).unwrap_or(false))
+}
+
 pub fn owned_count(state: &PtyState, owner_label: &str) -> usize {
     state
         .sessions
@@ -700,6 +708,13 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[test]
+    fn missing_or_no_ids_are_never_busy() {
+        let state = PtyState::default();
+        assert!(!sessions_busy(&state, &[]));
+        assert!(!sessions_busy(&state, &[404]));
+    }
+
     #[test]
     fn unknown_foreground_or_shell_counts_as_busy() {
         assert!(busy_from_foreground(None, Some(10)));

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import { TerminalView } from "./TerminalView";
 import { dropPathsIntoTerminal, writeToTerminal } from "./lib/terminalBus";
+import { guardPaneClose } from "./lib/paneSessions";
 import {
   computeLayout,
   computeSplitters,
@@ -44,6 +45,7 @@ const MediaTabContent = lazy(() =>
 import { LauncherPanel } from "@/components/LauncherPanel";
 import { dropOverlayClassName, outerBandOverlayClassName } from "@/components/EntryDropOverlay";
 import { InfoDialog } from "@/components/InfoDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PaneHeader } from "@/components/PaneHeader";
 import { TerminalPaneHeader } from "./TerminalPaneHeader";
 import {
@@ -152,6 +154,17 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
 
   // Closing a pane also drops its terminal scrollback history (a no-op for
   // panes that never held a terminal).
+  const [pendingBusyPaneClose, setPendingBusyPaneClose] = useState<string | null>(null);
+
+  function requestClosePane(paneId: string) {
+    const pane = computeLayout(tab.paneTree).find((p) => p.id === paneId);
+    guardPaneClose(
+      pane ? [pane] : [],
+      () => closePaneAndHistory(paneId),
+      () => setPendingBusyPaneClose(paneId),
+    );
+  }
+
   function closePaneAndHistory(paneId: string) {
     // `void` starts the promise but does not catch it, so a failed delete
     // became an unhandled rejection. The pane closes either way — leftover
@@ -475,11 +488,11 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   sshConnectionId={pane.content.ssh?.connectionId}
                   leafId={pane.id}
                   showClose={multiple}
-                  onClose={() => closePaneAndHistory(pane.id)}
+                  onClose={() => requestClosePane(pane.id)}
                 />
               )}
               {pane.content && HEADERLESS_KINDS.has(pane.content.kind) && multiple && (
-                <PaneHeader showClose onClose={() => closePaneAndHistory(pane.id)} />
+                <PaneHeader showClose onClose={() => requestClosePane(pane.id)} />
               )}
               {/* The header is shrink-0, so the content takes what is left —
                   panes are absolutely sized, and h-full inside would overflow
@@ -506,7 +519,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                           setPaneContent(tab.id, pane.id, { kind: "editor", path: next })
                         }
                         showClose={multiple}
-                        onClose={() => closePaneAndHistory(pane.id)}
+                        onClose={() => requestClosePane(pane.id)}
                       />
                     );
                   })()
@@ -528,13 +541,13 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     onNavigate={(url) => navigatePreview(tab.id, pane.id, url)}
                     onTitle={(title) => setPreviewTabTitle(tab.id, pane.id, title)}
                     showClose={multiple}
-                    onClose={() => closePaneAndHistory(pane.id)}
+                    onClose={() => requestClosePane(pane.id)}
                   />
                 ) : pane.content.kind === "media" ? (
                   <MediaTabContent
                     path={pane.content.path}
                     showClose={multiple}
-                    onClose={() => closePaneAndHistory(pane.id)}
+                    onClose={() => requestClosePane(pane.id)}
                   />
                 ) : pane.content.kind === "git-graph" ? (
                   <GitGraphTabContent />
@@ -543,7 +556,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     path={pane.content.path}
                     staged={pane.content.staged}
                     showClose={multiple}
-                    onClose={() => closePaneAndHistory(pane.id)}
+                    onClose={() => requestClosePane(pane.id)}
                   />
                 ) : pane.content.kind === "sessions" ? (
                   <SessionsTabContent />
@@ -689,6 +702,20 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
           message={t("connectionsPanel.alreadyOpenAlert", { name: sshAlreadyConnectedName })}
           confirmLabel={t("actions.confirm")}
           onConfirm={() => setSshAlreadyConnected(false)}
+        />
+      )}
+
+      {pendingBusyPaneClose && (
+        <ConfirmDialog
+          title={t("closeBusy.title")}
+          message={t("closeBusy.paneMessage")}
+          confirmLabel={t("closeBusy.confirm")}
+          cancelLabel={t("actions.cancel")}
+          onConfirm={() => {
+            closePaneAndHistory(pendingBusyPaneClose);
+            setPendingBusyPaneClose(null);
+          }}
+          onCancel={() => setPendingBusyPaneClose(null)}
         />
       )}
 

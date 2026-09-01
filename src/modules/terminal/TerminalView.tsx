@@ -16,6 +16,7 @@ import { createTerminal, type TerminalHandle } from "./lib/createTerminal";
 import { createOutputWriter } from "./lib/outputWriter";
 import { SearchBar } from "./SearchBar";
 import { openPty, type PtySession } from "./lib/pty-bridge";
+import { registerPaneSession, unregisterPaneSession } from "./lib/paneSessions";
 import { openSsh, type SshSession } from "@/modules/ssh/lib/ssh-bridge";
 import { useForwardStatusStore } from "@/modules/ssh/lib/forwardStatusStore";
 import { liveSessionsStore } from "@/modules/ssh/lib/liveSessionsStore";
@@ -183,6 +184,14 @@ export function TerminalView({
   const cwdRef = useRef(cwd);
   cwdRef.current = cwd;
   const containerRef = useRef<HTMLDivElement>(null);
+  // Unmount-only: drop this pane from the close guard's pty registry.
+  useEffect(() => {
+    return () => {
+      if (leafIdRef.current) {
+        unregisterPaneSession(leafIdRef.current);
+      }
+    };
+  }, []);
   const handleRef = useRef<TerminalHandle | null>(null);
   const sessionRef = useRef<PtySession | SshSession | null>(null);
   // The backend pty id of this pane's local session, if any. `session-status`
@@ -1017,6 +1026,10 @@ export function TerminalView({
         // Record the pty id so session-status IPC events can be matched to this
         // pane (see the session-status listener); SSH panes have no pty id.
         ptyIdRef.current = isPtySession(session) ? session.id : null;
+        // Let the tab/pane close guard resolve this pane to its live pty.
+        if (leafIdRef.current && ptyIdRef.current !== null) {
+          registerPaneSession(leafIdRef.current, ptyIdRef.current);
+        }
         // Register live SSH session so ConnectionsPanel can show forwarding status.
         const paneSshConn = sshRef.current;
         if (paneSshConn && !isPtySession(session)) {

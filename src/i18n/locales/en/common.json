@@ -415,5 +415,11 @@
       "topModel": "Top model",
       "recent": "Recent sessions"
     }
+  },
+  "closeBusy": {
+    "title": "A terminal is running a job",
+    "tabMessage": "A terminal in this tab is running a job; closing will interrupt it. Continue?",
+    "paneMessage": "This pane's terminal is running a job; closing will interrupt it. Continue?",
+    "confirm": "Close anyway"
   }
 }
