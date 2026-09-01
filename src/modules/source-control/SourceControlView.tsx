@@ -48,7 +48,7 @@ import { BRANCH_COLORS } from "@/modules/git-graph/lib/branchColors";
 import { generateCommitMessage } from "./lib/aiCommit";
 import { withMinDuration } from "@/lib/withMinDuration";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useTabsStore } from "@/stores/tabsStore";
+import { activeDiffPane, useTabsStore } from "@/stores/tabsStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { computeHistoryGraphLayout, HISTORY_GRAPH_GEOMETRY } from "./lib/commitGraph";
 
@@ -66,6 +66,36 @@ const STATUS_COLOR: Record<string, string> = {
   R: "text-accent",
 };
 
+/**
+ * Trailing strip of per-row action buttons, revealed on hover.
+ *
+ * Collapsed to zero width rather than `opacity-0`: the panel is narrow and the
+ * paths in it are long, and an invisible-but-present strip still reserved its
+ * width on every row, truncating names against a permanent blank gutter.
+ * Width (not `hidden`) keeps the buttons focusable, and `group-focus-within`
+ * expands the strip when one is tabbed to — with `display: none` they'd drop
+ * out of the tab order entirely. Clipping is only needed while collapsed, so
+ * it lifts on expand: the global `:focus-visible` outline (index.css) is
+ * painted outside the strip's box and would otherwise be cut off. Every action
+ * hidden here is also reachable from the row's context menu.
+ *
+ * The parent row must carry `group` and its own `focus-within` fill, so a
+ * strip revealed by tabbing doesn't sit on bare background.
+ */
+function RowActions({ revealed = false, children }: { revealed?: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={`flex shrink-0 items-center gap-1 ${
+        revealed
+          ? "pl-2"
+          : "w-0 overflow-hidden group-hover:w-auto group-hover:overflow-visible group-hover:pl-2 group-focus-within:w-auto group-focus-within:overflow-visible group-focus-within:pl-2"
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
 function StatusRow({
   file,
   displayPath,
@@ -75,6 +105,7 @@ function StatusRow({
   onAction,
   onOpen,
   onRequestDiscard,
+  active = false,
   indent = 0,
 }: {
   file: FileStatus;
@@ -87,6 +118,9 @@ function StatusRow({
   onOpen: (path: string) => void;
   /** Present on tracked unstaged rows only: ask to discard this file. */
   onRequestDiscard?: (path: string) => void;
+  /** This file's diff is the one on screen: the row stays highlighted and
+   * keeps its actions out without needing hover. */
+  active?: boolean;
   /** Tree depth for indentation; 0 (default) matches flat mode's spacing. */
   indent?: number;
 }) {
@@ -166,49 +200,54 @@ function StatusRow({
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
       }}
+      aria-current={active ? "true" : undefined}
       style={{ paddingLeft: `${indent * 14 + 12}px` }}
-      className="group flex cursor-pointer items-center gap-2 py-1 pr-3 text-sm hover:bg-bg-elevated/60"
+      className={`group flex cursor-pointer items-center py-1 pr-3 text-sm ${
+        active ? "bg-bg-elevated" : "hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
+      }`}
     >
       <span
-        className={`w-3 shrink-0 text-center font-mono text-xs ${
+        className={`mr-2 w-3 shrink-0 text-center font-mono text-xs ${
           STATUS_COLOR[file.status] ?? "text-fg-muted"
         }`}
       >
         {file.status}
       </span>
       <Tooltip label={file.path} className="min-w-0 flex-1">
-        <span className="min-w-0 flex-1 truncate text-fg-muted">
+        <span className={`min-w-0 flex-1 truncate ${active ? "text-fg" : "text-fg-muted"}`}>
           {displayPath ?? file.path}
         </span>
       </Tooltip>
-      {discardable && (
-        <Tooltip label={t("discard")}>
+      <RowActions revealed={active}>
+        {discardable && (
+          <Tooltip label={t("discard")}>
+            <button
+              type="button"
+              aria-label={t("discard")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRequestDiscard(file.path);
+              }}
+              className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-danger"
+            >
+              <Undo2 size={14} />
+            </button>
+          </Tooltip>
+        )}
+        <Tooltip label={actionLabel}>
           <button
             type="button"
-            aria-label={t("discard")}
+            aria-label={actionLabel}
             onClick={(e) => {
               e.stopPropagation();
-              onRequestDiscard(file.path);
+              onAction(file.path);
             }}
-            className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-danger"
+            className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
           >
-            <Undo2 size={14} />
+            <ActionIcon size={14} />
           </button>
         </Tooltip>
-      )}
-      <Tooltip label={actionLabel}>
-        <button
-          type="button"
-          aria-label={actionLabel}
-          onClick={(e) => {
-            e.stopPropagation();
-            onAction(file.path);
-          }}
-          className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
-        >
-          <ActionIcon size={14} />
-        </button>
-      </Tooltip>
+      </RowActions>
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
       )}
@@ -346,6 +385,7 @@ function FileTreeRows({
   onFolderAction,
   onFileOpen,
   onRequestDiscard,
+  activePath,
 }: {
   nodes: TreeNode<FileStatus>[];
   depth: number;
@@ -359,6 +399,7 @@ function FileTreeRows({
   onFolderAction: (paths: string[]) => void;
   onFileOpen: (path: string) => void;
   onRequestDiscard?: (path: string) => void;
+  activePath?: string | null;
 }) {
   const { t } = useTranslation("sourceControl");
   return (
@@ -380,6 +421,7 @@ function FileTreeRows({
               onAction={onFileAction}
               onOpen={onFileOpen}
               onRequestDiscard={onRequestDiscard}
+              active={node.file.path === activePath}
               indent={depth}
             />
           );
@@ -389,7 +431,7 @@ function FileTreeRows({
           <li key={node.path}>
             <div
               style={{ paddingLeft: `${depth * 14 + 12}px` }}
-              className="group flex items-center gap-1 py-1 pr-3 text-sm hover:bg-bg-elevated/60"
+              className="group flex items-center gap-1 py-1 pr-3 text-sm hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
             >
               <button
                 type="button"
@@ -407,16 +449,22 @@ function FileTreeRows({
               <Tooltip label={node.path} className="min-w-0 flex-1">
                 <span className="min-w-0 flex-1 truncate text-fg-muted">{node.name}</span>
               </Tooltip>
-              <Tooltip label={`${folderActionLabel}: ${node.path}`}>
-                <button
-                  type="button"
-                  aria-label={`${folderActionLabel}: ${node.path}`}
-                  onClick={() => onFolderAction(collectDescendantFiles(node).map((f) => f.path))}
-                  className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
-                >
-                  <ActionIcon size={14} />
-                </button>
-              </Tooltip>
+              {/* Permanently revealed, like the section headers: folder rows
+                  have no context menu to fall back on for pointers with no
+                  hover, and one icon costs little of the width the file rows'
+                  hover-reveal exists to reclaim. */}
+              <RowActions revealed>
+                <Tooltip label={`${folderActionLabel}: ${node.path}`}>
+                  <button
+                    type="button"
+                    aria-label={`${folderActionLabel}: ${node.path}`}
+                    onClick={() => onFolderAction(collectDescendantFiles(node).map((f) => f.path))}
+                    className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
+                  >
+                    <ActionIcon size={14} />
+                  </button>
+                </Tooltip>
+              </RowActions>
             </div>
             {!isCollapsed && (
               <ul>
@@ -433,6 +481,7 @@ function FileTreeRows({
                   onFolderAction={onFolderAction}
                   onFileOpen={onFileOpen}
                   onRequestDiscard={onRequestDiscard}
+                  activePath={activePath}
                 />
               </ul>
             )}
@@ -460,6 +509,7 @@ function FileList({
   onFolderAction,
   onFileOpen,
   onRequestDiscard,
+  activePath,
 }: {
   files: FileStatus[];
   viewMode: ViewMode;
@@ -471,6 +521,9 @@ function FileList({
   onFolderAction: (paths: string[]) => void;
   onFileOpen: (path: string) => void;
   onRequestDiscard?: (path: string) => void;
+  /** Repo-relative path of the file whose diff is on screen, if it is in this
+   * list — the staged and unstaged lists never claim it at the same time. */
+  activePath?: string | null;
 }) {
   const { collapsed, toggle: toggleFolder } = useCollapsedPaths();
 
@@ -487,6 +540,7 @@ function FileList({
             onAction={onFileAction}
             onOpen={onFileOpen}
             onRequestDiscard={onRequestDiscard}
+            active={file.path === activePath}
           />
         ))}
       </ul>
@@ -508,6 +562,7 @@ function FileList({
         onFolderAction={onFolderAction}
         onFileOpen={onFileOpen}
         onRequestDiscard={onRequestDiscard}
+        activePath={activePath}
       />
     </ul>
   );
@@ -520,9 +575,12 @@ type SectionKey = "staged" | "changes" | "history";
  * Collapsible section heading. The toggle is a real button stretched across
  * the row (like WorkspacePanel's group headers) so it works from the keyboard
  * and reports its state; `action` (e.g. the "stage all" button) sits outside
- * it at the trailing edge, so its clicks never reach the toggle. `action`
- * stays visible while collapsed, so e.g. staging everything doesn't require
- * expanding the section first.
+ * it at the trailing edge, so its clicks never reach the toggle. Unlike the
+ * file rows' actions it stays permanently revealed: a header has no context
+ * menu to fall back on for pointers with no hover, "Stage all" had always been
+ * visible before the hover-reveal landed, and one action per header costs no
+ * width worth reclaiming. It also stays available while the section is
+ * collapsed, so e.g. staging everything doesn't require expanding first.
  */
 function SectionHeader({
   label,
@@ -536,7 +594,7 @@ function SectionHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between px-3 py-1 text-fg-subtle hover:bg-bg-elevated/60 hover:text-fg">
+    <div className="group flex items-center justify-between px-3 py-1 text-fg-subtle hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60 hover:text-fg">
       <button
         type="button"
         aria-expanded={!collapsed}
@@ -550,7 +608,7 @@ function SectionHeader({
         )}
         <span className="truncate">{label}</span>
       </button>
-      {action}
+      {action && <RowActions revealed>{action}</RowActions>}
     </div>
   );
 }
@@ -586,6 +644,11 @@ export function SourceControlView() {
   const model = useChatStore((s) => s.model);
   const customBaseUrl = useChatStore((s) => s.customBaseUrl);
   const openDiffTab = useTabsStore((s) => s.openDiffTab);
+  // Which row is "the one on screen": the diff in the foreground pane. Read as
+  // two primitives — a selector returning a fresh {path, staged} object would
+  // never compare equal, re-rendering the panel on every store change.
+  const activeDiffPath = useTabsStore((s) => activeDiffPane(s.tabs, s.activeId)?.path ?? null);
+  const activeDiffStaged = useTabsStore((s) => activeDiffPane(s.tabs, s.activeId)?.staged ?? false);
   // Repo-relative path of the file awaiting discard confirmation, if any.
   const [discardTarget, setDiscardTarget] = useState<string | null>(null);
   // Basename of a file whose discard failed, shown in an error dialog.
@@ -646,6 +709,14 @@ export function SourceControlView() {
       </div>
     );
   }
+
+  // Rows key off repo-relative paths; the diff pane carries an absolute one.
+  // A diff opened from somewhere else (another repo, the git graph) simply
+  // matches no row.
+  const activeRelPath =
+    repoPath && activeDiffPath?.startsWith(`${repoPath}/`)
+      ? activeDiffPath.slice(repoPath.length + 1)
+      : null;
 
   const canCommit = message.trim().length > 0 && (status?.staged.length ?? 0) > 0;
   const hasStaged = (status?.staged.length ?? 0) > 0;
@@ -791,6 +862,21 @@ export function SourceControlView() {
                 label={t("stagedChanges")}
                 collapsed={collapsedSections.has("staged")}
                 onToggle={() => toggleSection("staged")}
+                action={
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void withRepo(async (repo) => {
+                        for (const file of status!.staged) {
+                          await gitUnstage(repo, file.path);
+                        }
+                      });
+                    }}
+                    className="shrink-0 text-[11px] text-accent hover:underline"
+                  >
+                    {t("unstageAll")}
+                  </button>
+                }
               />
               {!collapsedSections.has("staged") && (
                 <FileList
@@ -808,6 +894,7 @@ export function SourceControlView() {
                     })
                   }
                   onFileOpen={(path) => openDiff(path, true)}
+                  activePath={activeDiffStaged ? activeRelPath : null}
                   repoPath={repoPath ?? ""}
                 />
               )}
@@ -857,6 +944,7 @@ export function SourceControlView() {
                   }
                   onFileOpen={(path) => openDiff(path, false)}
                   onRequestDiscard={setDiscardTarget}
+                  activePath={activeDiffStaged ? null : activeRelPath}
                   repoPath={repoPath ?? ""}
                 />
               ))}

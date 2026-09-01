@@ -244,6 +244,25 @@ export function activeEditorPath(
   return content?.kind === "editor" ? content.path : null;
 }
 
+/**
+ * The diff the user is looking at: same rule as `activeEditorPath` (the active
+ * leaf of the active tab, so a split reports its focused pane), narrowed to
+ * diff panes. `staged` matters as much as the path — the same file can sit in
+ * both the staged and unstaged list, and only the row whose side is on screen
+ * is the active one.
+ */
+export function activeDiffPane(
+  tabs: readonly Tab[],
+  activeId: string | null,
+): { path: string; staged: boolean } | null {
+  const tab = tabs.find((t) => t.id === activeId);
+  if (!tab) {
+    return null;
+  }
+  const content = findPaneContent(tab.paneTree, tab.activeLeafId);
+  return content?.kind === "diff" ? { path: content.path, staged: content.staged } : null;
+}
+
 export function tabHasDirtyEditor(
   tab: Tab,
   buffers: Record<string, { content: string; baseline: string }>,

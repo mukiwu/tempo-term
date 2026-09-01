@@ -52,6 +52,34 @@ describe("SourceControlView row interactions", () => {
     expect(tabs[0].title).toBe("a.ts");
   });
 
+  it("marks the row whose diff is in the foreground as the current one", async () => {
+    render(<SourceControlView />);
+    const row = await screen.findByText("src/a.ts");
+    expect(row.closest("li")).not.toHaveAttribute("aria-current");
+
+    fireEvent.click(row);
+
+    expect(screen.getByText("src/a.ts").closest("li")).toHaveAttribute("aria-current", "true");
+  });
+
+  it("marks only the side of a part-staged file whose diff is open", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [{ path: "src/a.ts", staged: true, status: "M" }],
+      unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
+    });
+    render(<SourceControlView />);
+    // Staged section renders above Changes, so [0] is the staged row.
+    const rows = await screen.findAllByText("src/a.ts");
+    expect(rows).toHaveLength(2);
+
+    fireEvent.click(rows[1]);
+
+    const after = screen.getAllByText("src/a.ts");
+    expect(after[0].closest("li")).not.toHaveAttribute("aria-current");
+    expect(after[1].closest("li")).toHaveAttribute("aria-current", "true");
+  });
+
   it("confirms before discarding and calls gitRestoreFile", async () => {
     render(<SourceControlView />);
     await screen.findByText("src/a.ts");
@@ -157,6 +185,64 @@ describe("SourceControlView collapsible sections", () => {
       "aria-expanded",
       "false",
     );
+  });
+
+  it("keeps the header and folder actions revealed without hover; file-row actions stay collapsed", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [{ path: "src/a.ts", staged: true, status: "M" }],
+      unstaged: [{ path: "src/b.ts", staged: false, status: "M" }],
+    });
+    render(<SourceControlView />);
+    await screen.findByText("src/a.ts");
+
+    // jsdom applies no Tailwind, so the collapsed strip cannot be asserted
+    // through visibility; the class contract is the observable seam. Headers
+    // have no context menu, so their actions must never be hover-gated — and
+    // "Stage all" had always been visible before the hover-reveal landed.
+    const headerAction = screen.getByRole("button", { name: "Unstage all" });
+    expect(headerAction.closest("div.shrink-0")?.className).not.toMatch(/\bw-0\b/);
+
+    // File rows keep the hover-reveal: they carry the same actions in their
+    // context menu, and collapsing them is the point of the change.
+    const fileAction = screen.getByRole("button", { name: "Unstage" });
+    expect(fileAction.closest("div.shrink-0")?.className).toMatch(/\bw-0\b/);
+  });
+
+  it("marks the staged side as current when its diff is the one open", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [{ path: "src/a.ts", staged: true, status: "M" }],
+      unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
+    });
+    render(<SourceControlView />);
+    const rows = await screen.findAllByText("src/a.ts");
+    expect(rows).toHaveLength(2);
+
+    fireEvent.click(rows[0]);
+
+    const after = screen.getAllByText("src/a.ts");
+    expect(after[0].closest("li")).toHaveAttribute("aria-current", "true");
+    expect(after[1].closest("li")).not.toHaveAttribute("aria-current");
+  });
+
+  it("unstages every staged file from the staged section header", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [
+        { path: "src/a.ts", staged: true, status: "M" },
+        { path: "src/b.ts", staged: true, status: "A" },
+      ],
+      unstaged: [],
+    });
+    render(<SourceControlView />);
+    await screen.findByText("src/a.ts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Unstage all" }));
+
+    await waitFor(() => expect(gitBridge.gitUnstage).toHaveBeenCalledTimes(2));
+    expect(gitBridge.gitUnstage).toHaveBeenCalledWith("/repo", "src/a.ts");
+    expect(gitBridge.gitUnstage).toHaveBeenCalledWith("/repo", "src/b.ts");
   });
 });
 
