@@ -380,6 +380,31 @@ describe("SourceControlView nested folder tree", () => {
     expect(screen.queryByText("aaa")).not.toBeInTheDocument();
   });
 
+  it("toggles a folder from anywhere on its label, not just the chevron", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(screen.getByRole("button", { name: "Group by folder" }));
+    await screen.findByText("x.ts");
+
+    // The folder name is the obvious click target; aiming for the 13px
+    // chevron was the only thing that worked before.
+    fireEvent.click(screen.getByText("dist"));
+    expect(screen.queryByText("x.ts")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("dist"));
+    expect(await screen.findByText("x.ts")).toBeInTheDocument();
+  });
+
+  it("does not toggle the folder when its subtree action is clicked", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(screen.getByRole("button", { name: "Group by folder" }));
+    await screen.findByText("x.ts");
+
+    fireEvent.click(screen.getByRole("button", { name: /stage folder.*: dist$/i }));
+
+    await waitFor(() => expect(gitBridge.gitStage).toHaveBeenCalled());
+    expect(screen.getByText("x.ts")).toBeInTheDocument();
+  });
+
   it("gives same-named folders at different paths distinct collapse-button labels", async () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue({
       branch: "main",

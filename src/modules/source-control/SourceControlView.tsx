@@ -433,6 +433,14 @@ function FileTreeRows({
               style={{ paddingLeft: `${depth * 14 + 12}px` }}
               className="group flex items-center gap-1 py-1 pr-3 text-sm hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
             >
+              {/* The whole label — chevron, icon and name — is the toggle, the
+                  way the section headers and the Git Graph details tree work.
+                  Aiming for the 13px chevron alone was the only way to open a
+                  folder here. The subtree action stays a sibling button, so it
+                  never toggles the folder it acts on. Hover is the row
+                  background only, never a text colour: in this list a bright
+                  label means "this is the file you are viewing" (StatusRow's
+                  active row), and nothing else. */}
               <button
                 type="button"
                 onClick={() => onToggleCollapse(node.path)}
@@ -441,14 +449,18 @@ function FileTreeRows({
                     ? t("expandFolder", { name: node.path })
                     : t("collapseFolder", { name: node.path })
                 }
-                className="flex shrink-0 items-center text-fg-subtle hover:text-fg"
+                className="flex min-w-0 flex-1 items-center gap-1 text-left text-fg-subtle"
               >
-                {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                {isCollapsed ? (
+                  <ChevronRight size={13} className="shrink-0" />
+                ) : (
+                  <ChevronDown size={13} className="shrink-0" />
+                )}
+                <Folder size={13} className="shrink-0" />
+                <Tooltip label={node.path} className="min-w-0 flex-1">
+                  <span className="min-w-0 flex-1 truncate text-fg-muted">{node.name}</span>
+                </Tooltip>
               </button>
-              <Folder size={13} className="shrink-0 text-fg-subtle" />
-              <Tooltip label={node.path} className="min-w-0 flex-1">
-                <span className="min-w-0 flex-1 truncate text-fg-muted">{node.name}</span>
-              </Tooltip>
               {/* Permanently revealed, like the section headers: folder rows
                   have no context menu to fall back on for pointers with no
                   hover, and one icon costs little of the width the file rows'
