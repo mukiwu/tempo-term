@@ -59,11 +59,15 @@ enum WindowCloseDecision {
 fn decide_window_close(
     enabled: bool,
     session_count: usize,
+    busy_count: usize,
     prompting: bool,
 ) -> WindowCloseDecision {
     if session_count == 0 {
         WindowCloseDecision::Allow
-    } else if !enabled {
+    } else if !enabled || busy_count == 0 {
+        // Idle shells still need their backend sessions cleaned up, but they
+        // hold no work a prompt could save — close without asking, the way
+        // Terminal.app and iTerm2 treat a bare prompt.
         WindowCloseDecision::CloseAndDestroy
     } else if prompting {
         WindowCloseDecision::Ignore
@@ -72,10 +76,20 @@ fn decide_window_close(
     }
 }
 
-fn all_session_count(app: &AppHandle) -> usize {
+/// Sessions whose terminal is actually running a job (#366). SSH sessions all
+/// count: a live remote shell's foreground state cannot be probed from here,
+/// and over-asking beats silently dropping a remote connection.
+fn all_busy_count(app: &AppHandle) -> usize {
     let pty = app.state::<PtyState>();
     let ssh = app.state::<SshState>();
-    crate::modules::pty::session_count(&pty) + crate::modules::ssh::session_count(&ssh)
+    crate::modules::pty::busy_session_count(&pty) + crate::modules::ssh::session_count(&ssh)
+}
+
+fn window_busy_count(app: &AppHandle, owner: &str) -> usize {
+    let pty = app.state::<PtyState>();
+    let ssh = app.state::<SshState>();
+    crate::modules::pty::busy_owned_session_count(&pty, owner)
+        + crate::modules::ssh::owned_session_count(&ssh, owner)
 }
 
 fn window_session_count(app: &AppHandle, owner: &str) -> usize {
@@ -97,7 +111,7 @@ fn close_window_sessions(app: &AppHandle, owner: &str) {
 #[cfg(target_os = "macos")]
 pub fn request_quit(app: &AppHandle) {
     let guard = app.state::<ExitGuardState>();
-    let count = all_session_count(app);
+    let count = all_busy_count(app);
     if !guard.enabled.load(Ordering::Acquire) || count == 0 {
         guard.bypass_once.store(true, Ordering::Release);
         app.exit(0);
@@ -142,9 +156,11 @@ pub fn handle_run_event(app: &AppHandle, event: &RunEvent) {
     {
         let guard = app.state::<ExitGuardState>();
         let session_count = window_session_count(app, label);
+        let busy_count = window_busy_count(app, label);
         let decision = decide_window_close(
             guard.enabled.load(Ordering::Acquire),
             session_count,
+            busy_count,
             guard.prompting.load(Ordering::Acquire),
         );
 
@@ -188,7 +204,7 @@ pub fn handle_run_event(app: &AppHandle, event: &RunEvent) {
         let label = label.clone();
         let language = guard.language.lock().unwrap().clone();
         std::thread::spawn(move || {
-            let confirmed = show_confirmation(&app, &language, session_count, false, Some(&label));
+            let confirmed = show_confirmation(&app, &language, busy_count, false, Some(&label));
             let guard = app.state::<ExitGuardState>();
             guard.finish_prompt();
             if confirmed {
@@ -207,7 +223,7 @@ pub fn handle_run_event(app: &AppHandle, event: &RunEvent) {
     let guard = app.state::<ExitGuardState>();
     if guard.bypass_once.swap(false, Ordering::AcqRel)
         || !guard.enabled.load(Ordering::Acquire)
-        || all_session_count(app) == 0
+        || all_busy_count(app) == 0
     {
         return;
     }
@@ -219,7 +235,7 @@ pub fn handle_run_event(app: &AppHandle, event: &RunEvent) {
 
     let app = app.clone();
     let language = guard.language.lock().unwrap().clone();
-    let count = all_session_count(&app);
+    let count = all_busy_count(&app);
     std::thread::spawn(move || {
         let confirmed = show_confirmation(&app, &language, count, true, None);
 
@@ -309,7 +325,7 @@ mod tests {
     #[test]
     fn disabled_confirmation_still_closes_and_destroys_owned_sessions() {
         assert_eq!(
-            decide_window_close(false, 1, false),
+            decide_window_close(false, 1, 1, false),
             WindowCloseDecision::CloseAndDestroy
         );
     }
@@ -317,19 +333,30 @@ mod tests {
     #[test]
     fn close_without_owned_sessions_is_allowed() {
         assert_eq!(
-            decide_window_close(true, 0, false),
+            decide_window_close(true, 0, 0, false),
             WindowCloseDecision::Allow
+        );
+    }
+
+    // #366: an idle prompt holds no work a prompt could save — clean up and
+    // close without asking, exactly like a disabled guard, never like Allow
+    // (the backend sessions still need closing).
+    #[test]
+    fn idle_sessions_close_without_a_prompt_but_with_cleanup() {
+        assert_eq!(
+            decide_window_close(true, 2, 0, false),
+            WindowCloseDecision::CloseAndDestroy
         );
     }
 
     #[test]
     fn repeated_close_while_prompting_is_ignored() {
         assert_eq!(
-            decide_window_close(true, 1, false),
+            decide_window_close(true, 1, 1, false),
             WindowCloseDecision::Prompt
         );
         assert_eq!(
-            decide_window_close(true, 1, true),
+            decide_window_close(true, 1, 1, true),
             WindowCloseDecision::Ignore
         );
     }
@@ -341,7 +368,7 @@ mod tests {
         state.finish_prompt();
 
         assert_eq!(
-            decide_window_close(true, 1, state.prompting.load(Ordering::Acquire)),
+            decide_window_close(true, 1, 1, state.prompting.load(Ordering::Acquire)),
             WindowCloseDecision::Prompt
         );
     }

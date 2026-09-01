@@ -5,7 +5,8 @@ pub mod shell;
 
 pub use session::PtyState;
 pub(crate) use session::{
-    close_owned as close_owned_sessions, owned_count as owned_session_count, session_count,
+    busy_owned_count as busy_owned_session_count, busy_total_count as busy_session_count,
+    close_owned as close_owned_sessions, owned_count as owned_session_count,
 };
 
 use tauri::ipc::{Channel, Response};

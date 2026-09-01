@@ -18,6 +18,10 @@ use super::shell::{
 /// A single live terminal session.
 pub struct Session {
     owner_label: Mutex<Option<String>>,
+    /// The spawned shell's own pid, kept to tell "sitting at the prompt"
+    /// apart from "running a job" (see `session_is_busy`). None when the
+    /// backend could not report it — treated as busy, never as idle.
+    shell_pid: Option<u32>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
@@ -170,6 +174,7 @@ pub fn spawn_with_sinks(
         .map_err(|e| e.to_string())?;
 
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let shell_pid = child.process_id();
     // Drop the slave so EOF propagates to the reader once the child exits
     // (unix; on Windows EOF needs the pseudo console closed — see the waiter
     // thread below).
@@ -181,6 +186,7 @@ pub fn spawn_with_sinks(
 
     let session = Arc::new(Session {
         owner_label: Mutex::new(owner_label),
+        shell_pid,
         writer: Arc::new(Mutex::new(writer)),
         master: Mutex::new(pair.master),
         killer: Mutex::new(killer),
@@ -491,8 +497,67 @@ pub fn close_all(state: &PtyState) {
     }
 }
 
-pub fn session_count(state: &PtyState) -> usize {
-    state.sessions.read().unwrap().len()
+/// Busy = the terminal is doing something a close would kill: its foreground
+/// process group is not the shell itself. Pure and cfg-free so both platform
+/// rules stay unit-tested on every host. Unknown states count as busy —
+/// over-asking is recoverable, silently killing a job is not.
+#[cfg_attr(windows, allow(dead_code))]
+fn busy_from_foreground(foreground: Option<i32>, shell_pid: Option<u32>) -> bool {
+    match (foreground, shell_pid) {
+        (Some(fg), Some(shell)) => fg < 0 || fg as u32 != shell,
+        _ => true,
+    }
+}
+
+/// Windows has no foreground process group (see foreground_pid); a shell that
+/// spawned children it still owns is the closest observable notion of busy.
+/// `processes` is (pid, parent pid) for every live process.
+#[cfg_attr(unix, allow(dead_code))]
+fn busy_from_children(shell_pid: u32, processes: &[(u32, Option<u32>)]) -> bool {
+    processes.iter().any(|(_, parent)| *parent == Some(shell_pid))
+}
+
+#[cfg(unix)]
+fn session_is_busy(session: &Session) -> bool {
+    busy_from_foreground(foreground_pid(session), session.shell_pid)
+}
+
+#[cfg(not(unix))]
+fn session_is_busy(session: &Session) -> bool {
+    let Some(shell) = session.shell_pid else { return true };
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    let processes: Vec<(u32, Option<u32>)> = system
+        .processes()
+        .iter()
+        .map(|(pid, proc_)| (pid.as_u32(), proc_.parent().map(|p| p.as_u32())))
+        .collect();
+    busy_from_children(shell, &processes)
+}
+
+/// Sessions in this window whose terminal is running a foreground job. Only
+/// the exit guard's "should we ask" reads this; cleanup still uses the full
+/// counts, because closing kills idle shells too.
+pub fn busy_owned_count(state: &PtyState, owner_label: &str) -> usize {
+    state
+        .sessions
+        .read()
+        .unwrap()
+        .values()
+        .filter(|session| session.owner_label.lock().unwrap().as_deref() == Some(owner_label))
+        .filter(|session| session_is_busy(session))
+        .count()
+}
+
+/// Busy sessions across every window (the app-quit prompt's gate).
+pub fn busy_total_count(state: &PtyState) -> usize {
+    state
+        .sessions
+        .read()
+        .unwrap()
+        .values()
+        .filter(|session| session_is_busy(session))
+        .count()
 }
 
 pub fn owned_count(state: &PtyState, owner_label: &str) -> usize {
@@ -635,6 +700,71 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[test]
+    fn unknown_foreground_or_shell_counts_as_busy() {
+        assert!(busy_from_foreground(None, Some(10)));
+        assert!(busy_from_foreground(Some(10), None));
+        assert!(busy_from_foreground(None, None));
+    }
+
+    #[test]
+    fn foreground_group_decides_busy_on_unix_semantics() {
+        assert!(!busy_from_foreground(Some(42), Some(42))); // at the prompt
+        assert!(busy_from_foreground(Some(43), Some(42))); // a job owns the tty
+        assert!(busy_from_foreground(Some(-1), Some(42))); // tcgetpgrp error
+    }
+
+    #[test]
+    fn shell_children_decide_busy_on_windows_semantics() {
+        let table = [(1u32, None), (42, Some(1)), (99, Some(42))];
+        assert!(busy_from_children(42, &table)); // 99 is the shell's child
+        assert!(!busy_from_children(99, &table)); // leaf process: idle
+    }
+
+    /// Real end-to-end check of the unix rule against a live interactive
+    /// shell: idle at the prompt, busy while `sleep` owns the terminal.
+    /// Ignored by default: it needs an interactive zsh with job control and
+    /// real timing; run with `cargo test --lib busy -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_shell_reports_busy_only_while_a_job_runs() {
+        let state = PtyState::default();
+        let mut cmd = CommandBuilder::new("/bin/zsh");
+        cmd.args(["-f", "-i"]);
+        let id = spawn_with_sinks(
+            &state,
+            state.alloc_id(),
+            80,
+            24,
+            cmd,
+            "zsh".to_string(),
+            Some("main".to_string()),
+            |_| true,
+            |_| {},
+        )
+        .expect("spawn interactive zsh");
+
+        let wait_for = |want_busy: bool| -> bool {
+            for _ in 0..50 {
+                let busy = {
+                    let sessions = state.sessions.read().unwrap();
+                    session_is_busy(sessions.get(&id).expect("session alive"))
+                };
+                if busy == want_busy {
+                    return true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            false
+        };
+
+        assert!(wait_for(false), "idle prompt must not be busy");
+        write_input(&state, id, "sleep 3\r".as_bytes()).unwrap();
+        assert!(wait_for(true), "a running sleep must be busy");
+        assert!(wait_for(false), "back at the prompt must be idle again");
+        close(&state, id);
+    }
+
     #[test]
     fn registers_owner_with_the_session_atomically() {
         let state = PtyState::new();
