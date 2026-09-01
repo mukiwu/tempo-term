@@ -187,6 +187,45 @@ describe("SourceControlView collapsible sections", () => {
     );
   });
 
+  it("keeps the header and folder actions revealed without hover; file-row actions stay collapsed", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [{ path: "src/a.ts", staged: true, status: "M" }],
+      unstaged: [{ path: "src/b.ts", staged: false, status: "M" }],
+    });
+    render(<SourceControlView />);
+    await screen.findByText("src/a.ts");
+
+    // jsdom applies no Tailwind, so the collapsed strip cannot be asserted
+    // through visibility; the class contract is the observable seam. Headers
+    // have no context menu, so their actions must never be hover-gated — and
+    // "Stage all" had always been visible before the hover-reveal landed.
+    const headerAction = screen.getByRole("button", { name: "Unstage all" });
+    expect(headerAction.closest("div.shrink-0")?.className).not.toMatch(/\bw-0\b/);
+
+    // File rows keep the hover-reveal: they carry the same actions in their
+    // context menu, and collapsing them is the point of the change.
+    const fileAction = screen.getByRole("button", { name: "Unstage" });
+    expect(fileAction.closest("div.shrink-0")?.className).toMatch(/\bw-0\b/);
+  });
+
+  it("marks the staged side as current when its diff is the one open", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [{ path: "src/a.ts", staged: true, status: "M" }],
+      unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
+    });
+    render(<SourceControlView />);
+    const rows = await screen.findAllByText("src/a.ts");
+    expect(rows).toHaveLength(2);
+
+    fireEvent.click(rows[0]);
+
+    const after = screen.getAllByText("src/a.ts");
+    expect(after[0].closest("li")).toHaveAttribute("aria-current", "true");
+    expect(after[1].closest("li")).not.toHaveAttribute("aria-current");
+  });
+
   it("unstages every staged file from the staged section header", async () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue({
       branch: "main",

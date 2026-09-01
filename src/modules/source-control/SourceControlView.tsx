@@ -449,7 +449,11 @@ function FileTreeRows({
               <Tooltip label={node.path} className="min-w-0 flex-1">
                 <span className="min-w-0 flex-1 truncate text-fg-muted">{node.name}</span>
               </Tooltip>
-              <RowActions>
+              {/* Permanently revealed, like the section headers: folder rows
+                  have no context menu to fall back on for pointers with no
+                  hover, and one icon costs little of the width the file rows'
+                  hover-reveal exists to reclaim. */}
+              <RowActions revealed>
                 <Tooltip label={`${folderActionLabel}: ${node.path}`}>
                   <button
                     type="button"
@@ -571,10 +575,12 @@ type SectionKey = "staged" | "changes" | "history";
  * Collapsible section heading. The toggle is a real button stretched across
  * the row (like WorkspacePanel's group headers) so it works from the keyboard
  * and reports its state; `action` (e.g. the "stage all" button) sits outside
- * it at the trailing edge, so its clicks never reach the toggle. It is
- * revealed on hover like the file rows' own actions, and stays available while
- * the section is collapsed, so e.g. staging everything doesn't require
- * expanding the section first.
+ * it at the trailing edge, so its clicks never reach the toggle. Unlike the
+ * file rows' actions it stays permanently revealed: a header has no context
+ * menu to fall back on for pointers with no hover, "Stage all" had always been
+ * visible before the hover-reveal landed, and one action per header costs no
+ * width worth reclaiming. It also stays available while the section is
+ * collapsed, so e.g. staging everything doesn't require expanding first.
  */
 function SectionHeader({
   label,
@@ -602,7 +608,7 @@ function SectionHeader({
         )}
         <span className="truncate">{label}</span>
       </button>
-      {action && <RowActions>{action}</RowActions>}
+      {action && <RowActions revealed>{action}</RowActions>}
     </div>
   );
 }
@@ -857,22 +863,19 @@ export function SourceControlView() {
                 collapsed={collapsedSections.has("staged")}
                 onToggle={() => toggleSection("staged")}
                 action={
-                  <Tooltip label={t("unstageAll")}>
-                    <button
-                      type="button"
-                      aria-label={t("unstageAll")}
-                      onClick={() => {
-                        void withRepo(async (repo) => {
-                          for (const file of status!.staged) {
-                            await gitUnstage(repo, file.path);
-                          }
-                        });
-                      }}
-                      className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
-                    >
-                      <Minus size={14} />
-                    </button>
-                  </Tooltip>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void withRepo(async (repo) => {
+                        for (const file of status!.staged) {
+                          await gitUnstage(repo, file.path);
+                        }
+                      });
+                    }}
+                    className="shrink-0 text-[11px] text-accent hover:underline"
+                  >
+                    {t("unstageAll")}
+                  </button>
                 }
               />
               {!collapsedSections.has("staged") && (
