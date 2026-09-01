@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { message } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { InfoDialog } from "@/components/InfoDialog";
 import { usePorts } from "./lib/usePorts";
 import { killPortProcess, type PortInfo } from "./lib/portsBridge";
 import { PortRow } from "./PortRow";
@@ -20,6 +20,7 @@ export function PortsPanelView() {
   const setShowAll = useSettingsStore((s) => s.setShowAllPorts);
   const ports = usePorts(showAll, 5000);
   const [killTarget, setKillTarget] = useState<PortInfo | null>(null);
+  const [killError, setKillError] = useState<string | null>(null);
   const [expandedPid, setExpandedPid] = useState<number | null>(null);
 
   const list = ports ?? [];
@@ -36,10 +37,9 @@ export function PortsPanelView() {
     }
     void killPortProcess(target.port, target.pid).catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : String(err);
-      void message(t("ports.killFailed", { process: target.processName, error: detail }), {
-        title: t("ports.kill"),
-        kind: "error",
-      });
+      // Repo convention: failures surface in the app-styled dialog, never a
+      // native alert (the one former exception in this file included).
+      setKillError(t("ports.killFailed", { process: target.processName, error: detail }));
     });
   };
 
@@ -81,6 +81,14 @@ export function PortsPanelView() {
           ))
         )}
       </div>
+      {killError && (
+        <InfoDialog
+          title={t("ports.kill")}
+          message={killError}
+          confirmLabel={t("actions.confirm")}
+          onConfirm={() => setKillError(null)}
+        />
+      )}
       {killTarget && (
         <ConfirmDialog
           title={t("ports.kill")}
