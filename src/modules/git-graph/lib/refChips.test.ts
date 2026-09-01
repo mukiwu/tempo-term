@@ -38,14 +38,14 @@ describe("buildRefChips", () => {
     expect(chips[0].remoteNames).toEqual(["origin", "upstream"]);
   });
 
-  it("merges a remote listed before its local twin, keeping the local ref's slot", () => {
+  it("merges a remote listed before its local twin rather than giving it a chip", () => {
     const { chips } = buildRefChips(
       [ref("remote", "origin/feat/x"), ref("tag", "v1"), ref("branch", "feat/x")],
       ALL,
     );
 
-    expect(chips.map((c) => c.label)).toEqual(["v1", "feat/x (origin)"]);
-    expect(chips[1].remotes.map((r) => r.name)).toEqual(["origin/feat/x"]);
+    expect(chips.map((c) => c.label)).toEqual(["feat/x (origin)", "v1"]);
+    expect(chips[0].remotes.map((r) => r.name)).toEqual(["origin/feat/x"]);
   });
 
   it("leaves a remote with no local twin here as its own origin/ chip", () => {
@@ -73,14 +73,86 @@ describe("buildRefChips", () => {
     );
   });
 
-  it("leaves every ref alone when both options are off", () => {
+  it("keeps every ref when both options are off, still in the row's order", () => {
     const { chips, overflow } = buildRefChips(
       [ref("head", "master"), ref("remote", "origin/master"), ref("remote", "origin/HEAD")],
       NONE,
     );
 
-    expect(chips.map((c) => c.label)).toEqual(["master", "origin/master", "origin/HEAD"]);
+    // The options govern what a row shows, not what order it shows it in: the
+    // remotes are still here unmerged, they just no longer lead the row.
+    expect(chips.map((c) => c.label)).toEqual(["master", "origin/HEAD", "origin/master"]);
     expect(overflow).toEqual([]);
+  });
+
+  it("ranks the row by what it is read for: HEAD, branches, tags, then remotes", () => {
+    const { chips } = buildRefChips(
+      [
+        ref("stash", "refs/stash"),
+        ref("remote", "origin/solo"),
+        ref("tag", "v1"),
+        ref("branch", "feature"),
+        ref("head", "master"),
+      ],
+      ALL,
+    );
+
+    expect(chips.map((c) => c.label)).toEqual([
+      "master",
+      "feature",
+      "v1",
+      "origin/solo",
+      "refs/stash",
+    ]);
+  });
+
+  it("sorts within a kind by name, with origin ahead of the other remotes", () => {
+    const { chips } = buildRefChips(
+      [
+        ref("branch", "zeta"),
+        ref("remote", "upstream/solo"),
+        ref("branch", "alpha"),
+        ref("remote", "origin/solo"),
+      ],
+      ALL,
+    );
+
+    expect(chips.map((c) => c.label)).toEqual([
+      "alpha",
+      "zeta",
+      "origin/solo",
+      "upstream/solo",
+    ]);
+  });
+
+  it("puts origin's block first inside a merged chip", () => {
+    const { chips } = buildRefChips(
+      [
+        ref("branch", "master"),
+        ref("remote", "upstream/master"),
+        ref("remote", "origin/master"),
+      ],
+      ALL,
+    );
+
+    expect(chips[0].remoteNames).toEqual(["origin", "upstream"]);
+    expect(chips[0].label).toBe("master (origin, upstream)");
+  });
+
+  it("collapses the least important refs, not whichever git listed last", () => {
+    const { chips, overflow } = buildRefChips(
+      [
+        ref("remote", "origin/solo"),
+        ref("tag", "v1"),
+        ref("head", "master"),
+        ref("branch", "feature"),
+      ],
+      { ...ALL, collapseAfter: 2 },
+    );
+
+    // Git lists the remote first; the row keeps HEAD and the branch instead.
+    expect(chips.map((c) => c.label)).toEqual(["master", "feature"]);
+    expect(overflow.map((c) => c.label)).toEqual(["v1", "origin/solo"]);
   });
 
   it("collapses everything past the threshold into the overflow list", () => {
