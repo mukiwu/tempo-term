@@ -15,6 +15,10 @@ pub struct ChatMessage {
 /// system turns joined as session instructions, everything else rendered as a
 /// transcript ending in the newest user ask. The on-device session is created
 /// per request, so prior turns travel inside the prompt.
+// Consumed by the macOS arm of ai_chat; on other targets only the unit tests
+// touch it, which a plain `cargo check -D warnings` cannot see (windows-tauri
+// skill, rule 6).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn apple_prompt_parts(messages: &[ChatMessage]) -> (String, String) {
     let mut instructions: Vec<&str> = Vec::new();
     let mut transcript: Vec<String> = Vec::new();
