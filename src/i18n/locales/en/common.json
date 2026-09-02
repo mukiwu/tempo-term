@@ -90,9 +90,10 @@
     "groupOther": "Other processes",
     "cpu": "CPU",
     "memory": "Memory",
-    "askAi": "Ask AI what this is",
+    "askAi": "Ask AI",
     "aiThinking": "AI is thinking…",
-    "aiFailed": "AI could not answer"
+    "aiFailed": "AI could not answer",
+    "askAiFor": "Ask AI about port {{port}}"
   },
   "titleBar": {
     "minimize": "Minimize",

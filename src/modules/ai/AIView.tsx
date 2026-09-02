@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Bot, KeyRound, Paperclip, SendHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
 import { useChatStore } from "./store/chatStore";
-import { providerById, PROVIDERS } from "./lib/providers";
+import { CHAT_PROVIDERS } from "./lib/providers";
+import { resolveChatTarget } from "./store/chatStore";
 import { secretsHasKey, secretsSetKey } from "./lib/aiBridge";
 import { buildAttachmentsBlock, type AttachedFile } from "./lib/attachments";
 import { buildActiveFileBlock, buildTerminalBlock } from "./lib/context";
@@ -128,7 +129,19 @@ export function AIView() {
   // store, while workspaceStore.activeFile was never updated on tab navigation.
   const activeFile = useTabsStore((s) => activeEditorPath(s.tabs, s.activeId));
 
-  const provider = providerById(providerId);
+  const chatProviderId = useChatStore((s) => s.chatProviderId);
+  const chatModel = useChatStore((s) => s.chatModel);
+  const setChatProvider = useChatStore((s) => s.setChatProvider);
+  const setChatModel = useChatStore((s) => s.setChatModel);
+  // While the default is Apple Intelligence the panel shows and edits the
+  // chat-only fallback pair; otherwise it edits the shared default, as ever.
+  const appleDefault = providerId === "apple";
+  const { provider, model: effectiveModel } = resolveChatTarget({
+    providerId,
+    model,
+    chatProviderId,
+    chatModel,
+  });
   const [hasKey, setHasKey] = useState(true);
   const [input, setInput] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -192,19 +205,24 @@ export function AIView() {
         <Bot size={16} className="shrink-0 text-accent" />
         <Combobox
           value={provider.label}
-          options={PROVIDERS.map((p) => p.label)}
+          options={CHAT_PROVIDERS.map((p) => p.label)}
           onChange={(label) => {
-            const next = PROVIDERS.find((p) => p.label === label);
-            if (next) setProvider(next.id);
+            const next = CHAT_PROVIDERS.find((p) => p.label === label);
+            if (!next) return;
+            if (appleDefault) {
+              setChatProvider(next.id);
+            } else {
+              setProvider(next.id);
+            }
           }}
           ariaLabel={t("provider")}
           className="min-w-0 flex-1"
           textClassName="text-[13px]"
         />
         <Combobox
-          value={model}
+          value={effectiveModel}
           options={provider.models}
-          onChange={setModel}
+          onChange={appleDefault ? setChatModel : setModel}
           ariaLabel={t("model")}
           editable
           placeholder={t("modelPlaceholder")}

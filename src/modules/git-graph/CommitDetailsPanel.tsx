@@ -66,6 +66,10 @@ const FILE_OVERSCAN = 20;
 
 type FilesViewMode = "flat" | "folder";
 
+// Remembered per panel, not shared with the Source Control sidebar: the two
+// lists live at very different widths, so one preference would fit neither.
+const FILES_VIEW_MODE_KEY = "tempoterm-gitgraph-files-view-mode";
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -176,7 +180,12 @@ export function CommitDetailsPanel({ repo, selection, onClose, labels }: CommitD
   // run yet). Fall back to "diff" here so the content below never tries to
   // render the AI tab (and dereference `singleCommit`) while isCompare.
   const activeTab = isCompare ? "diff" : tab;
-  const [filesViewMode, setFilesViewMode] = useState<FilesViewMode>("flat");
+  const [filesViewMode, setFilesViewMode] = useState<FilesViewMode>(() =>
+    localStorage.getItem(FILES_VIEW_MODE_KEY) === "folder" ? "folder" : "flat",
+  );
+  useEffect(() => {
+    localStorage.setItem(FILES_VIEW_MODE_KEY, filesViewMode);
+  }, [filesViewMode]);
   const {
     collapsed: collapsedFolders,
     toggle: toggleDetailsFolder,

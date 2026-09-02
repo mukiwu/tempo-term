@@ -31,3 +31,8 @@ export function secretsDeleteKey(provider: string): Promise<void> {
 export function secretsHasKey(provider: string): Promise<boolean> {
   return invoke<boolean>("secrets_has_key", { provider });
 }
+
+/** Whether the on-device Apple Intelligence model can serve as a provider. */
+export function aiAppleAvailable(): Promise<boolean> {
+  return invoke<boolean>("ai_apple_available");
+}

@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -24,6 +24,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InfoDialog } from "@/components/InfoDialog";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
+import { Resizer } from "@/components/Resizer";
 import { fsReveal } from "@/modules/explorer/lib/fsBridge";
 import {
   gitCommit,
@@ -57,6 +58,15 @@ type ViewMode = "flat" | "folder";
 // Local git reads finish almost instantly; keep the refresh spinner up at least
 // this long so the feedback is perceptible.
 const MIN_REFRESH_MS = 400;
+
+// The history pane is drag-resizable and its height outlives the session, the
+// same deal as the Git Graph details pane.
+const COLLAPSED_SECTIONS_KEY = "tempoterm-sourcecontrol-collapsed-sections";
+const VIEW_MODE_KEY = "tempoterm-sourcecontrol-view-mode";
+const HISTORY_HEIGHT_KEY = "tempoterm-sourcecontrol-history-height";
+const HISTORY_HEIGHT_DEFAULT = 200;
+const HISTORY_HEIGHT_MIN = 60;
+const HISTORY_HEIGHT_MAX = 600;
 
 const STATUS_COLOR: Record<string, string> = {
   M: "text-warning",
@@ -433,6 +443,14 @@ function FileTreeRows({
               style={{ paddingLeft: `${depth * 14 + 12}px` }}
               className="group flex items-center gap-1 py-1 pr-3 text-sm hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
             >
+              {/* The whole label — chevron, icon and name — is the toggle, the
+                  way the section headers and the Git Graph details tree work.
+                  Aiming for the 13px chevron alone was the only way to open a
+                  folder here. The subtree action stays a sibling button, so it
+                  never toggles the folder it acts on. Hover is the row
+                  background only, never a text colour: in this list a bright
+                  label means "this is the file you are viewing" (StatusRow's
+                  active row), and nothing else. */}
               <button
                 type="button"
                 onClick={() => onToggleCollapse(node.path)}
@@ -441,14 +459,18 @@ function FileTreeRows({
                     ? t("expandFolder", { name: node.path })
                     : t("collapseFolder", { name: node.path })
                 }
-                className="flex shrink-0 items-center text-fg-subtle hover:text-fg"
+                className="flex min-w-0 flex-1 items-center gap-1 text-left text-fg-subtle"
               >
-                {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                {isCollapsed ? (
+                  <ChevronRight size={13} className="shrink-0" />
+                ) : (
+                  <ChevronDown size={13} className="shrink-0" />
+                )}
+                <Folder size={13} className="shrink-0" />
+                <Tooltip label={node.path} className="min-w-0 flex-1">
+                  <span className="min-w-0 flex-1 truncate text-fg-muted">{node.name}</span>
+                </Tooltip>
               </button>
-              <Folder size={13} className="shrink-0 text-fg-subtle" />
-              <Tooltip label={node.path} className="min-w-0 flex-1">
-                <span className="min-w-0 flex-1 truncate text-fg-muted">{node.name}</span>
-              </Tooltip>
               {/* Permanently revealed, like the section headers: folder rows
                   have no context menu to fall back on for pointers with no
                   hover, and one icon costs little of the width the file rows'
@@ -571,6 +593,22 @@ function FileList({
 /** Keys of the collapsible sections, a closed set so typos fail typecheck. */
 type SectionKey = "staged" | "changes" | "history";
 
+const SECTION_KEYS: SectionKey[] = ["staged", "changes", "history"];
+
+/** Collapsed sections as last left by the user; an unreadable value just means
+ *  "nothing collapsed", never a crash. */
+function readCollapsedSections(): Set<SectionKey> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLLAPSED_SECTIONS_KEY) ?? "[]");
+    const keys = Array.isArray(raw)
+      ? raw.filter((k): k is SectionKey => SECTION_KEYS.includes(k as SectionKey))
+      : [];
+    return new Set(keys);
+  } catch {
+    return new Set();
+  }
+}
+
 /**
  * Collapsible section heading. The toggle is a real button stretched across
  * the row (like WorkspacePanel's group headers) so it works from the keyboard
@@ -624,11 +662,27 @@ export function SourceControlView() {
   const [message, setMessage] = useState("");
   const [generating, setGenerating] = useState(false);
   const [pushing, setPushing] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("flat");
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    localStorage.getItem(VIEW_MODE_KEY) === "folder" ? "folder" : "flat",
+  );
+  useEffect(() => {
+    localStorage.setItem(VIEW_MODE_KEY, viewMode);
+  }, [viewMode]);
   const [refreshing, setRefreshing] = useState(false);
-  // Section headers the user has collapsed. Component-local, like viewMode —
-  // resets when the view remounts.
-  const [collapsedSections, setCollapsedSections] = useState<Set<SectionKey>>(new Set());
+  const [historyHeight, setHistoryHeight] = useState<number>(() => {
+    const v = Number(localStorage.getItem(HISTORY_HEIGHT_KEY));
+    return Number.isFinite(v) && v > 0 ? v : HISTORY_HEIGHT_DEFAULT;
+  });
+  const historyHeightRef = useRef(historyHeight);
+  historyHeightRef.current = historyHeight;
+  const persistHistoryHeight = useCallback(() => {
+    localStorage.setItem(HISTORY_HEIGHT_KEY, String(historyHeightRef.current));
+  }, []);
+  // Section headers the user has collapsed. Remembered across sessions, like
+  // the history pane's height — reopening the panel should not undo the layout.
+  const [collapsedSections, setCollapsedSections] = useState<Set<SectionKey>>(
+    readCollapsedSections,
+  );
   const toggleSection = useCallback((key: SectionKey) => {
     setCollapsedSections((prev) => {
       const next = new Set(prev);
@@ -640,6 +694,9 @@ export function SourceControlView() {
       return next;
     });
   }, []);
+  useEffect(() => {
+    localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify([...collapsedSections]));
+  }, [collapsedSections]);
   const providerId = useChatStore((s) => s.providerId);
   const model = useChatStore((s) => s.model);
   const customBaseUrl = useChatStore((s) => s.customBaseUrl);
@@ -949,36 +1006,50 @@ export function SourceControlView() {
                 />
               ))}
           </section>
-
-          {/* Expanded: history lives in the normal scroll flow below Changes, so
-              it never eats into or covers the Changes area — you just scroll. */}
-          {history.length > 0 && !collapsedSections.has("history") && (
-            <section className="mt-2 border-t border-border pt-1">
-              <SectionHeader
-                label={t("history")}
-                collapsed={false}
-                onToggle={() => toggleSection("history")}
-              />
-              <div className="flex gap-1 px-3 pb-2">
-                <HistoryGraphColumn commits={history} />
-                <ul className="min-w-0 flex-1">
-                  {history.map((commit) => (
-                    <HistoryRow key={commit.id} commit={commit} />
-                  ))}
-                </ul>
-              </div>
-            </section>
-          )}
         </div>
 
-        {/* Collapsed: just the header, pinned to the very bottom of the panel. */}
-        {history.length > 0 && collapsedSections.has("history") && (
-          <section className="shrink-0 border-t border-border">
+        {/* History is its own pane pinned to the bottom of the panel in both
+            states, so its header never rides the Changes scroll out of view:
+            expanding opens the list upward instead of moving the header. Its
+            height is dragged from the top edge and remembered; the max-height
+            keeps a squeezed panel from pushing Changes off the top. */}
+        {history.length > 0 && !collapsedSections.has("history") && (
+          <Resizer
+            orientation="horizontal"
+            onResize={(delta) =>
+              setHistoryHeight((h) =>
+                Math.min(HISTORY_HEIGHT_MAX, Math.max(HISTORY_HEIGHT_MIN, h - delta)),
+              )
+            }
+            onResizeEnd={persistHistoryHeight}
+          />
+        )}
+        {history.length > 0 && (
+          <section
+            style={
+              collapsedSections.has("history") ? undefined : { height: `${historyHeight}px` }
+            }
+            className={`flex min-h-0 shrink-0 flex-col border-t border-border ${
+              collapsedSections.has("history") ? "" : "max-h-[70%]"
+            }`}
+          >
             <SectionHeader
               label={t("history")}
-              collapsed
+              collapsed={collapsedSections.has("history")}
               onToggle={() => toggleSection("history")}
             />
+            {!collapsedSections.has("history") && (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="flex gap-1 px-3 pb-2">
+                  <HistoryGraphColumn commits={history} />
+                  <ul className="min-w-0 flex-1">
+                    {history.map((commit) => (
+                      <HistoryRow key={commit.id} commit={commit} />
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
           </section>
         )}
       </div>

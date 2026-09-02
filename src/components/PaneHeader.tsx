@@ -25,7 +25,7 @@ export function PaneHeader({
   const { t } = useTranslation();
 
   return (
-    <div className="flex h-7 shrink-0 items-center justify-between gap-2 border-b border-border bg-bg pl-2 pr-1">
+    <div className="flex h-7 shrink-0 items-center justify-between gap-2 border-b border-border bg-bg pl-2 pr-3">
       {left ?? <span />}
       <div className="flex shrink-0 items-center gap-0.5">
         {actions}

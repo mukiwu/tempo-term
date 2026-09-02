@@ -30,6 +30,26 @@ beforeEach(() => {
 });
 
 describe("chatStore.send base URL resolution", () => {
+  it("routes chat away from an Apple Intelligence default", async () => {
+    // The on-device model is a background-tasks default, not the assistant's
+    // conversational model: chat silently uses the fallback pair instead.
+    useChatStore.setState({ providerId: "apple", model: "on-device" });
+    await useChatStore.getState().send("hi", "");
+    expect(aiChat).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "openai", kind: "openai" }),
+    );
+  });
+
+  it("chat fallback switching never touches the default provider", async () => {
+    useChatStore.setState({ providerId: "apple", model: "on-device" });
+    useChatStore.getState().setChatProvider("groq");
+    await useChatStore.getState().send("hi", "");
+    expect(aiChat).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "groq", model: "llama-3.3-70b-versatile" }),
+    );
+    expect(useChatStore.getState().providerId).toBe("apple");
+  });
+
   it("sends the user's custom base URL when the custom provider is selected", async () => {
     useChatStore.setState({
       providerId: CUSTOM_PROVIDER_ID,
