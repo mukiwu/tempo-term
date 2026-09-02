@@ -32,6 +32,7 @@ export function RemoveWorktreeDialog({
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const remove = useWorktreesStore((s) => s.remove);
+  const prune = useWorktreesStore((s) => s.prune);
 
   const blocker = removalBlocker({
     dirty,
@@ -52,12 +53,21 @@ export function RemoveWorktreeDialog({
     setBusy(true);
     setFailure(null);
     try {
-      await remove(repoPath, detail.path, {
-        deleteBranch: deleteBranch && detail.branch ? detail.branch : undefined,
-        forceDeleteBranch: deleteBranch && forceDeleteBranch,
-        // Only ever from the checkbox. Never a default, never inferred.
-        force: needsAcknowledgement && acknowledged,
-      });
+      if (detail.prunable) {
+        // The directory is already gone, and `git worktree remove` validates
+        // it — Apple git 2.50 hard-fails with "validation failed, cannot
+        // remove working tree". Pruning is the porcelain for stale records,
+        // works on every git version, and is exactly what this dialog's copy
+        // promises. It refreshes the list the same way remove does.
+        await prune(repoPath);
+      } else {
+        await remove(repoPath, detail.path, {
+          deleteBranch: deleteBranch && detail.branch ? detail.branch : undefined,
+          forceDeleteBranch: deleteBranch && forceDeleteBranch,
+          // Only ever from the checkbox. Never a default, never inferred.
+          force: needsAcknowledgement && acknowledged,
+        });
+      }
       onDone();
     } catch (error) {
       // git's own words: it knows why better than a paraphrase would.
