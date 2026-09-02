@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHAT_PROVIDERS,
   CUSTOM_PROVIDER_ID,
   PROVIDERS,
   providerById,
@@ -54,5 +55,21 @@ describe("resolveBaseUrl", () => {
     const custom = providerById(CUSTOM_PROVIDER_ID);
     expect(resolveBaseUrl(custom, undefined)).toBe(custom.baseUrl);
     expect(resolveBaseUrl(custom, null)).toBe(custom.baseUrl);
+  });
+});
+
+describe("Apple Intelligence provider", () => {
+  it("exists as a keyless on-device preset", () => {
+    const apple = providerById("apple");
+    expect(apple.kind).toBe("apple");
+    expect(apple.needsKey).toBe(false);
+    expect(apple.models).toEqual(["on-device"]);
+  });
+
+  it("is offered everywhere except the chat panel", () => {
+    expect(PROVIDERS.some((p) => p.id === "apple")).toBe(true);
+    expect(CHAT_PROVIDERS.some((p) => p.id === "apple")).toBe(false);
+    // Nothing else is filtered out.
+    expect(CHAT_PROVIDERS.length).toBe(PROVIDERS.length - 1);
   });
 });

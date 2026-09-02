@@ -1,4 +1,4 @@
-export type ProviderKind = "openai" | "anthropic" | "google";
+export type ProviderKind = "openai" | "anthropic" | "google" | "apple";
 
 /** Provider id whose base URL the user supplies, for any OpenAI-compatible server. */
 export const CUSTOM_PROVIDER_ID = "custom";
@@ -87,6 +87,17 @@ export const PROVIDERS: ProviderPreset[] = [
     needsKey: false,
   },
   {
+    id: "apple",
+    label: "Apple Intelligence",
+    kind: "apple",
+    // Not an HTTP provider: the Rust side answers on-device via
+    // FoundationModels, so there is no URL and no key. macOS 26+ only; the
+    // settings UI hides this preset when the model probe says unavailable.
+    baseUrl: "",
+    models: ["on-device"],
+    needsKey: false,
+  },
+  {
     id: CUSTOM_PROVIDER_ID,
     label: "Custom (OpenAI-compatible)",
     kind: "openai",
@@ -120,3 +131,11 @@ export function resolveBaseUrl(
   // Tolerate a missing value from unhydrated/older persisted state.
   return (customBaseUrl ?? "").trim() || provider.baseUrl;
 }
+
+/**
+ * The providers the chat panel offers. Apple Intelligence is deliberately not
+ * one of them: the 3B on-device model is the default for background tasks
+ * (commit messages, diff explains, completion), not the conversational
+ * assistant — chat quality and its 4k-token window do not fit long sessions.
+ */
+export const CHAT_PROVIDERS: ProviderPreset[] = PROVIDERS.filter((p) => p.id !== "apple");

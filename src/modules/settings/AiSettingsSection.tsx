@@ -6,13 +6,36 @@ import { useChatStore } from "@/modules/ai/store/chatStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { Combobox } from "@/components/Combobox";
 import {
+  aiAppleAvailable,
   secretsDeleteKey,
   secretsHasKey,
   secretsSetKey,
 } from "@/modules/ai/lib/aiBridge";
 
+/**
+ * Providers the settings page offers: Apple Intelligence appears only where
+ * the on-device model actually answers (macOS 26+, Apple Intelligence on);
+ * elsewhere — Windows included — the option simply does not exist.
+ */
+function useVisibleProviders() {
+  const [appleOk, setAppleOk] = useState(false);
+  useEffect(() => {
+    let live = true;
+    aiAppleAvailable()
+      .then((ok) => {
+        if (live) setAppleOk(ok);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  return PROVIDERS.filter((p) => p.id !== "apple" || appleOk);
+}
+
 function DefaultModelRow() {
   const { t } = useTranslation("settings");
+  const visibleProviders = useVisibleProviders();
   const providerId = useChatStore((s) => s.providerId);
   const model = useChatStore((s) => s.model);
   const customBaseUrl = useChatStore((s) => s.customBaseUrl);
@@ -28,9 +51,9 @@ function DefaultModelRow() {
       <div className="flex flex-wrap gap-2">
         <Combobox
           value={provider.label}
-          options={PROVIDERS.map((p) => p.label)}
+          options={visibleProviders.map((p) => p.label)}
           onChange={(label) => {
-            const next = PROVIDERS.find((p) => p.label === label);
+            const next = visibleProviders.find((p) => p.label === label);
             if (next) setProvider(next.id);
           }}
           ariaLabel={t("aiModel.provider")}
@@ -178,6 +201,7 @@ function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; ne
 }
 
 export function AiSettingsSection() {
+  const keyListProviders = useVisibleProviders();
   const { t } = useTranslation("settings");
   return (
     <section>
@@ -192,7 +216,7 @@ export function AiSettingsSection() {
       <label className="mb-1 block text-sm font-medium text-fg">{t("aiKeys.title")}</label>
       <p className="mb-2 text-xs text-fg-muted">{t("aiKeys.description")}</p>
       <div>
-        {PROVIDERS.map((provider) => (
+        {keyListProviders.map((provider) => (
           <ProviderKeyRow
             key={provider.id}
             id={provider.id}
