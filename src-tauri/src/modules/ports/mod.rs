@@ -94,6 +94,14 @@ pub fn build_port_info(row: ListenerRow, meta: Option<ProcMeta>) -> PortInfo {
     }
 }
 
+/// A stable presentation order. The OS enumerates listeners in whatever order
+/// it likes, different on every poll; without this the panel reshuffles every
+/// 5 seconds and the user cannot keep their eye on a row.
+pub fn sorted_ports(mut infos: Vec<PortInfo>) -> Vec<PortInfo> {
+    infos.sort_by_key(|i| (i.port, i.pid));
+    infos
+}
+
 /// Default view shows only the current user's services; Show all removes the filter.
 pub fn should_show(info: &PortInfo, show_all: bool) -> bool {
     show_all || info.is_current_user
@@ -193,7 +201,7 @@ pub async fn list_ports(
         .filter(|info| should_show(info, show_all))
         .collect();
 
-    Ok(infos)
+    Ok(sorted_ports(infos))
 }
 
 #[tauri::command]
@@ -239,6 +247,31 @@ mod tests {
 
     fn row(port: u16, pid: u32) -> ListenerRow {
         ListenerRow { port, bind_addr: "127.0.0.1".into(), pid }
+    }
+
+    /// The listener enumeration order changes between polls; the panel must
+    /// not reshuffle every 5 seconds (#388 phase 1). Same rows in any input
+    /// order come out identically ordered.
+    #[test]
+    fn sorted_ports_is_deterministic_across_enumeration_orders() {
+        let mk = |port: u16, pid: u32| PortInfo {
+            port,
+            protocol: "tcp".into(),
+            bind_addr: "127.0.0.1".into(),
+            pid,
+            process_name: "p".into(),
+            command: None,
+            cwd: None,
+            cpu_usage: 0.0,
+            memory_bytes: 0,
+            uptime_secs: 0,
+            is_current_user: true,
+        };
+        let a = sorted_ports(vec![mk(8080, 2), mk(3000, 9), mk(8080, 1)]);
+        let b = sorted_ports(vec![mk(8080, 1), mk(8080, 2), mk(3000, 9)]);
+        let keys: Vec<(u16, u32)> = a.iter().map(|i| (i.port, i.pid)).collect();
+        assert_eq!(keys, vec![(3000, 9), (8080, 1), (8080, 2)]);
+        assert_eq!(a, b);
     }
 
     #[test]
