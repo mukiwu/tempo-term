@@ -51,6 +51,8 @@
   "discardFailed": "無法捨棄 {{name}} 的變更，檔案可能被鎖定或儲存庫狀態異常",
   "diffPrevChange": "上一個變更",
   "diffNextChange": "下一個變更",
+  "diffInlineView": "行內檢視",
+  "diffSplitView": "並排檢視",
   "diffUnchangedLines": "$ 行未變更",
   "expandFolder": "展開 {{name}}",
   "collapseFolder": "收合 {{name}}",

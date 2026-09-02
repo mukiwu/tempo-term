@@ -51,6 +51,8 @@
   "discardFailed": "Couldn't discard changes to {{name}}. The file may be locked or the repository is in an unexpected state.",
   "diffPrevChange": "Previous Change",
   "diffNextChange": "Next Change",
+  "diffInlineView": "Inline View",
+  "diffSplitView": "Side-by-Side View",
   "diffUnchangedLines": "$ unchanged lines",
   "expandFolder": "Expand {{name}}",
   "collapseFolder": "Collapse {{name}}",
