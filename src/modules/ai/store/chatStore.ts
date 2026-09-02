@@ -18,6 +18,9 @@ function getErrorMessage(error: unknown): string {
 interface ChatState {
   providerId: string;
   model: string;
+  /** Chat-only provider used while the default is Apple Intelligence. */
+  chatProviderId: string | null;
+  chatModel: string | null;
   /** User-supplied base URL for the custom OpenAI-compatible provider. */
   customBaseUrl: string;
   messages: ChatMessage[];
@@ -27,12 +30,33 @@ interface ChatState {
   attachedPaths: string[];
   setProvider: (id: string) => void;
   setModel: (model: string) => void;
+  setChatProvider: (id: string) => void;
+  setChatModel: (model: string) => void;
   setCustomBaseUrl: (url: string) => void;
   send: (text: string, systemPrompt: string) => Promise<void>;
   clear: () => void;
   attachPath: (path: string) => void;
   removeAttached: (path: string) => void;
   clearAttached: () => void;
+}
+
+/**
+ * What the chat panel actually talks to. An Apple Intelligence default is for
+ * background tasks; the assistant falls back to the persisted chat-only pair
+ * (seeded with OpenAI) and switching in the panel edits that pair, never the
+ * default.
+ */
+export function resolveChatTarget(state: {
+  providerId: string;
+  model: string;
+  chatProviderId: string | null;
+  chatModel: string | null;
+}): { provider: ReturnType<typeof providerById>; model: string } {
+  if (state.providerId !== "apple") {
+    return { provider: providerById(state.providerId), model: state.model };
+  }
+  const provider = providerById(state.chatProviderId ?? "openai");
+  return { provider, model: state.chatModel ?? provider.models[0] ?? "" };
 }
 
 export const CHAT_STORAGE_KEY = "tempoterm-chat";
@@ -42,6 +66,8 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       providerId: PROVIDERS[0].id,
       model: PROVIDERS[0].models[0],
+      chatProviderId: null,
+      chatModel: null,
       customBaseUrl: providerById(CUSTOM_PROVIDER_ID).baseUrl,
       messages: [],
       sending: false,
@@ -63,6 +89,13 @@ export const useChatStore = create<ChatState>()(
 
       setModel: (model) => set({ model }),
 
+      setChatProvider: (id) => {
+        const provider = providerById(id);
+        set({ chatProviderId: provider.id, chatModel: provider.models[0] ?? "" });
+      },
+
+      setChatModel: (model) => set({ chatModel: model }),
+
       setCustomBaseUrl: (url) => set({ customBaseUrl: url }),
 
       send: async (text, systemPrompt) => {
@@ -70,8 +103,8 @@ export const useChatStore = create<ChatState>()(
         if (!trimmed || get().sending) {
           return;
         }
-        const { providerId, model, customBaseUrl, messages } = get();
-        const provider = providerById(providerId);
+        const { customBaseUrl, messages } = get();
+        const { provider, model } = resolveChatTarget(get());
         const payload = composeMessages(systemPrompt, messages, trimmed);
 
         set({
@@ -119,6 +152,8 @@ export const useChatStore = create<ChatState>()(
       partialize: (state) => ({
         providerId: state.providerId,
         model: state.model,
+        chatProviderId: state.chatProviderId,
+        chatModel: state.chatModel,
         customBaseUrl: state.customBaseUrl,
         attachedPaths: state.attachedPaths,
       }),
