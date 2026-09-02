@@ -52,6 +52,27 @@ const confirmButton = () => screen.getByRole("button", { name: /remove/i });
 const discardBox = () => screen.getByRole("checkbox", { name: /discard/i });
 const branchBox = () => screen.getByRole("checkbox", { name: /branch/i });
 
+describe("RemoveWorktreeDialog — a stale worktree (directory gone)", () => {
+  // `git worktree remove` validates the directory and hard-fails on some git
+  // versions (Apple git 2.50: "validation failed, cannot remove working tree:
+  // '<path>/.git' does not exist"). Pruning is the porcelain built for gone
+  // directories, and it is what the dialog's own copy promises ("這只是把
+  // git 的紀錄清掉").
+  it("prunes the record instead of asking git to remove a directory that is gone", async () => {
+    gitWorktreePrune.mockResolvedValue([WT]);
+    const onDone = vi.fn();
+    render(
+      <RemoveWorktreeDialog repoPath={REPO} detail={detail({ prunable: true })} dirty={0} onDone={onDone} />,
+    );
+
+    fireEvent.click(confirmButton());
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(gitWorktreePrune).toHaveBeenCalledWith(REPO);
+    expect(gitWorktreeRemove).not.toHaveBeenCalled();
+  });
+});
+
 describe("RemoveWorktreeDialog — a clean worktree", () => {
   it("removes it, keeping the branch, forcing nothing", async () => {
     render(<RemoveWorktreeDialog repoPath={REPO} detail={detail()} dirty={0} onDone={vi.fn()} />);
@@ -143,7 +164,9 @@ describe("RemoveWorktreeDialog — what it refuses outright", () => {
 
     expect(confirmButton()).toBeEnabled();
     fireEvent.click(confirmButton());
-    await waitFor(() => expect(gitWorktreeRemove).toHaveBeenCalled());
+    // Dropped by pruning the stale record — never by git worktree remove,
+    // which validates the (gone) directory on some git versions.
+    await waitFor(() => expect(gitWorktreePrune).toHaveBeenCalled());
   });
 });
 
