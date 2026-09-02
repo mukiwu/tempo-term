@@ -31,6 +31,22 @@ beforeEach(() => {
   killPortProcess.mockReset();
 });
 
+describe("PortsPanelView grouping", () => {
+  it("groups ports under project headers, catch-all last, and never reshuffles", async () => {
+    usePorts.mockReturnValue([
+      { ...sample[0], port: 8080, pid: 20, cwd: "/w/beta", processName: "node", command: "node x/vite" },
+      { ...sample[0], port: 3000, pid: 10, cwd: "/w/alpha" },
+      { ...sample[0], port: 631, pid: 30, cwd: null, processName: "cupsd", command: null },
+    ]);
+    render(<PortsPanelView />);
+    const headers = await screen.findAllByRole("heading", { level: 3 });
+    // textContent carries the port count the header shows beside the name.
+    expect(headers.map((h) => h.textContent)).toEqual(["alpha1", "beta1", "Other processes1"]);
+    // The plain-English service label replaces the raw runtime name up front.
+    expect(screen.getByText("Vite dev server")).toBeInTheDocument();
+  });
+});
+
 describe("PortsPanelView kill failure", () => {
   it("reports a failed kill in the app's own dialog, not a native one", async () => {
     killPortProcess.mockRejectedValue(new Error("EPERM"));

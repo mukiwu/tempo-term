@@ -86,7 +86,10 @@
     "detailsFor": "Port {{port}} 詳細資訊",
     "bind": "綁定",
     "command": "指令",
-    "cwd": "工作目錄"
+    "cwd": "工作目錄",
+    "groupOther": "其他程序",
+    "cpu": "CPU",
+    "memory": "記憶體"
   },
   "titleBar": {
     "minimize": "最小化",

@@ -5,6 +5,7 @@ import { useTabsStore } from "@/stores/tabsStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InfoDialog } from "@/components/InfoDialog";
 import { usePorts } from "./lib/usePorts";
+import { groupByProject } from "./lib/classifyService";
 import { killPortProcess, type PortInfo } from "./lib/portsBridge";
 import { PortRow } from "./PortRow";
 
@@ -69,15 +70,26 @@ export function PortsPanelView() {
         ) : list.length === 0 ? (
           <div className="px-3 py-6 text-center text-sm text-fg-subtle">{t("ports.empty")}</div>
         ) : (
-          list.map((port) => (
-            <PortRow
-              key={`${port.port}-${port.pid}`}
-              port={port}
-              expanded={expandedPid === port.pid}
-              onToggleExpand={() => setExpandedPid((cur) => (cur === port.pid ? null : port.pid))}
-              onRequestKill={setKillTarget}
-              onOpenTerminal={openTerminal}
-            />
+          groupByProject(list).map((group) => (
+            <section key={group.cwd ?? "__other__"}>
+              {/* Port Radar's hierarchy: the project is the anchor a reader
+                  scans for; the rows underneath stay sorted by port, so
+                  nothing moves between polls. */}
+              <h3 className="sticky top-0 flex items-baseline gap-2 border-b border-border bg-bg-elevated px-3 py-1.5 text-xs font-semibold text-fg">
+                {group.name ?? t("ports.groupOther")}
+                <span className="font-normal text-fg-subtle">{group.ports.length}</span>
+              </h3>
+              {group.ports.map((port) => (
+                <PortRow
+                  key={`${port.port}-${port.pid}`}
+                  port={port}
+                  expanded={expandedPid === port.pid}
+                  onToggleExpand={() => setExpandedPid((cur) => (cur === port.pid ? null : port.pid))}
+                  onRequestKill={setKillTarget}
+                  onOpenTerminal={openTerminal}
+                />
+              ))}
+            </section>
           ))
         )}
       </div>

@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatBytes, formatPercent } from "@/modules/sysmon/lib/format";
 import { Tooltip } from "@/components/Tooltip";
 import { formatUptime } from "./lib/format";
+import { classifyService } from "./lib/classifyService";
 import type { PortInfo } from "./lib/portsBridge";
 
 interface PortRowProps {
@@ -20,17 +21,22 @@ export function PortRow({ port, expanded, onToggleExpand, onRequestKill, onOpenT
   const { t } = useTranslation();
   const canKill = port.isCurrentUser;
   const canTerminal = Boolean(port.cwd);
+  const service = classifyService(port);
+  // "Vite dev server" says more than "node"; show the raw name only when it
+  // still adds something (e.g. the label fell back to a runtime).
+  const showRawName = service.label.toLowerCase() !== port.processName.toLowerCase();
 
   return (
     <div className="border-b border-border px-3 py-2 last:border-b-0">
       {/* Line 1: identifier on the left, resource stats on the right. */}
       <div className="flex items-center gap-2 text-sm">
         <span className="shrink-0 font-mono text-xs text-accent">:{port.port}</span>
-        <span className="min-w-0 flex-1 truncate font-medium text-fg">{port.processName}</span>
-        <div className="flex shrink-0 items-center gap-3 text-xs text-fg-subtle">
+        <span className="min-w-0 truncate font-medium text-fg">{service.label}</span>
+        {showRawName && (
+          <span className="min-w-0 shrink truncate text-xs text-fg-subtle">{port.processName}</span>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-3 text-xs text-fg-subtle">
           <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={11} /> {formatUptime(port.uptimeSecs)}</span>
-          <span className="flex items-center gap-1 whitespace-nowrap"><Cpu size={11} /> {formatPercent(port.cpuUsage)}</span>
-          <span className="flex items-center gap-1 whitespace-nowrap"><MemoryStick size={11} /> {formatBytes(port.memoryBytes)}</span>
         </div>
         <button
           type="button"
@@ -93,6 +99,10 @@ export function PortRow({ port, expanded, onToggleExpand, onRequestKill, onOpenT
         <dl className="mt-1.5 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded bg-bg-inset px-3 py-2 font-mono text-xs text-fg-muted">
           <dt className="text-fg-subtle">PID</dt>
           <dd>{port.pid}</dd>
+          <dt className="text-fg-subtle">{t("ports.cpu")}</dt>
+          <dd className="flex items-center gap-1"><Cpu size={11} /> {formatPercent(port.cpuUsage)}</dd>
+          <dt className="text-fg-subtle">{t("ports.memory")}</dt>
+          <dd className="flex items-center gap-1"><MemoryStick size={11} /> {formatBytes(port.memoryBytes)}</dd>
           <dt className="text-fg-subtle">{t("ports.bind")}</dt>
           <dd>{port.bindAddr}:{port.port}</dd>
           <dt className="text-fg-subtle">{t("ports.command")}</dt>

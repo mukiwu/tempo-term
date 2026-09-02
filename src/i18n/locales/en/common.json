@@ -86,7 +86,10 @@
     "detailsFor": "Details for port {{port}}",
     "bind": "Bind",
     "command": "Command",
-    "cwd": "Working dir"
+    "cwd": "Working dir",
+    "groupOther": "Other processes",
+    "cpu": "CPU",
+    "memory": "Memory"
   },
   "titleBar": {
     "minimize": "Minimize",
