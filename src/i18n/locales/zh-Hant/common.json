@@ -89,7 +89,10 @@
     "cwd": "工作目錄",
     "groupOther": "其他程序",
     "cpu": "CPU",
-    "memory": "記憶體"
+    "memory": "記憶體",
+    "askAi": "問 AI 這是什麼",
+    "aiThinking": "AI 思考中…",
+    "aiFailed": "AI 回答失敗"
   },
   "titleBar": {
     "minimize": "最小化",

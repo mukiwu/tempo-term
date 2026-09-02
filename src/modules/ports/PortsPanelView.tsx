@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -6,7 +6,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InfoDialog } from "@/components/InfoDialog";
 import { usePorts } from "./lib/usePorts";
 import { groupByProject } from "./lib/classifyService";
-import { killPortProcess, type PortInfo } from "./lib/portsBridge";
+import { killPortProcess, portsAiAvailable, type PortInfo } from "./lib/portsBridge";
 import { PortRow } from "./PortRow";
 
 /**
@@ -23,6 +23,21 @@ export function PortsPanelView() {
   const [killTarget, setKillTarget] = useState<PortInfo | null>(null);
   const [killError, setKillError] = useState<string | null>(null);
   const [expandedPid, setExpandedPid] = useState<number | null>(null);
+  const [aiAvailable, setAiAvailable] = useState(false);
+
+  // One probe per mount: availability only changes with OS settings, and a
+  // false (or failed) probe simply leaves the affordance hidden.
+  useEffect(() => {
+    let live = true;
+    portsAiAvailable()
+      .then((ok) => {
+        if (live) setAiAvailable(ok);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const list = ports ?? [];
 
@@ -83,6 +98,7 @@ export function PortsPanelView() {
                 <PortRow
                   key={`${port.port}-${port.pid}`}
                   port={port}
+                  aiAvailable={aiAvailable}
                   expanded={expandedPid === port.pid}
                   onToggleExpand={() => setExpandedPid((cur) => (cur === port.pid ? null : port.pid))}
                   onRequestKill={setKillTarget}

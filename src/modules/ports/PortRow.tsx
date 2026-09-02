@@ -1,14 +1,18 @@
-import { ChevronRight, Cpu, MemoryStick, Clock, SquareTerminal, X, Copy, SquareArrowOutUpRight } from "lucide-react";
+import { useState } from "react";
+import { ChevronRight, Cpu, MemoryStick, Clock, SquareTerminal, X, Copy, SquareArrowOutUpRight, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatBytes, formatPercent } from "@/modules/sysmon/lib/format";
 import { Tooltip } from "@/components/Tooltip";
 import { formatUptime } from "./lib/format";
 import { classifyService } from "./lib/classifyService";
+import { portsAiExplain } from "./lib/portsBridge";
 import type { PortInfo } from "./lib/portsBridge";
 
 interface PortRowProps {
   port: PortInfo;
+  /** On-device Apple Intelligence probe result; false hides the affordance entirely. */
+  aiAvailable: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
   onRequestKill: (port: PortInfo) => void;
@@ -17,8 +21,9 @@ interface PortRowProps {
 
 const ACTION_BTN = "flex h-6 w-6 items-center justify-center rounded text-fg-subtle transition-colors disabled:opacity-30";
 
-export function PortRow({ port, expanded, onToggleExpand, onRequestKill, onOpenTerminal }: PortRowProps) {
-  const { t } = useTranslation();
+export function PortRow({ port, aiAvailable, expanded, onToggleExpand, onRequestKill, onOpenTerminal }: PortRowProps) {
+  const { t, i18n } = useTranslation();
+  const [aiState, setAiState] = useState<{ kind: "idle" } | { kind: "busy" } | { kind: "done"; text: string } | { kind: "failed" }>({ kind: "idle" });
   const canKill = port.isCurrentUser;
   const canTerminal = Boolean(port.cwd);
   const service = classifyService(port);
@@ -109,6 +114,42 @@ export function PortRow({ port, expanded, onToggleExpand, onRequestKill, onOpenT
           <dd className="break-all">{port.command ?? "-"}</dd>
           <dt className="text-fg-subtle">{t("ports.cwd")}</dt>
           <dd className="break-all">{port.cwd ?? "-"}</dd>
+          {aiAvailable && (
+            <>
+              <dt className="flex items-start text-fg-subtle"><Sparkles size={11} /></dt>
+              <dd>
+                {aiState.kind === "done" ? (
+                  <p className="whitespace-pre-wrap font-sans leading-relaxed text-fg">{aiState.text}</p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={aiState.kind === "busy"}
+                    onClick={() => {
+                      setAiState({ kind: "busy" });
+                      portsAiExplain({
+                        serviceLabel: service.label,
+                        processName: port.processName,
+                        command: port.command,
+                        cwd: port.cwd,
+                        uptimeSecs: port.uptimeSecs,
+                        port: port.port,
+                        language: i18n.language,
+                      })
+                        .then((text) => setAiState({ kind: "done", text }))
+                        .catch(() => setAiState({ kind: "failed" }));
+                    }}
+                    className="text-left text-accent hover:underline disabled:opacity-60"
+                  >
+                    {aiState.kind === "busy"
+                      ? t("ports.aiThinking")
+                      : aiState.kind === "failed"
+                        ? t("ports.aiFailed")
+                        : t("ports.askAi")}
+                  </button>
+                )}
+              </dd>
+            </>
+          )}
         </dl>
       )}
     </div>

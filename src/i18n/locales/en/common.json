@@ -89,7 +89,10 @@
     "cwd": "Working dir",
     "groupOther": "Other processes",
     "cpu": "CPU",
-    "memory": "Memory"
+    "memory": "Memory",
+    "askAi": "Ask AI what this is",
+    "aiThinking": "AI is thinking…",
+    "aiFailed": "AI could not answer"
   },
   "titleBar": {
     "minimize": "Minimize",
