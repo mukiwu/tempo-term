@@ -156,6 +156,79 @@ impl Default for PortsState {
     }
 }
 
+/// Whether the on-device Apple Intelligence model can answer questions about
+/// a port. Anything but a definite yes is a no: the button simply does not
+/// render, matching how Port Radar gates its AI features to macOS 26+.
+#[tauri::command]
+pub async fn ports_ai_available() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(|| {
+            fm_rs::SystemLanguageModel::new()
+                .map(|m| m.is_available())
+                .unwrap_or(false)
+        })
+        .await
+        .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Ask the on-device model to explain one port's process in plain language:
+/// what it is, whether it is safe to stop. Runs entirely on-device — nothing
+/// about the process leaves the machine.
+#[tauri::command]
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+pub async fn ports_ai_explain(
+    service_label: String,
+    process_name: String,
+    command: Option<String>,
+    cwd: Option<String>,
+    uptime_secs: u64,
+    port: u16,
+    language: String,
+) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let model = fm_rs::SystemLanguageModel::new().map_err(|e| e.to_string())?;
+            if !model.is_available() {
+                return Err("apple-intelligence-unavailable".to_string());
+            }
+            let instructions = if language.starts_with("zh") {
+                "你是終端機 app 內建的助手。用兩三句正體中文回答：這個本機監聽的行程是什麼、大概在做什麼、現在停掉它安不安全。語氣直接，不要條列。"
+            } else {
+                "You are a terminal app's built-in helper. In two or three plain sentences: what this locally listening process is, what it is likely doing, and whether stopping it now is safe. Be direct; no bullet lists."
+            };
+            let session = fm_rs::Session::with_instructions(&model, instructions)
+                .map_err(|e| e.to_string())?;
+            let prompt = format!(
+                "Port :{port}
+Service: {service_label}
+Process: {process_name}
+Command: {}
+Working directory: {}
+Uptime: {uptime_secs}s",
+                command.as_deref().unwrap_or("(unknown)"),
+                cwd.as_deref().unwrap_or("(none)"),
+            );
+            let response = session
+                .respond(&prompt, &fm_rs::GenerationOptions::default())
+                .map_err(|e| e.to_string())?;
+            Ok(response.content().to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("apple-intelligence-unavailable".to_string())
+    }
+}
+
 // Async so Tauri runs it off the GUI thread; the listeners + sysinfo reads block.
 #[tauri::command]
 pub async fn list_ports(
@@ -272,6 +345,28 @@ mod tests {
         let keys: Vec<(u16, u32)> = a.iter().map(|i| (i.port, i.pid)).collect();
         assert_eq!(keys, vec![(3000, 9), (8080, 1), (8080, 2)]);
         assert_eq!(a, b);
+    }
+
+    /// Real on-device Apple Intelligence round-trip. Ignored by default: it
+    /// needs macOS 26+ with Apple Intelligence enabled. Run locally with
+    /// `cargo test --lib ports_ai_spike -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    #[cfg(target_os = "macos")]
+    fn ports_ai_spike_end_to_end() {
+        let model = fm_rs::SystemLanguageModel::new().expect("model handle");
+        println!("available: {}", model.is_available());
+        if !model.is_available() {
+            return;
+        }
+        let session =
+            fm_rs::Session::with_instructions(&model, "Answer in one short sentence.").unwrap();
+        let response = session
+            .respond("What is a Vite dev server?", &fm_rs::GenerationOptions::default())
+            .unwrap();
+        let text = response.content();
+        println!("response: {text}");
+        assert!(!text.trim().is_empty());
     }
 
     #[test]

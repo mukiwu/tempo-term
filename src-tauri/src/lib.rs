@@ -38,7 +38,7 @@ use modules::git::{
 use modules::locale::set_app_languages;
 use modules::menu::set_native_menu;
 use modules::notes::{notes_unwatch, notes_watch, NotesWatchState};
-use modules::ports::{kill_port_process, list_ports, PortsState};
+use modules::ports::{kill_port_process, list_ports, PortsState, ports_ai_available, ports_ai_explain};
 use modules::pr::{gh_available, pr_via_api, pr_via_gh};
 use modules::preview::{
     preview_close, preview_create, preview_history_back, preview_history_forward, preview_navigate,
@@ -387,6 +387,8 @@ pub fn run() {
             ssh_secret_delete,
             system_stats,
             list_ports,
+            ports_ai_available,
+            ports_ai_explain,
             kill_port_process,
             editor_watch_set,
             sessions_index_start,
