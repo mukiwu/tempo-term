@@ -101,6 +101,7 @@ export function PortsPanelView() {
                   aiAvailable={aiAvailable}
                   expanded={expandedPid === port.pid}
                   onToggleExpand={() => setExpandedPid((cur) => (cur === port.pid ? null : port.pid))}
+                  onExpand={() => setExpandedPid(port.pid)}
                   onRequestKill={setKillTarget}
                   onOpenTerminal={openTerminal}
                 />
