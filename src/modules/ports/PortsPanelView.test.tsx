@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 
@@ -55,16 +55,22 @@ describe("PortsPanelView grouping", () => {
 });
 
 describe("PortsPanelView Apple Intelligence", () => {
-  it("offers Ask AI in the expanded row only when the on-device model is available", async () => {
+  it("leads the action row with Ask AI, expands the row, and renders the styled answer", async () => {
     portsAiAvailable.mockResolvedValue(true);
-    portsAiExplain.mockResolvedValue("A dev server. Safe to stop.");
-    render(<PortsPanelView />);
-    fireEvent.click(await screen.findByRole("button", { name: /details/i }));
+    portsAiExplain.mockResolvedValue("A dev server. **Safe** to stop.");
+    const { container } = render(<PortsPanelView />);
+
+    // The trigger lives on the always-visible action row, first position —
+    // no expanding needed to reach it.
     const ask = await screen.findByRole("button", { name: /ask ai/i });
+    const openBrowser = screen.getByRole("button", { name: /browser/i });
+    expect(ask.compareDocumentPosition(openBrowser) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     fireEvent.click(ask);
 
-    expect(await screen.findByText("A dev server. Safe to stop.")).toBeInTheDocument();
+    // The row auto-expands and the answer renders as markdown, not raw text.
+    expect(await screen.findByText(/A dev server/)).toBeInTheDocument();
+    await waitFor(() => expect(container.querySelector("strong")?.textContent).toBe("Safe"));
     expect(portsAiExplain).toHaveBeenCalledWith(
       expect.objectContaining({ port: 3000, processName: "node" }),
     );

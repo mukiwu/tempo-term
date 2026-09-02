@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { ChevronRight, Cpu, MemoryStick, Clock, SquareTerminal, X, Copy, SquareArrowOutUpRight, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -7,6 +7,12 @@ import { Tooltip } from "@/components/Tooltip";
 import { formatUptime } from "./lib/format";
 import { classifyService } from "./lib/classifyService";
 import { portsAiExplain } from "./lib/portsBridge";
+
+// Markdown renderer shared with the AI chat; lazy so react-markdown stays out
+// of the eager bundle — a plain-text fallback covers the load beat.
+const ChatMarkdown = lazy(() =>
+  import("@/modules/ai/ChatMarkdown").then((m) => ({ default: m.ChatMarkdown })),
+);
 import type { PortInfo } from "./lib/portsBridge";
 
 interface PortRowProps {
@@ -15,13 +21,15 @@ interface PortRowProps {
   aiAvailable: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
+  /** Expand without toggling — Ask AI opens the row to show its answer. */
+  onExpand: () => void;
   onRequestKill: (port: PortInfo) => void;
   onOpenTerminal: (port: PortInfo) => void;
 }
 
 const ACTION_BTN = "flex h-6 w-6 items-center justify-center rounded text-fg-subtle transition-colors disabled:opacity-30";
 
-export function PortRow({ port, aiAvailable, expanded, onToggleExpand, onRequestKill, onOpenTerminal }: PortRowProps) {
+export function PortRow({ port, aiAvailable, expanded, onToggleExpand, onExpand, onRequestKill, onOpenTerminal }: PortRowProps) {
   const { t, i18n } = useTranslation();
   const [aiState, setAiState] = useState<{ kind: "idle" } | { kind: "busy" } | { kind: "done"; text: string } | { kind: "failed" }>({ kind: "idle" });
   const canKill = port.isCurrentUser;
@@ -56,6 +64,34 @@ export function PortRow({ port, aiAvailable, expanded, onToggleExpand, onRequest
 
       {/* Line 2: actions, each with a tooltip explaining the icon. */}
       <div className="mt-1.5 flex items-center justify-end gap-1">
+        {aiAvailable && (
+          <Tooltip label={t("ports.askAi")} side="top">
+            <button
+              type="button"
+              aria-label={t("ports.askAiFor", { port: port.port })}
+              disabled={aiState.kind === "busy"}
+              onClick={() => {
+                onExpand();
+                if (aiState.kind === "busy" || aiState.kind === "done") return;
+                setAiState({ kind: "busy" });
+                portsAiExplain({
+                  serviceLabel: service.label,
+                  processName: port.processName,
+                  command: port.command,
+                  cwd: port.cwd,
+                  uptimeSecs: port.uptimeSecs,
+                  port: port.port,
+                  language: i18n.language,
+                })
+                  .then((text) => setAiState({ kind: "done", text }))
+                  .catch(() => setAiState({ kind: "failed" }));
+              }}
+              className={`${ACTION_BTN} hover:text-accent`}
+            >
+              <Sparkles size={14} />
+            </button>
+          </Tooltip>
+        )}
         <Tooltip label={t("ports.openBrowser")} side="top">
           <button
             type="button"
@@ -114,38 +150,20 @@ export function PortRow({ port, aiAvailable, expanded, onToggleExpand, onRequest
           <dd className="break-all">{port.command ?? "-"}</dd>
           <dt className="text-fg-subtle">{t("ports.cwd")}</dt>
           <dd className="break-all">{port.cwd ?? "-"}</dd>
-          {aiAvailable && (
+          {aiState.kind !== "idle" && (
             <>
               <dt className="flex items-start text-fg-subtle"><Sparkles size={11} /></dt>
               <dd>
-                {aiState.kind === "done" ? (
-                  <p className="whitespace-pre-wrap font-sans leading-relaxed text-fg">{aiState.text}</p>
+                {aiState.kind === "busy" ? (
+                  <span className="text-fg-subtle">{t("ports.aiThinking")}</span>
+                ) : aiState.kind === "failed" ? (
+                  <span className="text-danger">{t("ports.aiFailed")}</span>
                 ) : (
-                  <button
-                    type="button"
-                    disabled={aiState.kind === "busy"}
-                    onClick={() => {
-                      setAiState({ kind: "busy" });
-                      portsAiExplain({
-                        serviceLabel: service.label,
-                        processName: port.processName,
-                        command: port.command,
-                        cwd: port.cwd,
-                        uptimeSecs: port.uptimeSecs,
-                        port: port.port,
-                        language: i18n.language,
-                      })
-                        .then((text) => setAiState({ kind: "done", text }))
-                        .catch(() => setAiState({ kind: "failed" }));
-                    }}
-                    className="text-left text-accent hover:underline disabled:opacity-60"
-                  >
-                    {aiState.kind === "busy"
-                      ? t("ports.aiThinking")
-                      : aiState.kind === "failed"
-                        ? t("ports.aiFailed")
-                        : t("ports.askAi")}
-                  </button>
+                  <div className="font-sans text-xs leading-relaxed text-fg">
+                    <Suspense fallback={<p className="whitespace-pre-wrap">{aiState.text}</p>}>
+                      <ChatMarkdown content={aiState.text} />
+                    </Suspense>
+                  </div>
                 )}
               </dd>
             </>
