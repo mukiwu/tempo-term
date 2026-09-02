@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronUp, Send, SquareTerminal, WrapText } from "lucide-react";
-import { getChunks, MergeView, type Chunk } from "@codemirror/merge";
+import {
+  ChevronDown,
+  ChevronUp,
+  Send,
+  SquareSplitHorizontal,
+  SquareSplitVertical,
+  SquareTerminal,
+  WrapText,
+} from "lucide-react";
+import { getChunks, MergeView, unifiedMergeView, type Chunk } from "@codemirror/merge";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { PaneHeader } from "@/components/PaneHeader";
@@ -45,6 +53,21 @@ interface DiffDocs {
 }
 
 /**
+ * Collapse long unchanged stretches into an expandable bar (VS Code style),
+ * so a large file reads as just its changes.
+ */
+const COLLAPSE_UNCHANGED = { margin: 3, minSize: 5 };
+
+/**
+ * The two ways the same comparison is rendered. Split keeps a document per
+ * side; inline keeps only the new document and paints the old lines in as
+ * widgets, so it has no "a" editor to talk to.
+ */
+type DiffViews =
+  | { kind: "split"; merge: MergeView }
+  | { kind: "unified"; view: EditorView };
+
+/**
  * Read-only side-by-side comparison of one file's uncommitted changes.
  * Unstaged tab: index (left) vs working tree (right). Staged tab: HEAD (left)
  * vs index (right). MergeView computes the highlighting from the two full
@@ -55,12 +78,16 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
   const { t } = useTranslation("sourceControl");
   const { t: tEditor } = useTranslation("editor");
   const containerRef = useRef<HTMLDivElement>(null);
-  const mergeViewRef = useRef<MergeView | null>(null);
+  const viewsRef = useRef<DiffViews | null>(null);
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const themeId = useSettingsStore((s) => s.themeId);
   // Shares the editor's word-wrap setting so both surfaces toggle together.
   const wordWrap = useSettingsStore((s) => s.wordWrap);
   const toggleWordWrap = useSettingsStore((s) => s.toggleWordWrap);
+  // Split vs inline is a reading preference, so it is remembered app-wide
+  // rather than per tab.
+  const unified = useSettingsStore((s) => s.diffUnified);
+  const toggleUnified = useSettingsStore((s) => s.toggleDiffUnified);
   const hintSeen = useSettingsStore((s) => s.diffCommentHintSeen);
   const setHintSeen = useSettingsStore((s) => s.setDiffCommentHintSeen);
   const [docs, setDocs] = useState<DiffDocs | null>(null);
@@ -128,8 +155,21 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     };
   }, [path, staged, refreshKey]);
 
+  // The editor a comment side lives in, or null when the current mode has
+  // no such editor (inline has no "a" document).
+  function sideView(side: "a" | "b"): EditorView | null {
+    const views = viewsRef.current;
+    if (!views) {
+      return null;
+    }
+    if (views.kind === "split") {
+      return side === "a" ? views.merge.a : views.merge.b;
+    }
+    return side === "b" ? views.view : null;
+  }
+
   // Wire the comment extension's callbacks. Created per side inside the
-  // MergeView effect so the saved line text is read from that side's doc.
+  // view effect so the saved line text is read from that side's doc.
   function commentHandlers(side: "a" | "b"): CommentHandlers {
     return {
       // Clicking another line moves the draft there, carrying its text —
@@ -139,7 +179,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
         setDraft({ side, line });
       },
       onSave: (line, body) => {
-        const view = side === "a" ? mergeViewRef.current?.a : mergeViewRef.current?.b;
+        const view = sideView(side);
         const clamped = view ? Math.max(1, Math.min(line, view.state.doc.lines)) : line;
         const lineText = view ? view.state.doc.line(clamped).text : "";
         useDiffCommentStore.getState().add({ path, staged, side, line: clamped, lineText, body });
@@ -170,93 +210,131 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     if (!docs || !parent) {
       return;
     }
-    let view: MergeView | null = null;
+    let views: DiffViews | null = null;
     let scrollbars: ProxyScrollbarsHandle[] = [];
     let unlinkScroll: (() => void) | null = null;
     let cancelled = false;
     // A failed grammar load falls back to plain text instead of leaving the
-    // tab stuck without a MergeView.
+    // tab stuck without a diff.
     void loadLanguageExtension(path)
       .catch(() => [])
       .then((language) => {
-      if (cancelled) {
-        return;
-      }
-      const extensions = [
-        EditorState.readOnly.of(true),
-        EditorView.editable.of(false),
-        // Localizes the collapsed-region bar ("$ unchanged lines").
-        EditorState.phrases.of({ "$ unchanged lines": t("diffUnchangedLines") }),
-        editorSyntaxTheme(themeId),
-        // Fixed 13px to match the Git Graph diff view's type size. Height and
-        // scrolling belong to the outer .cm-mergeView container (the merge
-        // package forces the editors themselves to auto height).
-        EditorView.theme({
-          "&": { fontSize: "13px" },
-          ".cm-content, .cm-gutters, .cm-scroller": { fontFamily },
-        }),
-        lineNumbers(),
-        ...(wordWrap ? [EditorView.lineWrapping] : []),
-        ...language,
-      ];
-      view = new MergeView({
-        a: { doc: docs.left, extensions: [...extensions, diffCommentsExtension(commentHandlers("a"))] },
-        b: { doc: docs.right, extensions: [...extensions, diffCommentsExtension(commentHandlers("b"))] },
-        parent,
-        gutter: true,
-        // Collapse long unchanged stretches into an expandable bar (VS Code
-        // style), so a large file reads as just its changes.
-        collapseUnchanged: { margin: 3, minSize: 5 },
+        if (cancelled) {
+          return;
+        }
+        const extensions = [
+          EditorState.readOnly.of(true),
+          EditorView.editable.of(false),
+          // Localizes the collapsed-region bar ("$ unchanged lines").
+          EditorState.phrases.of({ "$ unchanged lines": t("diffUnchangedLines") }),
+          editorSyntaxTheme(themeId),
+          // Fixed 13px to match the Git Graph diff view's type size. Height and
+          // scrolling belong to the outer .cm-mergeView container (the merge
+          // package forces the editors themselves to auto height).
+          EditorView.theme({
+            "&": { fontSize: "13px" },
+            ".cm-content, .cm-gutters, .cm-scroller": { fontFamily },
+          }),
+          lineNumbers(),
+          ...(wordWrap ? [EditorView.lineWrapping] : []),
+          ...language,
+        ];
+        if (unified) {
+          const view = new EditorView({
+            doc: docs.right,
+            parent,
+            extensions: [
+              ...extensions,
+              diffCommentsExtension(commentHandlers("b")),
+              unifiedMergeView({
+                original: docs.left,
+                gutter: true,
+                // The accept/reject controls write to the document; this tab
+                // only reads one.
+                mergeControls: false,
+                collapseUnchanged: COLLAPSE_UNCHANGED,
+              }),
+            ],
+          });
+          views = { kind: "unified", view };
+          // Inline scrolls in the editor itself, so it owns both bars. "x"
+          // here would leave it with none at all in the vertical direction:
+          // attaching proxies hides the scroller's own bars on both axes.
+          scrollbars = [
+            attachProxyScrollbars({ scroller: view.scrollDOM, host: parent, axes: "xy" }),
+          ];
+        } else {
+          const merge = new MergeView({
+            a: {
+              doc: docs.left,
+              extensions: [...extensions, diffCommentsExtension(commentHandlers("a"))],
+            },
+            b: {
+              doc: docs.right,
+              extensions: [...extensions, diffCommentsExtension(commentHandlers("b"))],
+            },
+            parent,
+            gutter: true,
+            collapseUnchanged: COLLAPSE_UNCHANGED,
+          });
+          views = { kind: "split", merge };
+          // Pin a bottom horizontal scrollbar per side (the native one lives at
+          // the bottom of the full-height document, out of sight). Vertical
+          // scrolling stays on the outer .cm-mergeView, so "x" only.
+          scrollbars = [
+            attachProxyScrollbars({ scroller: merge.a.scrollDOM, host: parent, axes: "x" }),
+            attachProxyScrollbars({ scroller: merge.b.scrollDOM, host: parent, axes: "x" }),
+          ];
+          unlinkScroll = linkHorizontalScroll(merge.a.scrollDOM, merge.b.scrollDOM);
+        }
+        viewsRef.current = views;
+        // Re-anchor comments whose line shifted while the docs were reloading,
+        // then let the dispatch effect below render them into the new editors.
+        const store = useDiffCommentStore.getState();
+        for (const side of ["a", "b"] as const) {
+          const view = sideView(side);
+          if (!view) {
+            continue;
+          }
+          const doc = view.state.doc.toString().split("\n");
+          const sideComments = store.comments.filter(
+            (c) => c.path === path && c.staged === staged && c.side === side,
+          );
+          store.reanchor(reanchorComments(sideComments, doc));
+        }
+        setViewEpoch((epoch) => epoch + 1);
+        // Land on the first change right away so the counter starts at 1/N and
+        // the change is pinned in view.
+        const chunks = currentChunks();
+        setChunkPos({ current: chunks.length > 0 ? 1 : 0, total: chunks.length });
+        if (chunks.length > 0) {
+          scrollToChunk(chunks[0]);
+        }
       });
-      mergeViewRef.current = view;
-      // Pin a bottom horizontal scrollbar per side (the native one lives at
-      // the bottom of the full-height document, out of sight). Vertical
-      // scrolling stays on the outer .cm-mergeView, so "x" only.
-      scrollbars = [
-        attachProxyScrollbars({ scroller: view.a.scrollDOM, host: parent, axes: "x" }),
-        attachProxyScrollbars({ scroller: view.b.scrollDOM, host: parent, axes: "x" }),
-      ];
-      unlinkScroll = linkHorizontalScroll(view.a.scrollDOM, view.b.scrollDOM);
-      // Re-anchor comments whose line shifted while the docs were reloading,
-      // then let the dispatch effect below render them into the new editors.
-      const store = useDiffCommentStore.getState();
-      for (const side of ["a", "b"] as const) {
-        const doc = (side === "a" ? view.a : view.b).state.doc.toString().split("\n");
-        const sideComments = store.comments.filter(
-          (c) => c.path === path && c.staged === staged && c.side === side,
-        );
-        store.reanchor(reanchorComments(sideComments, doc));
-      }
-      setViewEpoch((epoch) => epoch + 1);
-      // Land on the first change right away so the counter starts at 1/N and
-      // the change is pinned in view.
-      const chunks = getChunks(view.b.state)?.chunks ?? [];
-      setChunkPos({ current: chunks.length > 0 ? 1 : 0, total: chunks.length });
-      if (chunks.length > 0) {
-        scrollToChunk(view, chunks[0]);
-      }
-    });
     return () => {
       cancelled = true;
-      mergeViewRef.current = null;
+      viewsRef.current = null;
       unlinkScroll?.();
       for (const bar of scrollbars) {
         bar.destroy();
       }
-      view?.destroy();
+      if (views?.kind === "split") {
+        views.merge.destroy();
+      } else {
+        views?.view.destroy();
+      }
     };
-  }, [docs, path, themeId, fontFamily, wordWrap]);
+  }, [docs, path, themeId, fontFamily, wordWrap, unified]);
 
   // Push the current comment set and draft into both editors whenever either
   // changes (or the MergeView was rebuilt). The extension renders from these
   // effects; the store stays the single source of truth.
   useEffect(() => {
-    const mv = mergeViewRef.current;
-    if (!mv) {
-      return;
-    }
     for (const side of ["a", "b"] as const) {
-      const view = side === "a" ? mv.a : mv.b;
+      const view = sideView(side);
+      if (!view) {
+        continue;
+      }
       view.dispatch({
         effects: [
           setCommentsEffect.of(
@@ -308,27 +386,49 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     }));
   }
 
-  // Pin a chunk's first line to the top of the real scroll container (the
-  // outer .cm-mergeView). lineBlockAt gives document geometry without needing
-  // the line to be rendered, so this works across collapsed regions too.
-  function scrollToChunk(view: MergeView, chunk: Chunk) {
-    const pos = Math.min(chunk.fromB, view.b.state.doc.length);
-    const top = view.b.lineBlockAt(pos).top;
-    const scroller = containerRef.current?.querySelector(".cm-mergeView");
-    if (scroller) {
-      scroller.scrollTop = Math.max(0, top - 8);
+  // Both modes count the same chunks; only the state carrying them differs.
+  function currentChunks(): readonly Chunk[] {
+    const views = viewsRef.current;
+    if (!views) {
+      return [];
     }
+    const state = views.kind === "split" ? views.merge.b.state : views.view.state;
+    return getChunks(state)?.chunks ?? [];
+  }
+
+  // Pin a chunk to the top of whichever element actually scrolls: the outer
+  // .cm-mergeView in split mode, the editor itself inline. lineBlockAt gives
+  // document geometry without needing the line to be rendered, so this works
+  // across collapsed regions too.
+  function scrollToChunk(chunk: Chunk) {
+    const views = viewsRef.current;
+    if (!views) {
+      return;
+    }
+    if (views.kind === "split") {
+      const pos = Math.min(chunk.fromB, views.merge.b.state.doc.length);
+      const top = views.merge.b.lineBlockAt(pos).top;
+      const scroller = containerRef.current?.querySelector(".cm-mergeView");
+      if (scroller) {
+        scroller.scrollTop = Math.max(0, top - 8);
+      }
+      return;
+    }
+    // Inline paints the old lines as a widget just above the chunk, so anchor
+    // one line earlier — landing on the chunk itself would scroll the deleted
+    // half off the top.
+    const { view } = views;
+    const pos = Math.min(chunk.fromB, view.state.doc.length);
+    const line = view.state.doc.lineAt(pos).number;
+    const anchor = line > 1 ? view.state.doc.line(line - 1).from : 0;
+    view.scrollDOM.scrollTop = Math.max(0, view.lineBlockAt(anchor).top - 8);
   }
 
   // Step the current/total counter and bring that chunk into view. Navigation
   // is index-based (not selection-based): a read-only diff has no visible
   // cursor, and with collapsed regions everything may already fit on screen.
   function goToChunk(direction: "prev" | "next") {
-    const view = mergeViewRef.current;
-    if (!view) {
-      return;
-    }
-    const chunks = getChunks(view.b.state)?.chunks ?? [];
+    const chunks = currentChunks();
     if (chunks.length === 0) {
       return;
     }
@@ -336,7 +436,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       direction === "next"
         ? Math.min(chunkPos.current + 1, chunks.length)
         : Math.max(chunkPos.current - 1, 1);
-    scrollToChunk(view, chunks[next - 1]);
+    scrollToChunk(chunks[next - 1]);
     setChunkPos({ current: next, total: chunks.length });
   }
 
@@ -380,6 +480,22 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
                 <ChevronDown size={14} />
               </button>
             </Tooltip>
+            {/* Names and draws the mode it switches to, not the one in use —
+                a two-way switch, so there is no "pressed" state to show. */}
+            <Tooltip label={unified ? t("diffSplitView") : t("diffInlineView")}>
+              <button
+                type="button"
+                aria-label={unified ? t("diffSplitView") : t("diffInlineView")}
+                onClick={toggleUnified}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              >
+                {unified ? (
+                  <SquareSplitHorizontal size={14} />
+                ) : (
+                  <SquareSplitVertical size={14} />
+                )}
+              </button>
+            </Tooltip>
             <Tooltip label={tEditor("wrap")}>
               <button
                 type="button"
@@ -420,7 +536,12 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       {error ? (
         <p className="px-3 py-2 text-xs text-danger">{t("diffLoadError")}</p>
       ) : (
-        <div ref={containerRef} className="diff-merge-view min-h-0 flex-1 overflow-hidden" />
+        <div
+          ref={containerRef}
+          className={`diff-merge-view min-h-0 flex-1 overflow-hidden ${
+            unified ? "diff-inline-view" : ""
+          }`}
+        />
       )}
       {!hintSeen && !error && (
         // One-time pointer at the review-comment loop, anchored under the

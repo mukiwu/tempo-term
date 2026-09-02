@@ -456,6 +456,26 @@ textarea:focus-visible,
 }
 .diff-merge-view .cm-collapsedLines:hover { color: var(--color-fg); }
 
+/* Inline mode: one editor holding the new document, with the old lines drawn
+   in as widgets. There is no cm-merge-a/b wrapper here, so the changed-line
+   tints above don't reach it — every real line is an addition, and the
+   deletions are already covered by the .cm-deletedChunk rules. */
+/* max-height, not height: a diff shorter than the pane ends where its
+   content ends (like the split view's auto-height editors) instead of
+   painting the editor background over the rest of the pane. */
+.diff-inline-view .cm-editor { max-height: 100%; }
+.diff-inline-view .cm-changedLine {
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+}
+.diff-inline-view .cm-changedText {
+  background: color-mix(in srgb, var(--color-success) 32%, transparent);
+  border-radius: 2px;
+}
+.diff-inline-view .cm-changedLineGutter::before {
+  content: "+";
+  color: var(--color-success);
+}
+
 .note-md strong { font-weight: 700; }
 .note-md em { font-style: italic; }
 .note-md blockquote {

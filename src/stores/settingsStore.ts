@@ -76,6 +76,8 @@ interface SettingsState {
   /** Inner padding (px) between the terminal content and its pane edges. */
   terminalPadding: number;
   wordWrap: boolean;
+  /** Diff tabs stack the two documents inline instead of side by side. */
+  diffUnified: boolean;
   /** Persist each terminal's scrollback and restore it on next launch. */
   restoreTerminalHistory: boolean;
   /** Ask before closing a window or app that still owns live PTY/SSH sessions. */
@@ -149,6 +151,7 @@ interface SettingsState {
   setBackgroundImageTextColor: (color: string | null) => void;
   setTerminalPadding: (padding: number) => void;
   toggleWordWrap: () => void;
+  toggleDiffUnified: () => void;
   setRestoreTerminalHistory: (value: boolean) => void;
   setConfirmCloseWithRunningTerminals: (value: boolean) => void;
   setNotesFolderPath: (path: string | null) => void;
@@ -240,6 +243,7 @@ export const useSettingsStore = create<SettingsState>()(
       backgroundImageTextColor: null,
       terminalPadding: DEFAULT_TERMINAL_PADDING,
       wordWrap: false,
+      diffUnified: false,
       restoreTerminalHistory: true,
       confirmCloseWithRunningTerminals: true,
       notesFolderPath: null,
@@ -288,6 +292,7 @@ export const useSettingsStore = create<SettingsState>()(
         }),
       setTerminalPadding: (padding) => set({ terminalPadding: clampPadding(padding) }),
       toggleWordWrap: () => set((s) => ({ wordWrap: !s.wordWrap })),
+      toggleDiffUnified: () => set((s) => ({ diffUnified: !s.diffUnified })),
       setRestoreTerminalHistory: (value) => set({ restoreTerminalHistory: value }),
       setConfirmCloseWithRunningTerminals: (value) =>
         set({ confirmCloseWithRunningTerminals: value }),

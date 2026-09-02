@@ -38,7 +38,7 @@ describe("DiffTabContent", () => {
     useDiffCommentStore.setState({ comments: [] });
     useSessionStatusStore.setState({ statuses: {}, agents: {}, sessionIds: {} });
     // Most tests are not about the one-time hint; dedicated cases flip it back.
-    useSettingsStore.setState({ diffCommentHintSeen: true });
+    useSettingsStore.setState({ diffCommentHintSeen: true, diffUnified: false });
   });
 
   it("compares index vs working tree for an unstaged diff", async () => {
@@ -85,6 +85,27 @@ describe("DiffTabContent", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "workspace.closePane" }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("switches the diff between side-by-side and inline", async () => {
+    vi.mocked(gitFileAtRev).mockResolvedValue("old line\n");
+    vi.mocked(fsReadFile).mockResolvedValue("new line\n");
+
+    const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
+
+    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "diffInlineView" }));
+
+    expect(useSettingsStore.getState().diffUnified).toBe(true);
+    // The control now offers the way back.
+    expect(screen.getByRole("button", { name: "diffSplitView" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "diffInlineView" })).toBeNull();
+    // Inline drops the two-editor container for a single editor holding the
+    // new document, with the old lines rendered in as deletion widgets.
+    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeNull());
+    expect(container.querySelector(".diff-inline-view .cm-editor")).toBeTruthy();
+    expect(container.querySelector(".cm-deletedChunk")).toBeTruthy();
   });
 
   it("renders a saved review comment as a card inside the diff", async () => {
