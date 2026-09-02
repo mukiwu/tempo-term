@@ -164,7 +164,9 @@ describe("RemoveWorktreeDialog — what it refuses outright", () => {
 
     expect(confirmButton()).toBeEnabled();
     fireEvent.click(confirmButton());
-    await waitFor(() => expect(gitWorktreeRemove).toHaveBeenCalled());
+    // Dropped by pruning the stale record — never by git worktree remove,
+    // which validates the (gone) directory on some git versions.
+    await waitFor(() => expect(gitWorktreePrune).toHaveBeenCalled());
   });
 });
 
