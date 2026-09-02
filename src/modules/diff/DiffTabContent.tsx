@@ -346,73 +346,73 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     <div className="relative flex h-full flex-col bg-bg">
       <PaneHeader
         left={
-        /* The controls sit at the end of the left half — the visual middle of
-            the two panes — where they are easy to spot. */
-        <div className="flex w-1/2 items-center gap-2">
-        <span className="min-w-0 truncate text-xs text-fg-muted">{name}</span>
-        <span className="shrink-0 rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] font-medium uppercase text-fg-subtle">
-          {staged ? t("diffStaged") : t("diffUnstaged")}
-        </span>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {chunkPos.total > 0 && (
-            <span className="mr-1 font-mono text-[11px] text-fg-subtle">
-              {chunkPos.current}/{chunkPos.total}
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate text-xs text-fg-muted">{name}</span>
+            <span className="shrink-0 rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] font-medium uppercase text-fg-subtle">
+              {staged ? t("diffStaged") : t("diffUnstaged")}
             </span>
-          )}
-          <Tooltip label={t("diffPrevChange")}>
-            <button
-              type="button"
-              aria-label={t("diffPrevChange")}
-              onClick={() => goToChunk("prev")}
-              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-            >
-              <ChevronUp size={14} />
-            </button>
-          </Tooltip>
-          <Tooltip label={t("diffNextChange")}>
-            <button
-              type="button"
-              aria-label={t("diffNextChange")}
-              onClick={() => goToChunk("next")}
-              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
-            >
-              <ChevronDown size={14} />
-            </button>
-          </Tooltip>
-          <Tooltip label={tEditor("wrap")}>
-            <button
-              type="button"
-              aria-label={tEditor("wrap")}
-              aria-pressed={wordWrap}
-              onClick={toggleWordWrap}
-              className={`rounded p-1 ${
-                wordWrap
-                  ? "bg-bg-elevated text-fg"
-                  : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
-              }`}
-            >
-              <WrapText size={14} />
-            </button>
-          </Tooltip>
-          <Tooltip label={t("diffSendToAgent")}>
-            <button
-              type="button"
-              aria-label={t("diffSendToAgent")}
-              disabled={unsent.length === 0}
-              onClick={(event) => {
-                setHintSeen(true);
-                setSendMenu({ x: event.clientX, y: event.clientY });
-              }}
-              className="flex items-center gap-1 rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
-            >
-              <Send size={14} />
-              {unsent.length > 0 && (
-                <span className="font-mono text-[11px] leading-none">{unsent.length}</span>
-              )}
-            </button>
-          </Tooltip>
-        </div>
-        </div>
+          </div>
+        }
+        actions={
+          <>
+            {chunkPos.total > 0 && (
+              <span className="mr-1 font-mono text-[11px] text-fg-subtle">
+                {chunkPos.current}/{chunkPos.total}
+              </span>
+            )}
+            <Tooltip label={t("diffPrevChange")}>
+              <button
+                type="button"
+                aria-label={t("diffPrevChange")}
+                onClick={() => goToChunk("prev")}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              >
+                <ChevronUp size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip label={t("diffNextChange")}>
+              <button
+                type="button"
+                aria-label={t("diffNextChange")}
+                onClick={() => goToChunk("next")}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              >
+                <ChevronDown size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip label={tEditor("wrap")}>
+              <button
+                type="button"
+                aria-label={tEditor("wrap")}
+                aria-pressed={wordWrap}
+                onClick={toggleWordWrap}
+                className={`rounded p-1 ${
+                  wordWrap
+                    ? "bg-bg-elevated text-fg"
+                    : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
+                }`}
+              >
+                <WrapText size={14} />
+              </button>
+            </Tooltip>
+            <Tooltip label={t("diffSendToAgent")}>
+              <button
+                type="button"
+                aria-label={t("diffSendToAgent")}
+                disabled={unsent.length === 0}
+                onClick={(event) => {
+                  setHintSeen(true);
+                  setSendMenu({ x: event.clientX, y: event.clientY });
+                }}
+                className="flex items-center gap-1 rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+              >
+                <Send size={14} />
+                {unsent.length > 0 && (
+                  <span className="font-mono text-[11px] leading-none">{unsent.length}</span>
+                )}
+              </button>
+            </Tooltip>
+          </>
         }
         showClose={showClose}
         onClose={() => onClose?.()}
@@ -424,13 +424,16 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       )}
       {!hintSeen && !error && (
         // One-time pointer at the review-comment loop, anchored under the
-        // send button (the last control before the pane's midline) with a
-        // notch, like the worktrees pane hint. Any use of the feature — the
-        // "+" gutter or the send button — also dismisses it.
-        <div className="absolute right-1/2 top-8 z-20 w-72 translate-x-8 rounded-lg border border-border-strong bg-bg-elevated p-3 shadow-xl">
+        // send button with a notch, like the worktrees pane hint. The notch
+        // shifts left when the pane's close button sits after the send button.
+        // Any use of the feature — the "+" gutter or the send button — also
+        // dismisses it.
+        <div className="absolute right-3 top-8 z-20 w-72 rounded-lg border border-border-strong bg-bg-elevated p-3 shadow-xl">
           <span
             aria-hidden
-            className="absolute -top-[5px] right-[24px] h-2 w-2 rotate-45 border-l border-t border-border-strong bg-bg-elevated"
+            className={`absolute -top-[5px] h-2 w-2 rotate-45 border-l border-t border-border-strong bg-bg-elevated ${
+              showClose ? "right-[31px]" : "right-[7px]"
+            }`}
           />
           <p className="text-sm font-semibold text-fg">{t("diffCommentHintTitle")}</p>
           <p className="mt-1 text-sm leading-relaxed text-fg-muted">{t("diffCommentHintBody")}</p>
