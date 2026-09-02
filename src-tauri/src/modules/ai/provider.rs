@@ -11,6 +11,32 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+/// Fold an OpenAI-style message array into what FoundationModels wants: the
+/// system turns joined as session instructions, everything else rendered as a
+/// transcript ending in the newest user ask. The on-device session is created
+/// per request, so prior turns travel inside the prompt.
+pub fn apple_prompt_parts(messages: &[ChatMessage]) -> (String, String) {
+    let mut instructions: Vec<&str> = Vec::new();
+    let mut transcript: Vec<String> = Vec::new();
+    for message in messages {
+        match message.role.as_str() {
+            "system" => instructions.push(&message.content),
+            "assistant" => transcript.push(format!("Assistant: {}", message.content)),
+            _ => transcript.push(format!("User: {}", message.content)),
+        }
+    }
+    // The last user line stands bare so the model answers it rather than the
+    // transcript; strip our own prefix from it.
+    if let Some(last) = transcript.pop() {
+        let bare = match last.strip_prefix("User: ") {
+            Some(b) => b.to_string(),
+            None => last,
+        };
+        transcript.push(bare);
+    }
+    (instructions.join("\n"), transcript.join("\n"))
+}
+
 pub struct ProviderRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
@@ -167,6 +193,29 @@ pub fn parse_response(kind: &str, value: &Value) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apple_prompt_folds_system_into_instructions_and_history_into_prompt() {
+        let messages = vec![
+            ChatMessage { role: "system".into(), content: "Be brief.".into() },
+            ChatMessage { role: "user".into(), content: "hi".into() },
+            ChatMessage { role: "assistant".into(), content: "hello".into() },
+            ChatMessage { role: "user".into(), content: "explain X".into() },
+        ];
+        let (instructions, prompt) = apple_prompt_parts(&messages);
+        assert_eq!(instructions, "Be brief.");
+        assert!(prompt.contains("User: hi"));
+        assert!(prompt.contains("Assistant: hello"));
+        assert!(prompt.ends_with("explain X"));
+    }
+
+    #[test]
+    fn apple_prompt_without_system_or_history_is_just_the_ask() {
+        let messages = vec![ChatMessage { role: "user".into(), content: "just this".into() }];
+        let (instructions, prompt) = apple_prompt_parts(&messages);
+        assert_eq!(instructions, "");
+        assert_eq!(prompt, "just this");
+    }
 
     fn msgs() -> Vec<ChatMessage> {
         vec![

@@ -3,6 +3,7 @@ mod modules;
 use tauri::Manager;
 
 use modules::ai::ai_chat;
+use modules::ai::ai_apple_available;
 use modules::appearance::{appearance_remove_background_image, appearance_save_background_image};
 use modules::claude_progress::{
     claude_progress_unwatch, claude_progress_watch, claude_session_title, ClaudeProgressState,
@@ -347,6 +348,7 @@ pub fn run() {
             preview_history_forward,
             preview_close,
             ai_chat,
+            ai_apple_available,
             terminal_history_save,
             terminal_history_load,
             terminal_history_delete,
