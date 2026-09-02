@@ -9,8 +9,14 @@ import {
   SquareTerminal,
   WrapText,
 } from "lucide-react";
-import { getChunks, MergeView, unifiedMergeView, type Chunk } from "@codemirror/merge";
-import { EditorState } from "@codemirror/state";
+import {
+  getChunks,
+  MergeView,
+  uncollapseUnchanged,
+  unifiedMergeView,
+  type Chunk,
+} from "@codemirror/merge";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { PaneHeader } from "@/components/PaneHeader";
 import { Tooltip } from "@/components/Tooltip";
@@ -30,6 +36,11 @@ import { pasteToTerminal } from "@/modules/terminal/lib/terminalBus";
 import { useDiffCommentStore } from "./lib/diffCommentStore";
 import { formatCommentPrompt, reanchorComments } from "./lib/commentPrompt";
 import { collectAgentTargets, type AgentTarget } from "./lib/agentTargets";
+import {
+  clearExpandedEffect,
+  collapseBackExtension,
+  expandedRegions,
+} from "./lib/collapseBack";
 import {
   diffCommentsExtension,
   setCommentsEffect,
@@ -58,6 +69,17 @@ interface DiffDocs {
  */
 const COLLAPSE_UNCHANGED = { margin: 3, minSize: 5 };
 
+/** The inline mode's merge extension, rebuilt whenever the bars are reset. */
+function unifiedExtension(original: string) {
+  return unifiedMergeView({
+    original,
+    gutter: true,
+    // The accept/reject controls write to the document; this tab only reads one.
+    mergeControls: false,
+    collapseUnchanged: COLLAPSE_UNCHANGED,
+  });
+}
+
 /**
  * The two ways the same comparison is rendered. Split keeps a document per
  * side; inline keeps only the new document and paints the old lines in as
@@ -65,7 +87,7 @@ const COLLAPSE_UNCHANGED = { margin: 3, minSize: 5 };
  */
 type DiffViews =
   | { kind: "split"; merge: MergeView }
-  | { kind: "unified"; view: EditorView };
+  | { kind: "unified"; view: EditorView; collapse: Compartment };
 
 /**
  * Read-only side-by-side comparison of one file's uncommitted changes.
@@ -155,6 +177,11 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     };
   }, [path, staged, refreshKey]);
 
+  const foldLabels = {
+    fold: t("diffCollapseUnchanged"),
+    unfold: t("diffExpandUnchanged"),
+  };
+
   // The editor a comment side lives in, or null when the current mode has
   // no such editor (inline has no "a" document).
   function sideView(side: "a" | "b"): EditorView | null {
@@ -196,6 +223,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
         draftBodyRef.current = text;
       },
       labels: {
+        add: t("diffCommentAdd"),
         placeholder: t("diffCommentPlaceholder"),
         save: t("diffCommentSave"),
         cancel: t("diffCommentCancel"),
@@ -239,24 +267,24 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
           ...(wordWrap ? [EditorView.lineWrapping] : []),
           ...language,
         ];
+        // Inline has no reconfigure() of its own, so its merge extension goes
+        // in a compartment the fold button can re-init (see recollapse below).
+        const collapse = new Compartment();
         if (unified) {
           const view = new EditorView({
             doc: docs.right,
             parent,
             extensions: [
+              // First in the list means leftmost gutter, out at the pane edge.
+              collapseBackExtension(foldLabels, (pos) =>
+                collapseRegion("b", pos),
+              ),
               ...extensions,
               diffCommentsExtension(commentHandlers("b")),
-              unifiedMergeView({
-                original: docs.left,
-                gutter: true,
-                // The accept/reject controls write to the document; this tab
-                // only reads one.
-                mergeControls: false,
-                collapseUnchanged: COLLAPSE_UNCHANGED,
-              }),
+              collapse.of(unifiedExtension(docs.left)),
             ],
           });
-          views = { kind: "unified", view };
+          views = { kind: "unified", view, collapse };
           // Inline scrolls in the editor itself, so it owns both bars. "x"
           // here would leave it with none at all in the vertical direction:
           // attaching proxies hides the scroller's own bars on both axes.
@@ -267,11 +295,23 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
           const merge = new MergeView({
             a: {
               doc: docs.left,
-              extensions: [...extensions, diffCommentsExtension(commentHandlers("a"))],
+              extensions: [
+                collapseBackExtension(foldLabels, (pos) =>
+                  collapseRegion("a", pos),
+                ),
+                ...extensions,
+                diffCommentsExtension(commentHandlers("a")),
+              ],
             },
             b: {
               doc: docs.right,
-              extensions: [...extensions, diffCommentsExtension(commentHandlers("b"))],
+              extensions: [
+                collapseBackExtension(foldLabels, (pos) =>
+                  collapseRegion("b", pos),
+                ),
+                ...extensions,
+                diffCommentsExtension(commentHandlers("b")),
+              ],
             },
             parent,
             gutter: true,
@@ -384,6 +424,44 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       icon: SquareTerminal,
       onSelect: () => sendToAgent(target),
     }));
+  }
+
+  // Fold one expanded stretch back up. @codemirror/merge can only rebuild
+  // every bar at once, so the ones the reader still wants open are replayed
+  // on top of the rebuild. The editors themselves are left alone, which keeps
+  // the scroll position.
+  function collapseRegion(side: "a" | "b", pos: number) {
+    const views = viewsRef.current;
+    if (!views) {
+      return;
+    }
+    if (views.kind === "unified") {
+      const { view } = views;
+      const keep = view.state.field(expandedRegions).filter((p) => p !== pos);
+      view.dispatch({
+        effects: [
+          views.collapse.reconfigure(unifiedExtension(docs?.left ?? "")),
+          clearExpandedEffect.of(null),
+        ],
+      });
+      view.dispatch({ effects: keep.map((p) => uncollapseUnchanged.of(p)) });
+      return;
+    }
+    // Split: the same stretch sits at a different offset on each side, and
+    // the library expands both together — so the two lists line up one for
+    // one and the clicked entry is dropped by index, not by position.
+    const clicked = side === "a" ? views.merge.a : views.merge.b;
+    const index = clicked.state.field(expandedRegions).indexOf(pos);
+    if (index < 0) {
+      return;
+    }
+    views.merge.reconfigure({ collapseUnchanged: COLLAPSE_UNCHANGED });
+    for (const view of [views.merge.a, views.merge.b]) {
+      const keep = view.state.field(expandedRegions).filter((_, i) => i !== index);
+      view.dispatch({
+        effects: [clearExpandedEffect.of(null), ...keep.map((p) => uncollapseUnchanged.of(p))],
+      });
+    }
   }
 
   // Both modes count the same chunks; only the state carrying them differs.
