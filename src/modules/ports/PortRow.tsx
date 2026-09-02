@@ -1,13 +1,18 @@
-import { ChevronRight, Cpu, MemoryStick, Clock, SquareTerminal, X, Copy, SquareArrowOutUpRight } from "lucide-react";
+import { useState } from "react";
+import { ChevronRight, Cpu, MemoryStick, Clock, SquareTerminal, X, Copy, SquareArrowOutUpRight, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatBytes, formatPercent } from "@/modules/sysmon/lib/format";
 import { Tooltip } from "@/components/Tooltip";
 import { formatUptime } from "./lib/format";
+import { classifyService } from "./lib/classifyService";
+import { portsAiExplain } from "./lib/portsBridge";
 import type { PortInfo } from "./lib/portsBridge";
 
 interface PortRowProps {
   port: PortInfo;
+  /** On-device Apple Intelligence probe result; false hides the affordance entirely. */
+  aiAvailable: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
   onRequestKill: (port: PortInfo) => void;
@@ -16,21 +21,27 @@ interface PortRowProps {
 
 const ACTION_BTN = "flex h-6 w-6 items-center justify-center rounded text-fg-subtle transition-colors disabled:opacity-30";
 
-export function PortRow({ port, expanded, onToggleExpand, onRequestKill, onOpenTerminal }: PortRowProps) {
-  const { t } = useTranslation();
+export function PortRow({ port, aiAvailable, expanded, onToggleExpand, onRequestKill, onOpenTerminal }: PortRowProps) {
+  const { t, i18n } = useTranslation();
+  const [aiState, setAiState] = useState<{ kind: "idle" } | { kind: "busy" } | { kind: "done"; text: string } | { kind: "failed" }>({ kind: "idle" });
   const canKill = port.isCurrentUser;
   const canTerminal = Boolean(port.cwd);
+  const service = classifyService(port);
+  // "Vite dev server" says more than "node"; show the raw name only when it
+  // still adds something (e.g. the label fell back to a runtime).
+  const showRawName = service.label.toLowerCase() !== port.processName.toLowerCase();
 
   return (
     <div className="border-b border-border px-3 py-2 last:border-b-0">
       {/* Line 1: identifier on the left, resource stats on the right. */}
       <div className="flex items-center gap-2 text-sm">
         <span className="shrink-0 font-mono text-xs text-accent">:{port.port}</span>
-        <span className="min-w-0 flex-1 truncate font-medium text-fg">{port.processName}</span>
-        <div className="flex shrink-0 items-center gap-3 text-xs text-fg-subtle">
+        <span className="min-w-0 truncate font-medium text-fg">{service.label}</span>
+        {showRawName && (
+          <span className="min-w-0 shrink truncate text-xs text-fg-subtle">{port.processName}</span>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-3 text-xs text-fg-subtle">
           <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={11} /> {formatUptime(port.uptimeSecs)}</span>
-          <span className="flex items-center gap-1 whitespace-nowrap"><Cpu size={11} /> {formatPercent(port.cpuUsage)}</span>
-          <span className="flex items-center gap-1 whitespace-nowrap"><MemoryStick size={11} /> {formatBytes(port.memoryBytes)}</span>
         </div>
         <button
           type="button"
@@ -93,12 +104,52 @@ export function PortRow({ port, expanded, onToggleExpand, onRequestKill, onOpenT
         <dl className="mt-1.5 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded bg-bg-inset px-3 py-2 font-mono text-xs text-fg-muted">
           <dt className="text-fg-subtle">PID</dt>
           <dd>{port.pid}</dd>
+          <dt className="text-fg-subtle">{t("ports.cpu")}</dt>
+          <dd className="flex items-center gap-1"><Cpu size={11} /> {formatPercent(port.cpuUsage)}</dd>
+          <dt className="text-fg-subtle">{t("ports.memory")}</dt>
+          <dd className="flex items-center gap-1"><MemoryStick size={11} /> {formatBytes(port.memoryBytes)}</dd>
           <dt className="text-fg-subtle">{t("ports.bind")}</dt>
           <dd>{port.bindAddr}:{port.port}</dd>
           <dt className="text-fg-subtle">{t("ports.command")}</dt>
           <dd className="break-all">{port.command ?? "-"}</dd>
           <dt className="text-fg-subtle">{t("ports.cwd")}</dt>
           <dd className="break-all">{port.cwd ?? "-"}</dd>
+          {aiAvailable && (
+            <>
+              <dt className="flex items-start text-fg-subtle"><Sparkles size={11} /></dt>
+              <dd>
+                {aiState.kind === "done" ? (
+                  <p className="whitespace-pre-wrap font-sans leading-relaxed text-fg">{aiState.text}</p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={aiState.kind === "busy"}
+                    onClick={() => {
+                      setAiState({ kind: "busy" });
+                      portsAiExplain({
+                        serviceLabel: service.label,
+                        processName: port.processName,
+                        command: port.command,
+                        cwd: port.cwd,
+                        uptimeSecs: port.uptimeSecs,
+                        port: port.port,
+                        language: i18n.language,
+                      })
+                        .then((text) => setAiState({ kind: "done", text }))
+                        .catch(() => setAiState({ kind: "failed" }));
+                    }}
+                    className="text-left text-accent hover:underline disabled:opacity-60"
+                  >
+                    {aiState.kind === "busy"
+                      ? t("ports.aiThinking")
+                      : aiState.kind === "failed"
+                        ? t("ports.aiFailed")
+                        : t("ports.askAi")}
+                  </button>
+                )}
+              </dd>
+            </>
+          )}
         </dl>
       )}
     </div>

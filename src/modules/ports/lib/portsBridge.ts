@@ -33,3 +33,21 @@ export function fetchPorts(showAll: boolean): Promise<PortInfo[]> {
 export function killPortProcess(port: number, pid: number): Promise<void> {
   return invoke("kill_port_process", { port, pid });
 }
+
+/** Whether the on-device Apple Intelligence model can explain ports (macOS 26+). */
+export function portsAiAvailable(): Promise<boolean> {
+  return invoke<boolean>("ports_ai_available");
+}
+
+/** Plain-language, on-device explanation of one port's process. */
+export function portsAiExplain(args: {
+  serviceLabel: string;
+  processName: string;
+  command: string | null;
+  cwd: string | null;
+  uptimeSecs: number;
+  port: number;
+  language: string;
+}): Promise<string> {
+  return invoke<string>("ports_ai_explain", args);
+}

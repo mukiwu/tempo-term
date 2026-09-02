@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InfoDialog } from "@/components/InfoDialog";
 import { usePorts } from "./lib/usePorts";
-import { killPortProcess, type PortInfo } from "./lib/portsBridge";
+import { groupByProject } from "./lib/classifyService";
+import { killPortProcess, portsAiAvailable, type PortInfo } from "./lib/portsBridge";
 import { PortRow } from "./PortRow";
 
 /**
@@ -22,6 +23,21 @@ export function PortsPanelView() {
   const [killTarget, setKillTarget] = useState<PortInfo | null>(null);
   const [killError, setKillError] = useState<string | null>(null);
   const [expandedPid, setExpandedPid] = useState<number | null>(null);
+  const [aiAvailable, setAiAvailable] = useState(false);
+
+  // One probe per mount: availability only changes with OS settings, and a
+  // false (or failed) probe simply leaves the affordance hidden.
+  useEffect(() => {
+    let live = true;
+    portsAiAvailable()
+      .then((ok) => {
+        if (live) setAiAvailable(ok);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const list = ports ?? [];
 
@@ -69,15 +85,27 @@ export function PortsPanelView() {
         ) : list.length === 0 ? (
           <div className="px-3 py-6 text-center text-sm text-fg-subtle">{t("ports.empty")}</div>
         ) : (
-          list.map((port) => (
-            <PortRow
-              key={`${port.port}-${port.pid}`}
-              port={port}
-              expanded={expandedPid === port.pid}
-              onToggleExpand={() => setExpandedPid((cur) => (cur === port.pid ? null : port.pid))}
-              onRequestKill={setKillTarget}
-              onOpenTerminal={openTerminal}
-            />
+          groupByProject(list).map((group) => (
+            <section key={group.cwd ?? "__other__"}>
+              {/* Port Radar's hierarchy: the project is the anchor a reader
+                  scans for; the rows underneath stay sorted by port, so
+                  nothing moves between polls. */}
+              <h3 className="sticky top-0 flex items-baseline gap-2 border-b border-border bg-bg-elevated px-3 py-1.5 text-xs font-semibold text-fg">
+                {group.name ?? t("ports.groupOther")}
+                <span className="font-normal text-fg-subtle">{group.ports.length}</span>
+              </h3>
+              {group.ports.map((port) => (
+                <PortRow
+                  key={`${port.port}-${port.pid}`}
+                  port={port}
+                  aiAvailable={aiAvailable}
+                  expanded={expandedPid === port.pid}
+                  onToggleExpand={() => setExpandedPid((cur) => (cur === port.pid ? null : port.pid))}
+                  onRequestKill={setKillTarget}
+                  onOpenTerminal={openTerminal}
+                />
+              ))}
+            </section>
           ))
         )}
       </div>

@@ -68,6 +68,7 @@ rusqlite = "0.32"
 # keyring 3.x ships no credential store by default; each platform must opt into
 # its native backend or every keychain operation fails silently.
 [target.'cfg(target_os = "macos")'.dependencies]
+fm-rs = "0.3"
 keyring = { version = "3", features = ["apple-native"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
