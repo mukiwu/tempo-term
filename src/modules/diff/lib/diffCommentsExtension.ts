@@ -7,6 +7,8 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { StateEffect, StateField, type Extension } from "@codemirror/state";
+import { lucideIcon, MESSAGE_SQUARE_PLUS } from "./lucideDom";
+import { withGutterHint } from "./gutterHint";
 
 /** The slice of a DiffComment one editor side needs to render. */
 export interface CommentView {
@@ -18,7 +20,7 @@ export interface CommentView {
 
 /** Callbacks and labels the host component wires into the extension. */
 export interface CommentHandlers {
-  /** The "+" gutter was clicked on a line: open a draft there. */
+  /** The comment gutter was clicked on a line: open a draft there. */
   onAdd: (line: number) => void;
   /** The draft was confirmed with this body. */
   onSave: (line: number, body: string) => void;
@@ -29,6 +31,8 @@ export interface CommentHandlers {
   getDraftBody: () => string;
   onDraftChange: (text: string) => void;
   labels: {
+    /** Hover hint on the gutter icon that starts a comment. */
+    add: string;
     placeholder: string;
     save: string;
     cancel: string;
@@ -196,14 +200,19 @@ function buildDecorations(
 
 const commentTheme = EditorView.baseTheme({
   ".cm-diff-comment-gutter": {
-    width: "16px",
+    width: "18px",
     cursor: "pointer",
   },
   ".cm-diff-comment-gutter .cm-gutterElement": {
     opacity: "0",
-    textAlign: "center",
     color: "var(--color-accent)",
-    fontWeight: "600",
+  },
+  // Fills the row so the icon is centred in it, not parked at the top.
+  ".cm-diff-comment-gutter .cm-gutterElement > span": {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "100%",
   },
   ".cm-diff-comment-gutter .cm-gutterElement:hover": {
     opacity: "1",
@@ -268,7 +277,7 @@ const commentTheme = EditorView.baseTheme({
 });
 
 /**
- * Inline review comments for one side of the diff: a hover "+" gutter that
+ * Inline review comments for one side of the diff: a hover gutter that
  * opens a draft box under the clicked line, plus block widgets rendering the
  * saved comments. The comment list itself lives outside the editor — the host
  * dispatches setCommentsEffect / setDraftEffect whenever it changes.
@@ -299,11 +308,14 @@ export function diffCommentsExtension(handlers: CommentHandlers): Extension {
     provide: (f) => EditorView.decorations.from(f, (v) => v.decorations),
   });
 
+  // A speech bubble rather than a bare "+": the change gutter one column over
+  // already marks added lines with "+", and two plus signs side by side read
+  // as the same control.
   const addMarker = new (class extends GutterMarker {
     toDOM(): Node {
       const el = document.createElement("span");
-      el.textContent = "+";
-      return el;
+      el.appendChild(lucideIcon(MESSAGE_SQUARE_PLUS, 12));
+      return withGutterHint(el, handlers.labels.add);
     }
   })();
 

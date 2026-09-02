@@ -455,6 +455,43 @@ textarea:focus-visible,
   cursor: pointer;
 }
 .diff-merge-view .cm-collapsedLines:hover { color: var(--color-fg); }
+/* Opening and folding the unchanged stretches, in a gutter of their own at the
+   pane edge: an unfold icon beside each "N unchanged lines" bar, a fold icon on
+   the first line of a stretch that is open. No marker, no width. */
+.diff-merge-view .cm-diff-fold-gutter { cursor: pointer; }
+.diff-merge-view .cm-diff-fold,
+.diff-merge-view .cm-diff-unfold {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The gutter element carries the row's height as an inline style, so filling
+     it is what actually centres the icon — without this the marker is only as
+     tall as the glyph and sits against the top of the row. */
+  height: 100%;
+  padding: 0 2px;
+  color: var(--color-fg-subtle);
+}
+.diff-merge-view .cm-diff-fold:hover,
+.diff-merge-view .cm-diff-unfold:hover {
+  color: var(--color-accent);
+}
+/* Their hover hint. Lives on the body (see lib/gutterHint.ts) because the
+   merge view's halves clip their overflow; metrics mirror Tooltip.tsx. */
+.cm-gutter-hint {
+  position: fixed;
+  z-index: 50;
+  white-space: nowrap;
+  pointer-events: none;
+  font-family: var(--font-sans, system-ui);
+  font-size: 12px;
+  line-height: 1rem;
+  color: var(--color-fg);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  padding: 4px 8px;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
 
 /* Inline mode: one editor holding the new document, with the old lines drawn
    in as widgets. There is no cm-merge-a/b wrapper here, so the changed-line
