@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -42,7 +42,7 @@ describe("SourceControlView row interactions", () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
     useWorkspaceStore.getState().setRoot("/repo");
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
-    useAllChangesLinkStore.setState({ file: null });
+    useAllChangesLinkStore.setState({ file: null, showing: null });
   });
 
   it("opens the all-changes tab from the panel toolbar", async () => {
@@ -112,6 +112,26 @@ describe("SourceControlView row interactions", () => {
     // Away from that pane and it is back.
     fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
     expect(await screen.findByPlaceholderText("Commit message")).toBeInTheDocument();
+  });
+
+  it("marks the row the all-changes page is showing", async () => {
+    render(<SourceControlView />);
+    const row = await screen.findByText("src/a.ts");
+    // Nothing marked: no diff pane in front, and no page reporting a file.
+    expect(row.closest("li")).not.toHaveAttribute("aria-current");
+
+    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+    act(() => {
+      useAllChangesLinkStore.getState().setShowing({ rel: "src/a.ts", staged: false });
+    });
+
+    expect(screen.getByText("src/a.ts").closest("li")).toHaveAttribute("aria-current", "true");
+
+    // The mark is the page's while that page is in front; it goes with it.
+    act(() => {
+      useAllChangesLinkStore.getState().setShowing(null);
+    });
+    expect(screen.getByText("src/a.ts").closest("li")).not.toHaveAttribute("aria-current");
   });
 
   it("opens a diff tab when a changed file row is clicked", async () => {

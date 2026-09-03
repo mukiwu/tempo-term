@@ -462,6 +462,22 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   // The counter follows the page rather than only the buttons: scrolling by
   // hand, or being scrolled by a click in the Source Control panel, moves it
   // too, so prev/next always carries on from what is actually on screen.
+  /** Where a file's section starts inside the page's scrollable content. */
+  const sectionTop = useCallback(
+    (root: HTMLElement, index: number): number | null => {
+      const element = ordered[index] && elementsRef.current.get(ordered[index].key);
+      if (!element) {
+        return null;
+      }
+      // The section, never its header: the header is sticky, so its rect
+      // reports where it is pinned rather than where it belongs.
+      return (
+        root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top
+      );
+    },
+    [ordered],
+  );
+
   const scrollFrame = useRef(0);
   const trackPosition = useCallback(() => {
     // Cancel and re-schedule, rather than skipping while one is pending. A
@@ -481,8 +497,25 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       }
       const top = root.scrollTop + LANDING_GAP + 4;
       setPosition(changeAtViewportTop(changes.length, top, (i) => changeTop(root, i)));
+      // The panel marks the row the reader is on, which is the file at the top
+      // of the page — the same question the counter asks, one level up, so it
+      // takes the same lazy binary search over an ordered list. The topmost
+      // *file* rather than the file owning the topmost change: a file with no
+      // change to navigate to, folded or binary, is still one you can be
+      // looking straight at.
+      const file = ordered[changeAtViewportTop(ordered.length, top, (i) => sectionTop(root, i)) - 1];
+      useAllChangesLinkStore
+        .getState()
+        .setShowing(file ? { rel: file.rel, staged: file.staged } : null);
     });
-  }, [changes.length, changeTop]);
+  }, [changes.length, changeTop, ordered, sectionTop]);
+
+  // Mark the first file as soon as there is a list, without waiting for a
+  // scroll, and let the mark go when this page does — the panel falls back to
+  // whichever diff pane is in front, as it did before.
+  useEffect(() => {
+    trackPosition();
+  }, [trackPosition]);
 
   // Coming back to a window that was hidden brings no scroll event with it,
   // and no frame ran while it was away to take a reading, so one is taken on
@@ -502,6 +535,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       if (scrollFrame.current) {
         cancelAnimationFrame(scrollFrame.current);
       }
+      useAllChangesLinkStore.getState().setShowing(null);
     },
     [],
   );

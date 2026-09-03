@@ -703,6 +703,10 @@ export function SourceControlView() {
   // While the all-changes page is the pane in front, this panel is its table
   // of contents rather than a way of opening more tabs.
   const allChangesInFront = useTabsStore((s) => allChangesPaneActive(s.tabs, s.activeId));
+  // Read as two primitives for the same reason as the diff pane above: a
+  // selector returning a fresh object would re-render on every store change.
+  const showingRel = useAllChangesLinkStore((s) => s.showing?.rel ?? null);
+  const showingStaged = useAllChangesLinkStore((s) => s.showing?.staged ?? false);
   // Which row is "the one on screen": the diff in the foreground pane. Read as
   // two primitives — a selector returning a fresh {path, staged} object would
   // never compare equal, re-rendering the panel on every store change.
@@ -780,10 +784,17 @@ export function SourceControlView() {
   // Rows key off repo-relative paths; the diff pane carries an absolute one.
   // A diff opened from somewhere else (another repo, the git graph) simply
   // matches no row.
-  const activeRelPath =
+  const diffRelPath =
     repoPath && activeDiffPath?.startsWith(`${repoPath}/`)
       ? activeDiffPath.slice(repoPath.length + 1)
       : null;
+  // #364's "the file you are viewing" mark, extended to the all-changes page:
+  // there the file being viewed is the one at the top of it, which the page
+  // reports as it is scrolled. Without this the mark simply went out whenever
+  // that page was in front, which is the one place the panel is being read as
+  // a table of contents.
+  const activeRelPath = allChangesInFront ? showingRel : diffRelPath;
+  const activeStaged = allChangesInFront ? showingStaged : activeDiffStaged;
 
   const canCommit = message.trim().length > 0 && (status?.staged.length ?? 0) > 0;
   const hasStaged = (status?.staged.length ?? 0) > 0;
@@ -979,7 +990,7 @@ export function SourceControlView() {
                     })
                   }
                   onFileOpen={(path) => openDiff(path, true)}
-                  activePath={activeDiffStaged ? activeRelPath : null}
+                  activePath={activeStaged ? activeRelPath : null}
                   repoPath={repoPath ?? ""}
                 />
               )}
@@ -1029,7 +1040,7 @@ export function SourceControlView() {
                   }
                   onFileOpen={(path) => openDiff(path, false)}
                   onRequestDiscard={setDiscardTarget}
-                  activePath={activeDiffStaged ? null : activeRelPath}
+                  activePath={activeStaged ? null : activeRelPath}
                   repoPath={repoPath ?? ""}
                 />
               ))}
