@@ -43,6 +43,15 @@ describe("SourceControlView row interactions", () => {
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
   });
 
+  it("opens the all-changes tab from the panel toolbar", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0].kind).toBe("all-changes");
+  });
+
   it("opens a diff tab when a changed file row is clicked", async () => {
     render(<SourceControlView />);
     fireEvent.click(await screen.findByText("src/a.ts"));

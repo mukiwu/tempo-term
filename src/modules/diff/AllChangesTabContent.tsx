@@ -41,6 +41,11 @@ const MOUNT_MARGIN = "800px";
 /** Breathing room above a change that navigation lands on. */
 const LANDING_GAP = 8;
 
+interface FileCounts {
+  added: number;
+  deleted: number;
+}
+
 interface ChangedFiles {
   staged: ChangedFile[];
   unstaged: ChangedFile[];
@@ -95,6 +100,8 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   // anyway, and the heights the mounted ones grew to.
   const [mounted, setMounted] = useState<ReadonlySet<string>>(() => new Set());
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  // Files the reader has shut by hand, having read them.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const heightsRef = useRef(new Map<string, number>());
   const elementsRef = useRef(new Map<string, HTMLElement>());
   const handlesRef = useRef(new Map<string, DiffSectionHandle>());
@@ -258,8 +265,47 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
     }
   }, []);
 
+  // What the scan could not measure, reported back by the sections that did.
+  const [counted, setCounted] = useState<ReadonlyMap<string, FileCounts>>(() => new Map());
+  const onCounted = useCallback((key: string, counts: FileCounts) => {
+    setCounted((prev) => {
+      const had = prev.get(key);
+      if (had && had.added === counts.added && had.deleted === counts.deleted) {
+        return prev;
+      }
+      return new Map(prev).set(key, counts);
+    });
+  }, []);
+
+  /**
+   * The whole change in two numbers. One of the reasons for this view is that
+   * a list of file names never says how big the change actually is.
+   */
+  const totals = useMemo(() => {
+    let added = 0;
+    let deleted = 0;
+    for (const file of ordered) {
+      const counts = file.stats ?? counted.get(file.key);
+      if (counts) {
+        added += counts.added;
+        deleted += counts.deleted;
+      }
+    }
+    return { added, deleted };
+  }, [ordered, counted]);
+
   const onExpand = useCallback((key: string) => {
     setExpanded((prev) => new Set(prev).add(key));
+  }, []);
+
+  const onToggleCollapse = useCallback((key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+      return next;
+    });
   }, []);
 
   /**
@@ -271,7 +317,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   const changes = useMemo(() => {
     const list: { key: string; line: number }[] = [];
     for (const file of ordered) {
-      if (file.stats?.binary) {
+      if (file.stats?.binary || collapsed.has(file.key)) {
         continue;
       }
       if (
@@ -293,7 +339,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       }
     }
     return list;
-  }, [ordered, expanded]);
+  }, [ordered, expanded, collapsed]);
 
   const [position, setPosition] = useState(0);
   const [pending, setPending] = useState<{ key: string; line: number } | null>(null);
@@ -370,9 +416,12 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
             mount={mounted.has(file.key)}
             expanded={expanded.has(file.key)}
             onExpand={() => onExpand(file.key)}
+            collapsed={collapsed.has(file.key)}
+            onToggleCollapse={() => onToggleCollapse(file.key)}
             reserved={heightsRef.current.get(file.key) ?? 0}
             onMeasure={onMeasure}
             onHandle={onHandle}
+            onCounted={onCounted}
             onDraft={onDraft}
           />
         ))}
@@ -388,15 +437,22 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
         left={
           <div className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 truncate text-xs text-fg-muted">{t("allChanges")}</span>
-            {ordered.length > 0 && (
-              <span className="shrink-0 rounded bg-bg-elevated px-1.5 py-0.5 text-[10px] font-medium uppercase text-fg-subtle">
-                {t("allChangesFileCount", { count: ordered.length })}
-              </span>
-            )}
+            {/* Named now so that comparing against another ref later reads as
+                a different thing rather than a redefinition of this one. */}
+            <span className="shrink-0 text-xs text-fg-subtle">{t("allChangesUncommitted")}</span>
           </div>
         }
         actions={
           <>
+            {ordered.length > 0 && (
+              <span className="mr-1 flex shrink-0 items-center gap-2.5 font-mono text-[11px]">
+                <span className="text-success">+{totals.added}</span>
+                <span className="text-danger">−{totals.deleted}</span>
+                <span className="text-fg-subtle">
+                  {t("allChangesFileCount", { count: ordered.length })}
+                </span>
+              </span>
+            )}
             {changes.length > 0 && (
               <span className="mr-1 font-mono text-[11px] text-fg-subtle">
                 {position}/{changes.length}

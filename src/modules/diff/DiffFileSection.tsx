@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { gitFileAtRev } from "@/modules/source-control/lib/gitBridge";
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { STATUS_COLOR } from "@/modules/source-control/lib/fileStatus";
@@ -14,6 +15,7 @@ import {
   type DiffViews,
 } from "./lib/diffViews";
 import { useDiffComments } from "./lib/useDiffComments";
+import { linkHorizontalScroll } from "./lib/linkScroll";
 
 /** One changed file in the working tree, as the scan describes it. */
 export interface ChangedFile {
@@ -58,10 +60,15 @@ interface DiffFileSectionProps {
   /** The reader asked a folded file to open anyway. */
   expanded: boolean;
   onExpand: () => void;
+  /** The reader closed this file by hand, having read it. */
+  collapsed: boolean;
+  onToggleCollapse: () => void;
   /** Height to hold while unmounted: measured once, estimated before that. */
   reserved: number;
   onMeasure: (key: string, height: number) => void;
   onHandle: (key: string, handle: DiffSectionHandle | null) => void;
+  /** Report what a file the scan could not measure turned out to weigh. */
+  onCounted: (key: string, counts: { added: number; deleted: number }) => void;
   /** A section with a comment half-typed is not unmounted under the reader. */
   onDraft: (key: string, open: boolean) => void;
 }
@@ -90,9 +97,12 @@ export function DiffFileSection({
   mount,
   expanded,
   onExpand,
+  collapsed,
+  onToggleCollapse,
   reserved,
   onMeasure,
   onHandle,
+  onCounted,
   onDraft,
 }: DiffFileSectionProps) {
   const { t } = useTranslation("sourceControl");
@@ -118,10 +128,22 @@ export function DiffFileSection({
       ? lineCount(docs.left) + lineCount(docs.right)
       : null;
   const folded = changed !== null && changed > TRUNCATE_CHANGED_LINES && !expanded;
-  const hidden = binary || folded;
-  // Nothing to read for a binary file, and nothing to read yet for a file the
-  // scan already says is too big.
-  const shouldLoad = mount && !binary && !(file.stats !== null && folded);
+  const closed = collapsed || folded;
+  const hidden = binary || closed;
+  // Nothing to read for a binary file, nothing to read for a file the reader
+  // has closed, and nothing to read yet for one the scan already says is too
+  // big.
+  const shouldLoad = mount && !binary && !collapsed && !(file.stats !== null && folded);
+
+  // One control for both ways a file is shut: an oversized file opens to its
+  // full diff, anything else just opens back up.
+  function toggleOpen() {
+    if (folded) {
+      onExpand();
+      return;
+    }
+    onToggleCollapse();
+  }
 
   const commentLabels = useMemo(
     () => ({
@@ -193,10 +215,11 @@ export function DiffFileSection({
 
   useEffect(() => {
     const parent = hostRef.current;
-    if (!docs || !parent || hidden) {
+    if (!docs || !parent || hidden || !mount) {
       return;
     }
     let views: DiffViews | null = null;
+    let unlinkScroll: (() => void) | null = null;
     let cancelled = false;
     void buildDiffViews({
       parent,
@@ -219,6 +242,11 @@ export function DiffFileSection({
       }
       views = built;
       viewsRef.current = built;
+      if (built.kind === "split") {
+        // Same as the single-file tab: reading a long line means dragging one
+        // side and having the other follow, or the two halves stop lining up.
+        unlinkScroll = linkHorizontalScroll(built.merge.a.scrollDOM, built.merge.b.scrollDOM);
+      }
       reanchorInto(built);
       setViewEpoch((epoch) => epoch + 1);
       onMeasure(file.key, parent.offsetHeight);
@@ -226,6 +254,7 @@ export function DiffFileSection({
     return () => {
       cancelled = true;
       viewsRef.current = null;
+      unlinkScroll?.();
       if (views) {
         destroyDiffViews(views);
       }
@@ -233,7 +262,18 @@ export function DiffFileSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- comment
     // callbacks and labels are rebuilt every render; rebuilding the editors
     // on those would throw away the reading position on every keystroke.
-  }, [docs, hidden, themeId, fontFamily, fontSize, wordWrap, unified, file.key, file.path]);
+  }, [
+    docs,
+    hidden,
+    mount,
+    themeId,
+    fontFamily,
+    fontSize,
+    wordWrap,
+    unified,
+    file.key,
+    file.path,
+  ]);
 
   // The height a section holds while unmounted has to keep up with what it
   // actually grew to — expanding a collapsed stretch changes it.
@@ -245,7 +285,7 @@ export function DiffFileSection({
     const observer = new ResizeObserver(() => onMeasure(file.key, el.offsetHeight));
     observer.observe(el);
     return () => observer.disconnect();
-  }, [file.key, onMeasure, docs, hidden]);
+  }, [file.key, onMeasure, docs, hidden, mount]);
 
   useEffect(() => {
     onHandle(file.key, {
@@ -268,30 +308,78 @@ export function DiffFileSection({
   const added = file.stats ? file.stats.added : docs ? lineCount(docs.right) : null;
   const deleted = file.stats ? file.stats.deleted : docs ? lineCount(docs.left) : null;
   const slash = file.rel.lastIndexOf("/");
-  const dir = slash < 0 ? "" : file.rel.slice(0, slash + 1);
+  const dir = slash < 0 ? "" : file.rel.slice(0, slash);
   const name = slash < 0 ? file.rel : file.rel.slice(slash + 1);
   // Before a file is measured, its placeholder is guessed from the hunks the
   // scan found — near enough that the scrollbar doesn't lurch when it mounts.
   const placeholder =
     reserved || (file.stats ? estimatedRows(file.stats) * Math.round(fontSize * 1.4) : 120);
 
+  // A file the scan could not count — an untracked one — only learns its size
+  // by loading. Report it up so the page total covers the whole change and not
+  // just the tracked part of it.
+  useEffect(() => {
+    if (!file.stats && added !== null && deleted !== null) {
+      onCounted(file.key, { added, deleted });
+    }
+  }, [file.key, file.stats, added, deleted, onCounted]);
+
   return (
     <section data-diff-file={file.key} className="border-b border-border">
       <header className="sticky top-0 z-10 flex h-7 items-center gap-2 border-b border-border bg-bg-elevated px-3">
-        <span
-          className={`w-3 shrink-0 text-center font-mono text-[11px] font-semibold ${
-            STATUS_COLOR[file.status] ?? "text-fg-muted"
-          }`}
+        {/* The whole label opens and shuts the file, not just the chevron —
+            same as the panel's folder rows (#381).
+
+            The file's own name leads and never truncates; the folder it sits
+            in trails it, quieter and the first to be cut when the pane is
+            narrow — reading a page of files is looking for the name. */}
+        <button
+          type="button"
+          onClick={toggleOpen}
+          aria-expanded={!closed}
+          aria-label={
+            closed
+              ? t("allChangesExpandFile", { name })
+              : t("allChangesCollapseFile", { name })
+          }
+          className="flex min-w-0 items-center gap-2 text-left text-fg-subtle hover:text-fg"
         >
-          {file.status}
-        </span>
-        <span className="min-w-0 truncate text-xs">
-          <span className="text-fg-subtle">{dir}</span>
-          <span className="text-fg">{name}</span>
-        </span>
+          {closed ? (
+            <ChevronRight size={13} className="shrink-0" />
+          ) : (
+            <ChevronDown size={13} className="shrink-0" />
+          )}
+          <span
+            className={`w-3 shrink-0 text-center font-mono text-[11px] font-semibold ${
+              STATUS_COLOR[file.status] ?? "text-fg-muted"
+            }`}
+          >
+            {file.status}
+          </span>
+          <span className="shrink-0 font-mono text-xs text-fg">{name}</span>
+          {dir && (
+            <span className="min-w-0 truncate font-mono text-[10.5px] text-fg-subtle">{dir}</span>
+          )}
+        </button>
+        {/* A folded file says why in its own row: there is no body under it
+            to put the reason in. */}
+        {folded && !collapsed && (
+          <>
+            <span className="shrink-0 text-[11px] text-fg-subtle">
+              {t("allChangesFolded", { count: TRUNCATE_CHANGED_LINES })}
+            </span>
+            <button
+              type="button"
+              onClick={onExpand}
+              className="shrink-0 rounded border border-border-strong px-2 py-0.5 text-[11px] text-fg-muted transition-colors hover:text-fg"
+            >
+              {t("allChangesShowFull")}
+            </button>
+          </>
+        )}
         {added !== null && deleted !== null && !binary && (
-          <span className="ml-auto shrink-0 font-mono text-[11px]">
-            <span className="text-success">+{added}</span>{" "}
+          <span className="ml-auto flex shrink-0 gap-2.5 font-mono text-[11px]">
+            <span className="text-success">+{added}</span>
             <span className="text-danger">−{deleted}</span>
           </span>
         )}
@@ -300,20 +388,7 @@ export function DiffFileSection({
         <p className="px-3 py-2 text-xs text-danger">{t("diffLoadError")}</p>
       ) : binary ? (
         <p className="px-3 py-2 text-xs text-fg-subtle">{t("allChangesBinary")}</p>
-      ) : folded ? (
-        <div className="flex items-center gap-3 px-3 py-2">
-          <span className="text-xs text-fg-subtle">
-            {t("allChangesFolded", { count: changed ?? 0 })}
-          </span>
-          <button
-            type="button"
-            onClick={onExpand}
-            className="rounded px-1 py-0.5 text-xs text-accent transition-colors hover:text-fg"
-          >
-            {t("allChangesShowFull")}
-          </button>
-        </div>
-      ) : mount ? (
+      ) : closed ? null : mount ? (
         <div
           ref={hostRef}
           style={docs ? undefined : { height: placeholder }}
