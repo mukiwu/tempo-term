@@ -71,6 +71,8 @@ interface DiffFileSectionProps {
   onCounted: (key: string, counts: { added: number; deleted: number }) => void;
   /** A section with a comment half-typed is not unmounted under the reader. */
   onDraft: (key: string, open: boolean) => void;
+  /** Bumped by the page when the working tree may have moved under it. */
+  reloadKey: number;
   /** The pane is too narrow to carry explanations as well as actions. */
   narrow: boolean;
 }
@@ -107,6 +109,7 @@ export function DiffFileSection({
   onCounted,
   onDraft,
   narrow,
+  reloadKey,
 }: DiffFileSectionProps) {
   const { t } = useTranslation("sourceControl");
   const hostRef = useRef<HTMLDivElement>(null);
@@ -203,7 +206,7 @@ export function DiffFileSection({
     return () => {
       cancelled = true;
     };
-  }, [shouldLoad, repo, file.rel, file.path, file.staged]);
+  }, [shouldLoad, repo, file.rel, file.path, file.staged, reloadKey]);
 
   // The old side is read through a ref so that folding a stretch back up
   // never lands in the dependencies of the effect that builds the editors.

@@ -165,8 +165,9 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   }, [rootPath]);
 
   // Re-scan when the window regains focus (e.g. after staging or committing
-  // elsewhere); cheap enough that no file watcher is needed, and each mounted
-  // file re-reads its own documents on the same event.
+  // elsewhere); cheap enough that no file watcher is needed. The same key is
+  // handed to every section, so the files already up re-read their own two
+  // documents rather than keeping whatever they loaded first.
   useEffect(() => {
     const bump = () => setRefreshKey((key) => key + 1);
     window.addEventListener("focus", bump);
@@ -504,6 +505,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
             onCounted={onCounted}
             onDraft={onDraft}
             narrow={narrow}
+            reloadKey={refreshKey}
           />
         ))}
       </>

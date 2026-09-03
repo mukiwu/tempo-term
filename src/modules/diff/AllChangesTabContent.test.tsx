@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AllChangesTabContent } from "./AllChangesTabContent";
 
@@ -208,6 +208,35 @@ describe("AllChangesTabContent", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "allChangesExpandFile" }));
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
+  });
+
+  it("re-reads the files already up, not just the file list", async () => {
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
+    });
+    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
+      staged ? "" : diffFor("src/a.ts"),
+    );
+    vi.mocked(gitFileAtRev).mockResolvedValue("keep\ngone\n");
+    vi.mocked(fsReadFile).mockResolvedValue("keep\none\n");
+
+    const { container } = render(<AllChangesTabContent />);
+    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
+    const readsBefore = vi.mocked(fsReadFile).mock.calls.length;
+
+    // The working tree can move while this page is open. A rescan that only
+    // refreshed the list would leave every mounted diff showing what it first
+    // loaded.
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() =>
+      expect(vi.mocked(fsReadFile).mock.calls.length).toBeGreaterThan(readsBefore),
+    );
+    expect(gitStatus).toHaveBeenCalledTimes(2);
   });
 
   it("names a binary file instead of trying to show it", async () => {
