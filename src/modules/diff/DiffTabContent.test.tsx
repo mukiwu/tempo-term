@@ -281,4 +281,36 @@ describe("DiffTabContent", () => {
     fireEvent.click(screen.getByRole("button", { name: "diffSendToAgent" }));
     expect(await screen.findByRole("menuitem", { name: "diffNoAgentSession" })).toBeDisabled();
   });
+
+  it("diffs a big file precisely when its changes are scattered", async () => {
+    // @codemirror/merge's default diff config gives up on a differing range
+    // past a few thousand characters and marks the whole of it as replaced.
+    // What trips it is not size alone but changes spread out inside one — a
+    // resource file with lines added in four places used to render as the
+    // entire file deleted and added back. 600 lines with four insertion
+    // points is the smallest shape that reproduces it (31 lines falsely
+    // marked deleted before this change).
+    const base = Array.from(
+      { length: 600 },
+      (_, i) => `    const value${i} = computeSomething(${i}, "an argument");`,
+    );
+    const insertAt = new Set([120, 240, 360, 480]);
+    const withAdditions: string[] = [];
+    base.forEach((line, i) => {
+      if (insertAt.has(i)) {
+        withAdditions.push("    const brandNew = 1;", "    const alsoNew = 2;");
+      }
+      withAdditions.push(line);
+    });
+    vi.mocked(gitFileAtRev).mockResolvedValue(base.join("\n") + "\n");
+    vi.mocked(fsReadFile).mockResolvedValue(withAdditions.join("\n") + "\n");
+
+    const { container } = render(<DiffTabContent path="/repo/big.ts" staged={false} />);
+
+    await waitFor(() =>
+      expect(container.querySelectorAll(".cm-merge-b .cm-changedLine").length).toBeGreaterThan(0),
+    );
+    // Nothing was removed, so the old side carries no changed line at all.
+    expect(container.querySelectorAll(".cm-merge-a .cm-changedLine").length).toBe(0);
+  });
 });

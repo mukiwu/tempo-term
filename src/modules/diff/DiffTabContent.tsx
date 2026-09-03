@@ -69,6 +69,28 @@ interface DiffDocs {
  */
 const COLLAPSE_UNCHANGED = { margin: 3, minSize: 5 };
 
+/**
+ * @codemirror/merge defaults to `{ scanLimit: 500 }`, which abandons the
+ * precise diff once a differing range passes 4,000 characters and marks the
+ * whole range replaced past 16,000. That measures the wrong thing: the
+ * algorithm is O(N*D) in the number of differences, so a file with a few
+ * changes spread far apart is cheap to diff exactly and yet trips a limit set
+ * on range size alone. A 13,890-line resource file with 24 added lines came
+ * out as the entire file deleted and added back, against git's own +24 -0.
+ *
+ * Measured on that file (450KB): the default marks 107,763 characters as
+ * deleted in 0.8ms, where an unlimited scan is exact in 11ms.
+ *
+ * So the budget is time, not size. 1000ms sits above the worst case worth
+ * being precise about -- 500 changed lines scattered through a large file,
+ * exact in ~530ms -- and a shorter deadline is not only less precise but
+ * slower, because every range that misses it falls back to a crude match that
+ * costs more on a wide range than finishing the scan would have (300ms
+ * measured at 1653ms, against 411ms unlimited). Two genuinely unrelated large
+ * files, the case the scan limit is there for, give up at ~930ms.
+ */
+const DIFF_CONFIG = { timeout: 1000 };
+
 /** The inline mode's merge extension, rebuilt whenever the bars are reset. */
 function unifiedExtension(original: string) {
   return unifiedMergeView({
@@ -77,6 +99,7 @@ function unifiedExtension(original: string) {
     // The accept/reject controls write to the document; this tab only reads one.
     mergeControls: false,
     collapseUnchanged: COLLAPSE_UNCHANGED,
+    diffConfig: DIFF_CONFIG,
   });
 }
 
@@ -316,6 +339,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
             parent,
             gutter: true,
             collapseUnchanged: COLLAPSE_UNCHANGED,
+            diffConfig: DIFF_CONFIG,
           });
           views = { kind: "split", merge };
           // Pin a bottom horizontal scrollbar per side (the native one lives at
@@ -455,7 +479,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     if (index < 0) {
       return;
     }
-    views.merge.reconfigure({ collapseUnchanged: COLLAPSE_UNCHANGED });
+    views.merge.reconfigure({ collapseUnchanged: COLLAPSE_UNCHANGED, diffConfig: DIFF_CONFIG });
     for (const view of [views.merge.a, views.merge.b]) {
       const keep = view.state.field(expandedRegions).filter((_, i) => i !== index);
       view.dispatch({
