@@ -42,7 +42,7 @@ describe("SourceControlView row interactions", () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
     useWorkspaceStore.getState().setRoot("/repo");
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
-    useAllChangesLinkStore.setState({ file: null, showing: null });
+    useAllChangesLinkStore.setState({ file: null, showing: null, rescan: 0 });
   });
 
   it("opens the all-changes tab from the panel toolbar", async () => {
@@ -132,6 +132,17 @@ describe("SourceControlView row interactions", () => {
       useAllChangesLinkStore.getState().setShowing(null);
     });
     expect(screen.getByText("src/a.ts").closest("li")).not.toHaveAttribute("aria-current");
+  });
+
+  it("reloads the all-changes page along with itself", async () => {
+    render(<SourceControlView />);
+    await screen.findByText("src/a.ts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    // Both are reading one list from one status call, so a refresh that moved
+    // only the panel would leave the two disagreeing side by side.
+    await waitFor(() => expect(useAllChangesLinkStore.getState().rescan).toBe(1));
   });
 
   it("opens a diff tab when a changed file row is clicked", async () => {

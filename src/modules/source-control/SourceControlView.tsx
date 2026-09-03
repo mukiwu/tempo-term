@@ -741,6 +741,10 @@ export function SourceControlView() {
       return;
     }
     setRefreshing(true);
+    // Whatever else is reading this repo reloads with it: the all-changes page
+    // shows the same list, from the same status call, and a refresh that moved
+    // only one of them would leave the two disagreeing side by side.
+    useAllChangesLinkStore.getState().requestRescan();
     try {
       await withMinDuration(
         (async () => {

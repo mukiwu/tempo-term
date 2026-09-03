@@ -69,7 +69,7 @@ describe("AllChangesTabContent", () => {
     useWorkspaceStore.setState({ rootPath: "/repo" });
     useDiffCommentStore.setState({ comments: [] });
     useSettingsStore.setState({ diffUnified: false });
-    useAllChangesLinkStore.setState({ file: null });
+    useAllChangesLinkStore.setState({ file: null, showing: null, rescan: 0 });
     vi.mocked(gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitDiff).mockResolvedValue("");
     vi.mocked(gitFileAtRev).mockResolvedValue("");

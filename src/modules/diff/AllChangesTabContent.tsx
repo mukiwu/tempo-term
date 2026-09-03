@@ -115,6 +115,12 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   const [files, setFiles] = useState<ChangedFiles | null>(null);
   const [error, setError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // The panel's refresh button asks for a rescan too: while this page has the
+  // pane, that button is the only refresh control on screen, and the panel's
+  // list and this one have to move together.
+  const rescan = useAllChangesLinkStore((s) => s.rescan);
+  // Either trigger moves this, and both only ever count up.
+  const reloadKey = refreshKey + rescan;
   const [sendMenu, setSendMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Which files have their editors up, which oversized ones the reader opened
@@ -234,7 +240,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
     return () => {
       cancelled = true;
     };
-  }, [repo, refreshKey]);
+  }, [repo, reloadKey]);
 
   const ordered = useMemo(
     () => (files ? [...files.staged, ...files.unstaged] : []),
@@ -683,7 +689,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
             onCounted={onCounted}
             onDraft={onDraft}
             narrow={narrow}
-            reloadKey={refreshKey}
+            reloadKey={reloadKey}
           />
         ))}
       </>

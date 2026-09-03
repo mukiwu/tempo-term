@@ -23,6 +23,15 @@ interface AllChangesLinkState {
    */
   showing: AllChangesFile | null;
   setShowing: (file: AllChangesFile | null) => void;
+
+  /**
+   * Panel to page: rescan the working tree. Bumped by the panel's refresh
+   * button, which is the only refresh control on screen while that page has
+   * the pane — the two are reading one list, so they reload together or they
+   * disagree side by side.
+   */
+  rescan: number;
+  requestRescan: () => void;
 }
 
 /**
@@ -42,6 +51,9 @@ export const useAllChangesLinkStore = create<AllChangesLinkState>((set, get) => 
     set({ file: null });
     return file;
   },
+
+  rescan: 0,
+  requestRescan: () => set((state) => ({ rescan: state.rescan + 1 })),
 
   showing: null,
   setShowing: (file) => {
