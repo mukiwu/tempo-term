@@ -16,6 +16,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changedLines, parseDiffStats, type FileDiffStats } from "./lib/parseDiffStats";
 import { agentTargetMenuItems } from "./lib/sendComments";
+import { changeAtViewportTop } from "./lib/changeAtTop";
 import { useUnsentCommentCount } from "./lib/useDiffComments";
 import {
   DiffFileSection,
@@ -369,6 +370,60 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   const [position, setPosition] = useState(0);
   const [pending, setPending] = useState<{ key: string; line: number } | null>(null);
 
+  /**
+   * Where a change sits inside the page's scrollable content. A mounted file
+   * can place its own line; one that is not up yet is placed at the top of its
+   * section, which is close enough to count by and always available.
+   */
+  const changeTop = useCallback(
+    (root: HTMLElement, index: number): number | null => {
+      const change = changes[index];
+      if (!change) {
+        return null;
+      }
+      const placed = handlesRef.current.get(change.key)?.lineOffset(root, change.line) ?? null;
+      if (placed !== null) {
+        return placed;
+      }
+      const element = elementsRef.current.get(change.key);
+      if (!element) {
+        return null;
+      }
+      return (
+        root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top
+      );
+    },
+    [changes],
+  );
+
+  // The counter follows the page rather than only the buttons: scrolling by
+  // hand, or being scrolled by a click in the Source Control panel, moves it
+  // too, so prev/next always carries on from what is actually on screen.
+  const scrollFrame = useRef(0);
+  const trackPosition = useCallback(() => {
+    if (scrollFrame.current) {
+      return;
+    }
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = 0;
+      const root = scrollRef.current;
+      if (!root) {
+        return;
+      }
+      const top = root.scrollTop + LANDING_GAP + 4;
+      setPosition(changeAtViewportTop(changes.length, top, (i) => changeTop(root, i)));
+    });
+  }, [changes.length, changeTop]);
+
+  useEffect(
+    () => () => {
+      if (scrollFrame.current) {
+        cancelAnimationFrame(scrollFrame.current);
+      }
+    },
+    [],
+  );
+
   // A rescan can leave the counter past the end.
   useEffect(() => {
     setPosition((prev) => Math.min(prev, changes.length));
@@ -565,7 +620,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       ) : empty ? (
         <p className="px-3 py-2 text-xs text-fg-subtle">{t("noChanges")}</p>
       ) : (
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+        <div ref={scrollRef} onScroll={trackPosition} className="min-h-0 flex-1 overflow-auto">
           {files && renderGroup(files.staged, t("stagedChanges"))}
           {files && renderGroup(files.unstaged, t("changes"))}
         </div>
