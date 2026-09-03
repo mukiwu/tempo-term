@@ -71,6 +71,8 @@ interface DiffFileSectionProps {
   onCounted: (key: string, counts: { added: number; deleted: number }) => void;
   /** A section with a comment half-typed is not unmounted under the reader. */
   onDraft: (key: string, open: boolean) => void;
+  /** The pane is too narrow to carry explanations as well as actions. */
+  narrow: boolean;
 }
 
 interface DiffDocs {
@@ -104,6 +106,7 @@ export function DiffFileSection({
   onHandle,
   onCounted,
   onDraft,
+  narrow,
 }: DiffFileSectionProps) {
   const { t } = useTranslation("sourceControl");
   const hostRef = useRef<HTMLDivElement>(null);
@@ -330,9 +333,10 @@ export function DiffFileSection({
         {/* The whole label opens and shuts the file, not just the chevron —
             same as the panel's folder rows (#381).
 
-            The file's own name leads and never truncates; the folder it sits
-            in trails it, quieter and the first to be cut when the pane is
-            narrow — reading a page of files is looking for the name. */}
+            The file's own name leads and the folder it sits in trails it,
+            quieter and shrinking four times faster — reading a page of files
+            is looking for the name, so the folder gives up its width first
+            and the name only truncates once there is nothing else to give. */}
         <button
           type="button"
           onClick={toggleOpen}
@@ -342,7 +346,7 @@ export function DiffFileSection({
               ? t("allChangesExpandFile", { name })
               : t("allChangesCollapseFile", { name })
           }
-          className="flex min-w-0 items-center gap-2 text-left text-fg-subtle hover:text-fg"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left text-fg-subtle hover:text-fg"
         >
           {closed ? (
             <ChevronRight size={13} className="shrink-0" />
@@ -350,24 +354,29 @@ export function DiffFileSection({
             <ChevronDown size={13} className="shrink-0" />
           )}
           <span
-            className={`w-3 shrink-0 text-center font-mono text-[11px] font-semibold ${
+            className={`w-3 shrink-0 text-center font-mono text-xs font-semibold ${
               STATUS_COLOR[file.status] ?? "text-fg-muted"
             }`}
           >
             {file.status}
           </span>
-          <span className="shrink-0 font-mono text-xs text-fg">{name}</span>
+          <span className="min-w-0 truncate font-mono text-xs text-fg">{name}</span>
           {dir && (
-            <span className="min-w-0 truncate font-mono text-[10.5px] text-fg-subtle">{dir}</span>
+            <span className="min-w-0 shrink-[4] truncate font-mono text-[11px] text-fg-subtle">
+              {dir}
+            </span>
           )}
         </button>
         {/* A folded file says why in its own row: there is no body under it
-            to put the reason in. */}
+            to put the reason in. On a narrow pane the reason gives way and the
+            button stays — half a sentence explains nothing. */}
         {folded && !collapsed && (
           <>
-            <span className="shrink-0 text-[11px] text-fg-subtle">
-              {t("allChangesFolded", { count: TRUNCATE_CHANGED_LINES })}
-            </span>
+            {!narrow && (
+              <span className="min-w-0 shrink-[4] truncate text-[11px] text-fg-subtle">
+                {t("allChangesFolded", { count: TRUNCATE_CHANGED_LINES })}
+              </span>
+            )}
             <button
               type="button"
               onClick={onExpand}

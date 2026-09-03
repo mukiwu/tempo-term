@@ -41,6 +41,14 @@ const MOUNT_MARGIN = "800px";
 /** Breathing room above a change that navigation lands on. */
 const LANDING_GAP = 8;
 
+/**
+ * Below this the header's numbers start costing the pane its own name, so the
+ * two that repeat elsewhere give way: the file count is already on the panel's
+ * Changes section, and "uncommitted" only matters next to a comparison that
+ * isn't. The +/- total has nowhere else to be read, so it stays.
+ */
+const NARROW_PANE = 600;
+
 interface FileCounts {
   added: number;
   deleted: number;
@@ -88,7 +96,9 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   const toggleUnified = useSettingsStore((s) => s.toggleDiffUnified);
   const unsent = useUnsentCommentCount();
 
+  const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
   const [repo, setRepo] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
   const [files, setFiles] = useState<ChangedFiles | null>(null);
@@ -109,6 +119,21 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   // Bumped when a section's editors come or go, so a jump waiting on one can
   // finish.
   const [handleEpoch, setHandleEpoch] = useState(0);
+
+  // A pane is not a window: it can be a quarter of one, so what fits in the
+  // header follows the pane's own width rather than any viewport breakpoint.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      setNarrow(width > 0 && width < NARROW_PANE);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Resolve the repo from the workspace root, the same way the Git Graph tab
   // does — this view is about the workspace, not about any one file.
@@ -423,6 +448,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
             onHandle={onHandle}
             onCounted={onCounted}
             onDraft={onDraft}
+            narrow={narrow}
           />
         ))}
       </>
@@ -432,14 +458,20 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   const empty = files !== null && ordered.length === 0;
 
   return (
-    <div className="relative flex h-full flex-col bg-bg">
+    <div ref={rootRef} className="relative flex h-full flex-col bg-bg">
       <PaneHeader
         left={
-          <div className="flex min-w-0 items-center gap-2">
+          // Clips its own content: the actions opposite never shrink, so
+          // anything that overruns here would be painted over them.
+          <div className="flex min-w-0 items-center gap-2 overflow-hidden">
             <span className="min-w-0 truncate text-xs text-fg-muted">{t("allChanges")}</span>
             {/* Named now so that comparing against another ref later reads as
                 a different thing rather than a redefinition of this one. */}
-            <span className="shrink-0 text-xs text-fg-subtle">{t("allChangesUncommitted")}</span>
+            {!narrow && (
+              <span className="shrink-0 text-xs text-fg-subtle">
+                {t("allChangesUncommitted")}
+              </span>
+            )}
           </div>
         }
         actions={
@@ -448,9 +480,11 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
               <span className="mr-1 flex shrink-0 items-center gap-2.5 font-mono text-[11px]">
                 <span className="text-success">+{totals.added}</span>
                 <span className="text-danger">−{totals.deleted}</span>
-                <span className="text-fg-subtle">
-                  {t("allChangesFileCount", { count: ordered.length })}
-                </span>
+                {!narrow && (
+                  <span className="text-fg-subtle">
+                    {t("allChangesFileCount", { count: ordered.length })}
+                  </span>
+                )}
               </span>
             )}
             {changes.length > 0 && (
