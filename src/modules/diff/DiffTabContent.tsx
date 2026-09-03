@@ -9,25 +9,15 @@ import {
   SquareTerminal,
   WrapText,
 } from "lucide-react";
-import {
-  getChunks,
-  MergeView,
-  uncollapseUnchanged,
-  unifiedMergeView,
-  type Chunk,
-} from "@codemirror/merge";
-import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView, lineNumbers } from "@codemirror/view";
+import { type Chunk } from "@codemirror/merge";
 import { PaneHeader } from "@/components/PaneHeader";
 import { Tooltip } from "@/components/Tooltip";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { gitFileAtRev, gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
-import { loadLanguageExtension } from "@/modules/editor/lib/language";
 import { attachProxyScrollbars, type ProxyScrollbarsHandle } from "@/lib/proxyScrollbar";
 import { linkHorizontalScroll } from "./lib/linkScroll";
 import { dirname, relativePath } from "@/modules/explorer/lib/paths";
-import { editorSyntaxTheme } from "@/themes/editorTheme";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore } from "@/stores/tabsStore";
@@ -37,12 +27,14 @@ import { useDiffCommentStore } from "./lib/diffCommentStore";
 import { formatCommentPrompt, reanchorComments } from "./lib/commentPrompt";
 import { collectAgentTargets, type AgentTarget } from "./lib/agentTargets";
 import {
-  clearExpandedEffect,
-  collapseBackExtension,
-  expandedRegions,
-} from "./lib/collapseBack";
+  buildDiffViews,
+  collapseDiffRegion,
+  destroyDiffViews,
+  diffChunks,
+  diffSideView,
+  type DiffViews,
+} from "./lib/diffViews";
 import {
-  diffCommentsExtension,
   setCommentsEffect,
   setDraftEffect,
   type CommentHandlers,
@@ -62,55 +54,6 @@ interface DiffDocs {
   left: string;
   right: string;
 }
-
-/**
- * Collapse long unchanged stretches into an expandable bar (VS Code style),
- * so a large file reads as just its changes.
- */
-const COLLAPSE_UNCHANGED = { margin: 3, minSize: 5 };
-
-/**
- * @codemirror/merge defaults to `{ scanLimit: 500 }`, which abandons the
- * precise diff once a differing range passes 4,000 characters and marks the
- * whole range replaced past 16,000. That measures the wrong thing: the
- * algorithm is O(N*D) in the number of differences, so a file with a few
- * changes spread far apart is cheap to diff exactly and yet trips a limit set
- * on range size alone. A 13,890-line resource file with 24 added lines came
- * out as the entire file deleted and added back, against git's own +24 -0.
- *
- * Measured on that file (450KB): the default marks 107,763 characters as
- * deleted in 0.8ms, where an unlimited scan is exact in 11ms.
- *
- * So the budget is time, not size. 1000ms sits above the worst case worth
- * being precise about -- 500 changed lines scattered through a large file,
- * exact in ~530ms -- and a shorter deadline is not only less precise but
- * slower, because every range that misses it falls back to a crude match that
- * costs more on a wide range than finishing the scan would have (300ms
- * measured at 1653ms, against 411ms unlimited). Two genuinely unrelated large
- * files, the case the scan limit is there for, give up at ~930ms.
- */
-const DIFF_CONFIG = { timeout: 1000 };
-
-/** The inline mode's merge extension, rebuilt whenever the bars are reset. */
-function unifiedExtension(original: string) {
-  return unifiedMergeView({
-    original,
-    gutter: true,
-    // The accept/reject controls write to the document; this tab only reads one.
-    mergeControls: false,
-    collapseUnchanged: COLLAPSE_UNCHANGED,
-    diffConfig: DIFF_CONFIG,
-  });
-}
-
-/**
- * The two ways the same comparison is rendered. Split keeps a document per
- * side; inline keeps only the new document and paints the old lines in as
- * widgets, so it has no "a" editor to talk to.
- */
-type DiffViews =
-  | { kind: "split"; merge: MergeView }
-  | { kind: "unified"; view: EditorView; collapse: Compartment };
 
 /**
  * Read-only side-by-side comparison of one file's uncommitted changes.
@@ -208,15 +151,8 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
 
   // The editor a comment side lives in, or null when the current mode has
   // no such editor (inline has no "a" document).
-  function sideView(side: "a" | "b"): EditorView | null {
-    const views = viewsRef.current;
-    if (!views) {
-      return null;
-    }
-    if (views.kind === "split") {
-      return side === "a" ? views.merge.a : views.merge.b;
-    }
-    return side === "b" ? views.view : null;
+  function sideView(side: "a" | "b") {
+    return diffSideView(viewsRef.current, side);
   }
 
   // Wire the comment extension's callbacks. Created per side inside the
@@ -266,118 +202,68 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     let scrollbars: ProxyScrollbarsHandle[] = [];
     let unlinkScroll: (() => void) | null = null;
     let cancelled = false;
-    // A failed grammar load falls back to plain text instead of leaving the
-    // tab stuck without a diff.
-    void loadLanguageExtension(path)
-      .catch(() => [])
-      .then((language) => {
-        if (cancelled) {
-          return;
-        }
-        const extensions = [
-          EditorState.readOnly.of(true),
-          EditorView.editable.of(false),
-          // Localizes the collapsed-region bar ("$ unchanged lines").
-          EditorState.phrases.of({ "$ unchanged lines": t("diffUnchangedLines") }),
-          editorSyntaxTheme(themeId),
-          // Reads code, so it follows the configured font size like an editor
-          // pane rather than pinning its own (the store's 13px default is the
-          // Git Graph diff view's type size, so nothing moves out of the box).
-          // Height and scrolling belong to the outer .cm-mergeView container
-          // (the merge package forces the editors themselves to auto height).
-          EditorView.theme({
-            "&": { fontSize: `${fontSize}px` },
-            ".cm-content, .cm-gutters, .cm-scroller": { fontFamily },
-          }),
-          lineNumbers(),
-          ...(wordWrap ? [EditorView.lineWrapping] : []),
-          ...language,
+    void buildDiffViews({
+      parent,
+      left: docs.left,
+      right: docs.right,
+      path,
+      themeId,
+      fontFamily,
+      fontSize,
+      wordWrap,
+      unified,
+      unchangedLines: t("diffUnchangedLines"),
+      foldLabels,
+      onCollapseRegion: collapseRegion,
+      commentHandlers,
+      cancelled: () => cancelled,
+    }).then((built) => {
+      if (!built) {
+        return;
+      }
+      views = built;
+      viewsRef.current = built;
+      if (built.kind === "unified") {
+        // Inline scrolls in the editor itself, so it owns both bars. "x"
+        // here would leave it with none at all in the vertical direction:
+        // attaching proxies hides the scroller's own bars on both axes.
+        scrollbars = [
+          attachProxyScrollbars({ scroller: built.view.scrollDOM, host: parent, axes: "xy" }),
         ];
-        // Inline has no reconfigure() of its own, so its merge extension goes
-        // in a compartment the fold button can re-init (see recollapse below).
-        const collapse = new Compartment();
-        if (unified) {
-          const view = new EditorView({
-            doc: docs.right,
-            parent,
-            extensions: [
-              // First in the list means leftmost gutter, out at the pane edge.
-              collapseBackExtension(foldLabels, (pos) =>
-                collapseRegion("b", pos),
-              ),
-              ...extensions,
-              diffCommentsExtension(commentHandlers("b")),
-              collapse.of(unifiedExtension(docs.left)),
-            ],
-          });
-          views = { kind: "unified", view, collapse };
-          // Inline scrolls in the editor itself, so it owns both bars. "x"
-          // here would leave it with none at all in the vertical direction:
-          // attaching proxies hides the scroller's own bars on both axes.
-          scrollbars = [
-            attachProxyScrollbars({ scroller: view.scrollDOM, host: parent, axes: "xy" }),
-          ];
-        } else {
-          const merge = new MergeView({
-            a: {
-              doc: docs.left,
-              extensions: [
-                collapseBackExtension(foldLabels, (pos) =>
-                  collapseRegion("a", pos),
-                ),
-                ...extensions,
-                diffCommentsExtension(commentHandlers("a")),
-              ],
-            },
-            b: {
-              doc: docs.right,
-              extensions: [
-                collapseBackExtension(foldLabels, (pos) =>
-                  collapseRegion("b", pos),
-                ),
-                ...extensions,
-                diffCommentsExtension(commentHandlers("b")),
-              ],
-            },
-            parent,
-            gutter: true,
-            collapseUnchanged: COLLAPSE_UNCHANGED,
-            diffConfig: DIFF_CONFIG,
-          });
-          views = { kind: "split", merge };
-          // Pin a bottom horizontal scrollbar per side (the native one lives at
-          // the bottom of the full-height document, out of sight). Vertical
-          // scrolling stays on the outer .cm-mergeView, so "x" only.
-          scrollbars = [
-            attachProxyScrollbars({ scroller: merge.a.scrollDOM, host: parent, axes: "x" }),
-            attachProxyScrollbars({ scroller: merge.b.scrollDOM, host: parent, axes: "x" }),
-          ];
-          unlinkScroll = linkHorizontalScroll(merge.a.scrollDOM, merge.b.scrollDOM);
+      } else {
+        // Pin a bottom horizontal scrollbar per side (the native one lives at
+        // the bottom of the full-height document, out of sight). Vertical
+        // scrolling stays on the outer .cm-mergeView, so "x" only.
+        const { a, b } = built.merge;
+        scrollbars = [
+          attachProxyScrollbars({ scroller: a.scrollDOM, host: parent, axes: "x" }),
+          attachProxyScrollbars({ scroller: b.scrollDOM, host: parent, axes: "x" }),
+        ];
+        unlinkScroll = linkHorizontalScroll(a.scrollDOM, b.scrollDOM);
+      }
+      // Re-anchor comments whose line shifted while the docs were reloading,
+      // then let the dispatch effect below render them into the new editors.
+      const store = useDiffCommentStore.getState();
+      for (const side of ["a", "b"] as const) {
+        const view = sideView(side);
+        if (!view) {
+          continue;
         }
-        viewsRef.current = views;
-        // Re-anchor comments whose line shifted while the docs were reloading,
-        // then let the dispatch effect below render them into the new editors.
-        const store = useDiffCommentStore.getState();
-        for (const side of ["a", "b"] as const) {
-          const view = sideView(side);
-          if (!view) {
-            continue;
-          }
-          const doc = view.state.doc.toString().split("\n");
-          const sideComments = store.comments.filter(
-            (c) => c.path === path && c.staged === staged && c.side === side,
-          );
-          store.reanchor(reanchorComments(sideComments, doc));
-        }
-        setViewEpoch((epoch) => epoch + 1);
-        // Land on the first change right away so the counter starts at 1/N and
-        // the change is pinned in view.
-        const chunks = currentChunks();
-        setChunkPos({ current: chunks.length > 0 ? 1 : 0, total: chunks.length });
-        if (chunks.length > 0) {
-          scrollToChunk(chunks[0]);
-        }
-      });
+        const doc = view.state.doc.toString().split("\n");
+        const sideComments = store.comments.filter(
+          (c) => c.path === path && c.staged === staged && c.side === side,
+        );
+        store.reanchor(reanchorComments(sideComments, doc));
+      }
+      setViewEpoch((epoch) => epoch + 1);
+      // Land on the first change right away so the counter starts at 1/N and
+      // the change is pinned in view.
+      const chunks = currentChunks();
+      setChunkPos({ current: chunks.length > 0 ? 1 : 0, total: chunks.length });
+      if (chunks.length > 0) {
+        scrollToChunk(chunks[0]);
+      }
+    });
     return () => {
       cancelled = true;
       viewsRef.current = null;
@@ -385,10 +271,8 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       for (const bar of scrollbars) {
         bar.destroy();
       }
-      if (views?.kind === "split") {
-        views.merge.destroy();
-      } else {
-        views?.view.destroy();
+      if (views) {
+        destroyDiffViews(views);
       }
     };
   }, [docs, path, themeId, fontFamily, fontSize, wordWrap, unified]);
@@ -453,52 +337,17 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     }));
   }
 
-  // Fold one expanded stretch back up. @codemirror/merge can only rebuild
-  // every bar at once, so the ones the reader still wants open are replayed
-  // on top of the rebuild. The editors themselves are left alone, which keeps
-  // the scroll position.
+  // Fold one expanded stretch back up; the replay of what stays open lives
+  // with the view builder, since both diff surfaces need it.
   function collapseRegion(side: "a" | "b", pos: number) {
     const views = viewsRef.current;
-    if (!views) {
-      return;
-    }
-    if (views.kind === "unified") {
-      const { view } = views;
-      const keep = view.state.field(expandedRegions).filter((p) => p !== pos);
-      view.dispatch({
-        effects: [
-          views.collapse.reconfigure(unifiedExtension(docs?.left ?? "")),
-          clearExpandedEffect.of(null),
-        ],
-      });
-      view.dispatch({ effects: keep.map((p) => uncollapseUnchanged.of(p)) });
-      return;
-    }
-    // Split: the same stretch sits at a different offset on each side, and
-    // the library expands both together — so the two lists line up one for
-    // one and the clicked entry is dropped by index, not by position.
-    const clicked = side === "a" ? views.merge.a : views.merge.b;
-    const index = clicked.state.field(expandedRegions).indexOf(pos);
-    if (index < 0) {
-      return;
-    }
-    views.merge.reconfigure({ collapseUnchanged: COLLAPSE_UNCHANGED, diffConfig: DIFF_CONFIG });
-    for (const view of [views.merge.a, views.merge.b]) {
-      const keep = view.state.field(expandedRegions).filter((_, i) => i !== index);
-      view.dispatch({
-        effects: [clearExpandedEffect.of(null), ...keep.map((p) => uncollapseUnchanged.of(p))],
-      });
+    if (views) {
+      collapseDiffRegion(views, side, pos, docs?.left ?? "");
     }
   }
 
-  // Both modes count the same chunks; only the state carrying them differs.
   function currentChunks(): readonly Chunk[] {
-    const views = viewsRef.current;
-    if (!views) {
-      return [];
-    }
-    const state = views.kind === "split" ? views.merge.b.state : views.view.state;
-    return getChunks(state)?.chunks ?? [];
+    return diffChunks(viewsRef.current);
   }
 
   // Pin a chunk to the top of whichever element actually scrolls: the outer
