@@ -509,7 +509,12 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       // *file* rather than the file owning the topmost change: a file with no
       // change to navigate to, folded or binary, is still one you can be
       // looking straight at.
-      const file = ordered[changeAtViewportTop(ordered.length, top, (i) => sectionTop(root, i)) - 1];
+      // Clamped, unlike the counter above: "before the first change" is a
+      // real place for a navigation cursor to be, but a reader sitting at the
+      // top of the page is looking at the first file, not at no file — and the
+      // panel would mark nothing until they scrolled past the group heading.
+      const at = changeAtViewportTop(ordered.length, top, (i) => sectionTop(root, i));
+      const file = ordered[Math.max(0, at - 1)];
       useAllChangesLinkStore
         .getState()
         .setShowing(file ? { rel: file.rel, staged: file.staged } : null);
