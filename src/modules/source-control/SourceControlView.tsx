@@ -6,6 +6,7 @@ import {
   Clipboard,
   ClipboardList,
   File,
+  FileDiff,
   Folder,
   FolderOpen,
   FolderTree,
@@ -49,6 +50,7 @@ import { BRANCH_COLORS } from "@/modules/git-graph/lib/branchColors";
 import { generateCommitMessage } from "./lib/aiCommit";
 import { withMinDuration } from "@/lib/withMinDuration";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { STATUS_COLOR } from "./lib/fileStatus";
 import { activeDiffPane, useTabsStore } from "@/stores/tabsStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { computeHistoryGraphLayout, HISTORY_GRAPH_GEOMETRY } from "./lib/commitGraph";
@@ -67,14 +69,6 @@ const HISTORY_HEIGHT_KEY = "tempoterm-sourcecontrol-history-height";
 const HISTORY_HEIGHT_DEFAULT = 200;
 const HISTORY_HEIGHT_MIN = 60;
 const HISTORY_HEIGHT_MAX = 600;
-
-const STATUS_COLOR: Record<string, string> = {
-  M: "text-warning",
-  A: "text-success",
-  D: "text-danger",
-  "?": "text-fg-subtle",
-  R: "text-accent",
-};
 
 /**
  * Trailing strip of per-row action buttons, revealed on hover.
@@ -701,6 +695,7 @@ export function SourceControlView() {
   const model = useChatStore((s) => s.model);
   const customBaseUrl = useChatStore((s) => s.customBaseUrl);
   const openDiffTab = useTabsStore((s) => s.openDiffTab);
+  const openAllChangesTab = useTabsStore((s) => s.openAllChangesTab);
   // Which row is "the one on screen": the diff in the foreground pane. Read as
   // two primitives — a selector returning a fresh {path, staged} object would
   // never compare equal, re-rendering the panel on every store change.
@@ -825,6 +820,16 @@ export function SourceControlView() {
           {t("title")}
         </span>
         <div className="flex items-center gap-0.5">
+          <Tooltip label={t("allChanges")}>
+            <button
+              type="button"
+              aria-label={t("allChanges")}
+              onClick={() => openAllChangesTab()}
+              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+            >
+              <FileDiff size={14} />
+            </button>
+          </Tooltip>
           <Tooltip label={viewMode === "flat" ? t("viewFolder") : t("viewFlat")}>
             <button
               type="button"

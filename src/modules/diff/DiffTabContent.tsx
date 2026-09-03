@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -6,13 +6,12 @@ import {
   Send,
   SquareSplitHorizontal,
   SquareSplitVertical,
-  SquareTerminal,
   WrapText,
 } from "lucide-react";
 import { type Chunk } from "@codemirror/merge";
 import { PaneHeader } from "@/components/PaneHeader";
 import { Tooltip } from "@/components/Tooltip";
-import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
+import { ContextMenu } from "@/components/ContextMenu";
 import { gitFileAtRev, gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { attachProxyScrollbars, type ProxyScrollbarsHandle } from "@/lib/proxyScrollbar";
@@ -20,25 +19,15 @@ import { linkHorizontalScroll } from "./lib/linkScroll";
 import { dirname, relativePath } from "@/modules/explorer/lib/paths";
 import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useTabsStore } from "@/stores/tabsStore";
-import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
-import { pasteToTerminal } from "@/modules/terminal/lib/terminalBus";
-import { useDiffCommentStore } from "./lib/diffCommentStore";
-import { formatCommentPrompt, reanchorComments } from "./lib/commentPrompt";
-import { collectAgentTargets, type AgentTarget } from "./lib/agentTargets";
 import {
   buildDiffViews,
   collapseDiffRegion,
   destroyDiffViews,
   diffChunks,
-  diffSideView,
   type DiffViews,
 } from "./lib/diffViews";
-import {
-  setCommentsEffect,
-  setDraftEffect,
-  type CommentHandlers,
-} from "./lib/diffCommentsExtension";
+import { agentTargetMenuItems } from "./lib/sendComments";
+import { useDiffComments, useUnsentCommentCount } from "./lib/useDiffComments";
 
 interface DiffTabContentProps {
   /** Absolute path of the file being compared. */
@@ -84,19 +73,9 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
   const [refreshKey, setRefreshKey] = useState(0);
   // 1-based position of the chunk the cursor sits in (0 = before the first).
   const [chunkPos, setChunkPos] = useState({ current: 0, total: 0 });
-  // Review comments for the agent: this file's render inside the editors, the
-  // unsent count across all files feeds the batch-send button.
-  const allComments = useDiffCommentStore((s) => s.comments);
-  const fileComments = useMemo(
-    () => allComments.filter((c) => c.path === path && c.staged === staged),
-    [allComments, path, staged],
-  );
-  const unsent = useMemo(() => allComments.filter((c) => !c.sent), [allComments]);
-  const [draft, setDraft] = useState<{ side: "a" | "b"; line: number } | null>(null);
-  // The draft's text lives in a ref (not state): the widget reads it back on
-  // rebuild — view recreation, draft moved to another line — so typed text is
-  // never lost, and keystrokes don't re-render the component.
-  const draftBodyRef = useRef("");
+  // Review comments for the agent live in a store shared with every diff
+  // surface; the unsent count across all files feeds the batch-send button.
+  const unsent = useUnsentCommentCount();
   // Bumped once the async MergeView construction finishes, so the dispatch
   // effect below re-runs against the fresh editors.
   const [viewEpoch, setViewEpoch] = useState(0);
@@ -149,49 +128,20 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     unfold: t("diffExpandUnchanged"),
   };
 
-  // The editor a comment side lives in, or null when the current mode has
-  // no such editor (inline has no "a" document).
-  function sideView(side: "a" | "b") {
-    return diffSideView(viewsRef.current, side);
-  }
-
-  // Wire the comment extension's callbacks. Created per side inside the
-  // view effect so the saved line text is read from that side's doc.
-  function commentHandlers(side: "a" | "b"): CommentHandlers {
-    return {
-      // Clicking another line moves the draft there, carrying its text —
-      // never silently saving and never discarding what was typed.
-      onAdd: (line) => {
-        useSettingsStore.getState().setDiffCommentHintSeen(true);
-        setDraft({ side, line });
-      },
-      onSave: (line, body) => {
-        const view = sideView(side);
-        const clamped = view ? Math.max(1, Math.min(line, view.state.doc.lines)) : line;
-        const lineText = view ? view.state.doc.line(clamped).text : "";
-        useDiffCommentStore.getState().add({ path, staged, side, line: clamped, lineText, body });
-        draftBodyRef.current = "";
-        setDraft(null);
-      },
-      onCancel: () => {
-        draftBodyRef.current = "";
-        setDraft(null);
-      },
-      onDelete: (id) => useDiffCommentStore.getState().remove(id),
-      getDraftBody: () => draftBodyRef.current,
-      onDraftChange: (text) => {
-        draftBodyRef.current = text;
-      },
-      labels: {
-        add: t("diffCommentAdd"),
-        placeholder: t("diffCommentPlaceholder"),
-        save: t("diffCommentSave"),
-        cancel: t("diffCommentCancel"),
-        delete: t("diffCommentDelete"),
-        sent: t("diffCommentSent"),
-      },
-    };
-  }
+  const { commentHandlers, reanchorInto } = useDiffComments({
+    path,
+    staged,
+    viewsRef,
+    viewEpoch,
+    labels: {
+      add: t("diffCommentAdd"),
+      placeholder: t("diffCommentPlaceholder"),
+      save: t("diffCommentSave"),
+      cancel: t("diffCommentCancel"),
+      delete: t("diffCommentDelete"),
+      sent: t("diffCommentSent"),
+    },
+  });
 
   useEffect(() => {
     const parent = containerRef.current;
@@ -241,20 +191,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
         ];
         unlinkScroll = linkHorizontalScroll(a.scrollDOM, b.scrollDOM);
       }
-      // Re-anchor comments whose line shifted while the docs were reloading,
-      // then let the dispatch effect below render them into the new editors.
-      const store = useDiffCommentStore.getState();
-      for (const side of ["a", "b"] as const) {
-        const view = sideView(side);
-        if (!view) {
-          continue;
-        }
-        const doc = view.state.doc.toString().split("\n");
-        const sideComments = store.comments.filter(
-          (c) => c.path === path && c.staged === staged && c.side === side,
-        );
-        store.reanchor(reanchorComments(sideComments, doc));
-      }
+      reanchorInto(built);
       setViewEpoch((epoch) => epoch + 1);
       // Land on the first change right away so the counter starts at 1/N and
       // the change is pinned in view.
@@ -277,65 +214,6 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     };
   }, [docs, path, themeId, fontFamily, fontSize, wordWrap, unified]);
 
-  // Push the current comment set and draft into both editors whenever either
-  // changes (or the MergeView was rebuilt). The extension renders from these
-  // effects; the store stays the single source of truth.
-  useEffect(() => {
-    for (const side of ["a", "b"] as const) {
-      const view = sideView(side);
-      if (!view) {
-        continue;
-      }
-      view.dispatch({
-        effects: [
-          setCommentsEffect.of(
-            fileComments
-              .filter((c) => c.side === side)
-              .map(({ id, line, body, sent }) => ({ id, line, body, sent })),
-          ),
-          setDraftEffect.of(draft && draft.side === side ? draft.line : null),
-        ],
-      });
-    }
-  }, [fileComments, draft, viewEpoch]);
-
-  // Batch-send every unsent comment (across files) to the picked agent pane.
-  // The prompt is pasted, not submitted: bracketed paste puts it in the
-  // agent's input box so the user reviews and presses Enter there.
-  function sendToAgent(target: AgentTarget) {
-    const batch = useDiffCommentStore.getState().comments.filter((c) => !c.sent);
-    if (batch.length === 0) {
-      return;
-    }
-    pasteToTerminal(target.leafId, formatCommentPrompt(batch));
-    useDiffCommentStore.getState().markSent(batch.map((c) => c.id));
-    useTabsStore.getState().setActive(target.tabId);
-  }
-
-  function sendMenuItems(): ContextMenuItem[] {
-    const targets = collectAgentTargets(
-      useTabsStore.getState().tabs,
-      useSessionStatusStore.getState().statuses,
-      useSessionStatusStore.getState().agents,
-    );
-    if (targets.length === 0) {
-      return [
-        {
-          id: "no-agent",
-          label: t("diffNoAgentSession"),
-          icon: SquareTerminal,
-          disabled: true,
-          onSelect: () => {},
-        },
-      ];
-    }
-    return targets.map((target) => ({
-      id: target.leafId,
-      label: target.label,
-      icon: SquareTerminal,
-      onSelect: () => sendToAgent(target),
-    }));
-  }
 
   // Fold one expanded stretch back up; the replay of what stays open lives
   // with the view builder, since both diff surfaces need it.
@@ -469,7 +347,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
               <button
                 type="button"
                 aria-label={t("diffSendToAgent")}
-                disabled={unsent.length === 0}
+                disabled={unsent === 0}
                 onClick={(event) => {
                   setHintSeen(true);
                   setSendMenu({ x: event.clientX, y: event.clientY });
@@ -477,8 +355,8 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
                 className="flex items-center gap-1 rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
               >
                 <Send size={14} />
-                {unsent.length > 0 && (
-                  <span className="font-mono text-[11px] leading-none">{unsent.length}</span>
+                {unsent > 0 && (
+                  <span className="font-mono text-[11px] leading-none">{unsent}</span>
                 )}
               </button>
             </Tooltip>
@@ -525,7 +403,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
         <ContextMenu
           x={sendMenu.x}
           y={sendMenu.y}
-          items={sendMenuItems()}
+          items={agentTargetMenuItems(t("diffNoAgentSession"))}
           onClose={() => setSendMenu(null)}
         />
       )}

@@ -517,6 +517,16 @@ textarea:focus-visible,
   color: var(--color-success);
 }
 
+/* One file inside the all-changes view. It grows to its whole comparison and
+   lets the page scroll past it, instead of scrolling inside its own box the
+   way the single-file tab does — a page of files each with its own scrollbar
+   would be unreadable. */
+.diff-flow .cm-mergeView {
+  height: auto;
+  overflow-y: visible;
+}
+.diff-flow.diff-inline-view .cm-editor { max-height: none; }
+
 .note-md strong { font-weight: 700; }
 .note-md em { font-style: italic; }
 .note-md blockquote {

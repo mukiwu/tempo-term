@@ -39,6 +39,7 @@ export type PaneContent =
   | { kind: "preview"; url: string }
   | { kind: "media"; path: string }
   | { kind: "git-graph" }
+  | { kind: "all-changes" }
   | { kind: "diff"; path: string; staged: boolean }
   | { kind: "sessions" }
   | { kind: "launcher" };

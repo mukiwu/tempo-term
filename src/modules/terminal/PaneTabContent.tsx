@@ -34,6 +34,11 @@ const GitGraphTabContent = lazy(() =>
 const DiffTabContent = lazy(() =>
   import("@/modules/diff/DiffTabContent").then((m) => ({ default: m.DiffTabContent })),
 );
+const AllChangesTabContent = lazy(() =>
+  import("@/modules/diff/AllChangesTabContent").then((m) => ({
+    default: m.AllChangesTabContent,
+  })),
+);
 const SessionsTabContent = lazy(() =>
   import("@/modules/sessions/SessionsTabContent").then((m) => ({
     default: m.SessionsTabContent,
@@ -224,7 +229,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
   // sessions pane is a read-only browser with no drop action, so it accepts
   // nothing.
   function canDrop(content: PaneContent, entry: DraggedEntry): boolean {
-    if (content.kind === "diff" || content.kind === "sessions") {
+    if (content.kind === "diff" || content.kind === "sessions" || content.kind === "all-changes") {
       return false;
     }
     if (
@@ -556,6 +561,11 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   <DiffTabContent
                     path={pane.content.path}
                     staged={pane.content.staged}
+                    showClose={multiple}
+                    onClose={() => requestClosePane(pane.id)}
+                  />
+                ) : pane.content.kind === "all-changes" ? (
+                  <AllChangesTabContent
                     showClose={multiple}
                     onClose={() => requestClosePane(pane.id)}
                   />

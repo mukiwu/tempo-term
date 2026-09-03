@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   FileCode,
+  FileDiff,
   FileText,
   GitBranch,
   GitCompare,
@@ -66,6 +67,8 @@ function tabIcon(kind: Tab["kind"]): LucideIcon {
       return Image;
     case "git-graph":
       return GitBranch;
+    case "all-changes":
+      return FileDiff;
     case "diff":
       return GitCompare;
     case "sessions":
