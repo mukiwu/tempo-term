@@ -367,24 +367,14 @@ export function DiffFileSection({
             </span>
           )}
         </button>
-        {/* A folded file says why in its own row: there is no body under it
-            to put the reason in. On a narrow pane the reason gives way and the
-            button stays — half a sentence explains nothing. */}
-        {folded && !collapsed && (
-          <>
-            {!narrow && (
-              <span className="min-w-0 shrink-[4] truncate text-[11px] text-fg-subtle">
-                {t("allChangesFolded", { count: TRUNCATE_CHANGED_LINES })}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={onExpand}
-              className="shrink-0 rounded border border-border-strong px-2 py-0.5 text-[11px] text-fg-muted transition-colors hover:text-fg"
-            >
-              {t("allChangesShowFull")}
-            </button>
-          </>
+        {/* A file the reader did not shut says why it is shut anyway. It
+            needs no button of its own: the header opens it, the same as every
+            other file. On a narrow pane the reason steps out rather than
+            truncate — half a sentence explains nothing. */}
+        {folded && !collapsed && !narrow && (
+          <span className="min-w-0 shrink-[4] truncate text-[11px] text-fg-subtle">
+            {t("allChangesFolded", { count: TRUNCATE_CHANGED_LINES })}
+          </span>
         )}
         {added !== null && deleted !== null && !binary && (
           <span className="ml-auto flex shrink-0 gap-2.5 font-mono text-[11px]">

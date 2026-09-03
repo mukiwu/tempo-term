@@ -174,9 +174,12 @@ describe("AllChangesTabContent", () => {
     expect(container.querySelector(".cm-mergeView")).toBeNull();
     expect(gitFileAtRev).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "allChangesShowFull" }));
+    // It carries no button of its own: the header opens it, like any file.
+    fireEvent.click(screen.getByRole("button", { name: "allChangesExpandFile" }));
 
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
+    // And the reason goes with the fold — the file is no longer shut by a rule.
+    expect(screen.queryByText("allChangesFolded:500")).toBeNull();
   });
 
   it("shuts a file the reader has finished with, and its changes with it", async () => {
@@ -204,39 +207,6 @@ describe("AllChangesTabContent", () => {
     expect(screen.getByText("a.ts")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "allChangesExpandFile" }));
-    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
-  });
-
-  it("opens an oversized file from its own header, not just the button", async () => {
-    const huge = Array.from({ length: 600 }, (_, i) => `+line ${i}`);
-    vi.mocked(gitStatus).mockResolvedValue({
-      branch: "main",
-      staged: [],
-      unstaged: [{ path: "pnpm-lock.yaml", staged: false, status: "M" }],
-    });
-    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
-      staged
-        ? ""
-        : [
-            "diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml",
-            "--- a/pnpm-lock.yaml",
-            "+++ b/pnpm-lock.yaml",
-            "@@ -1,1 +1,601 @@",
-            " keep",
-            ...huge,
-            "",
-          ].join("\n"),
-    );
-
-    const { container } = render(<AllChangesTabContent />);
-
-    // A folded file reads as shut, so its header opens it the same way the
-    // explicit button does.
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "allChangesExpandFile" })).toBeInTheDocument(),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "allChangesExpandFile" }));
-
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
   });
 

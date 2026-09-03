@@ -26,7 +26,6 @@
   "allChangesFileCount": "{{count}} 個檔案",
   "allChangesBinary": "二進位檔，不顯示內容",
   "allChangesFolded": "超過 {{count}} 行，已收合",
-  "allChangesShowFull": "展開完整 diff",
   "allChangesExpandFile": "展開 {{name}}",
   "allChangesCollapseFile": "收合 {{name}}",
   "history": "近期提交",

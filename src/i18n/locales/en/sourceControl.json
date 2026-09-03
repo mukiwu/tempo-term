@@ -26,7 +26,6 @@
   "allChangesFileCount": "{{count}} files",
   "allChangesBinary": "Binary file — not shown",
   "allChangesFolded": "Over {{count}} changed lines, folded",
-  "allChangesShowFull": "Show full diff",
   "allChangesExpandFile": "Expand {{name}}",
   "allChangesCollapseFile": "Collapse {{name}}",
   "history": "Recent commits",
