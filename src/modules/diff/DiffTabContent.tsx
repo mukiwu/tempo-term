@@ -102,6 +102,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
   const containerRef = useRef<HTMLDivElement>(null);
   const viewsRef = useRef<DiffViews | null>(null);
   const fontFamily = useFontStore(selectTerminalFontFamily);
+  const fontSize = useFontStore((s) => s.fontSize);
   const themeId = useSettingsStore((s) => s.themeId);
   // Shares the editor's word-wrap setting so both surfaces toggle together.
   const wordWrap = useSettingsStore((s) => s.wordWrap);
@@ -256,11 +257,13 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
           // Localizes the collapsed-region bar ("$ unchanged lines").
           EditorState.phrases.of({ "$ unchanged lines": t("diffUnchangedLines") }),
           editorSyntaxTheme(themeId),
-          // Fixed 13px to match the Git Graph diff view's type size. Height and
-          // scrolling belong to the outer .cm-mergeView container (the merge
-          // package forces the editors themselves to auto height).
+          // Reads code, so it follows the configured font size like an editor
+          // pane rather than pinning its own (the store's 13px default is the
+          // Git Graph diff view's type size, so nothing moves out of the box).
+          // Height and scrolling belong to the outer .cm-mergeView container
+          // (the merge package forces the editors themselves to auto height).
           EditorView.theme({
-            "&": { fontSize: "13px" },
+            "&": { fontSize: `${fontSize}px` },
             ".cm-content, .cm-gutters, .cm-scroller": { fontFamily },
           }),
           lineNumbers(),
@@ -364,7 +367,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
         views?.view.destroy();
       }
     };
-  }, [docs, path, themeId, fontFamily, wordWrap, unified]);
+  }, [docs, path, themeId, fontFamily, fontSize, wordWrap, unified]);
 
   // Push the current comment set and draft into both editors whenever either
   // changes (or the MergeView was rebuilt). The extension renders from these

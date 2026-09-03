@@ -29,6 +29,7 @@ import { useDiffCommentStore } from "./lib/diffCommentStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { DEFAULT_FONT_SIZE, useFontStore } from "@/stores/fontStore";
 import { leaf } from "@/modules/terminal/lib/terminalLayout";
 
 describe("DiffTabContent", () => {
@@ -39,6 +40,7 @@ describe("DiffTabContent", () => {
     useSessionStatusStore.setState({ statuses: {}, agents: {}, sessionIds: {} });
     // Most tests are not about the one-time hint; dedicated cases flip it back.
     useSettingsStore.setState({ diffCommentHintSeen: true, diffUnified: false });
+    useFontStore.setState({ fontSize: DEFAULT_FONT_SIZE });
   });
 
   it("compares index vs working tree for an unstaged diff", async () => {
@@ -106,6 +108,21 @@ describe("DiffTabContent", () => {
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeNull());
     expect(container.querySelector(".diff-inline-view .cm-editor")).toBeTruthy();
     expect(container.querySelector(".cm-deletedChunk")).toBeTruthy();
+  });
+
+  it("sets the diff type size from the font setting", async () => {
+    useFontStore.setState({ fontSize: 20 });
+    vi.mocked(gitFileAtRev).mockResolvedValue("old line\n");
+    vi.mocked(fsReadFile).mockResolvedValue("new line\n");
+
+    const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
+
+    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
+    // The size lands in the theme CodeMirror injects, not on the elements.
+    const css = Array.from(document.querySelectorAll("style"))
+      .map((tag) => tag.textContent ?? "")
+      .join("");
+    expect(css).toContain("font-size: 20px");
   });
 
   it("folds expanded unchanged regions back up", async () => {
