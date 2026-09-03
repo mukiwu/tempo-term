@@ -402,8 +402,14 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   // too, so prev/next always carries on from what is actually on screen.
   const scrollFrame = useRef(0);
   const trackPosition = useCallback(() => {
+    // Cancel and re-schedule, rather than skipping while one is pending. A
+    // frame that never runs -- requestAnimationFrame simply does not fire for
+    // a minimised or hidden window -- would otherwise leave the pending id in
+    // the ref and every later call returning on that first line, leaving the
+    // counter dead until a reload. Still at most one frame in flight, but it
+    // cannot wedge.
     if (scrollFrame.current) {
-      return;
+      cancelAnimationFrame(scrollFrame.current);
     }
     scrollFrame.current = requestAnimationFrame(() => {
       scrollFrame.current = 0;
@@ -415,6 +421,19 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       setPosition(changeAtViewportTop(changes.length, top, (i) => changeTop(root, i)));
     });
   }, [changes.length, changeTop]);
+
+  // Coming back to a window that was hidden brings no scroll event with it,
+  // and no frame ran while it was away to take a reading, so one is taken on
+  // the way in.
+  useEffect(() => {
+    const track = () => trackPosition();
+    window.addEventListener("focus", track);
+    document.addEventListener("visibilitychange", track);
+    return () => {
+      window.removeEventListener("focus", track);
+      document.removeEventListener("visibilitychange", track);
+    };
+  }, [trackPosition]);
 
   useEffect(
     () => () => {

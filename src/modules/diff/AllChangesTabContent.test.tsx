@@ -38,6 +38,14 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useDiffCommentStore } from "./lib/diffCommentStore";
 
+/**
+ * The n/N counter, whichever numbers it holds. Its left-hand number is read
+ * off the scroll position and jsdom has no layout to have one, so tests assert
+ * the total and the stepping rather than an absolute position.
+ */
+const counter = (total: number) =>
+  screen.getByText((text) => /^\d+\/\d+$/.test(text) && text.endsWith(`/${total}`));
+
 /** A one-hunk diff for `path`, three lines added and one taken away. */
 function diffFor(path: string) {
   return [
@@ -195,14 +203,15 @@ describe("AllChangesTabContent", () => {
     const { container } = render(<AllChangesTabContent />);
 
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
-    expect(screen.getByText("0/1")).toBeInTheDocument();
+    expect(counter(1)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "allChangesCollapseFile" }));
 
     // The editors go, and so does the file's hunk in the page's navigation —
     // there is nothing on screen left to land on.
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeNull());
-    expect(screen.queryByText("0/1")).toBeNull();
+    // Nothing left to navigate, so the counter itself is gone.
+    expect(screen.queryByText(/^\d+\/1$/)).toBeNull();
     // The header still reads, counts and all.
     expect(screen.getByText("a.ts")).toBeInTheDocument();
 
@@ -298,9 +307,10 @@ describe("AllChangesTabContent", () => {
 
     // Two hunks in the first file and one in the second: the navigation walks
     // the page, not a file.
-    await waitFor(() => expect(screen.getByText("0/3")).toBeInTheDocument());
+    await waitFor(() => expect(counter(3)).toBeInTheDocument());
+    const before = Number(counter(3).textContent?.split("/")[0]);
     fireEvent.click(screen.getByRole("button", { name: "diffNextChange" }));
-    expect(screen.getByText("1/3")).toBeInTheDocument();
+    expect(counter(3).textContent).toBe(`${Math.min(before + 1, 3)}/3`);
   });
 
   it("says so when the workspace is not a repository", async () => {
