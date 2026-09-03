@@ -51,7 +51,8 @@ import { generateCommitMessage } from "./lib/aiCommit";
 import { withMinDuration } from "@/lib/withMinDuration";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { STATUS_COLOR } from "./lib/fileStatus";
-import { activeDiffPane, useTabsStore } from "@/stores/tabsStore";
+import { activeDiffPane, allChangesPaneActive, useTabsStore } from "@/stores/tabsStore";
+import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { computeHistoryGraphLayout, HISTORY_GRAPH_GEOMETRY } from "./lib/commitGraph";
 
@@ -153,7 +154,10 @@ function StatusRow({
       label: t("menuShowDiff"),
       icon: GitCompare,
       group: 0,
-      onSelect: () => onOpen(file.path),
+      // Deliberately not onOpen: a left click follows the all-changes page
+      // when that is in front, and this is the way to the single-file tab
+      // that stays put. Same direct store call as the two items above.
+      onSelect: () => useTabsStore.getState().openDiffTab(absPath, file.staged),
     },
     {
       id: "stageAction",
@@ -695,7 +699,10 @@ export function SourceControlView() {
   const model = useChatStore((s) => s.model);
   const customBaseUrl = useChatStore((s) => s.customBaseUrl);
   const openDiffTab = useTabsStore((s) => s.openDiffTab);
-  const openAllChangesTab = useTabsStore((s) => s.openAllChangesTab);
+  const toggleAllChangesTab = useTabsStore((s) => s.toggleAllChangesTab);
+  // While the all-changes page is the pane in front, this panel is its table
+  // of contents rather than a way of opening more tabs.
+  const allChangesInFront = useTabsStore((s) => allChangesPaneActive(s.tabs, s.activeId));
   // Which row is "the one on screen": the diff in the foreground pane. Read as
   // two primitives — a selector returning a fresh {path, staged} object would
   // never compare equal, re-rendering the panel on every store change.
@@ -710,11 +717,19 @@ export function SourceControlView() {
   // absolute path so it can resolve the repo on its own.
   const openDiff = useCallback(
     (path: string, staged: boolean) => {
+      // With the all-changes page in front, a row scrolls it to that file
+      // instead of opening a tab per file, which is the whole point of that
+      // page. The right-click menu's "Show Diff" still opens the single-file
+      // tab, so nothing is only reachable one way.
+      if (allChangesInFront) {
+        useAllChangesLinkStore.getState().request({ rel: path, staged });
+        return;
+      }
       if (repoPath) {
         openDiffTab(`${repoPath}/${path}`, staged);
       }
     },
-    [repoPath, openDiffTab],
+    [allChangesInFront, repoPath, openDiffTab],
   );
 
   const refresh = useCallback(async () => {
@@ -824,7 +839,7 @@ export function SourceControlView() {
             <button
               type="button"
               aria-label={t("allChanges")}
-              onClick={() => openAllChangesTab()}
+              onClick={() => toggleAllChangesTab()}
               className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
             >
               <FileDiff size={14} />
@@ -861,60 +876,68 @@ export function SourceControlView() {
         </div>
       )}
 
-      <div className="px-3 pb-3">
-        <div className="relative">
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder={t("commitPlaceholder")}
-            rows={2}
-            className="w-full resize-none rounded-md border border-border bg-bg px-2 py-1.5 pr-9 text-sm text-fg outline-none focus:border-accent"
-          />
-          <Tooltip label={t("aiGenerate")} className="absolute right-1.5 top-1.5">
+      {/* The commit box steps out while the all-changes page is in front:
+          nothing is committed from there, and the message box and buttons
+          together take a fixed ~76px off the file list that page is being
+          read against. It comes straight back when the page does not have
+          the pane. Nothing else about the panel moves -- no section is
+          collapsed for the reader (#380), no control is relocated. */}
+      {!allChangesInFront && (
+        <div className="px-3 pb-3">
+          <div className="relative">
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder={t("commitPlaceholder")}
+              rows={2}
+              className="w-full resize-none rounded-md border border-border bg-bg px-2 py-1.5 pr-9 text-sm text-fg outline-none focus:border-accent"
+            />
+            <Tooltip label={t("aiGenerate")} className="absolute right-1.5 top-1.5">
+              <button
+                type="button"
+                disabled={!hasStaged || generating}
+                onClick={() => void aiGenerate()}
+                aria-label={t("aiGenerate")}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {generating ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <Sparkles size={15} />
+                )}
+              </button>
+            </Tooltip>
+          </div>
+          <div className="mt-2 flex gap-2">
             <button
               type="button"
-              disabled={!hasStaged || generating}
-              onClick={() => void aiGenerate()}
-              aria-label={t("aiGenerate")}
-              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!canCommit}
+              onClick={() =>
+                void withRepo(async (repo) => {
+                  await gitCommit(repo, message);
+                  setMessage("");
+                })
+              }
+              className="flex-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {generating ? (
-                <Loader2 size={15} className="animate-spin" />
-              ) : (
-                <Sparkles size={15} />
-              )}
+              {t("commit")}
             </button>
-          </Tooltip>
+            <button
+              type="button"
+              disabled={pushing}
+              onClick={() => void doPush()}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg disabled:opacity-40"
+            >
+              {pushing ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <UploadCloud size={14} />
+              )}
+              {t("push")}
+            </button>
+          </div>
         </div>
-        <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            disabled={!canCommit}
-            onClick={() =>
-              void withRepo(async (repo) => {
-                await gitCommit(repo, message);
-                setMessage("");
-              })
-            }
-            className="flex-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {t("commit")}
-          </button>
-          <button
-            type="button"
-            disabled={pushing}
-            onClick={() => void doPush()}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg disabled:opacity-40"
-          >
-            {pushing ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <UploadCloud size={14} />
-            )}
-            {t("push")}
-          </button>
-        </div>
-      </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">

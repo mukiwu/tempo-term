@@ -37,6 +37,7 @@ import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useDiffCommentStore } from "./lib/diffCommentStore";
+import { useAllChangesLinkStore } from "./lib/allChangesLinkStore";
 
 /**
  * The n/N counter, whichever numbers it holds. Its left-hand number is read
@@ -68,6 +69,7 @@ describe("AllChangesTabContent", () => {
     useWorkspaceStore.setState({ rootPath: "/repo" });
     useDiffCommentStore.setState({ comments: [] });
     useSettingsStore.setState({ diffUnified: false });
+    useAllChangesLinkStore.setState({ file: null });
     vi.mocked(gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitDiff).mockResolvedValue("");
     vi.mocked(gitFileAtRev).mockResolvedValue("");
@@ -412,5 +414,53 @@ describe("AllChangesTabContent", () => {
     render(<AllChangesTabContent />);
 
     await waitFor(() => expect(screen.getByText("noChanges")).toBeInTheDocument());
+  });
+
+  it("opens a file the panel asks for, and clears the request", async () => {
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
+    });
+    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
+      staged ? "" : diffFor("src/a.ts"),
+    );
+
+    const { container } = render(<AllChangesTabContent />);
+    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "allChangesCollapseFile" }));
+    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeNull());
+
+    // Clicking that row in the panel means "show me this file", so a file the
+    // reader had shut comes back rather than landing them on a bare header.
+    act(() => {
+      useAllChangesLinkStore.getState().request({ rel: "src/a.ts", staged: false });
+    });
+
+    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
+    expect(useAllChangesLinkStore.getState().file).toBeNull();
+  });
+
+  it("drops a request for a file it does not carry", async () => {
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
+    });
+    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
+      staged ? "" : diffFor("src/a.ts"),
+    );
+
+    const { container } = render(<AllChangesTabContent />);
+    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
+
+    act(() => {
+      useAllChangesLinkStore.getState().request({ rel: "src/gone.ts", staged: false });
+    });
+
+    // Dropped rather than left pending, or it would fire at some unrelated
+    // moment after the next rescan.
+    await waitFor(() => expect(useAllChangesLinkStore.getState().file).toBeNull());
   });
 });

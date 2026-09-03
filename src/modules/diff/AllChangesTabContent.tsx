@@ -18,6 +18,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { changedLines, parseDiffStats, type FileDiffStats } from "./lib/parseDiffStats";
 import { agentTargetMenuItems } from "./lib/sendComments";
 import { changeAtViewportTop } from "./lib/changeAtTop";
+import { useAllChangesLinkStore } from "./lib/allChangesLinkStore";
 import { useUnsentCommentCount } from "./lib/useDiffComments";
 import {
   DiffFileSection,
@@ -61,6 +62,14 @@ interface ChangedFiles {
   unstaged: ChangedFile[];
 }
 
+/**
+ * A file staged and then edited again appears in both sections, as two
+ * independent comparisons, so the side is part of its identity.
+ */
+export function sectionKey(rel: string, staged: boolean): string {
+  return `${staged ? "s" : "w"}:${rel}`;
+}
+
 function toChangedFile(
   repo: string,
   file: { path: string; status: string },
@@ -68,7 +77,7 @@ function toChangedFile(
   stats: Map<string, FileDiffStats>,
 ): ChangedFile {
   return {
-    key: `${staged ? "s" : "w"}:${file.path}`,
+    key: sectionKey(file.path, staged),
     rel: file.path,
     path: `${repo}/${file.path}`,
     staged,
@@ -524,6 +533,50 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
     }
     setPending(target);
   }, []);
+
+  /**
+   * Put a file's header at the top of the page. Used by the Source Control
+   * panel: while this page is in front, clicking a row scrolls here instead of
+   * opening a diff tab of its own.
+   */
+  const scrollToSection = useCallback((key: string) => {
+    const root = scrollRef.current;
+    const element = elementsRef.current.get(key);
+    if (!root || !element) {
+      return false;
+    }
+    setMounted((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    // A file the reader had shut opens again: they just asked for it, and
+    // landing on a bare header reads as nothing having happened. A file folded
+    // for its size keeps its own control — that one is about weight, not about
+    // having been read.
+    setCollapsed((prev) => {
+      if (!prev.has(key)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    root.scrollTop = Math.max(
+      0,
+      root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top,
+    );
+    return true;
+  }, []);
+
+  const requested = useAllChangesLinkStore((s) => s.file);
+  useEffect(() => {
+    // Wait for the scan: there are no sections to scroll to before it lands.
+    if (!requested || ordered.length === 0) {
+      return;
+    }
+    scrollToSection(sectionKey(requested.rel, requested.staged));
+    // Consumed either way. A row for a file this page does not carry (a stale
+    // click, or one raced with a rescan) is dropped rather than left to fire
+    // at some unrelated moment later.
+    useAllChangesLinkStore.getState().consume();
+  }, [requested, ordered, scrollToSection]);
 
   useEffect(() => {
     if (!pending) {

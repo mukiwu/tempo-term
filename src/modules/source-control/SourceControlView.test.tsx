@@ -25,6 +25,7 @@ import * as gitBridge from "./lib/gitBridge";
 import type { GitStatus } from "./lib/gitBridge";
 import { useTabsStore } from "@/stores/tabsStore";
 import { usePendingGraphSelectionStore } from "@/modules/git-graph/lib/pendingGraphSelectionStore";
+import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
 
 const STATUS_ONE_MODIFIED: GitStatus = {
   branch: "main",
@@ -41,6 +42,7 @@ describe("SourceControlView row interactions", () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
     useWorkspaceStore.getState().setRoot("/repo");
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+    useAllChangesLinkStore.setState({ file: null });
   });
 
   it("opens the all-changes tab from the panel toolbar", async () => {
@@ -50,6 +52,66 @@ describe("SourceControlView row interactions", () => {
     const tabs = useTabsStore.getState().tabs;
     expect(tabs).toHaveLength(1);
     expect(tabs[0].kind).toBe("all-changes");
+  });
+
+  it("shuts the all-changes tab from the same button that opened it", async () => {
+    render(<SourceControlView />);
+    const button = await screen.findByRole("button", { name: "All Changes" });
+
+    fireEvent.click(button);
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+
+    // In front already, so the button is the way out too.
+    fireEvent.click(button);
+    expect(useTabsStore.getState().tabs).toHaveLength(0);
+  });
+
+  it("scrolls the all-changes page to a row instead of opening a tab", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+
+    fireEvent.click(await screen.findByText("src/a.ts"));
+
+    // No second tab: the page in front is asked to scroll to the file.
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(useAllChangesLinkStore.getState().file).toEqual({
+      rel: "src/a.ts",
+      staged: false,
+    });
+  });
+
+  it("keeps the right-click route to a single-file diff tab", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+
+    fireEvent.contextMenu(await screen.findByText("src/a.ts"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Show Diff" }));
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs.map((t) => t.kind)).toEqual(["all-changes", "diff"]);
+    expect(useAllChangesLinkStore.getState().file).toBeNull();
+  });
+
+  it("stands the commit box down while the all-changes page is in front", async () => {
+    render(<SourceControlView />);
+    // Wait for the status to land, so the branch row and the list are up.
+    await screen.findByText("src/a.ts");
+    expect(screen.getByPlaceholderText("Commit message")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+
+    // Nothing is committed from that page, and the box costs the file list
+    // room it is being read against.
+    expect(screen.queryByPlaceholderText("Commit message")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Commit" })).toBeNull();
+    // The branch row and the file list stay exactly where they were.
+    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+
+    // Away from that pane and it is back.
+    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+    expect(await screen.findByPlaceholderText("Commit message")).toBeInTheDocument();
   });
 
   it("opens a diff tab when a changed file row is clicked", async () => {

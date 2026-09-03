@@ -409,6 +409,34 @@ describe("tabsStore", () => {
     expect(useTabsStore.getState().activeId).toBe(a1);
   });
 
+  it("toggles the all-changes tab from one control", () => {
+    const opened = useTabsStore.getState().toggleAllChangesTab();
+    expect(opened).not.toBeNull();
+    expect(activeTab().kind).toBe("all-changes");
+
+    // Not in front: focused rather than closed.
+    const other = useTabsStore.getState().newTerminalTab();
+    expect(useTabsStore.getState().activeId).toBe(other);
+    expect(useTabsStore.getState().toggleAllChangesTab()).toBe(opened);
+    expect(useTabsStore.getState().activeId).toBe(opened);
+    expect(useTabsStore.getState().tabs).toHaveLength(2);
+
+    // In front: the way out.
+    expect(useTabsStore.getState().toggleAllChangesTab()).toBeNull();
+    expect(useTabsStore.getState().tabs.map((t) => t.id)).toEqual([other]);
+  });
+
+  it("focuses rather than closes an all-changes tab that has been split", () => {
+    const id = useTabsStore.getState().openAllChangesTab();
+    useTabsStore.getState().splitActivePane("row");
+    expect(useTabsStore.getState().activeId).toBe(id);
+
+    // Closing the tab would take the pane split alongside it down too, so a
+    // split one is only ever focused.
+    expect(useTabsStore.getState().toggleAllChangesTab()).not.toBeNull();
+    expect(useTabsStore.getState().tabs.some((t) => t.id === id)).toBe(true);
+  });
+
   it("does not dedupe an editor tab once it has been split", () => {
     const first = useTabsStore.getState().openEditorTab("/a/b.ts");
     useTabsStore
