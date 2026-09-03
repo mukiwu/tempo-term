@@ -111,6 +111,7 @@ function StatusRow({
   onOpen,
   onRequestDiscard,
   active = false,
+  followsPage = false,
   indent = 0,
 }: {
   file: FileStatus;
@@ -126,6 +127,11 @@ function StatusRow({
   /** This file's diff is the one on screen: the row stays highlighted and
    * keeps its actions out without needing hover. */
   active?: boolean;
+  /**
+   * The all-changes page has the pane in front, so this row takes its mark
+   * from what that page is showing rather than from a diff pane.
+   */
+  followsPage?: boolean;
   /** Tree depth for indentation; 0 (default) matches flat mode's spacing. */
   indent?: number;
 }) {
@@ -133,6 +139,31 @@ function StatusRow({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const discardable = onRequestDiscard && file.status !== "?";
   const absPath = `${repoPath}/${file.path}`;
+  const rowRef = useRef<HTMLLIElement>(null);
+
+  /**
+   * Asked here, per row, rather than handed down from the panel: the file the
+   * all-changes page is showing changes as it is scrolled, and a mark read at
+   * the top would re-render every row (and the commit graph under them) each
+   * time the page crossed into another file. A selector returning a boolean
+   * re-renders the two rows that actually change hands and nothing else.
+   */
+  const isShownByPage = useAllChangesLinkStore(
+    (s) => s.showing?.rel === file.path && s.showing?.staged === file.staged,
+  );
+  const onPage = followsPage && isShownByPage;
+  const marked = active || onPage;
+
+  // A mark you cannot see says nothing, and with dozens of files it leaves the
+  // list within a screenful of scrolling. "nearest" is the whole point: a row
+  // already in view is left alone, so the list does not chase the page while
+  // the reader is looking at it, and one that has gone off the edge comes back
+  // by the shortest distance rather than jumping to the middle.
+  useEffect(() => {
+    if (onPage) {
+      rowRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [onPage]);
 
   const menuItems: ContextMenuItem[] = [
     {
@@ -208,10 +239,11 @@ function StatusRow({
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
       }}
-      aria-current={active ? "true" : undefined}
+      ref={rowRef}
+      aria-current={marked ? "true" : undefined}
       style={{ paddingLeft: `${indent * 14 + 12}px` }}
       className={`group flex cursor-pointer items-center py-1 pr-3 text-sm ${
-        active ? "bg-bg-elevated" : "hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
+        marked ? "bg-bg-elevated" : "hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
       }`}
     >
       <span
@@ -222,11 +254,11 @@ function StatusRow({
         {file.status}
       </span>
       <Tooltip label={file.path} className="min-w-0 flex-1">
-        <span className={`min-w-0 flex-1 truncate ${active ? "text-fg" : "text-fg-muted"}`}>
+        <span className={`min-w-0 flex-1 truncate ${marked ? "text-fg" : "text-fg-muted"}`}>
           {displayPath ?? file.path}
         </span>
       </Tooltip>
-      <RowActions revealed={active}>
+      <RowActions revealed={marked}>
         {discardable && (
           <Tooltip label={t("discard")}>
             <button
@@ -394,6 +426,7 @@ function FileTreeRows({
   onFileOpen,
   onRequestDiscard,
   activePath,
+  followsPage,
 }: {
   nodes: TreeNode<FileStatus>[];
   depth: number;
@@ -408,6 +441,7 @@ function FileTreeRows({
   onFileOpen: (path: string) => void;
   onRequestDiscard?: (path: string) => void;
   activePath?: string | null;
+  followsPage?: boolean;
 }) {
   const { t } = useTranslation("sourceControl");
   return (
@@ -430,6 +464,7 @@ function FileTreeRows({
               onOpen={onFileOpen}
               onRequestDiscard={onRequestDiscard}
               active={node.file.path === activePath}
+              followsPage={followsPage}
               indent={depth}
             />
           );
@@ -502,6 +537,7 @@ function FileTreeRows({
                   onFileOpen={onFileOpen}
                   onRequestDiscard={onRequestDiscard}
                   activePath={activePath}
+                  followsPage={followsPage}
                 />
               </ul>
             )}
@@ -530,6 +566,7 @@ function FileList({
   onFileOpen,
   onRequestDiscard,
   activePath,
+  followsPage,
 }: {
   files: FileStatus[];
   viewMode: ViewMode;
@@ -544,6 +581,7 @@ function FileList({
   /** Repo-relative path of the file whose diff is on screen, if it is in this
    * list — the staged and unstaged lists never claim it at the same time. */
   activePath?: string | null;
+  followsPage?: boolean;
 }) {
   const { collapsed, toggle: toggleFolder } = useCollapsedPaths();
 
@@ -561,6 +599,7 @@ function FileList({
             onOpen={onFileOpen}
             onRequestDiscard={onRequestDiscard}
             active={file.path === activePath}
+            followsPage={followsPage}
           />
         ))}
       </ul>
@@ -703,10 +742,6 @@ export function SourceControlView() {
   // While the all-changes page is the pane in front, this panel is its table
   // of contents rather than a way of opening more tabs.
   const allChangesInFront = useTabsStore((s) => allChangesPaneActive(s.tabs, s.activeId));
-  // Read as two primitives for the same reason as the diff pane above: a
-  // selector returning a fresh object would re-render on every store change.
-  const showingRel = useAllChangesLinkStore((s) => s.showing?.rel ?? null);
-  const showingStaged = useAllChangesLinkStore((s) => s.showing?.staged ?? false);
   // Which row is "the one on screen": the diff in the foreground pane. Read as
   // two primitives — a selector returning a fresh {path, staged} object would
   // never compare equal, re-rendering the panel on every store change.
@@ -792,13 +827,11 @@ export function SourceControlView() {
     repoPath && activeDiffPath?.startsWith(`${repoPath}/`)
       ? activeDiffPath.slice(repoPath.length + 1)
       : null;
-  // #364's "the file you are viewing" mark, extended to the all-changes page:
-  // there the file being viewed is the one at the top of it, which the page
-  // reports as it is scrolled. Without this the mark simply went out whenever
-  // that page was in front, which is the one place the panel is being read as
-  // a table of contents.
-  const activeRelPath = allChangesInFront ? showingRel : diffRelPath;
-  const activeStaged = allChangesInFront ? showingStaged : activeDiffStaged;
+  // #364's mark for a diff pane. The all-changes page's own mark is asked for
+  // by each row instead (see StatusRow), so that scrolling that page does not
+  // re-render the whole panel every time it crosses into another file.
+  const activeRelPath = diffRelPath;
+  const activeStaged = activeDiffStaged;
 
   const canCommit = message.trim().length > 0 && (status?.staged.length ?? 0) > 0;
   const hasStaged = (status?.staged.length ?? 0) > 0;
@@ -995,6 +1028,7 @@ export function SourceControlView() {
                   }
                   onFileOpen={(path) => openDiff(path, true)}
                   activePath={activeStaged ? activeRelPath : null}
+                  followsPage={allChangesInFront}
                   repoPath={repoPath ?? ""}
                 />
               )}
@@ -1045,6 +1079,7 @@ export function SourceControlView() {
                   onFileOpen={(path) => openDiff(path, false)}
                   onRequestDiscard={setDiscardTarget}
                   activePath={activeStaged ? null : activeRelPath}
+                  followsPage={allChangesInFront}
                   repoPath={repoPath ?? ""}
                 />
               ))}

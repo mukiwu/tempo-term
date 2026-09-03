@@ -145,6 +145,31 @@ describe("SourceControlView row interactions", () => {
     await waitFor(() => expect(useAllChangesLinkStore.getState().rescan).toBe(1));
   });
 
+  it("brings the marked row back into view, and only when it has left", async () => {
+    // jsdom has no layout, so the browser's own "already visible, do nothing"
+    // cannot be exercised here; what is asserted is that the row asks, with
+    // the nearest-edge options that leave a visible row alone.
+    // The suite's setup already stubs this on HTMLElement, which shadows any
+    // spy left on Element itself (src/test/setup.ts).
+    const scrollIntoView = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    try {
+      render(<SourceControlView />);
+      await screen.findByText("src/a.ts");
+      fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      act(() => {
+        useAllChangesLinkStore.getState().setShowing({ rel: "src/a.ts", staged: false });
+      });
+
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
   it("opens a diff tab when a changed file row is clicked", async () => {
     render(<SourceControlView />);
     fireEvent.click(await screen.findByText("src/a.ts"));
