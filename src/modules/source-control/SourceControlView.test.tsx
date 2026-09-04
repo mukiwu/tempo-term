@@ -170,6 +170,29 @@ describe("SourceControlView row interactions", () => {
     }
   });
 
+  it("lists the flat view in the tree's order, not the order status reports", async () => {
+    localStorage.setItem("tempoterm-sourcecontrol-view-mode", "flat");
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [
+        { path: "root-b.md", staged: false, status: "M" },
+        { path: "src/zeta.ts", staged: false, status: "M" },
+        { path: "root-a.md", staged: false, status: "M" },
+        { path: "src/alpha.ts", staged: false, status: "M" },
+      ],
+    });
+
+    const { container } = render(<SourceControlView />);
+    await screen.findByText("src/alpha.ts");
+
+    // A directory's changes together, then the root's — the same order the
+    // folder view and the all-changes page put them in.
+    expect(
+      Array.from(container.querySelectorAll("li")).map((li) => li.textContent?.trim()),
+    ).toEqual(["Msrc/alpha.ts", "Msrc/zeta.ts", "Mroot-a.md", "Mroot-b.md"]);
+  });
+
   it("opens a diff tab when a changed file row is clicked", async () => {
     render(<SourceControlView />);
     fireEvent.click(await screen.findByText("src/a.ts"));

@@ -42,7 +42,12 @@ import {
   type GitStatus,
 } from "./lib/gitBridge";
 import { Tooltip } from "@/components/Tooltip";
-import { buildFileTree, collectDescendantFiles, type TreeNode } from "@/lib/fileTree";
+import {
+  buildFileTree,
+  collectDescendantFiles,
+  flattenFileTree,
+  type TreeNode,
+} from "@/lib/fileTree";
 import { useCollapsedPaths } from "@/lib/useCollapsedPaths";
 import { usePendingGraphSelectionStore } from "@/modules/git-graph/lib/pendingGraphSelectionStore";
 import { edgePath } from "@/modules/git-graph/lib/graphLayout";
@@ -588,7 +593,12 @@ function FileList({
   if (viewMode === "flat") {
     return (
       <ul>
-        {files.map((file) => (
+        {/* Ordered by the same tree the folder view draws, just without the
+            folder rows: one directory's changes stay together instead of
+            landing wherever status happened to report them, and the flat
+            list, the folder view and the all-changes page then read as one
+            index rather than three sorts of the same files. */}
+        {flattenFileTree(buildFileTree(files)).map((file) => (
           <StatusRow
             key={file.path}
             file={file}
