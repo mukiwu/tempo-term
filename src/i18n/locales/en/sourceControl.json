@@ -22,6 +22,7 @@
   "generating": "Generating…",
   "refresh": "Refresh",
   "allChanges": "All Changes",
+  "allChangesClose": "Close All Changes",
   "allChangesUncommitted": "(uncommitted)",
   "allChangesFileCount": "{{count}} files",
   "allChangesBinary": "Binary file — not shown",

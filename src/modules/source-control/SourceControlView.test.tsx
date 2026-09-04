@@ -66,6 +66,31 @@ describe("SourceControlView row interactions", () => {
     expect(useTabsStore.getState().tabs).toHaveLength(0);
   });
 
+  it("shows on the entry button whether the page is the pane in front", async () => {
+    render(<SourceControlView />);
+    const button = await screen.findByRole("button", { name: "All Changes" });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(button);
+    // In front: the state that also takes the commit box away, so it is the
+    // one the button most needs to account for.
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveAccessibleName("Close All Changes");
+
+    // Open, but the reader has gone elsewhere. The button speaks about the
+    // pane in front, so it reads the same as shut -- and clicking it comes
+    // back to the page rather than closing it.
+    const pageId = useTabsStore.getState().tabs[0].id;
+    act(() => {
+      useTabsStore.getState().openEditorTab("/repo/src/a.ts");
+    });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveAccessibleName("All Changes");
+
+    fireEvent.click(button);
+    expect(useTabsStore.getState().activeId).toBe(pageId);
+  });
+
   it("scrolls the all-changes page to a row instead of opening a tab", async () => {
     render(<SourceControlView />);
     fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
@@ -109,8 +134,9 @@ describe("SourceControlView row interactions", () => {
     expect(screen.getByText("main")).toBeInTheDocument();
     expect(screen.getByText("src/a.ts")).toBeInTheDocument();
 
-    // Away from that pane and it is back.
-    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+    // Away from that pane and it is back. The button says "Close" while the
+    // page is in front, which is when it is indeed the way out.
+    fireEvent.click(screen.getByRole("button", { name: "Close All Changes" }));
     expect(await screen.findByPlaceholderText("Commit message")).toBeInTheDocument();
   });
 

@@ -894,12 +894,27 @@ export function SourceControlView() {
           {t("title")}
         </span>
         <div className="flex items-center gap-0.5">
-          <Tooltip label={t("allChanges")}>
+          {/* Filled while the page is the pane in front, which is the state
+              worth showing: that is when this panel stops opening tabs and
+              starts following the page, and when the commit box steps out.
+              Something has to account for that, and this button is the only
+              thing on screen that can. Open-but-behind is deliberately drawn
+              the same as shut -- the button speaks about the pane in front,
+              not about what exists somewhere in the space. Same on/off looks
+              as the wrap button in DiffTabContent, and the icon never changes:
+              it is the all-changes tab's own icon, and that match is what
+              makes the button legible in the first place. */}
+          <Tooltip label={allChangesInFront ? t("allChangesClose") : t("allChanges")}>
             <button
               type="button"
-              aria-label={t("allChanges")}
+              aria-label={allChangesInFront ? t("allChangesClose") : t("allChanges")}
+              aria-pressed={allChangesInFront}
               onClick={() => toggleAllChangesTab()}
-              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              className={`rounded p-1 ${
+                allChangesInFront
+                  ? "bg-bg-elevated text-fg"
+                  : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              }`}
             >
               <FileDiff size={14} />
             </button>
