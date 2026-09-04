@@ -207,12 +207,17 @@ const commentTheme = EditorView.baseTheme({
     opacity: "0",
     color: "var(--color-accent)",
   },
-  // Fills the row so the icon is centred in it, not parked at the top.
+  // One text row tall, so the icon centres on the line's first row and sits
+  // level with that line's number in the gutter one column over. Filling the
+  // element instead centres the icon on the whole line block, which drops it
+  // below the number as soon as a block is taller than one row: a wrapped long
+  // line, a line carrying a comment card or the draft box, or a line the merge
+  // view padded out to keep the two sides aligned.
   ".cm-diff-comment-gutter .cm-gutterElement > span": {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    height: "100%",
+    height: "1lh",
   },
   ".cm-diff-comment-gutter .cm-gutterElement:hover": {
     opacity: "1",
