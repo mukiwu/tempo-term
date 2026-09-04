@@ -116,6 +116,33 @@ describe("AllChangesTabContent", () => {
     expect(screen.getByText("allChangesFileCount:2")).toBeInTheDocument();
   });
 
+  it("stacks the files the way the panel's tree draws them", async () => {
+    // Status reports these in its own order; a directory's changes belong
+    // together, and the panel lists them folders-first so this page has to as
+    // well or it is not the same index twice.
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [
+        { path: "root-b.md", staged: false, status: "M" },
+        { path: "src/zeta.ts", staged: false, status: "M" },
+        { path: "root-a.md", staged: false, status: "M" },
+        { path: "src/alpha.ts", staged: false, status: "M" },
+      ],
+    });
+
+    const { container } = render(<AllChangesTabContent />);
+
+    await waitFor(() =>
+      expect(container.querySelectorAll("[data-diff-file]").length).toBe(4),
+    );
+    expect(
+      Array.from(container.querySelectorAll("[data-diff-file]")).map((el) =>
+        el.getAttribute("data-diff-file"),
+      ),
+    ).toEqual(["w:src/alpha.ts", "w:src/zeta.ts", "w:root-a.md", "w:root-b.md"]);
+  });
+
   it("reads each file the way the single-file tab does", async () => {
     vi.mocked(gitStatus).mockResolvedValue({
       branch: "main",

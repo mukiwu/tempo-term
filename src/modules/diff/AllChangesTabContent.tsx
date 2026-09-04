@@ -13,6 +13,7 @@ import { Tooltip } from "@/components/Tooltip";
 import { ContextMenu } from "@/components/ContextMenu";
 import { gitDiff, gitResolveRepo, gitStatus } from "@/modules/source-control/lib/gitBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { buildFileTree, flattenFileTree } from "@/lib/fileTree";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changedLines, parseDiffStats, type FileDiffStats } from "./lib/parseDiffStats";
 import { agentTargetMenuItems } from "./lib/sendComments";
@@ -197,9 +198,17 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
         const stagedStats = parseDiffStats(stagedDiff);
         const workingStats = parseDiffStats(workingDiff);
         setError(false);
+        // Stacked the way the Source Control panel draws its tree — folders
+        // before files at each level, each alphabetical — rather than in the
+        // order status happens to report. A page of dozens of files reads
+        // better with a directory's changes together, and it means the panel
+        // beside it lists the same files in the same order rather than being a
+        // differently sorted index of them.
         setFiles({
-          staged: status.staged.map((file) => toChangedFile(repoPath, file, true, stagedStats)),
-          unstaged: status.unstaged.map((file) =>
+          staged: flattenFileTree(buildFileTree(status.staged)).map((file) =>
+            toChangedFile(repoPath, file, true, stagedStats),
+          ),
+          unstaged: flattenFileTree(buildFileTree(status.unstaged)).map((file) =>
             toChangedFile(repoPath, file, false, workingStats),
           ),
         });
