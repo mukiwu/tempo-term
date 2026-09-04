@@ -308,9 +308,16 @@ describe("AllChangesTabContent", () => {
     // Two hunks in the first file and one in the second: the navigation walks
     // the page, not a file.
     await waitFor(() => expect(counter(3)).toBeInTheDocument());
-    const before = Number(counter(3).textContent?.split("/")[0]);
-    fireEvent.click(screen.getByRole("button", { name: "diffNextChange" }));
-    expect(counter(3).textContent).toBe(`${Math.min(before + 1, 3)}/3`);
+    // Next walks the page rather than the file: three changes across two of
+    // them, stepped through one at a time and stopping at the end.
+    const next = screen.getByRole("button", { name: "diffNextChange" });
+    expect(counter(3).textContent).toBe("1/3");
+    fireEvent.click(next);
+    expect(counter(3).textContent).toBe("2/3");
+    fireEvent.click(next);
+    expect(counter(3).textContent).toBe("3/3");
+    fireEvent.click(next);
+    expect(counter(3).textContent).toBe("3/3");
   });
 
   it("says so when the workspace is not a repository", async () => {

@@ -486,14 +486,33 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
     }
   }, [pending, handleEpoch]);
 
+  // Open on the first change rather than above it, so the counter starts at
+  // 1/N and there is a change on screen to read — the same landing the
+  // single-file tab makes, and cheap here because the collapsed run at the top
+  // of the first file leaves it only a little way down. Once per scan: a
+  // reload must not haul the reader back to the top of the page.
+  const landed = useRef(false);
+  useEffect(() => {
+    if (landed.current || changes.length === 0) {
+      return;
+    }
+    landed.current = true;
+    setPosition(1);
+    jumpTo(changes[0]);
+  }, [changes, jumpTo]);
+
   function goToChange(direction: "prev" | "next") {
     if (changes.length === 0) {
       return;
     }
+    // Steps from the position as read, not from the raw one. The two differ
+    // only at the top of the page, where the raw one is still zero — above the
+    // first change, technically, though that change is on screen — and Next
+    // would otherwise spend its first press moving the number from zero to one
+    // while the page stayed where it was.
+    const from = Math.max(1, position);
     const next =
-      direction === "next"
-        ? Math.min(position + 1, changes.length)
-        : Math.max(position - 1, 1);
+      direction === "next" ? Math.min(from + 1, changes.length) : Math.max(from - 1, 1);
     setPosition(next);
     jumpTo(changes[next - 1]);
   }
@@ -565,7 +584,11 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
             )}
             {changes.length > 0 && (
               <span className="mr-1 font-mono text-[11px] text-fg-subtle">
-                {position}/{changes.length}
+                {/* From one, never zero: a page that opens at "0/215" reads
+                    as having failed to count. The state behind it keeps the
+                    zero, which is honestly what "not measured yet, or above
+                    the first change" is. */}
+                {Math.max(1, position)}/{changes.length}
               </span>
             )}
             <Tooltip label={t("diffPrevChange")}>
