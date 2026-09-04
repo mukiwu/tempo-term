@@ -39,6 +39,7 @@ import { useTabsStore } from "@/stores/tabsStore";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useUiStore } from "@/stores/uiStore";
+import { useExplorerStore } from "@/stores/explorerStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 
 type MenuPosition = { x: number; y: number };
@@ -84,7 +85,18 @@ interface TreeNodeProps {
 function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }: TreeNodeProps) {
   const { t } = useTranslation("explorer");
   const { t: tCommon } = useTranslation("common");
-  const [expanded, setExpanded] = useState(false);
+  // Restored rather than always-false: switching to a tab on another project
+  // re-roots the explorer and unmounts every node, so without this the tree
+  // came back fully collapsed each time the user switched back. Read once, via
+  // getState() — after mount this local state is the source of truth and the
+  // store only trails it, so there is nothing to subscribe to.
+  const [expanded, setExpanded] = useState(
+    () =>
+      entry.is_dir &&
+      useExplorerStore
+        .getState()
+        .isDirExpanded(useWorkspaceStore.getState().rootPath, entry.path),
+  );
   const [children, setChildren] = useState<DirEntry[] | null>(null);
   const [menu, setMenu] = useState<MenuPosition | null>(null);
   const [creating, setCreating] = useState<Creating>(null);
@@ -108,8 +120,8 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
   // which can leave many such fetches in flight at once.
   const collapseTokenRef = useRef(0);
 
-  // Skip the initial value (0 / undefined) so a future restore-on-mount of
-  // expanded state wouldn't be immediately collapsed.
+  // Skip the initial value (0 / undefined) so a node that mounts with its
+  // expanded state restored from the store isn't immediately collapsed.
   useEffect(() => {
     if (collapseSignal) {
       collapseTokenRef.current += 1;
@@ -126,8 +138,7 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
   // this effect ever sets isExpandingAll true; it's reset explicitly at
   // every place a collapse happens (above, and in toggle() below) rather
   // than via an effect on `expanded` itself, since that would also fire
-  // (and immediately undo this) on every fresh mount, where `expanded`
-  // starts out false by default.
+  // (and immediately undo this) on every fresh mount.
   useEffect(() => {
     if (expandSignal && !(entry.is_dir && AUTO_EXPAND_EXCLUDED_DIRS.has(entry.name))) {
       setIsExpandingAll(true);
@@ -135,10 +146,23 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
     }
   }, [expandSignal]);
 
+  // A node restored as expanded mounts with `children` still null, so nothing
+  // would render beneath it until something kicks off the first fetch — that
+  // is normally expand()'s job, and on a restore nobody calls it. Mount-only:
+  // every later expand goes through expand() itself. Skipped when expandSignal
+  // arrives already nonzero, since the expand-all effect above fires on mount
+  // too and would duplicate the fetch.
+  useEffect(() => {
+    if (expanded && !expandSignal) {
+      void expand();
+    }
+  }, []);
+
   const openFromSidebar = useTabsStore((s) => s.openFromSidebar);
   const openInNewTab = useTabsStore((s) => s.openInNewTab);
   const openPreviewFromSidebar = useTabsStore((s) => s.openPreviewFromSidebar);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
+  const setDirExpanded = useExplorerStore((s) => s.setDirExpanded);
   const activatePanel = useUiStore((s) => s.activatePanel);
   const attachPath = useChatStore((s) => s.attachPath);
   const activeEditorPath = useTabsStore((s) => {
@@ -175,6 +199,7 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
       return;
     }
     setExpanded(true);
+    setDirExpanded(rootPath, entry.path, true);
   }
 
   /**
@@ -196,6 +221,7 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
       collapseTokenRef.current += 1;
       setExpanded(false);
       setIsExpandingAll(false);
+      setDirExpanded(rootPath, entry.path, false);
       return;
     }
     await expand();

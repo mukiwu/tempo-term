@@ -11,9 +11,11 @@ vi.mock("./lib/fsBridge", () => ({
 
 import { ExplorerView } from "./ExplorerView";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useExplorerStore } from "@/stores/explorerStore";
 
 beforeEach(() => {
   useWorkspaceStore.setState({ rootPath: null });
+  useExplorerStore.setState({ expandedDirs: {} });
 });
 
 describe("ExplorerView remote root", () => {
@@ -193,5 +195,95 @@ describe("ExplorerView refresh", () => {
     // A fresh tree renders fully collapsed again: the cached child is gone.
     await screen.findByText("a-dir");
     expect(screen.queryByText("leaf.ts")).not.toBeInTheDocument();
+  });
+});
+
+describe("ExplorerView remembered expanded folders", () => {
+  it("restores the folders that were open when the root is switched away and back", async () => {
+    const { fsReadDir } = await import("./lib/fsBridge");
+    vi.mocked(fsReadDir).mockImplementation(async (path: string) => {
+      if (path === "/root-a") {
+        return [{ name: "a-dir", path: "/root-a/a-dir", is_dir: true, size: 0 }];
+      }
+      if (path === "/root-a/a-dir") {
+        return [{ name: "leaf.ts", path: "/root-a/a-dir/leaf.ts", is_dir: false, size: 0 }];
+      }
+      if (path === "/root-b") {
+        return [{ name: "b-dir", path: "/root-b/b-dir", is_dir: true, size: 0 }];
+      }
+      return [];
+    });
+
+    useWorkspaceStore.setState({ rootPath: "/root-a" });
+    render(<ExplorerView />);
+
+    // Open "a-dir" by hand — the state a tab switch used to throw away.
+    fireEvent.click(await screen.findByText("a-dir"));
+    await screen.findByText("leaf.ts");
+
+    // Switching to a tab on another project re-roots the explorer...
+    await act(async () => {
+      useWorkspaceStore.setState({ rootPath: "/root-b" });
+    });
+    await screen.findByText("b-dir");
+    expect(screen.queryByText("leaf.ts")).not.toBeInTheDocument();
+
+    // ...and switching back must bring the open folder back with it.
+    await act(async () => {
+      useWorkspaceStore.setState({ rootPath: "/root-a" });
+    });
+    expect(await screen.findByText("leaf.ts")).toBeInTheDocument();
+  });
+
+  it("does not restore a folder the user collapsed before switching away", async () => {
+    const { fsReadDir } = await import("./lib/fsBridge");
+    vi.mocked(fsReadDir).mockImplementation(async (path: string) => {
+      if (path === "/root-a") {
+        return [{ name: "a-dir", path: "/root-a/a-dir", is_dir: true, size: 0 }];
+      }
+      if (path === "/root-a/a-dir") {
+        return [{ name: "leaf.ts", path: "/root-a/a-dir/leaf.ts", is_dir: false, size: 0 }];
+      }
+      return [];
+    });
+
+    useWorkspaceStore.setState({ rootPath: "/root-a" });
+    const { unmount } = render(<ExplorerView />);
+
+    fireEvent.click(await screen.findByText("a-dir"));
+    await screen.findByText("leaf.ts");
+    fireEvent.click(screen.getByText("a-dir"));
+    expect(screen.queryByText("leaf.ts")).not.toBeInTheDocument();
+
+    unmount();
+    render(<ExplorerView />);
+
+    await screen.findByText("a-dir");
+    await waitFor(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(screen.queryByText("leaf.ts")).not.toBeInTheDocument();
+  });
+
+  it("forgets the remembered folders when collapse-all fires", async () => {
+    const { fsReadDir } = await import("./lib/fsBridge");
+    vi.mocked(fsReadDir).mockImplementation(async (path: string) => {
+      if (path === "/root-a") {
+        return [{ name: "a-dir", path: "/root-a/a-dir", is_dir: true, size: 0 }];
+      }
+      if (path === "/root-a/a-dir") {
+        return [{ name: "leaf.ts", path: "/root-a/a-dir/leaf.ts", is_dir: false, size: 0 }];
+      }
+      return [];
+    });
+
+    useWorkspaceStore.setState({ rootPath: "/root-a" });
+    render(<ExplorerView />);
+
+    fireEvent.click(await screen.findByText("a-dir"));
+    await screen.findByText("leaf.ts");
+
+    fireEvent.click(screen.getByLabelText("Expand All"));
+    fireEvent.click(screen.getByLabelText("Collapse All"));
+
+    expect(useExplorerStore.getState().expandedDirs["/root-a"]).toBeUndefined();
   });
 });
