@@ -622,6 +622,7 @@ function FileList({
         onFileOpen={onFileOpen}
         onRequestDiscard={onRequestDiscard}
         activePath={activePath}
+        followsPage={followsPage}
       />
     </ul>
   );
