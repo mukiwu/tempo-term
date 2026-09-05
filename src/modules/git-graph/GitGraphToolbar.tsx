@@ -21,6 +21,22 @@ import type { Branch, CommitOrder } from "./types";
 // begins to crowd in a split panel.
 const COMPACT_WIDTH = 620;
 
+// Two steps before the full compact fold, so the row gives way one control at a
+// time instead of holding everything until it breaks. Both only apply once the
+// toolbar has actually been measured — an unmeasured toolbar renders roomy.
+//
+// Below this the worktree picker steps aside. It is the widest control on the
+// row and the most reproducible elsewhere: the worktree manager opens the same
+// worktrees, so nothing becomes unreachable. Set well above the point where it
+// strictly stops fitting — "<folder> (<branch>)" is long enough that keeping it
+// to the last possible pixel leaves the row correct but uncomfortably packed.
+const WORKTREE_WIDTH = 1000;
+// Below this the "HEAD: <branch>" button goes altogether rather than shrinking
+// to an icon: right-clicking a branch chip in the graph already offers checkout,
+// and below COMPACT_WIDTH the overflow menu carries the button again. An icon
+// here would only be a second, wordless door to something already reachable.
+const HEAD_BUTTON_WIDTH = 900;
+
 interface WorktreeOption {
   label: string;
   path: string;
@@ -158,6 +174,10 @@ export function GitGraphToolbar({
   }, []);
 
   const isCompact = width !== null && width < COMPACT_WIDTH;
+  // Unmeasured (width === null) counts as roomy, same as isCompact above, so
+  // the first paint never flashes a collapsed row.
+  const hasRoomForWorktree = width === null || width >= WORKTREE_WIDTH;
+  const hasRoomForHeadButton = width === null || width >= HEAD_BUTTON_WIDTH;
 
   const locals = branches.filter((b) => !b.isRemote);
   const remotes = branches.filter((b) => b.isRemote);
@@ -214,8 +234,12 @@ export function GitGraphToolbar({
     currentWorktreePath === null
       ? undefined
       : worktreeOptions.find((o) => samePath(o.path, currentWorktreePath));
-  // A single-worktree repo (the common case) hides the control entirely.
-  const showWorktreeControls = showBranchControls && worktreeOptions.length > 1;
+  // A single-worktree repo (the common case) hides the control entirely, and so
+  // does a row too narrow to carry it.
+  const showWorktreeControls =
+    showBranchControls && hasRoomForWorktree && worktreeOptions.length > 1;
+  const worktreeValue =
+    currentWorktree?.label ?? (currentWorktreePath ? basename(currentWorktreePath) : "");
 
   // git refuses `git checkout <branch>` for a branch some other worktree has
   // checked out — disable those menu entries and show where each one lives.
@@ -268,32 +292,58 @@ export function GitGraphToolbar({
         {showWorktreeControls && (
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
             <span className="shrink-0">{labels.worktree}:</span>
-            <Combobox
-              value={
-                currentWorktree?.label ??
-                (currentWorktreePath ? basename(currentWorktreePath) : "")
-              }
-              options={worktreeOptions.map((o) => o.label)}
-              onChange={(label) => {
-                const picked = worktreeOptions.find((o) => o.label === label);
-                if (picked && (!currentWorktree || !samePath(picked.path, currentWorktree.path))) {
-                  onSelectWorktree(picked.path);
-                }
-              }}
-              ariaLabel={labels.worktree}
-              textClassName="text-[13px]"
-              noTruncate
-            />
+            {/* The value is "<folder> (<branch>)", so a long branch name makes
+                this the widest thing on the row. It used to opt out of clipping
+                entirely, which dropped the ellipsis *and* the overflow guard
+                that comes with it — the text then painted straight over the
+                remote-branches checkbox beside it.
+
+                The bounds belong on this wrapper, not on the Combobox: the
+                wrapper is the flex item, so it is what the row measures and
+                makes space for. Bounding only the inner box let it outgrow the
+                wrapper and paint over a neighbour the layout still believed had
+                room. The floor keeps the picker readable instead of letting it
+                collapse to its chevron; the full value is on hover. */}
+            <Tooltip label={worktreeValue} className="min-w-[8rem] max-w-[14rem]">
+              <Combobox
+                value={worktreeValue}
+                options={worktreeOptions.map((o) => o.label)}
+                onChange={(label) => {
+                  const picked = worktreeOptions.find((o) => o.label === label);
+                  if (
+                    picked &&
+                    (!currentWorktree || !samePath(picked.path, currentWorktree.path))
+                  ) {
+                    onSelectWorktree(picked.path);
+                  }
+                }}
+                ariaLabel={labels.worktree}
+                // Matched to the branch filter's trigger sitting right next to
+                // it — same radius, border, padding and type size, so the two
+                // read as one pair of controls, not two unrelated boxes.
+                size="sm"
+                fieldClassName="px-2 py-1"
+                textClassName="text-[13px]"
+                // Fill the wrapper, which is where the bounds live, and keep
+                // min-w-0 so the trigger text can ellipsize instead of holding
+                // a min-content floor and pushing back out through it.
+                className="min-w-0 flex-1"
+              />
+            </Tooltip>
           </div>
         )}
 
         {!isCompact && (
-          <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-fg-muted">
+          // shrink-0 + nowrap: squeezed, this label used to wrap mid-word, and
+          // the second line grew the whole row — which read as the icons on the
+          // right sitting too high rather than as a wrapped label. It keeps its
+          // width now; below COMPACT_WIDTH it moves into the overflow menu.
+          <label className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
             <input
               type="checkbox"
               checked={includeRemotes}
               onChange={(e) => onToggleRemotes(e.target.checked)}
-              className="accent-accent"
+              className="shrink-0 accent-accent"
             />
             <span>{labels.showRemoteBranches}</span>
           </label>
@@ -344,7 +394,12 @@ export function GitGraphToolbar({
         )}
 
         {isCompact ? (
-          <div className="relative">
+          // flex, not a plain block: the Tooltip wrapper is inline-flex, and an
+          // inline box in a block sits on the text baseline with the strut's
+          // descender space left under it. That padded the wrapper a few px
+          // taller than the icon, and items-center then centred the wrapper —
+          // leaving this icon riding higher than its unwrapped neighbours.
+          <div className="relative flex items-center">
             <Tooltip label={labels.more}>
               <button
                 type="button"
@@ -363,7 +418,12 @@ export function GitGraphToolbar({
                   onClick={() => setOverflowOpen(false)}
                   aria-hidden="true"
                 />
-                <div className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg">
+                {/* top-full, not the static position: the wrapper is a flex
+                    container, and a flex container aligns an absolutely
+                    positioned child's static position with align-items — so
+                    `items-center` would hang this menu off the button's
+                    midpoint and float it up over the tab bar. */}
+                <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg">
                   <button
                     type="button"
                     aria-label={switchBranchLabel}
@@ -419,7 +479,7 @@ export function GitGraphToolbar({
           </div>
         ) : (
           <>
-            <div className="relative">
+            <div className="relative flex items-center">
               <Tooltip label={labels.displayOptions}>
                 <button
                   type="button"
@@ -437,7 +497,7 @@ export function GitGraphToolbar({
                     onClick={() => setOptionsOpen(false)}
                     aria-hidden="true"
                   />
-                  <div className="absolute right-0 z-30 mt-1 w-48 rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg">
+                  <div className="absolute right-0 top-full z-30 mt-1 w-48 rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg">
                     {toggles.map((t) => (
                       <ToggleRow key={t.label} {...t} />
                     ))}
@@ -471,21 +531,25 @@ export function GitGraphToolbar({
               </button>
             </Tooltip>
 
-            <div className="relative">
-              <Tooltip label={labels.switchBranch}>
-                <button
-                  type="button"
-                  aria-label={switchBranchLabel}
-                  aria-expanded={branchMenuOpen}
-                  disabled={branches.length === 0}
-                  onClick={() => setBranchMenuOpen((v) => !v)}
-                  className="ml-1 whitespace-nowrap rounded px-1 py-0.5 font-mono text-[11px] text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:opacity-50"
-                >
-                  {labels.head}: {currentBranch}
-                </button>
-              </Tooltip>
-              {branchMenu}
-            </div>
+            {hasRoomForHeadButton && (
+              <div className="relative flex items-center">
+                {/* The tooltip carries the branch name in full, so a long one
+                    stays readable once the label itself is ellipsized. */}
+                <Tooltip label={switchBranchLabel}>
+                  <button
+                    type="button"
+                    aria-label={switchBranchLabel}
+                    aria-expanded={branchMenuOpen}
+                    disabled={branches.length === 0}
+                    onClick={() => setBranchMenuOpen((v) => !v)}
+                    className="ml-1 max-w-[14rem] truncate rounded px-1 py-0.5 font-mono text-[11px] text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:opacity-50"
+                  >
+                    {labels.head}: {currentBranch}
+                  </button>
+                </Tooltip>
+                {branchMenu}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -584,7 +648,7 @@ function BranchMenu({
       <div className="fixed inset-0 z-20" onClick={onClose} aria-hidden="true" />
       <div
         role="menu"
-        className="absolute right-0 z-30 mt-1 max-h-72 w-56 overflow-y-auto rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg"
+        className="absolute right-0 top-full z-30 mt-1 max-h-72 w-56 overflow-y-auto rounded-md border border-border-strong bg-bg-elevated p-1 shadow-lg"
       >
         {locals.map((b) => {
           const otherWorktree =
