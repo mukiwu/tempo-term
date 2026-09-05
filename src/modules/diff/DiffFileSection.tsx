@@ -333,8 +333,12 @@ export function DiffFileSection({
   return (
     <section data-diff-file={file.key} className="border-b border-border">
       <header className="sticky top-0 z-10 flex h-7 items-center gap-2 border-b border-border bg-bg-elevated px-3">
-        {/* The whole label opens and shuts the file, not just the chevron —
-            same as the panel's folder rows (#381).
+        {/* The whole row opens and shuts the file, not just the chevron —
+            same as the panel's folder rows (#381). The counts and the reason
+            a file is folded sit inside the button rather than beside it, so
+            there is no dead strip along the right of every header; anything
+            with an action of its own (a copy button, say) goes after the
+            button as a sibling, never inside it.
 
             The file's own name leads and the folder it sits in trails it,
             quieter and shrinking four times faster — reading a page of files
@@ -369,22 +373,22 @@ export function DiffFileSection({
               {dir}
             </span>
           )}
+          {/* A file the reader did not shut says why it is shut anyway. It
+              needs no button of its own: the header opens it, the same as
+              every other file. On a narrow pane the reason steps out rather
+              than truncate — half a sentence explains nothing. */}
+          {folded && !collapsed && !narrow && (
+            <span className="min-w-0 shrink-[4] truncate text-[11px] text-fg-subtle">
+              {t("allChangesFolded", { count: TRUNCATE_CHANGED_LINES })}
+            </span>
+          )}
+          {added !== null && deleted !== null && !binary && (
+            <span className="ml-auto flex shrink-0 gap-2.5 font-mono text-[11px]">
+              <span className="text-success">+{added}</span>
+              <span className="text-danger">−{deleted}</span>
+            </span>
+          )}
         </button>
-        {/* A file the reader did not shut says why it is shut anyway. It
-            needs no button of its own: the header opens it, the same as every
-            other file. On a narrow pane the reason steps out rather than
-            truncate — half a sentence explains nothing. */}
-        {folded && !collapsed && !narrow && (
-          <span className="min-w-0 shrink-[4] truncate text-[11px] text-fg-subtle">
-            {t("allChangesFolded", { count: TRUNCATE_CHANGED_LINES })}
-          </span>
-        )}
-        {added !== null && deleted !== null && !binary && (
-          <span className="ml-auto flex shrink-0 gap-2.5 font-mono text-[11px]">
-            <span className="text-success">+{added}</span>
-            <span className="text-danger">−{deleted}</span>
-          </span>
-        )}
       </header>
       {error ? (
         <p className="px-3 py-2 text-xs text-danger">{t("diffLoadError")}</p>

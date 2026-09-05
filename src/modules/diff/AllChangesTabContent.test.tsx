@@ -239,8 +239,12 @@ describe("AllChangesTabContent", () => {
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeNull());
     // Nothing left to navigate, so the counter itself is gone.
     expect(screen.queryByText(/^\d+\/1$/)).toBeNull();
-    // The header still reads, counts and all.
+    // The header still reads, counts and all — and the counts are part of the
+    // same target, so there is no dead strip along the right of the row.
     expect(screen.getByText("a.ts")).toBeInTheDocument();
+    const header = screen.getByRole("button", { name: "allChangesExpandFile" });
+    expect(within(header).getByText("+3")).toBeInTheDocument();
+    expect(within(header).getByText("−1")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "allChangesExpandFile" }));
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
