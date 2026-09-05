@@ -102,7 +102,7 @@ pub enum CommitOrder {
 /// `deny_unknown_fields` 是刻意的：搭配 `default`，一個拼錯或過時的欄位名
 /// （例如改名前的 `branch`）會安靜地取預設值，篩選就變成「全部分支」而且不
 /// 報錯。寧可讓它在反序列化階段就失敗、把錯誤送回前端。
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct GraphOptions {
     /// 篩選用的分支清單；空清單代表「全部分支」。
@@ -111,6 +111,21 @@ pub struct GraphOptions {
     pub include_tags: bool,
     pub include_stashes: bool,
     pub order: CommitOrder,
+}
+
+/// 對齊工具列的預設（遠端與標籤開、stash 關），不是「全部 false」。
+/// 這幾個開關現在真的會拿掉 ref 裝飾，衍生出來的 all-false 預設等於「什麼
+/// 都不標」——跟使用者打開分頁看到的畫面對不起來。
+impl Default for GraphOptions {
+    fn default() -> Self {
+        Self {
+            branches: Vec::new(),
+            include_remotes: true,
+            include_tags: true,
+            include_stashes: false,
+            order: CommitOrder::default(),
+        }
+    }
 }
 
 /// 把排序選項翻成 git log 旗標。純函式方便測試。
@@ -126,7 +141,11 @@ fn order_flag(order: CommitOrder) -> &'static str {
 /// 否則 `--remotes` 會把所有遠端分支的歷史聯集進來，預設開關全開時篩選
 /// 形同失效；沒指定分支才用 --branches 含全部本地分支，並依開關疊加其他
 /// ref 範圍。
-fn build_log_refs(options: &GraphOptions) -> Vec<String> {
+///
+/// `stash_tips` 是 stash_commits() 讀出來的 stash commit，開關關掉時傳空片段。
+/// 之所以不像 remote/tag 那樣給一個旗標，是因為 git 沒有「所有 stash」的旗標：
+/// refs/stash 只指到最新一筆，其餘藏在它的 reflog 裡，只能把 hash 一個個列出來。
+fn build_log_refs(options: &GraphOptions, stash_tips: &[String]) -> Vec<String> {
     let picked: Vec<String> = options
         .branches
         .iter()
@@ -144,10 +163,62 @@ fn build_log_refs(options: &GraphOptions) -> Vec<String> {
     if options.include_tags {
         refs.push("--tags".to_string());
     }
-    if options.include_stashes {
-        refs.push("--glob=refs/stash".to_string());
-    }
+    refs.extend(stash_tips.iter().cloned());
     refs
+}
+
+/// refs/stash 的 reflog 讀出來的 stash 全貌。
+#[derive(Debug, Default, PartialEq, Eq)]
+struct StashCommits {
+    /// 每筆 stash 的 commit hash，reflog 順序（[0] 就是 stash@{0}）。
+    tips: Vec<String>,
+    /// git 為 stash 造的 index／untracked 輔助 commit。
+    helpers: Vec<String>,
+}
+
+/// 解析 `git rev-list --no-walk --parents -g refs/stash` 的輸出。純函式方便測試。
+///
+/// 每行是「stash hash + 它的 parent」。第一個 parent 是 stash 當下的 HEAD，屬於
+/// 真正的歷史、要留著；第二個以後是 git 自己造的 index／untracked 快照
+/// （`-u` 的 stash 會有三個 parent），使用者沒提交過這些東西，畫進線圖只是雜訊。
+fn parse_stash_commits(stdout: &str) -> StashCommits {
+    let mut out = StashCommits::default();
+    for line in stdout.lines() {
+        let mut hashes = line.split_whitespace();
+        let Some(tip) = hashes.next() else {
+            continue;
+        };
+        out.tips.push(tip.to_string());
+        // skip(1) 跳過 stash 的基底 commit，只收輔助 commit。
+        out.helpers.extend(hashes.skip(1).map(str::to_string));
+    }
+    out
+}
+
+/// 讀出 repo 裡所有的 stash。沒有任何 stash 時 `git rev-list` 會非零退出
+/// （`unknown revision refs/stash`），當成「沒有 stash」而不是錯誤。
+fn stash_commits(repo_path: &str) -> StashCommits {
+    let stdout = run_git(
+        repo_path,
+        &["rev-list", "--no-walk", "--parents", "-g", "refs/stash"],
+    )
+    .unwrap_or_default();
+    parse_stash_commits(&stdout)
+}
+
+/// 依顯示開關濾掉 commit 上的 ref 裝飾。
+///
+/// 只把 ref 移出 `git log` 的走訪範圍是不夠的：`--decorate` 照樣會標出落在
+/// 既有 commit 上的 `origin/x`、`tag: v1`。遠端分支和標籤絕大多數都指在本地
+/// 歷史走得到的 commit 上，所以少了這一步，關掉開關看起來完全沒反應。
+fn filter_refs(refs: Vec<GraphRef>, options: &GraphOptions) -> Vec<GraphRef> {
+    refs.into_iter()
+        .filter(|r| match r.kind.as_str() {
+            "remote" => options.include_remotes,
+            "tag" => options.include_tags,
+            _ => true,
+        })
+        .collect()
 }
 
 /// Short code for the staged (index vs HEAD) side of a status, if any.
@@ -1316,7 +1387,6 @@ pub fn graph_log(
     options: &GraphOptions,
 ) -> Result<GraphLog, String> {
     let limit = limit.clamp(1, 2000);
-    let max_count = format!("--max-count={}", limit + 1);
     let skip_arg = format!("--skip={skip}");
 
     // 分支清單是從前端的選單挑出來的，正常不會有幾百筆。設上限的理由是超長的
@@ -1346,7 +1416,17 @@ pub fn graph_log(
         }
     }
 
-    let ref_args = build_log_refs(options);
+    // 只有「全部分支」模式才疊加 stash，跟 remote/tag 開關同一個規則。
+    let stashes = if options.include_stashes {
+        stash_commits(repo_path)
+    } else {
+        StashCommits::default()
+    };
+
+    let ref_args = build_log_refs(options, &stashes.tips);
+    // 輔助 commit 會在下面被濾掉，所以多抓它們的份，否則整頁被扣掉幾筆之後
+    // has_more 會提早變成 false，把還沒讀到的歷史藏起來。
+    let max_count = format!("--max-count={}", limit + 1 + stashes.helpers.len());
     let mut args: Vec<&str> = vec![
         "log",
         order_flag(options.order),
@@ -1361,12 +1441,56 @@ pub fn graph_log(
     // 空 repo（還沒任何 commit）會讓 git log 非零退出，當成空線圖。
     let stdout = run_git(repo_path, &args).unwrap_or_default();
 
-    let mut commits: Vec<GraphCommit> = stdout.lines().filter_map(parse_graph_commit).collect();
+    let mut commits: Vec<GraphCommit> = stdout
+        .lines()
+        .filter_map(parse_graph_commit)
+        .map(|mut c| {
+            c.refs = filter_refs(c.refs, options);
+            c
+        })
+        .collect();
+    // %h 是縮寫 hash，stash 那邊拿到的是完整 SHA，所以比前綴。縮寫本來就保證
+    // 在這個 repo 內唯一，前綴相符即同一個 commit。
+    //
+    // parents 也要一起清：一個指向已被移除的 commit 的 parent 是懸空的，而前端
+    // 的 lane 配置會替每個 parent 佔一條線且永遠等不到它被釋放。四筆 stash 就
+    // 足以把 lane 撐過 maxLane，超出的 lane 會被壓到同一欄，兩個節點疊在同一個
+    // x 上，看起來就多出一條根本不存在的父子線。
+    if !stashes.helpers.is_empty() {
+        let is_helper =
+            |hash: &str| !hash.is_empty() && stashes.helpers.iter().any(|h| h.starts_with(hash));
+        commits.retain(|c| !is_helper(&c.hash));
+        for commit in &mut commits {
+            commit.parents.retain(|p| !is_helper(p));
+        }
+    }
+    label_stashes(&mut commits, &stashes.tips);
     let has_more = commits.len() > limit;
     if has_more {
         commits.truncate(limit);
     }
     Ok(GraphLog { commits, has_more })
+}
+
+/// 把每筆 stash 標成 `stash@{n}`，對齊 `git stash list` 的叫法。
+///
+/// git 只會裝飾 `refs/stash`（也就是 stash@{0}），較舊的那幾筆在 reflog 裡、
+/// 沒有 ref 可標，不補的話它們會變成一排沒有任何標籤的 "WIP on ..." commit。
+fn label_stashes(commits: &mut [GraphCommit], tips: &[String]) {
+    for (index, tip) in tips.iter().enumerate() {
+        let name = format!("stash@{{{index}}}");
+        for commit in commits.iter_mut() {
+            if commit.hash.is_empty() || !tip.starts_with(&commit.hash) {
+                continue;
+            }
+            commit.refs.retain(|r| r.kind != "stash");
+            commit.refs.push(GraphRef {
+                name: name.clone(),
+                kind: "stash".to_string(),
+            });
+            break;
+        }
+    }
 }
 
 /// 列出本地與遠端分支，標出目前所在分支與是否為遠端。
@@ -2895,8 +3019,16 @@ mod tests {
 
     #[test]
     fn build_log_refs_show_all_default() {
+        // 預設是工具列的預設：本地分支 + 遠端 + 標籤，不含 stash。
         let options = GraphOptions::default();
-        assert_eq!(build_log_refs(&options), vec!["--branches".to_string()]);
+        assert_eq!(
+            build_log_refs(&options, &[]),
+            vec![
+                "--branches".to_string(),
+                "--remotes".to_string(),
+                "--tags".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -2905,7 +3037,7 @@ mod tests {
             branches: vec!["main".to_string()],
             ..GraphOptions::default()
         };
-        assert_eq!(build_log_refs(&options), vec!["main".to_string()]);
+        assert_eq!(build_log_refs(&options, &[]), vec!["main".to_string()]);
     }
 
     #[test]
@@ -2919,7 +3051,10 @@ mod tests {
             include_stashes: true,
             order: CommitOrder::Date,
         };
-        assert_eq!(build_log_refs(&options), vec!["main".to_string()]);
+        assert_eq!(
+            build_log_refs(&options, &["deadbeef".to_string()]),
+            vec!["main".to_string()]
+        );
     }
 
     #[test]
@@ -2930,8 +3065,95 @@ mod tests {
             ..GraphOptions::default()
         };
         assert_eq!(
-            build_log_refs(&options),
+            build_log_refs(&options, &[]),
             vec!["main".to_string(), "origin/feature".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_stash_commits_splits_tips_from_helpers() {
+        // 每行是「stash + parent」。第一個 parent 是 stash 當下的 HEAD（真實
+        // 歷史），第二個以後才是 index／untracked 快照。第一行是 `stash -u`，
+        // 所以有三個 parent。
+        let parsed = parse_stash_commits(
+            "aaa1 base1 idx1 untracked1\nbbb2 base2 idx2\n",
+        );
+        assert_eq!(parsed.tips, vec!["aaa1".to_string(), "bbb2".to_string()]);
+        assert_eq!(
+            parsed.helpers,
+            vec!["idx1".to_string(), "untracked1".to_string(), "idx2".to_string()]
+        );
+        // 基底 commit 不能被當成輔助 commit，否則真實歷史會被濾掉。
+        assert!(!parsed.helpers.contains(&"base1".to_string()));
+        assert!(!parsed.helpers.contains(&"base2".to_string()));
+    }
+
+    #[test]
+    fn parse_stash_commits_of_nothing_is_empty() {
+        // 沒有任何 stash 時 `git rev-list` 非零退出，呼叫端會餵進空字串。
+        assert_eq!(parse_stash_commits(""), StashCommits::default());
+    }
+
+    #[test]
+    fn filter_refs_drops_the_kinds_their_toggle_turned_off() {
+        // 把 ref 移出 git log 的走訪範圍不會拿掉裝飾：遠端分支和標籤幾乎都指在
+        // 本地歷史走得到的 commit 上，少了這層過濾，關掉開關看起來毫無反應。
+        let refs = vec![
+            GraphRef { name: "main".into(), kind: "head".into() },
+            GraphRef { name: "v1".into(), kind: "tag".into() },
+            GraphRef { name: "origin/main".into(), kind: "remote".into() },
+        ];
+        let off = GraphOptions {
+            include_remotes: false,
+            include_tags: false,
+            ..GraphOptions::default()
+        };
+        assert_eq!(
+            filter_refs(refs.clone(), &off),
+            vec![GraphRef { name: "main".into(), kind: "head".into() }]
+        );
+
+        let on = GraphOptions {
+            include_remotes: true,
+            include_tags: true,
+            ..GraphOptions::default()
+        };
+        assert_eq!(filter_refs(refs.clone(), &on), refs);
+    }
+
+    #[test]
+    fn label_stashes_names_every_stash_the_way_git_stash_list_does() {
+        // git 只裝飾 refs/stash（stash@{0}）；較舊的在 reflog 裡，沒有 ref 可標，
+        // 不補的話會變成一排沒有標籤的 "WIP on ..." commit。
+        let mut commits = vec![
+            GraphCommit {
+                hash: "aaa1111".into(),
+                parents: vec![],
+                author: "A".into(),
+                date: "2024-01-01 00:00".into(),
+                refs: vec![GraphRef { name: "stash".into(), kind: "stash".into() }],
+                message: "WIP on main".into(),
+            },
+            GraphCommit {
+                hash: "bbb2222".into(),
+                parents: vec![],
+                author: "A".into(),
+                date: "2024-01-01 00:00".into(),
+                refs: vec![],
+                message: "WIP on main".into(),
+            },
+        ];
+        label_stashes(
+            &mut commits,
+            &["aaa1111ffff".to_string(), "bbb2222ffff".to_string()],
+        );
+        assert_eq!(
+            commits[0].refs,
+            vec![GraphRef { name: "stash@{0}".into(), kind: "stash".into() }]
+        );
+        assert_eq!(
+            commits[1].refs,
+            vec![GraphRef { name: "stash@{1}".into(), kind: "stash".into() }]
         );
     }
 
@@ -2970,9 +3192,11 @@ mod tests {
     fn build_log_refs_blank_entries_fall_back_to_show_all() {
         let options = GraphOptions {
             branches: vec!["   ".to_string(), "".to_string()],
+            include_remotes: false,
+            include_tags: false,
             ..GraphOptions::default()
         };
-        assert_eq!(build_log_refs(&options), vec!["--branches".to_string()]);
+        assert_eq!(build_log_refs(&options, &[]), vec!["--branches".to_string()]);
     }
 
     #[test]
@@ -2984,15 +3208,134 @@ mod tests {
             include_stashes: true,
             order: CommitOrder::Date,
         };
+        // stash 以 commit hash 逐筆列出，不是旗標——git 沒有「所有 stash」的
+        // 旗標，而 `--glob=refs/stash` 因為不含萬用字元會被 git 當成前綴、
+        // 展開成 refs/stash/*，永遠匹配不到東西。
         assert_eq!(
-            build_log_refs(&options),
+            build_log_refs(&options, &["aaa1".to_string(), "bbb2".to_string()]),
             vec![
                 "--branches".to_string(),
                 "--remotes".to_string(),
                 "--tags".to_string(),
-                "--glob=refs/stash".to_string(),
+                "aaa1".to_string(),
+                "bbb2".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn graph_log_shows_every_stash_without_its_helper_commits() {
+        let dir = temp_repo_dir("graph-stash");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.name", "Test"]).unwrap();
+        run_git(&path, &["config", "user.email", "test@example.com"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        run_git(&path, &["add", "a.txt"]).unwrap();
+        run_git(&path, &["commit", "-m", "first"]).unwrap();
+
+        // 兩筆 stash：只有較新的那筆有 refs/stash 這個 ref，舊的在 reflog 裡。
+        std::fs::write(dir.join("a.txt"), "older\n").unwrap();
+        run_git(&path, &["stash"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "newer\n").unwrap();
+        run_git(&path, &["stash"]).unwrap();
+
+        let off = graph_log(&path, 50, 0, &GraphOptions::default()).unwrap();
+        assert!(
+            !off.commits.iter().any(|c| c.message.starts_with("WIP on")),
+            "開關關著不該畫出 stash: {:?}",
+            off.commits.iter().map(|c| &c.message).collect::<Vec<_>>()
+        );
+
+        let options = GraphOptions {
+            include_stashes: true,
+            ..GraphOptions::default()
+        };
+        let on = graph_log(&path, 50, 0, &options).unwrap();
+
+        // 兩筆都要在，而且都被標成 stash@{n}——舊的那筆沒有 ref 可以裝飾。
+        let stash_names: Vec<String> = on
+            .commits
+            .iter()
+            .flat_map(|c| c.refs.iter())
+            .filter(|r| r.kind == "stash")
+            .map(|r| r.name.clone())
+            .collect();
+        assert_eq!(
+            stash_names,
+            vec!["stash@{0}".to_string(), "stash@{1}".to_string()]
+        );
+
+        // git 為 stash 造的 index 快照不是使用者的歷史，不該出現在線圖上。
+        assert!(
+            !on.commits.iter().any(|c| c.message.starts_with("index on")),
+            "輔助 commit 漏進線圖: {:?}",
+            on.commits.iter().map(|c| &c.message).collect::<Vec<_>>()
+        );
+
+        // 每個 parent 都必須指到還在清單裡的 commit。懸空的 parent 會讓前端的
+        // lane 配置佔著一條永遠等不到的線，lane 一超過 maxLane 就被壓到同一欄，
+        // 兩個節點疊在同一個 x 上、畫出一條不存在的父子線。
+        let present: Vec<&str> = on.commits.iter().map(|c| c.hash.as_str()).collect();
+        for commit in &on.commits {
+            for parent in &commit.parents {
+                assert!(
+                    present.iter().any(|h| h == parent),
+                    "{} 的 parent {parent} 不在線圖裡",
+                    commit.hash
+                );
+            }
+        }
+        // 每筆 stash 只該剩下它的基底 commit 這一個 parent。
+        let stash_rows: Vec<&GraphCommit> = on
+            .commits
+            .iter()
+            .filter(|c| c.refs.iter().any(|r| r.kind == "stash"))
+            .collect();
+        assert_eq!(stash_rows.len(), 2);
+        for commit in stash_rows {
+            assert_eq!(commit.parents.len(), 1, "stash 還帶著輔助 parent: {commit:?}");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn graph_log_hides_remote_and_tag_chips_when_their_toggle_is_off() {
+        let dir = temp_repo_dir("graph-decorations");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.name", "Test"]).unwrap();
+        run_git(&path, &["config", "user.email", "test@example.com"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        run_git(&path, &["add", "a.txt"]).unwrap();
+        run_git(&path, &["commit", "-m", "first"]).unwrap();
+        run_git(&path, &["tag", "v1"]).unwrap();
+        // 遠端分支和本地 HEAD 指在同一個 commit——這是實務上的常態，也正是
+        // 「把 ref 移出走訪範圍」擋不掉裝飾的情境。
+        run_git(&path, &["update-ref", "refs/remotes/origin/main", "HEAD"]).unwrap();
+
+        let on = GraphOptions {
+            include_remotes: true,
+            include_tags: true,
+            ..GraphOptions::default()
+        };
+        let refs = &graph_log(&path, 10, 0, &on).unwrap().commits[0].refs;
+        assert!(refs.iter().any(|r| r.kind == "tag" && r.name == "v1"));
+        assert!(refs.iter().any(|r| r.kind == "remote" && r.name == "origin/main"));
+
+        let off = GraphOptions {
+            include_remotes: false,
+            include_tags: false,
+            ..GraphOptions::default()
+        };
+        let refs = &graph_log(&path, 10, 0, &off).unwrap().commits[0].refs;
+        assert!(!refs.iter().any(|r| r.kind == "tag"), "標籤沒被關掉: {refs:?}");
+        assert!(!refs.iter().any(|r| r.kind == "remote"), "遠端沒被關掉: {refs:?}");
+        // 本地分支不受這兩個開關影響。
+        assert!(refs.iter().any(|r| r.kind == "head" && r.name == "main"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
 
@@ -3005,6 +3348,17 @@ mod tests {
     #[test]
     fn graph_options_default_order_is_date() {
         assert_eq!(GraphOptions::default().order, CommitOrder::Date);
+    }
+
+    #[test]
+    fn graph_options_default_matches_the_toolbar() {
+        // 開關會拿掉 ref 裝飾，所以衍生的 all-false 預設會變成「什麼都不標」。
+        // 這些預設要跟 GitGraphTabContent 的 useState 初值一致。
+        let defaults = GraphOptions::default();
+        assert!(defaults.include_remotes);
+        assert!(defaults.include_tags);
+        assert!(!defaults.include_stashes);
+        assert!(defaults.branches.is_empty());
     }
 
     #[test]
