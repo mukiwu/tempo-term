@@ -417,6 +417,122 @@ function basename(path: string): string {
  * Recursively renders one level of a changed-files tree: folder headers with
  * a collapse toggle and a subtree-wide action button, file rows via StatusRow.
  */
+/**
+ * One folder in the tree: its header, and its children when it is open.
+ *
+ * Split out of FileTreeRows so it can hold a subscription of its own. A
+ * collapsed folder renders none of its files, so when the all-changes page
+ * scrolls into one of them there is no row to mark and the panel goes quiet
+ * about where the reader is. The folder takes the mark instead: the tree says
+ * where you are at whatever granularity is on screen -- the folder while it is
+ * shut, the file once it is open.
+ *
+ * Opening it by itself was the other option and is worse. Scrolling is
+ * continuous, so it would not be one folder opening but every folder the
+ * reader passes, and by the end of a long page the tree they had arranged is
+ * fully expanded. Collapse state belongs to the reader (#380), which is the
+ * same reason this feature leaves the panel's sections alone.
+ */
+function FolderRow({
+  node,
+  depth,
+  isCollapsed,
+  onToggleCollapse,
+  actionIcon: ActionIcon,
+  folderActionLabel,
+  onFolderAction,
+  followsPage,
+  children,
+}: {
+  node: TreeNode<FileStatus> & { kind: "folder" };
+  depth: number;
+  isCollapsed: boolean;
+  onToggleCollapse: (path: string) => void;
+  actionIcon: typeof Plus;
+  folderActionLabel: string;
+  onFolderAction: (paths: string[]) => void;
+  followsPage?: boolean;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation("sourceControl");
+  const rowRef = useRef<HTMLLIElement>(null);
+
+  // A boolean per folder row, for the same reason StatusRow asks per file: a
+  // reading taken at the top would re-render the whole tree every time the
+  // page crossed into another file.
+  const holdsShownFile = useAllChangesLinkStore((s) =>
+    s.showing ? s.showing.rel.startsWith(`${node.path}/`) : false,
+  );
+  // Only while shut. Open, the file's own row carries the mark and marking the
+  // folder too would say the same thing twice.
+  const onPage = Boolean(followsPage) && isCollapsed && holdsShownFile;
+
+  useEffect(() => {
+    if (onPage) {
+      rowRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [onPage]);
+
+  return (
+    <li ref={rowRef} aria-current={onPage ? "true" : undefined}>
+      <div
+        style={{ paddingLeft: `${depth * 14 + 12}px` }}
+        className={`group flex items-center gap-1 py-1 pr-3 text-sm ${
+          onPage ? "bg-bg-elevated" : "hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
+        }`}
+      >
+        {/* The whole label — chevron, icon and name — is the toggle, the
+            way the section headers and the Git Graph details tree work.
+            Aiming for the 13px chevron alone was the only way to open a
+            folder here. The subtree action stays a sibling button, so it
+            never toggles the folder it acts on. Hover is the row
+            background only, never a text colour: in this list a bright
+            label means "this is the file you are viewing" (StatusRow's
+            active row), and nothing else. */}
+        <button
+          type="button"
+          onClick={() => onToggleCollapse(node.path)}
+          aria-label={
+            isCollapsed
+              ? t("expandFolder", { name: node.path })
+              : t("collapseFolder", { name: node.path })
+          }
+          className="flex min-w-0 flex-1 items-center gap-1 text-left text-fg-subtle"
+        >
+          {isCollapsed ? (
+            <ChevronRight size={13} className="shrink-0" />
+          ) : (
+            <ChevronDown size={13} className="shrink-0" />
+          )}
+          <Folder size={13} className="shrink-0" />
+          <Tooltip label={node.path} className="min-w-0 flex-1">
+            <span className={`min-w-0 flex-1 truncate ${onPage ? "text-fg" : "text-fg-muted"}`}>
+              {node.name}
+            </span>
+          </Tooltip>
+        </button>
+        {/* Permanently revealed, like the section headers: folder rows
+            have no context menu to fall back on for pointers with no
+            hover, and one icon costs little of the width the file rows'
+            hover-reveal exists to reclaim. */}
+        <RowActions revealed>
+          <Tooltip label={`${folderActionLabel}: ${node.path}`}>
+            <button
+              type="button"
+              aria-label={`${folderActionLabel}: ${node.path}`}
+              onClick={() => onFolderAction(collectDescendantFiles(node).map((f) => f.path))}
+              className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
+            >
+              <ActionIcon size={14} />
+            </button>
+          </Tooltip>
+        </RowActions>
+      </div>
+      {!isCollapsed && <ul>{children}</ul>}
+    </li>
+  );
+}
+
 function FileTreeRows({
   nodes,
   depth,
@@ -448,7 +564,6 @@ function FileTreeRows({
   activePath?: string | null;
   followsPage?: boolean;
 }) {
-  const { t } = useTranslation("sourceControl");
   return (
     <>
       {nodes.map((node) => {
@@ -475,78 +590,35 @@ function FileTreeRows({
           );
         }
         const isCollapsed = collapsed.has(node.path);
-        return (
-          <li key={node.path}>
-            <div
-              style={{ paddingLeft: `${depth * 14 + 12}px` }}
-              className="group flex items-center gap-1 py-1 pr-3 text-sm hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
-            >
-              {/* The whole label — chevron, icon and name — is the toggle, the
-                  way the section headers and the Git Graph details tree work.
-                  Aiming for the 13px chevron alone was the only way to open a
-                  folder here. The subtree action stays a sibling button, so it
-                  never toggles the folder it acts on. Hover is the row
-                  background only, never a text colour: in this list a bright
-                  label means "this is the file you are viewing" (StatusRow's
-                  active row), and nothing else. */}
-              <button
-                type="button"
-                onClick={() => onToggleCollapse(node.path)}
-                aria-label={
-                  isCollapsed
-                    ? t("expandFolder", { name: node.path })
-                    : t("collapseFolder", { name: node.path })
-                }
-                className="flex min-w-0 flex-1 items-center gap-1 text-left text-fg-subtle"
-              >
-                {isCollapsed ? (
-                  <ChevronRight size={13} className="shrink-0" />
-                ) : (
-                  <ChevronDown size={13} className="shrink-0" />
-                )}
-                <Folder size={13} className="shrink-0" />
-                <Tooltip label={node.path} className="min-w-0 flex-1">
-                  <span className="min-w-0 flex-1 truncate text-fg-muted">{node.name}</span>
-                </Tooltip>
-              </button>
-              {/* Permanently revealed, like the section headers: folder rows
-                  have no context menu to fall back on for pointers with no
-                  hover, and one icon costs little of the width the file rows'
-                  hover-reveal exists to reclaim. */}
-              <RowActions revealed>
-                <Tooltip label={`${folderActionLabel}: ${node.path}`}>
-                  <button
-                    type="button"
-                    aria-label={`${folderActionLabel}: ${node.path}`}
-                    onClick={() => onFolderAction(collectDescendantFiles(node).map((f) => f.path))}
-                    className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
-                  >
-                    <ActionIcon size={14} />
-                  </button>
-                </Tooltip>
-              </RowActions>
-            </div>
-            {!isCollapsed && (
-              <ul>
-                <FileTreeRows
-                  nodes={node.children}
-                  depth={depth + 1}
-                  collapsed={collapsed}
-                  onToggleCollapse={onToggleCollapse}
-                  repoPath={repoPath}
-                  actionIcon={ActionIcon}
-                  actionLabel={actionLabel}
-                  folderActionLabel={folderActionLabel}
-                  onFileAction={onFileAction}
-                  onFolderAction={onFolderAction}
-                  onFileOpen={onFileOpen}
-                  onRequestDiscard={onRequestDiscard}
-                  activePath={activePath}
-                  followsPage={followsPage}
-                />
-              </ul>
-            )}
-          </li>
+return (
+          <FolderRow
+            key={node.path}
+            node={node}
+            depth={depth}
+            isCollapsed={isCollapsed}
+            onToggleCollapse={onToggleCollapse}
+            actionIcon={ActionIcon}
+            folderActionLabel={folderActionLabel}
+            onFolderAction={onFolderAction}
+            followsPage={followsPage}
+          >
+            <FileTreeRows
+              nodes={node.children}
+              depth={depth + 1}
+              collapsed={collapsed}
+              onToggleCollapse={onToggleCollapse}
+              repoPath={repoPath}
+              actionIcon={ActionIcon}
+              actionLabel={actionLabel}
+              folderActionLabel={folderActionLabel}
+              onFileAction={onFileAction}
+              onFolderAction={onFolderAction}
+              onFileOpen={onFileOpen}
+              onRequestDiscard={onRequestDiscard}
+              activePath={activePath}
+              followsPage={followsPage}
+            />
+          </FolderRow>
         );
       })}
     </>

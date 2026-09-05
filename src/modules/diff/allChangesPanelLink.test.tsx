@@ -145,4 +145,45 @@ describe("the Source Control panel beside the all-changes page", () => {
     view.scrollTo(250);
     await waitFor(() => expect(rowFor("src/c.ts", mode)).toHaveAttribute("aria-current", "true"));
   });
+
+  it("marks the folder instead when the file inside it is shut away", async () => {
+    localStorage.setItem("tempoterm-sourcecontrol-view-mode", "folder");
+    const { container } = render(
+      <>
+        <SourceControlView />
+        <AllChangesTabContent />
+      </>,
+    );
+    useTabsStore.getState().openAllChangesTab();
+    await waitFor(() => expect(container.querySelectorAll("[data-diff-file]").length).toBe(3));
+
+    // Shut the folder the files live in. Its rows leave the DOM with it, so
+    // there is nothing left for the page to mark.
+    fireEvent.click(await screen.findByRole("button", { name: "Collapse src" }));
+    // (the page renders the name in its own headers too, so this asks the
+    // panel specifically: no row, no `li`.)
+    expect(rowFor("src/a.ts", "folder")).toBeUndefined();
+
+    const page = container.querySelector<HTMLElement>(".overflow-auto");
+    const view = layOut(page!);
+    view.scrollTo(0);
+
+    // The folder takes the mark on their behalf: the tree still says where the
+    // reader is, at the granularity that is actually on screen.
+    // The page shows the directory in its own headers, so the folder row is
+    // found by its toggle rather than by the text.
+    const folder = screen.getByRole("button", { name: "Expand src" }).closest("li");
+    await waitFor(() => expect(folder).toHaveAttribute("aria-current", "true"));
+
+    // Opening it hands the mark back to the file, rather than marking both.
+    fireEvent.click(screen.getByRole("button", { name: "Expand src" }));
+    await waitFor(() => expect(rowFor("src/b.ts", "folder")).toBeTruthy());
+    view.scrollTo(150);
+    await waitFor(() =>
+      expect(rowFor("src/b.ts", "folder")).toHaveAttribute("aria-current", "true"),
+    );
+    expect(
+      screen.getByRole("button", { name: "Collapse src" }).closest("li"),
+    ).not.toHaveAttribute("aria-current");
+  });
 });
