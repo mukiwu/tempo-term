@@ -156,7 +156,8 @@ export function buildMenus(ctx: MenuContext): MenuDef[] {
         { id: "zoom-in", labelKey: "menuBar.zoomIn", group: 2, shortcut: { mac: "⌘+", win: "Ctrl++" }, action: { kind: "event", event: "menu:zoom-in" } },
         { id: "zoom-out", labelKey: "menuBar.zoomOut", group: 2, shortcut: { mac: "⌘-", win: "Ctrl+-" }, action: { kind: "event", event: "menu:zoom-out" } },
         { id: "zoom-reset", labelKey: "menuBar.resetZoom", group: 2, shortcut: { mac: "⌘0", win: "Ctrl+0" }, action: { kind: "event", event: "menu:zoom-reset" } },
-        { id: "reload-workspace", labelKey: "menuBar.reloadWorkspace", group: 3, shortcut: { mac: "⇧⌘R", win: "Ctrl+Shift+R" }, action: { kind: "event", event: "menu:reload-workspace" } },
+        { id: "all-changes", labelKey: "menuBar.allChanges", group: 3, shortcut: { mac: "⇧⌘G", win: "Ctrl+Shift+G" }, action: { kind: "event", event: "menu:all-changes" } },
+        { id: "reload-workspace", labelKey: "menuBar.reloadWorkspace", group: 4, shortcut: { mac: "⇧⌘R", win: "Ctrl+Shift+R" }, action: { kind: "event", event: "menu:reload-workspace" } },
       ],
     },
     {

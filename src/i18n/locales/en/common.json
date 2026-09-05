@@ -133,6 +133,7 @@
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out",
     "resetZoom": "Reset Zoom",
+    "allChanges": "All Changes",
     "reloadWorkspace": "Reload Workspace",
     "splitRight": "Split Right",
     "splitDown": "Split Down",

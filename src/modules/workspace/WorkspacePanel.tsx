@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   FileCode,
+  FileDiff,
   FileText,
   Folder,
   GitBranch,
@@ -61,6 +62,8 @@ function tabIcon(kind: TabKind): LucideIcon {
       return Image;
     case "git-graph":
       return GitBranch;
+    case "all-changes":
+      return FileDiff;
     case "diff":
       return GitCompare;
     case "sessions":

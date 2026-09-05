@@ -600,6 +600,11 @@ function App() {
         void reloadWorkspace().catch(() => {});
         return;
       }
+      if (key === "g" && e.shiftKey) {
+        e.preventDefault();
+        useTabsStore.getState().openAllChangesTab();
+        return;
+      }
       if (key === "t") {
         e.preventDefault();
         // ⇧⌘T opens a terminal straight away; ⌘T opens the launcher.
@@ -723,6 +728,9 @@ function App() {
       }),
       listenWebview("menu:reload-workspace", () => {
         void reloadWorkspace().catch(() => {});
+      }),
+      listenWebview("menu:all-changes", () => {
+        useTabsStore.getState().openAllChangesTab();
       }),
       listenWebview("menu:split-right", () => {
         useTabsStore.getState().splitActivePane("row");

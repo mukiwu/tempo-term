@@ -457,8 +457,15 @@ textarea:focus-visible,
 .diff-merge-view .cm-collapsedLines:hover { color: var(--color-fg); }
 /* Opening and folding the unchanged stretches, in a gutter of their own at the
    pane edge: an unfold icon beside each "N unchanged lines" bar, a fold icon on
-   the first line of a stretch that is open. No marker, no width. */
-.diff-merge-view .cm-diff-fold-gutter { cursor: pointer; }
+   the first line of a stretch that is open.
+
+   Width is fixed for the same reason the change gutter's is. A gutter is only
+   asked for markers over the visible range, so one sized by its content is as
+   wide as whatever happens to be on screen: scroll a fold icon into view and
+   every line of code shifts right, scroll it away and they all shift back.
+   Holding the width costs 18px on a file that never folds anything and keeps
+   the text still on every file that does. */
+.diff-merge-view .cm-diff-fold-gutter { cursor: pointer; width: 18px; }
 .diff-merge-view .cm-diff-fold,
 .diff-merge-view .cm-diff-unfold {
   display: flex;
@@ -516,6 +523,16 @@ textarea:focus-visible,
   content: "+";
   color: var(--color-success);
 }
+
+/* One file inside the all-changes view. It grows to its whole comparison and
+   lets the page scroll past it, instead of scrolling inside its own box the
+   way the single-file tab does — a page of files each with its own scrollbar
+   would be unreadable. */
+.diff-flow .cm-mergeView {
+  height: auto;
+  overflow-y: visible;
+}
+.diff-flow.diff-inline-view .cm-editor { max-height: none; }
 
 .note-md strong { font-weight: 700; }
 .note-md em { font-style: italic; }

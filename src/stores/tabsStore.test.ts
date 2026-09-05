@@ -397,6 +397,18 @@ describe("tabsStore", () => {
     expect(useTabsStore.getState().activeId).toBe(s1);
   });
 
+  it("opens an all-changes tab as a singleton, focusing the existing one", () => {
+    const a1 = useTabsStore.getState().openAllChangesTab();
+    expect(activeTab().kind).toBe("all-changes");
+    expect(activeTab().title).toBe("All Changes");
+    expect(firstLeafContent(activeTab())).toEqual({ kind: "all-changes" });
+
+    const a2 = useTabsStore.getState().openAllChangesTab();
+    expect(a2).toBe(a1);
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(useTabsStore.getState().activeId).toBe(a1);
+  });
+
   it("does not dedupe an editor tab once it has been split", () => {
     const first = useTabsStore.getState().openEditorTab("/a/b.ts");
     useTabsStore

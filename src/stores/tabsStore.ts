@@ -52,6 +52,7 @@ export type TabKind =
   | "preview"
   | "media"
   | "git-graph"
+  | "all-changes"
   | "diff"
   | "sessions"
   | "launcher";
@@ -97,6 +98,7 @@ interface TabsState {
   openNoteTab: (noteId: string, title: string) => string;
   openPreviewTab: (url: string) => string;
   openGitGraphTab: () => string;
+  openAllChangesTab: () => string;
   openDiffTab: (path: string, staged: boolean) => string;
   /** Open the AI sessions browser tab (singleton per space). */
   openSessionsTab: () => string;
@@ -681,6 +683,33 @@ export const useTabsStore = create<TabsState>()(
       kind: "git-graph",
       title: "Git Graph",
       paneTree: leaf(paneId, { kind: "git-graph" }),
+      activeLeafId: paneId,
+      paneOrder: [paneId],
+    };
+    set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
+    return id;
+  },
+
+  openAllChangesTab: () => {
+    const spaceId = get().ensureSpace();
+    const existing = get().tabs.find(
+      (t) =>
+        t.kind === "all-changes" &&
+        t.spaceId === spaceId &&
+        singleLeafContentEquals(t, { kind: "all-changes" }),
+    );
+    if (existing) {
+      set({ activeId: existing.id });
+      return existing.id;
+    }
+    const id = nextTabId();
+    const paneId = nextPaneId();
+    const tab: Tab = {
+      id,
+      spaceId,
+      kind: "all-changes",
+      title: "All Changes",
+      paneTree: leaf(paneId, { kind: "all-changes" }),
       activeLeafId: paneId,
       paneOrder: [paneId],
     };

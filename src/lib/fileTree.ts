@@ -83,6 +83,23 @@ export function buildFileTree<T extends { path: string }>(files: T[]): TreeNode<
   return toSortedArray(root);
 }
 
+/**
+ * The tree's files in the order it draws them: at every level the folders
+ * first, each alphabetical, then the files. Used where a flat list has to
+ * stack in the same order the tree beside it is read in.
+ */
+export function flattenFileTree<T>(nodes: readonly TreeNode<T>[]): T[] {
+  const files: T[] = [];
+  for (const node of nodes) {
+    if (node.kind === "folder") {
+      files.push(...flattenFileTree(node.children));
+    } else {
+      files.push(node.file);
+    }
+  }
+  return files;
+}
+
 /** Every file under a folder, recursing through all descendant folders —
  * the basis for "act on this whole subtree" folder actions. Reads the tree
  * data structure, not rendered DOM, so it is unaffected by collapse state. */
