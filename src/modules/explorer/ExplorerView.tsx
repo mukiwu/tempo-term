@@ -8,6 +8,7 @@ import { buildCrumbs } from "@/lib/breadcrumb";
 import { listSubdirectories, useHomeDir } from "@/components/paneCrumbs";
 import { fsReadDir, type DirEntry } from "./lib/fsBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useExplorerStore } from "@/stores/explorerStore";
 import { pickFolder } from "@/lib/dialog";
 import { buildRemoteUri, isRemoteUri, parseRemoteUri } from "@/modules/ssh/lib/remotePath";
 
@@ -30,6 +31,7 @@ export function ExplorerView() {
   // leave stale subfolders in place — remounting is the only way to discard
   // that cache and guarantee a truly fresh listing.
   const [refreshTick, setRefreshTick] = useState(0);
+  const clearExpandedDirs = useExplorerStore((s) => s.clearRoot);
 
   // A remote (SFTP) root hides local-only controls and shows the remote path
   // rather than the raw ssh:// uri.
@@ -86,6 +88,10 @@ export function ExplorerView() {
 
   function toggleExpandCollapseAll() {
     if (treeExpanded) {
+      // Collapse-all only tells the mounted nodes to fold; the remembered set
+      // has to be dropped too, or the next remount would restore the tree the
+      // user just asked to close.
+      clearExpandedDirs(rootPath);
       setCollapseSignal((v) => v + 1);
     } else {
       setExpandSignal((v) => v + 1);
@@ -94,8 +100,11 @@ export function ExplorerView() {
   }
 
   // Mirrors the root-change reset above: a refresh must render as if a brand
-  // new root had just been opened, fully collapsed with no cached children.
+  // new root had just been opened, fully collapsed with no cached children —
+  // hence dropping the remembered expanded set too, which would otherwise
+  // restore the old shape the moment the tree remounts.
   function refresh() {
+    clearExpandedDirs(rootPath);
     setTreeExpanded(false);
     setCollapseSignal(0);
     setExpandSignal(0);
