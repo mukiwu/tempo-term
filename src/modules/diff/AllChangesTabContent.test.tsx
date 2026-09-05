@@ -246,6 +246,54 @@ describe("AllChangesTabContent", () => {
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
   });
 
+  it("keeps the header in view when a file is shut from half way down it", async () => {
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [
+        { path: "src/a.ts", staged: false, status: "M" },
+        { path: "src/b.ts", staged: false, status: "M" },
+        { path: "src/c.ts", staged: false, status: "M" },
+      ],
+    });
+    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
+      staged ? "" : diffFor("src/a.ts") + diffFor("src/b.ts") + diffFor("src/c.ts"),
+    );
+
+    const { container } = render(<AllChangesTabContent />);
+    await waitFor(() => expect(container.querySelectorAll("[data-diff-file]").length).toBe(3));
+
+    // jsdom lays nothing out, so the geometry the page reads is stubbed. The
+    // middle file is the one being shut -- there is a whole file above it, so
+    // the arithmetic is not clamped at the top of the page and a few pixels
+    // out would show. Its header starts 1,000px down; the reader is 2,000px
+    // into it; shutting it takes 3,000px of body out of the flow.
+    const root = container.querySelector<HTMLElement>(".overflow-auto")!;
+    let scrollTop = 3000;
+    let body = 3000;
+    Object.defineProperty(root, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    root.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    const middle = container.querySelector<HTMLElement>('[data-diff-file="w:src/b.ts"]')!;
+    middle.getBoundingClientRect = () => ({ top: 1000 - scrollTop }) as DOMRect;
+
+    fireEvent.click(screen.getAllByRole("button", { name: "allChangesCollapseFile" })[1]);
+    body = 40;
+
+    // Without the pin the page stays at 3,000 and the reader is left in
+    // whatever file has moved up into that position. The header goes exactly
+    // to the top of the pane, not to the gap a jump would leave: it is sticky
+    // and has been sitting there all along, so any offset is a visible drop.
+    await waitFor(() => expect(scrollTop).toBe(1000));
+    expect(middle.getBoundingClientRect().top).toBeCloseTo(0);
+    expect(body).toBe(40);
+  });
+
   it("re-reads the files already up, not just the file list", async () => {
     vi.mocked(gitStatus).mockResolvedValue({
       branch: "main",

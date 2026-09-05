@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -117,6 +117,9 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   const heightsRef = useRef(new Map<string, number>());
   const elementsRef = useRef(new Map<string, HTMLElement>());
   const handlesRef = useRef(new Map<string, DiffSectionHandle>());
+  // Where the header of the file being shut sat, so the page can put it back
+  // there once the body it was holding is gone (see onToggleCollapse).
+  const anchorRef = useRef<{ key: string; top: number } | null>(null);
   const draftsRef = useRef(new Set<string>());
   // Bumped when a section's editors come or go, so a jump waiting on one can
   // finish.
@@ -334,7 +337,29 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
     setExpanded((prev) => new Set(prev).add(key));
   }, []);
 
+  /**
+   * Shutting a file takes its whole body out of the flow, and everything below
+   * slides up by that much. The page's scroll position does not move with it,
+   * so a reader half way down a long file lands several files further on with
+   * no idea where they are.
+   *
+   * So the header is pinned: whatever offset it sat at is the offset it keeps.
+   * Clamping at zero is what makes the interesting case work -- scrolled well
+   * into the file, the section's top is far above the viewport but its header
+   * is not, because the header is sticky and has been sitting at the top of
+   * the pane all along. Zero is where it already is, so it does not move at
+   * all; the landing gap other jumps leave would drop it those few pixels. A
+   * header still on screen has an offset inside the viewport and stays put.
+   */
   const onToggleCollapse = useCallback((key: string) => {
+    const root = scrollRef.current;
+    const element = elementsRef.current.get(key);
+    if (root && element) {
+      anchorRef.current = {
+        key,
+        top: element.getBoundingClientRect().top - root.getBoundingClientRect().top,
+      };
+    }
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (!next.delete(key)) {
@@ -343,6 +368,19 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       return next;
     });
   }, []);
+
+  // Before the browser paints the shorter page, so the jump is never seen.
+  useLayoutEffect(() => {
+    const pinned = anchorRef.current;
+    anchorRef.current = null;
+    const root = scrollRef.current;
+    const element = pinned ? elementsRef.current.get(pinned.key) : null;
+    if (!pinned || !root || !element) {
+      return;
+    }
+    const now = element.getBoundingClientRect().top - root.getBoundingClientRect().top;
+    root.scrollTop = Math.max(0, root.scrollTop + now - Math.max(pinned.top, 0));
+  }, [collapsed]);
 
   /**
    * Every change in the page, in reading order. Built from the scan rather
