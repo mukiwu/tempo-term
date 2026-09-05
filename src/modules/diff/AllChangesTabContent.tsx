@@ -352,6 +352,12 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
    * header still on screen has an offset inside the viewport and stays put.
    */
   const onToggleCollapse = useCallback((key: string) => {
+    // A jump waiting on editors that were not up yet finishes itself the
+    // moment a handle registers, and shutting a file registers handles. The
+    // reader shutting something is a newer instruction than a jump they asked
+    // for before it, so the jump is dropped rather than allowed to land on
+    // top of the pinning below.
+    setPending(null);
     const root = scrollRef.current;
     const element = elementsRef.current.get(key);
     if (root && element) {

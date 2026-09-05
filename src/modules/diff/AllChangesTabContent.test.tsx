@@ -265,16 +265,18 @@ describe("AllChangesTabContent", () => {
     );
 
     const { container } = render(<AllChangesTabContent />);
-    await waitFor(() => expect(container.querySelectorAll("[data-diff-file]").length).toBe(3));
+    // Wait for the editors, not just the sections: the page registers the
+    // handles it measures against as they are built.
+    await waitFor(() => expect(container.querySelectorAll(".cm-mergeView").length).toBe(3));
 
     // jsdom lays nothing out, so the geometry the page reads is stubbed. The
     // middle file is the one being shut -- there is a whole file above it, so
     // the arithmetic is not clamped at the top of the page and a few pixels
-    // out would show. Its header starts 1,000px down; the reader is 2,000px
-    // into it; shutting it takes 3,000px of body out of the flow.
+    // out would show. Its header starts 1,000px down and the reader is
+    // 2,000px into it, which is to say its header is above the viewport and
+    // its sticky copy is what they can actually see.
     const root = container.querySelector<HTMLElement>(".overflow-auto")!;
     let scrollTop = 3000;
-    let body = 3000;
     Object.defineProperty(root, "scrollTop", {
       configurable: true,
       get: () => scrollTop,
@@ -286,16 +288,14 @@ describe("AllChangesTabContent", () => {
     const middle = container.querySelector<HTMLElement>('[data-diff-file="w:src/b.ts"]')!;
     middle.getBoundingClientRect = () => ({ top: 1000 - scrollTop }) as DOMRect;
 
-    fireEvent.click(screen.getAllByRole("button", { name: "allChangesCollapseFile" })[1]);
-    body = 40;
+    fireEvent.click(within(middle).getByRole("button", { name: "allChangesCollapseFile" }));
 
     // Without the pin the page stays at 3,000 and the reader is left in
-    // whatever file has moved up into that position. The header goes exactly
-    // to the top of the pane, not to the gap a jump would leave: it is sticky
-    // and has been sitting there all along, so any offset is a visible drop.
+    // whatever file has moved up into that position. The header goes to the
+    // very top of the pane, not to the gap navigation leaves: it is sticky and
+    // has been sitting there all along, so any offset reads as a flinch.
     await waitFor(() => expect(scrollTop).toBe(1000));
     expect(middle.getBoundingClientRect().top).toBeCloseTo(0);
-    expect(body).toBe(40);
   });
 
   it("re-reads the files already up, not just the file list", async () => {
