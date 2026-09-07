@@ -77,6 +77,7 @@ export function laneX(lane: number, geometry: GraphGeometry): number {
 export function computeGraphLayout(
   commits: readonly GraphLayoutCommit[],
   geometry: GraphGeometry = DEFAULT_GEOMETRY,
+  headHash?: string,
 ): GraphLayout {
   const layouts: Record<string, CommitLayout> = {};
 
@@ -131,6 +132,17 @@ export function computeGraphLayout(
     laneColors.push(pickColor());
     return activeLanes.length - 1;
   };
+
+  // Reserve the leftmost lane for HEAD before anything claims it, so the branch
+  // you are on runs down the left edge and the branches that merely have newer
+  // commits bend out to the right. Without this, lane 0 goes to whatever commit
+  // happens to be newest — often another branch entirely — and the line you
+  // most want to follow is the one pushed aside. Only when HEAD is actually in
+  // this page: seeding a hash that never arrives would strand an empty lane.
+  if (headHash && commits.some((c) => c.hash === headHash)) {
+    activeLanes.push(headHash);
+    laneColors.push(pickColor());
+  }
 
   commits.forEach((commit, index) => {
     const y = geometry.paddingTop + index * geometry.rowHeight;

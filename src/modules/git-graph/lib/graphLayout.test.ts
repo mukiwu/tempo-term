@@ -284,3 +284,36 @@ describe("laneContinuationRowIndex", () => {
     expect(laneContinuationRowIndex(edges, 2)).toBe(0); // a -> m, straight
   });
 });
+
+describe("computeGraphLayout head lane", () => {
+  // Two branches are newer than the one checked out — the everyday shape when
+  // the graph shows all branches.
+  const commits = [commit("newer", ["head"]), commit("other", ["head"]), commit("head", [])];
+
+  it("gives HEAD the leftmost lane and bends the newer branches out", () => {
+    const { layouts } = computeGraphLayout(commits, DEFAULT_GEOMETRY, "head");
+    expect(layouts["head"].lane).toBe(0);
+    expect(layouts["newer"].lane).toBeGreaterThan(0);
+    expect(layouts["other"].lane).toBeGreaterThan(0);
+  });
+
+  it("leaves the lanes alone when no head is named", () => {
+    // The sidebar's compact graph passes none, and must keep its old shape.
+    const { layouts } = computeGraphLayout(commits, DEFAULT_GEOMETRY);
+    expect(layouts["newer"].lane).toBe(0);
+  });
+
+  it("does not strand a lane on a head outside this page", () => {
+    // A branch filter can hide HEAD entirely; reserving a lane for a hash that
+    // never arrives would leave an empty column down the whole graph.
+    const { layouts } = computeGraphLayout(commits, DEFAULT_GEOMETRY, "not-loaded");
+    expect(layouts["newer"].lane).toBe(0);
+  });
+
+  it("is a no-op when HEAD is already the newest commit", () => {
+    const headFirst = [commit("head", ["old"]), commit("old", [])];
+    const { layouts } = computeGraphLayout(headFirst, DEFAULT_GEOMETRY, "head");
+    expect(layouts["head"].lane).toBe(0);
+    expect(layouts["old"].lane).toBe(0);
+  });
+});
