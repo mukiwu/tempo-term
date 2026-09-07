@@ -1138,13 +1138,28 @@ pub fn diff(repo_path: &str, staged: bool) -> Result<String, String> {
     }
 }
 
-/// Content of `path` at `rev`, where rev is limited to "HEAD" (last commit)
-/// or ":" (the index) — the only two versions the diff tab compares against.
-/// A file missing at that rev is an empty document, not an error, so new
-/// files diff as all-added.
+/// Content of `path` at `rev`. "HEAD" is the last commit and ":" is the index;
+/// anything else is resolved as a rev, so a branch, tag or hash can be read
+/// too — the comparison base in #398 needs that.
+///
+/// The two-value whitelist that used to stand here was doing double duty: it
+/// picked the supported revs *and*, as a side effect, validated them, since a
+/// literal cannot be anything else. Opening it up means the validation has to
+/// be said out loud, so the rev is resolved with `rev-parse --verify` before it
+/// is used. That both rejects nonsense and keeps a value that happens to look
+/// like an option out of the argv (`ensure_not_flag` only catches a leading
+/// dash).
+///
+/// A file missing at that rev is an empty document, not an error, so new files
+/// diff as all-added.
 pub fn file_at_rev(repo_path: &str, rev: &str, path: &str) -> Result<String, String> {
+    ensure_not_flag(rev)?;
     if rev != "HEAD" && rev != ":" {
-        return Err(format!("unsupported rev: {rev}"));
+        // `--verify` makes rev-parse fail rather than echo the string back,
+        // and `^{commit}` refuses a tree or a blob: what is wanted here is a
+        // point in history, not any object that happens to be nameable.
+        run_git(repo_path, &["rev-parse", "--verify", "--quiet", &format!("{rev}^{{commit}}")])
+            .map_err(|_| format!("unknown rev: {rev}"))?;
     }
     ensure_not_flag(path)?;
     // "HEAD:path" names the committed version; ":path" (single colon) names
@@ -2868,6 +2883,40 @@ mod tests {
         // (all-added diff), not an error.
         assert_eq!(file_at_rev(&path, "HEAD", "a.txt").unwrap(), "");
         assert_eq!(file_at_rev(&path, ":", "a.txt").unwrap(), "staged\n");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn file_at_rev_reads_any_rev_and_refuses_one_that_is_not() {
+        // The comparison base is a branch or a tag, so the two-value whitelist
+        // had to go; what replaces it is a real resolve, which still says no.
+        let dir = temp_repo_dir("far-anyrev");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "first").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "second").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "second"]).unwrap();
+        run_git(&path, &["tag", "v1"]).unwrap();
+        run_git(&path, &["checkout", "-q", "-b", "later"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "third").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "third"]).unwrap();
+
+        assert_eq!(file_at_rev(&path, "v1", "a.txt").unwrap().trim(), "second");
+        assert_eq!(file_at_rev(&path, "main", "a.txt").unwrap().trim(), "second");
+        assert_eq!(file_at_rev(&path, "HEAD", "a.txt").unwrap().trim(), "third");
+        // Still an empty document rather than an error when the file is not
+        // there at that rev -- that is what makes a new file diff as all-added.
+        assert_eq!(file_at_rev(&path, "main", "nope.txt").unwrap(), "");
+        // Nonsense is refused rather than reaching git's argv.
+        assert!(file_at_rev(&path, "no-such-branch", "a.txt").is_err());
+        assert!(file_at_rev(&path, "--upload-pack=touch", "a.txt").is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
