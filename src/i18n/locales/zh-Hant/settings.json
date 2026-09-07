@@ -15,6 +15,8 @@
     "uncommittedDescription": "在圖的最上方常駐一列，顯示工作區的狀態。",
     "uncommittedRowLabel": "在圖最上方顯示未提交的變更",
     "uncommittedRowHint": "不論有沒有未提交的東西，這一列都在，所以提交時整張圖不會在游標底下跳動。關掉之後，圖的第一列就是最新的 commit。",
+    "uncommittedWhenCleanLabel": "沒有未提交的變更時也保留這一列",
+    "uncommittedWhenCleanHint": "開啟時，工作區乾淨也會留一列安靜的列，整張圖不會移動。關閉時只在有未提交的變更才出現——代價是每次提交或改動檔案，整張圖都會上下位移一列。",
     "refsTitle": "分支標籤",
     "refsDescription": "Git Graph 在 commit 列上如何精簡分支與標籤 chip。",
     "mergeLocalRemoteLabel": "同名的本地與遠端分支合併成一顆",

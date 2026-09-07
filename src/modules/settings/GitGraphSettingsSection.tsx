@@ -16,6 +16,8 @@ export function GitGraphSettingsSection() {
   const setRefs = useSettingsStore((s) => s.setGitGraphRefs);
   const uncommittedRow = useSettingsStore((s) => s.gitGraphUncommittedRow);
   const setUncommittedRow = useSettingsStore((s) => s.setGitGraphUncommittedRow);
+  const whenClean = useSettingsStore((s) => s.gitGraphUncommittedWhenClean);
+  const setWhenClean = useSettingsStore((s) => s.setGitGraphUncommittedWhenClean);
 
   return (
     <section>
@@ -36,7 +38,25 @@ export function GitGraphSettingsSection() {
         />
         {t("gitGraph.uncommittedRowLabel")}
       </label>
-      <p className="mb-6 ml-6 text-xs text-fg-muted">{t("gitGraph.uncommittedRowHint")}</p>
+      <p className="mb-3 ml-6 text-xs text-fg-muted">{t("gitGraph.uncommittedRowHint")}</p>
+
+      <label
+        className={`mb-1 ml-6 flex items-center gap-2 text-sm ${
+          uncommittedRow ? "text-fg" : "text-fg-subtle"
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={whenClean}
+          disabled={!uncommittedRow}
+          onChange={(e) => setWhenClean(e.target.checked)}
+          className="h-4 w-4 accent-accent disabled:opacity-50"
+        />
+        {t("gitGraph.uncommittedWhenCleanLabel")}
+      </label>
+      <p className="mb-6 ml-12 text-xs text-fg-muted">
+        {t("gitGraph.uncommittedWhenCleanHint")}
+      </p>
 
       <label className="mb-1 block text-sm font-medium text-fg">{t("gitGraph.refsTitle")}</label>
       <p className="mb-2 text-xs text-fg-muted">{t("gitGraph.refsDescription")}</p>

@@ -36,6 +36,7 @@ import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore"
 import { filterCommits } from "./lib/filterCommits";
 import { buildCommitMenu, buildRefMenu, buildWorkingTreeMenu } from "./lib/contextMenuItems";
 import { isCurrentCommit } from "./lib/currentCommit";
+import { uncommittedRowSummary } from "./lib/uncommittedRow";
 import { splitRemoteRef } from "./lib/remoteRef";
 import type { RefChipOptions } from "./lib/refChips";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -86,6 +87,7 @@ export function GitGraphTabContent() {
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const gitGraphRefs = useSettingsStore((s) => s.gitGraphRefs);
   const showUncommittedRow = useSettingsStore((s) => s.gitGraphUncommittedRow);
+  const keepRowWhenClean = useSettingsStore((s) => s.gitGraphUncommittedWhenClean);
 
   const [repo, setRepo] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
@@ -494,12 +496,13 @@ export function GitGraphTabContent() {
       t("uncommitted.summary", { staged, unstaged }),
   };
 
-  // `null` means the row is switched off. A clean tree still gets a row, just a
-  // quiet one — dropping it whenever the tree went clean would jump the whole
-  // graph up one row on every commit, right under the pointer.
-  const uncommittedSummary: UncommittedSummary | null = showUncommittedRow
-    ? { staged: status?.staged.length ?? 0, unstaged: status?.unstaged.length ?? 0 }
-    : null;
+  // `null` means no row at all — either the feature is off, or the tree is
+  // clean and the reader asked not to keep a row for that.
+  const uncommittedSummary: UncommittedSummary | null = uncommittedRowSummary(
+    status,
+    showUncommittedRow,
+    keepRowWhenClean,
+  );
   // Which commit the uncommitted changes sit on top of. Found by its ref rather
   // than assumed to be the first row: a branch filter or a detached HEAD can
   // leave HEAD further down the list, or off it entirely.
