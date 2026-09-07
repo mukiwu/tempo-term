@@ -11,6 +11,10 @@
     "about": "About"
   },
   "gitGraph": {
+    "uncommittedTitle": "Uncommitted changes",
+    "uncommittedDescription": "Keep a row for your working tree at the top of the graph.",
+    "uncommittedRowLabel": "Show uncommitted changes at the top of the graph",
+    "uncommittedRowHint": "The row stays put whether or not anything is uncommitted, so committing never shifts the graph under the pointer. Turn it off and the first row is the newest commit again.",
     "refsTitle": "Branch labels",
     "refsDescription": "How the Git Graph condenses the branch and tag chips on a commit row.",
     "mergeLocalRemoteLabel": "Merge a branch with its remotes",

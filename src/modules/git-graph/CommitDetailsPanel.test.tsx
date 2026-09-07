@@ -8,6 +8,8 @@ import {
   gitCommitRangeFiles,
   gitCommitRangeFileDiff,
 } from "./lib/gitGraphBridge";
+import { gitDiff } from "@/modules/source-control/lib/gitBridge";
+import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
 import type { CommitNode } from "./types";
 
 vi.mock("./lib/gitGraphBridge", () => ({
@@ -15,6 +17,15 @@ vi.mock("./lib/gitGraphBridge", () => ({
   gitCommitFileDiff: vi.fn().mockResolvedValue(""),
   gitCommitRangeFiles: vi.fn(),
   gitCommitRangeFileDiff: vi.fn().mockResolvedValue(""),
+}));
+
+// Only the two calls the working-tree mode makes; the panel takes nothing else
+// from either module at runtime (the rest are types).
+vi.mock("@/modules/source-control/lib/gitBridge", () => ({
+  gitDiff: vi.fn().mockResolvedValue(""),
+}));
+vi.mock("@/modules/explorer/lib/fsBridge", () => ({
+  fsReadFile: vi.fn().mockResolvedValue(""),
 }));
 
 const LABELS = {
@@ -37,6 +48,11 @@ const LABELS = {
   viewFlat: "Flat view",
   expandFolder: (name: string) => `Expand ${name}`,
   collapseFolder: (name: string) => `Collapse ${name}`,
+  uncommittedTitle: "Uncommitted changes",
+  uncommittedClean: "No uncommitted changes",
+  relativeTo: (hash: string) => `against ${hash}`,
+  stagedTitle: "Staged",
+  unstagedTitle: "Unstaged",
 };
 
 const COMMIT: CommitNode = {
@@ -240,5 +256,85 @@ describe("CommitDetailsPanel compare mode", () => {
 
     expect(await screen.findByText("No diff")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "AI Explain" })).not.toBeInTheDocument();
+  });
+});
+
+describe("CommitDetailsPanel working-tree mode", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(gitDiff).mockResolvedValue("");
+    vi.mocked(fsReadFile).mockResolvedValue("");
+  });
+
+  const STATUS = {
+    branch: "main",
+    staged: [{ path: "src/a.ts", staged: true, status: "M" }],
+    unstaged: [
+      { path: "src/b.ts", staged: false, status: "M" },
+      { path: "src/new.ts", staged: false, status: "?" },
+    ],
+  };
+
+  function renderWorkspace(uncommitted: typeof STATUS | null = STATUS) {
+    render(
+      <CommitDetailsPanel
+        repo="/repo"
+        selection={{ mode: "workspace" }}
+        onClose={() => {}}
+        uncommitted={uncommitted}
+        headHash="abc1234"
+        labels={LABELS}
+      />,
+    );
+  }
+
+  it("splits the files into staged and unstaged groups", async () => {
+    renderWorkspace();
+    expect(await screen.findByText("Staged (1)")).toBeInTheDocument();
+    expect(screen.getByText("Unstaged (2)")).toBeInTheDocument();
+    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+    expect(screen.getByText("src/b.ts")).toBeInTheDocument();
+  });
+
+  it("titles the header and says which commit the changes sit on", async () => {
+    renderWorkspace();
+    // Awaited so the first file's diff load settles inside act(); the header is
+    // already on screen before it.
+    await screen.findByText("Staged (1)");
+    expect(screen.getByText("Uncommitted changes")).toBeInTheDocument();
+    expect(screen.getByText("against abc1234")).toBeInTheDocument();
+  });
+
+  it("has no AI tab — there is no commit to explain", async () => {
+    renderWorkspace();
+    await screen.findByText("Staged (1)");
+    expect(screen.queryByRole("button", { name: "AI Explain" })).not.toBeInTheDocument();
+  });
+
+  it("says the tree is clean rather than showing an empty list", () => {
+    renderWorkspace({ branch: "main", staged: [], unstaged: [] });
+    expect(screen.getByText("No uncommitted changes")).toBeInTheDocument();
+  });
+
+  it("reads an untracked file off disk instead of asking git to diff it", async () => {
+    // `git diff` never mentions an untracked file, so slicing its section would
+    // give nothing and the panel would claim there is no difference.
+    vi.mocked(fsReadFile).mockResolvedValue("fresh\n");
+    renderWorkspace();
+    fireEvent.click(await screen.findByText("src/new.ts"));
+    await waitFor(() => expect(fsReadFile).toHaveBeenCalledWith("/repo/src/new.ts"));
+    expect(await screen.findByText("+fresh")).toBeInTheDocument();
+  });
+
+  it("asks for the staged side when a staged file is picked", async () => {
+    renderWorkspace();
+    await screen.findByText("src/a.ts");
+    await waitFor(() => expect(gitDiff).toHaveBeenCalledWith("/repo", true));
+  });
+
+  it("asks for the unstaged side when an unstaged tracked file is picked", async () => {
+    renderWorkspace();
+    fireEvent.click(await screen.findByText("src/b.ts"));
+    await waitFor(() => expect(gitDiff).toHaveBeenCalledWith("/repo", false));
   });
 });

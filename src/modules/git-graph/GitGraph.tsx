@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock, GitBranch, User } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
-import type { CommitNode, CommitRef, GraphSelection } from "./types";
+import type {
+  CommitNode,
+  CommitRef,
+  GraphSelection,
+  UncommittedSummary,
+} from "./types";
 import { RefChipStrip } from "./RefChipStrip";
 import { DEFAULT_REF_CHIP_OPTIONS, type RefChipOptions } from "./lib/refChips";
 import {
@@ -10,6 +15,7 @@ import {
   edgePath,
   firstParentRowIndex,
   laneContinuationRowIndex,
+  laneX,
 } from "./lib/graphLayout";
 import { isCurrentCommit } from "./lib/currentCommit";
 import { BRANCH_COLORS } from "./lib/branchColors";
@@ -21,6 +27,12 @@ export interface GitGraphLabels {
   loadMore: string;
   refHint: string;
   moreRefs: string;
+  /** Message on the working-tree row while something is uncommitted. */
+  uncommittedTitle: string;
+  /** Message on the working-tree row while the tree is clean. */
+  uncommittedClean: string;
+  /** "3 staged · 4 unstaged", appended after the title. */
+  uncommittedSummary: (staged: number, unstaged: number) => string;
 }
 
 interface GitGraphProps {
@@ -39,12 +51,35 @@ interface GitGraphProps {
   refChipOptions?: RefChipOptions;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  /**
+   * Counts for the working-tree row above the newest commit. `null` leaves the
+   * row out altogether — that is the setting being off, not a clean tree; a
+   * clean tree is `{ staged: 0, unstaged: 0 }` and still draws a (quiet) row.
+   */
+  uncommitted?: UncommittedSummary | null;
+  onSelectWorkspace?: () => void;
+  onWorkspaceContextMenu?: (x: number, y: number) => void;
   labels: GitGraphLabels;
 }
 
 const NODE_RADIUS = 6;
 const ROW_HEIGHT = DEFAULT_GEOMETRY.rowHeight;
 const PADDING_TOP = DEFAULT_GEOMETRY.paddingTop;
+
+/**
+ * Path from the working-tree node down to HEAD: straight along its own track,
+ * then one bend into HEAD's lane in the final row. Same shape as a branch tail
+ * rejoining a trunk in `edgePath`, kept separate because this one is not an
+ * edge — it has no parent/child to look up and must not take a lane colour.
+ */
+function uncommittedPath(x: number, y: number, headX: number, headY: number): string {
+  if (headX === x) {
+    return `M ${x} ${y} L ${x} ${headY}`;
+  }
+  const bend = Math.min(ROW_HEIGHT, headY - y);
+  const turn = headY - bend;
+  return `M ${x} ${y} L ${x} ${turn} C ${x} ${turn + bend * 0.5}, ${headX} ${headY - bend * 0.5}, ${headX} ${headY}`;
+}
 
 export function GitGraph({
   commits,
@@ -55,6 +90,9 @@ export function GitGraph({
   refChipOptions = DEFAULT_REF_CHIP_OPTIONS,
   hasMore = false,
   onLoadMore,
+  uncommitted = null,
+  onSelectWorkspace,
+  onWorkspaceContextMenu,
   labels,
 }: GitGraphProps) {
   // All hooks run unconditionally before any early return so the hook order
@@ -77,8 +115,32 @@ export function GitGraph({
     return () => observer.disconnect();
   }, []);
 
-  const { layouts, edges } = useMemo(() => computeGraphLayout(commits), [commits]);
+  const showUncommitted = uncommitted !== null;
+  // The working-tree row is made room for by starting the commits one row
+  // lower, rather than by shifting each drawn coordinate. Every y the graph
+  // uses — nodes, rows, edge endpoints, the keyboard's scroll-into-view — comes
+  // out of computeGraphLayout, so moving its origin moves all of them at once
+  // and the row itself stays outside the lane and colour bookkeeping.
+  const rowOffset = showUncommitted ? ROW_HEIGHT : 0;
+  const geometry = useMemo(
+    () => ({ ...DEFAULT_GEOMETRY, paddingTop: PADDING_TOP + rowOffset }),
+    [rowOffset],
+  );
+  // HEAD takes the leftmost lane, so the working tree's dashed segment runs
+  // straight down that lane into it and the branches that only happen to be
+  // newer bend out to the right instead.
+  //
+  // Only while the row is drawn. The reordering exists to serve that segment,
+  // and switching the row off has to put the graph back exactly as it was —
+  // otherwise turning a feature off still leaves every lane moved.
+  const headHash = useMemo(() => commits.find(isCurrentCommit)?.hash, [commits]);
+  const layoutHead = showUncommitted ? headHash : undefined;
+  const { layouts, edges } = useMemo(
+    () => computeGraphLayout(commits, geometry, layoutHead),
+    [commits, geometry, layoutHead],
+  );
 
+  const isWorkspaceSelected = selection?.mode === "workspace";
   const activeHash =
     selection?.mode === "single"
       ? selection.commit.hash
@@ -108,7 +170,23 @@ export function GitGraph({
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (commits.length === 0 || !activeHash) {
+    if (commits.length === 0) {
+      return;
+    }
+    // The working-tree row is stepped on and off by position, not by the hash
+    // walk below: it has no hash, so `commits.findIndex` would answer -1 for it
+    // and every arrow key would fall through and do nothing. Its only exit is
+    // down onto the newest commit — there is no row above it, and the Shift
+    // combos (walk to first parent, follow a lane) are about commit ancestry,
+    // which the working tree has no place in.
+    if (isWorkspaceSelected) {
+      if (event.key === "ArrowDown" && !event.shiftKey) {
+        event.preventDefault();
+        onSelectCommit(commits[0], { shiftKey: false });
+      }
+      return;
+    }
+    if (!activeHash) {
       return;
     }
     const currentIndex = commits.findIndex((c) => c.hash === activeHash);
@@ -127,6 +205,12 @@ export function GitGraph({
       }
     } else if (event.key === "ArrowUp" && !event.shiftKey) {
       event.preventDefault();
+      // Off the top of the commits and onto the working-tree row, when it is
+      // drawn. Without this the selection would just stick at index 0.
+      if (currentIndex === 0 && showUncommitted && onSelectWorkspace) {
+        onSelectWorkspace();
+        return;
+      }
       const targetIndex = Math.max(currentIndex - 1, 0);
       if (targetIndex !== currentIndex || isComparing) {
         onSelectCommit(commits[targetIndex], { shiftKey: false });
@@ -194,16 +278,40 @@ export function GitGraph({
     }
   }, [activeHash, layouts]);
 
-  const svgHeight = commits.length * ROW_HEIGHT + PADDING_TOP * 2 - 20;
+  // Stepping onto the working-tree row brings it into view. It lives above the
+  // first commit, so that is simply the top; the hash-keyed effect above can't
+  // do this one because the row has no hash to key on.
+  useEffect(() => {
+    if (isWorkspaceSelected && scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [isWorkspaceSelected]);
+
+  const svgHeight = commits.length * ROW_HEIGHT + rowOffset + PADDING_TOP * 2 - 20;
+  // Commit `i` is drawn at PADDING_TOP + rowOffset + i * ROW_HEIGHT, so the
+  // offset comes back out before scroll position is turned into an index.
   const visibleStart = Math.max(
     0,
-    Math.floor((viewport.scrollTop - PADDING_TOP) / ROW_HEIGHT) - 12,
+    Math.floor((viewport.scrollTop - PADDING_TOP - rowOffset) / ROW_HEIGHT) - 12,
   );
   const visibleEnd = Math.min(
     commits.length,
-    Math.ceil((viewport.scrollTop + viewport.height + PADDING_TOP) / ROW_HEIGHT) + 12,
+    Math.ceil((viewport.scrollTop + viewport.height + PADDING_TOP - rowOffset) / ROW_HEIGHT) + 12,
   );
   const visibleCommits = commits.slice(visibleStart, visibleEnd);
+
+  // The dashed segment runs down to HEAD, which is what uncommitted changes are
+  // relative to — not necessarily the first row, since the graph can show newer
+  // commits from other branches above it. The node sits in HEAD's own lane, so
+  // the segment is a straight vertical line down that lane and passes behind
+  // any node on the way exactly as every other lane line already does (nodes
+  // are z-10, the tracks z-[1]).
+  const headLayout = headHash ? layouts[headHash] : undefined;
+  // Directly above HEAD, which now owns the leftmost lane; lane 0 is the
+  // fallback for a page that does not contain HEAD at all.
+  const uncommittedX = headLayout?.x ?? laneX(0, geometry);
+  const uncommittedY = PADDING_TOP;
+  const isDirty = uncommitted !== null && uncommitted.staged + uncommitted.unstaged > 0;
 
   if (commits.length === 0) {
     return (
@@ -262,7 +370,57 @@ export function GitGraph({
                   />
                 );
               })}
+              {/* Working tree → HEAD. Dashed and in the accent rather than a
+                  lane colour, so it reads as "not history yet": straight down
+                  its own track, then bending into HEAD in the last row. Drawn
+                  after the lane lines so the bend, which crosses into HEAD's
+                  lane, stays visible over the solid line already there. */}
+              {showUncommitted && headLayout && (
+                <path
+                  d={uncommittedPath(uncommittedX, uncommittedY, headLayout.x, headLayout.y)}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeDasharray="3 4"
+                  className={isDirty ? "text-accent opacity-70" : "text-fg-subtle opacity-40"}
+                />
+              )}
             </svg>
+
+            {/* Working-tree node: hollow with a dashed ring, so it cannot be
+                mistaken for either of the filled kinds — HEAD (accent + glow)
+                or a commit (its lane's colour). */}
+            {showUncommitted && (
+              <Tooltip label={labels.uncommittedTitle}>
+                <button
+                  type="button"
+                  aria-label={labels.uncommittedTitle}
+                  onClick={() => {
+                    scrollRef.current?.focus();
+                    onSelectWorkspace?.();
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onWorkspaceContextMenu?.(e.clientX, e.clientY);
+                  }}
+                  style={{
+                    left: `${uncommittedX - NODE_RADIUS - 2}px`,
+                    top: `${uncommittedY - NODE_RADIUS - 2}px`,
+                    width: `${(NODE_RADIUS + 2) * 2}px`,
+                    height: `${(NODE_RADIUS + 2) * 2}px`,
+                  }}
+                  className={`absolute z-10 flex items-center justify-center rounded-full transition-all focus:outline-none ${
+                    isWorkspaceSelected ? "scale-125 ring-4 ring-accent/30" : "hover:scale-110"
+                  }`}
+                >
+                  <span
+                    className={`h-3 w-3 rounded-full border-2 border-dashed bg-bg ${
+                      isDirty ? "border-accent" : "border-fg-subtle opacity-60"
+                    }`}
+                  />
+                </button>
+              </Tooltip>
+            )}
 
             {/* Commit nodes positioned over the SVG */}
             {visibleCommits.map((commit) => {
@@ -310,6 +468,53 @@ export function GitGraph({
 
           {/* Commit rows aligned with their node y */}
           <div className="flex-1 pr-4">
+            {showUncommitted && (
+              <div
+                onClick={() => {
+                  scrollRef.current?.focus();
+                  onSelectWorkspace?.();
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  onWorkspaceContextMenu?.(e.clientX, e.clientY);
+                }}
+                style={{
+                  height: `${ROW_HEIGHT}px`,
+                  top: `${uncommittedY - ROW_HEIGHT / 2}px`,
+                }}
+                className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pl-[112px] pr-3 transition-all ${
+                  isWorkspaceSelected
+                    ? "border-border-strong bg-bg-elevated/60 text-fg shadow-sm"
+                    : "border-transparent text-fg-muted hover:bg-bg-elevated/40 hover:text-fg"
+                }`}
+              >
+                <div className="flex items-center space-x-3 overflow-hidden pr-2">
+                  {/* Placeholder in the hash column, dimmed and the same width,
+                      so the columns still line up down the whole list. */}
+                  <span className="font-mono text-xs font-semibold text-fg-subtle opacity-50">
+                    •••••••
+                  </span>
+                  <span
+                    className={`truncate font-sans text-[13px] font-medium ${
+                      isDirty ? "text-fg" : "text-fg-subtle"
+                    }`}
+                  >
+                    {isDirty ? labels.uncommittedTitle : labels.uncommittedClean}
+                  </span>
+                  {/* Counts sit right after the message, not out in the
+                      author/time column: that column belongs to things the
+                      working tree does not have, and numbers parked at the far
+                      end of a wide row read as unrelated to their label. */}
+                  {isDirty && uncommitted && (
+                    <span className="shrink-0 font-mono text-[11px] text-fg-muted">
+                      {labels.uncommittedSummary(uncommitted.staged, uncommitted.unstaged)}
+                    </span>
+                  )}
+                </div>
+                {/* The author/time column stays empty — the cheapest signal
+                    there is that this row is not a commit. */}
+              </div>
+            )}
             {visibleCommits.map((commit) => {
               const layout = layouts[commit.hash];
               if (!layout) {

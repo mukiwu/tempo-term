@@ -14,12 +14,29 @@ export function GitGraphSettingsSection() {
   const { t } = useTranslation("settings");
   const refs = useSettingsStore((s) => s.gitGraphRefs);
   const setRefs = useSettingsStore((s) => s.setGitGraphRefs);
+  const uncommittedRow = useSettingsStore((s) => s.gitGraphUncommittedRow);
+  const setUncommittedRow = useSettingsStore((s) => s.setGitGraphUncommittedRow);
 
   return (
     <section>
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-fg-subtle">
         {t("sections.gitGraph")}
       </h2>
+
+      <label className="mb-1 block text-sm font-medium text-fg">
+        {t("gitGraph.uncommittedTitle")}
+      </label>
+      <p className="mb-2 text-xs text-fg-muted">{t("gitGraph.uncommittedDescription")}</p>
+      <label className="mb-1 flex items-center gap-2 text-sm text-fg">
+        <input
+          type="checkbox"
+          checked={uncommittedRow}
+          onChange={(e) => setUncommittedRow(e.target.checked)}
+          className="h-4 w-4 accent-accent"
+        />
+        {t("gitGraph.uncommittedRowLabel")}
+      </label>
+      <p className="mb-6 ml-6 text-xs text-fg-muted">{t("gitGraph.uncommittedRowHint")}</p>
 
       <label className="mb-1 block text-sm font-medium text-fg">{t("gitGraph.refsTitle")}</label>
       <p className="mb-2 text-xs text-fg-muted">{t("gitGraph.refsDescription")}</p>

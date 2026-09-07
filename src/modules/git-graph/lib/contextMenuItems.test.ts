@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildCommitMenu,
   buildRefMenu,
+  buildWorkingTreeMenu,
   type CommitMenuActions,
   type CommitMenuLabels,
   type RefMenuActions,
@@ -223,5 +224,35 @@ describe("buildCommitMenu", () => {
     items.find((i) => i.id === "copySubject")?.onSelect();
     expect(actions.onCopyHash).toHaveBeenCalledTimes(1);
     expect(actions.onCopySubject).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("buildWorkingTreeMenu", () => {
+  const labels = { openSourceControl: "Open in Source Control", refresh: "Refresh" };
+
+  it("offers only the two actions the working tree can actually do", () => {
+    // Nothing from the commit menu applies: there is no hash to copy and
+    // nothing to check out. Staging/stashing/discarding all wait on backend
+    // capabilities the app does not have yet.
+    const items = buildWorkingTreeMenu(labels, {
+      onOpenSourceControl: vi.fn(),
+      onRefresh: vi.fn(),
+    });
+    expect(items.map((i) => i.id)).toEqual(["openSourceControl", "refresh"]);
+    expect(items.map((i) => i.label)).toEqual(["Open in Source Control", "Refresh"]);
+    // One group, so no separator is drawn between two items that belong together.
+    expect(new Set(items.map((i) => i.group))).toEqual(new Set([0]));
+    expect(items.some((i) => i.danger)).toBe(false);
+  });
+
+  it("wires each item to its own action", () => {
+    const onOpenSourceControl = vi.fn();
+    const onRefresh = vi.fn();
+    const items = buildWorkingTreeMenu(labels, { onOpenSourceControl, onRefresh });
+    items.find((i) => i.id === "openSourceControl")?.onSelect();
+    expect(onOpenSourceControl).toHaveBeenCalledTimes(1);
+    expect(onRefresh).not.toHaveBeenCalled();
+    items.find((i) => i.id === "refresh")?.onSelect();
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });

@@ -9,6 +9,8 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 vi.mock("@/modules/source-control/lib/gitBridge", () => ({
   gitResolveRepo: vi.fn().mockResolvedValue("/repo"),
+  // Read on every reload for the working-tree row's counts.
+  gitStatus: vi.fn().mockResolvedValue({ branch: "main", staged: [], unstaged: [] }),
 }));
 
 vi.mock("./lib/gitGraphBridge", () => ({

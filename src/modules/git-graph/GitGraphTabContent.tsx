@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { GitCommit } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { Resizer } from "@/components/Resizer";
-import { gitResolveRepo } from "@/modules/source-control/lib/gitBridge";
+import { gitResolveRepo, gitStatus, type GitStatus } from "@/modules/source-control/lib/gitBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -34,12 +34,21 @@ import {
 import { GitGraphToolbar, type GitGraphToolbarLabels } from "./GitGraphToolbar";
 import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore";
 import { filterCommits } from "./lib/filterCommits";
-import { buildCommitMenu, buildRefMenu } from "./lib/contextMenuItems";
+import { buildCommitMenu, buildRefMenu, buildWorkingTreeMenu } from "./lib/contextMenuItems";
+import { isCurrentCommit } from "./lib/currentCommit";
 import { splitRemoteRef } from "./lib/remoteRef";
 import type { RefChipOptions } from "./lib/refChips";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { withMinDuration } from "@/lib/withMinDuration";
-import type { Branch, CommitNode, CommitRef, CommitOrder, GraphOptions, GraphSelection } from "./types";
+import type {
+  Branch,
+  CommitNode,
+  CommitRef,
+  CommitOrder,
+  GraphOptions,
+  GraphSelection,
+  UncommittedSummary,
+} from "./types";
 
 const PAGE_SIZE = 200;
 // Local git reloads finish almost instantly; keep the busy spinner up at least
@@ -48,7 +57,10 @@ const MIN_BUSY_MS = 400;
 
 type MenuTarget =
   | { type: "commit"; commit: CommitNode; x: number; y: number }
-  | { type: "ref"; ref: CommitRef; remotes: CommitRef[]; x: number; y: number };
+  | { type: "ref"; ref: CommitRef; remotes: CommitRef[]; x: number; y: number }
+  // No payload: the working-tree row has neither a hash to copy nor a ref to
+  // act on, which is also why it cannot reuse the commit menu.
+  | { type: "workingTree"; x: number; y: number };
 
 interface ModalState {
   title: string;
@@ -73,12 +85,16 @@ export function GitGraphTabContent() {
   const { t } = useTranslation("gitGraph");
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const gitGraphRefs = useSettingsStore((s) => s.gitGraphRefs);
+  const showUncommittedRow = useSettingsStore((s) => s.gitGraphUncommittedRow);
 
   const [repo, setRepo] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
   const [commits, setCommits] = useState<CommitNode[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [worktrees, setWorktrees] = useState<WorktreeItem[]>([]);
+  // The working tree, feeding both the top row's counts and the details
+  // panel's file list — one fetch so the two can never disagree.
+  const [status, setStatus] = useState<GitStatus | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [selection, setSelection] = useState<GraphSelection | null>(null);
@@ -127,22 +143,27 @@ export function GitGraphTabContent() {
   const reload = useCallback(
     async (repoPath: string, nextLimit: number, opts: GraphOptions) => {
       try {
-        const [log, branchList, worktreeList] = await Promise.all([
+        const [log, branchList, worktreeList, workingTree] = await Promise.all([
           gitGraphLog(repoPath, nextLimit, opts),
           gitBranches(repoPath),
           // Refetched on every reload so the selector's branch labels track
           // in-app checkouts and `git worktree add/remove` runs in the app's
           // own terminal; a failure just hides the selector.
           gitWorktreeList(repoPath).catch((): WorktreeItem[] => []),
+          // Own catch, like the worktree list: a status walk that fails should
+          // quiet the top row, not blank the whole graph.
+          gitStatus(repoPath).catch((): GitStatus | null => null),
         ]);
         setCommits(log.commits);
         setHasMore(log.hasMore);
         setBranches(branchList);
         setWorktrees(worktreeList);
+        setStatus(workingTree);
       } catch (err: unknown) {
         setCommits([]);
         setBranches([]);
         setWorktrees([]);
+        setStatus(null);
         setHasMore(false);
         setError(getErrorMessage(err));
       }
@@ -467,7 +488,22 @@ export function GitGraphTabContent() {
     loadMore: t("loadMore"),
     refHint: t("refHint"),
     moreRefs: t("moreRefs"),
+    uncommittedTitle: t("uncommitted.title"),
+    uncommittedClean: t("uncommitted.clean"),
+    uncommittedSummary: (staged: number, unstaged: number) =>
+      t("uncommitted.summary", { staged, unstaged }),
   };
+
+  // `null` means the row is switched off. A clean tree still gets a row, just a
+  // quiet one — dropping it whenever the tree went clean would jump the whole
+  // graph up one row on every commit, right under the pointer.
+  const uncommittedSummary: UncommittedSummary | null = showUncommittedRow
+    ? { staged: status?.staged.length ?? 0, unstaged: status?.unstaged.length ?? 0 }
+    : null;
+  // Which commit the uncommitted changes sit on top of. Found by its ref rather
+  // than assumed to be the first row: a branch filter or a detached HEAD can
+  // leave HEAD further down the list, or off it entirely.
+  const headHash = commits.find(isCurrentCommit)?.hash ?? null;
 
   const detailsLabels: CommitDetailsLabels = {
     author: t("details.author"),
@@ -489,6 +525,11 @@ export function GitGraphTabContent() {
     viewFlat: t("details.viewFlat"),
     expandFolder: (name: string) => t("details.expandFolder", { name }),
     collapseFolder: (name: string) => t("details.collapseFolder", { name }),
+    uncommittedTitle: t("uncommitted.title"),
+    uncommittedClean: t("uncommitted.clean"),
+    relativeTo: (hash: string) => t("uncommitted.relativeTo", { hash }),
+    stagedTitle: t("uncommitted.stagedTitle"),
+    unstagedTitle: t("uncommitted.unstagedTitle"),
   };
 
   const openCreateBranchModal = (commit: CommitNode) =>
@@ -557,6 +598,21 @@ export function GitGraphTabContent() {
         onResetHard: () => void runAction(() => gitReset(repo!, commit.hash, "hard")),
         onCopyHash: () => void navigator.clipboard.writeText(commit.hash),
         onCopySubject: () => void navigator.clipboard.writeText(commit.message),
+      },
+    );
+
+  // The working-tree row's menu. "Refresh" reuses the toolbar's own label and
+  // reload rather than introducing a second word (and a second path) for the
+  // same thing.
+  const workingTreeMenuItems = (): ContextMenuItem[] =>
+    buildWorkingTreeMenu(
+      {
+        openSourceControl: t("menu.openInSourceControl"),
+        refresh: t("toolbar.refresh"),
+      },
+      {
+        onOpenSourceControl: () => useUiStore.getState().activatePanel("sourceControl"),
+        onRefresh: () => void runAction(async () => {}),
       },
     );
 
@@ -685,6 +741,9 @@ export function GitGraphTabContent() {
             refChipOptions={refChipOptions}
             hasMore={hasMore}
             onLoadMore={loadMore}
+            uncommitted={uncommittedSummary}
+            onSelectWorkspace={() => setSelection({ mode: "workspace" })}
+            onWorkspaceContextMenu={(x, y) => setMenu({ type: "workingTree", x, y })}
             labels={labels}
           />
         </div>
@@ -702,6 +761,8 @@ export function GitGraphTabContent() {
                 repo={repo}
                 selection={selection}
                 onClose={() => setSelection(null)}
+                uncommitted={status}
+                headHash={headHash}
                 labels={detailsLabels}
               />
             </div>
@@ -714,7 +775,9 @@ export function GitGraphTabContent() {
           const items =
             menu.type === "commit"
               ? commitMenuItems(menu.commit)
-              : refMenuItems(menu.ref, menu.remotes);
+              : menu.type === "ref"
+                ? refMenuItems(menu.ref, menu.remotes)
+                : workingTreeMenuItems();
           // A detached HEAD, a stash and an unknown ref have no applicable
           // actions; skip the menu rather than flashing an empty one.
           if (items.length === 0) {

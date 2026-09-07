@@ -75,7 +75,8 @@
     "deleteRemoteOn": "Delete branch on {{remote}}… (git push --delete)",
     "copyBranchName": "Copy branch name",
     "copyTagName": "Copy tag name",
-    "openWorktree": "Open worktree for this branch"
+    "openWorktree": "Open worktree for this branch",
+    "openInSourceControl": "Open in Source Control"
   },
   "modal": {
     "cancel": "Cancel",
@@ -102,5 +103,13 @@
       "message": "Delete {{name}} on the remote? This cannot be undone.",
       "confirm": "Delete"
     }
+  },
+  "uncommitted": {
+    "title": "Uncommitted changes",
+    "clean": "No uncommitted changes",
+    "summary": "{{staged}} staged · {{unstaged}} unstaged",
+    "relativeTo": "against {{hash}}",
+    "stagedTitle": "Staged",
+    "unstagedTitle": "Unstaged"
   }
 }

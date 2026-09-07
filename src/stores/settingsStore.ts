@@ -88,6 +88,12 @@ interface SettingsState {
   workspaceCard: WorkspaceCardBlocks;
   /** How the Git Graph condenses a commit row's ref chips. */
   gitGraphRefs: GitGraphRefSettings;
+  /**
+   * Keep a row for the working tree above the newest commit in the Git Graph.
+   * Flat rather than folded into `gitGraphRefs`: that group is specifically the
+   * ref-chip condensing options, and this has nothing to do with chips.
+   */
+  gitGraphUncommittedRow: boolean;
   /** Where workspace cards source PR data. */
   prSource: WorkspacePrSource;
   /** Default flags appended to the `claude` command when launched from the launcher. */
@@ -157,6 +163,7 @@ interface SettingsState {
   setNotesFolderPath: (path: string | null) => void;
   setWorkspaceCardBlock: (key: keyof WorkspaceCardBlocks, value: boolean) => void;
   setGitGraphRefs: (patch: Partial<GitGraphRefSettings>) => void;
+  setGitGraphUncommittedRow: (value: boolean) => void;
   setPrSource: (source: WorkspacePrSource) => void;
   setClaudeFlags: (flags: string) => void;
   setCodexFlags: (flags: string) => void;
@@ -249,6 +256,7 @@ export const useSettingsStore = create<SettingsState>()(
       notesFolderPath: null,
       workspaceCard: DEFAULT_WORKSPACE_CARD,
       gitGraphRefs: DEFAULT_GIT_GRAPH_REFS,
+      gitGraphUncommittedRow: true,
       prSource: "auto",
       claudeFlags: "",
       codexFlags: "",
@@ -303,6 +311,7 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({
           gitGraphRefs: normalizeGitGraphRefs({ ...state.gitGraphRefs, ...patch }),
         })),
+      setGitGraphUncommittedRow: (value) => set({ gitGraphUncommittedRow: value }),
       setPrSource: (prSource) => set({ prSource }),
       setClaudeFlags: (claudeFlags) => set({ claudeFlags }),
       setCodexFlags: (codexFlags) => set({ codexFlags }),

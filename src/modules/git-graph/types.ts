@@ -16,13 +16,30 @@ export interface CommitNode {
 }
 
 /**
- * What the Git Graph commit list currently has selected: one commit, or two
- * commits being compared. `from`/`to` are ordered older/newer by list
- * position, not by click order.
+ * What the Git Graph commit list currently has selected: one commit, two
+ * commits being compared, or the working tree. `from`/`to` are ordered
+ * older/newer by list position, not by click order.
+ *
+ * The working-tree variant carries nothing. It has no hash to identify it by,
+ * and giving it a payload (the head it sits on, its file counts) would freeze
+ * a copy that goes stale the moment the graph reloads. Everything the panel
+ * needs about the working tree arrives as props, freshly fetched; this stays a
+ * plain answer to "what is selected", which is also why it survives a reload
+ * that no longer finds any particular hash.
  */
 export type GraphSelection =
   | { mode: "single"; commit: CommitNode }
-  | { mode: "compare"; from: CommitNode; to: CommitNode };
+  | { mode: "compare"; from: CommitNode; to: CommitNode }
+  | { mode: "workspace" };
+
+/**
+ * How much is uncommitted, for the graph's top row. Counts only — the row shows
+ * "staged 3 · unstaged 4" and nothing that would need the paths themselves.
+ */
+export interface UncommittedSummary {
+  staged: number;
+  unstaged: number;
+}
 
 /** A page of graph commits plus whether more history exists past `commits`. */
 export interface GraphLog {

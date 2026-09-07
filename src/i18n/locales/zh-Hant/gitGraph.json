@@ -75,7 +75,8 @@
     "deleteRemoteOn": "刪除 {{remote}} 上的分支… (git push --delete)",
     "copyBranchName": "複製分支名稱",
     "copyTagName": "複製標籤名稱",
-    "openWorktree": "為這個分支開 worktree"
+    "openWorktree": "為這個分支開 worktree",
+    "openInSourceControl": "到原始碼控制側欄"
   },
   "modal": {
     "cancel": "取消",
@@ -102,5 +103,13 @@
       "message": "確定要在遠端刪除 {{name}}？此動作無法復原",
       "confirm": "刪除"
     }
+  },
+  "uncommitted": {
+    "title": "未提交的變更",
+    "clean": "沒有未提交的變更",
+    "summary": "已暫存 {{staged}} · 未暫存 {{unstaged}}",
+    "relativeTo": "相對於 {{hash}}",
+    "stagedTitle": "已暫存",
+    "unstagedTitle": "未暫存"
   }
 }
