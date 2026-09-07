@@ -1653,12 +1653,33 @@ pub fn commit_file_diff(repo_path: &str, commit: &str, file: &str) -> Result<Str
     Ok(diff)
 }
 
+/// The two ends of a range as git argv, either two-dot or three-dot.
+///
+/// Two-dot is the literal difference between the two trees. Three-dot starts
+/// from where they diverged, which is what "what does this branch change"
+/// means -- without it, every commit the other side gained in the meantime is
+/// counted as yours.
+///
+/// It is one helper because the file list and the per-file diff have to agree.
+/// They are two commands running two git invocations, and if only one of them
+/// learns about three-dot the list and the diffs disagree by exactly the
+/// commits made on the base since the branch left it -- silently, with no
+/// error, just a file too many or too few.
+fn range_spec(from: &str, to: &str, merge_base: bool) -> String {
+    if merge_base {
+        format!("{from}...{to}")
+    } else {
+        format!("{from}..{to}")
+    }
+}
+
 /// 兩個任意 commit 之間變更的檔案清單(`git diff --name-status from to`)。
 /// 不像 commit_details 限定「對第一個 parent」，from/to 可以是歷史上任意兩點。
 pub fn commit_range_files(
     repo_path: &str,
     from: &str,
     to: &str,
+    merge_base: bool,
 ) -> Result<Vec<CommitFileChange>, String> {
     let from = from.trim();
     let to = to.trim();
@@ -1668,7 +1689,8 @@ pub fn commit_range_files(
     ensure_not_flag(from)?;
     ensure_not_flag(to)?;
 
-    let name_status = run_git(repo_path, &["diff", "--name-status", from, to])?;
+    let spec = range_spec(from, to, merge_base);
+    let name_status = run_git(repo_path, &["diff", "--name-status", &spec])?;
     let files = name_status
         .lines()
         .filter_map(parse_name_status_line)
@@ -1682,6 +1704,7 @@ pub fn commit_range_file_diff(
     from: &str,
     to: &str,
     file: &str,
+    merge_base: bool,
 ) -> Result<String, String> {
     let from = from.trim();
     let to = to.trim();
@@ -1691,7 +1714,8 @@ pub fn commit_range_file_diff(
     ensure_not_flag(from)?;
     ensure_not_flag(to)?;
 
-    run_git(repo_path, &["diff", from, to, "--", file])
+    let spec = range_spec(from, to, merge_base);
+    run_git(repo_path, &["diff", &spec, "--", file])
 }
 
 #[tauri::command]
@@ -1907,25 +1931,37 @@ pub async fn git_commit_file_diff(
         .map_err(|e| e.to_string())?
 }
 
+/// `merge_base` absent means two-dot, which is what every caller before #398
+/// wanted; the file list and the per-file diff must be asked the same way or
+/// they disagree without saying so.
 #[tauri::command]
 pub async fn git_commit_range_files(
     repo_path: String,
     from: String,
     to: String,
+    merge_base: Option<bool>,
 ) -> Result<Vec<CommitFileChange>, String> {
-    tauri::async_runtime::spawn_blocking(move || commit_range_files(&repo_path, &from, &to))
+    tauri::async_runtime::spawn_blocking(move || {
+        commit_range_files(&repo_path, &from, &to, merge_base.unwrap_or(false))
+    })
         .await
         .map_err(|e| e.to_string())?
 }
 
+/// `merge_base` absent means two-dot, which is what every caller before #398
+/// wanted; the file list and the per-file diff must be asked the same way or
+/// they disagree without saying so.
 #[tauri::command]
 pub async fn git_commit_range_file_diff(
     repo_path: String,
     from: String,
     to: String,
     file: String,
+    merge_base: Option<bool>,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || commit_range_file_diff(&repo_path, &from, &to, &file))
+    tauri::async_runtime::spawn_blocking(move || {
+        commit_range_file_diff(&repo_path, &from, &to, &file, merge_base.unwrap_or(false))
+    })
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2609,9 +2645,9 @@ mod tests {
         assert!(ensure_not_flag("-x").is_err());
         assert!(ensure_not_flag("--upload-pack=evil").is_err());
 
-        let err = commit_range_files("/no/such/repo", "-x", "HEAD").unwrap_err();
+        let err = commit_range_files("/no/such/repo", "-x", "HEAD", false).unwrap_err();
         assert!(err.to_lowercase().contains("flag"), "got: {err}");
-        let err = commit_range_file_diff("/no/such/repo", "HEAD", "-x", "a.txt").unwrap_err();
+        let err = commit_range_file_diff("/no/such/repo", "HEAD", "-x", "a.txt", false).unwrap_err();
         assert!(err.to_lowercase().contains("flag"), "got: {err}");
     }
 
@@ -2638,15 +2674,59 @@ mod tests {
 
         // first..third skips the middle commit entirely — proves this isn't
         // limited to adjacent parent-child pairs like commit_details is.
-        let files = commit_range_files(&path, &first, &third).unwrap();
+        let files = commit_range_files(&path, &first, &third, false).unwrap();
         let mut paths: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
         paths.sort();
         assert_eq!(paths, vec!["a.txt", "b.txt"]);
         assert!(files.iter().any(|f| f.path == "a.txt" && f.status == "M"));
         assert!(files.iter().any(|f| f.path == "b.txt" && f.status == "A"));
 
-        let diff = commit_range_file_diff(&path, &first, &third, "a.txt").unwrap();
+        let diff = commit_range_file_diff(&path, &first, &third, "a.txt", false).unwrap();
         assert!(diff.contains("+line2"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn three_dot_ignores_what_the_base_gained_after_the_branch_left_it() {
+        // main and feature both move after they diverge. Two-dot compares the
+        // two tips, so main's own new file reads as something feature deleted;
+        // three-dot starts from where they parted and reports only feature's
+        // work. Getting this wrong is what makes "what does my branch change"
+        // list files the branch never touched.
+        let dir = temp_repo_dir("range-threedot");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "hi").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        run_git(&path, &["checkout", "-q", "-b", "feature"]).unwrap();
+        std::fs::write(dir.join("mine.txt"), "feature").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "feature work"]).unwrap();
+        run_git(&path, &["checkout", "-q", "main"]).unwrap();
+        std::fs::write(dir.join("theirs.txt"), "main").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "main moves on"]).unwrap();
+
+        let two = commit_range_files(&path, "main", "feature", false).unwrap();
+        let three = commit_range_files(&path, "main", "feature", true).unwrap();
+        let names = |v: &[CommitFileChange]| {
+            let mut n: Vec<String> = v.iter().map(|f| f.path.clone()).collect();
+            n.sort();
+            n
+        };
+        assert_eq!(names(&two), vec!["mine.txt".to_string(), "theirs.txt".to_string()]);
+        assert_eq!(names(&three), vec!["mine.txt".to_string()]);
+
+        // And the per-file diff has to answer the same way, or the list and
+        // the diffs describe different comparisons.
+        let two_diff = commit_range_file_diff(&path, "main", "feature", "theirs.txt", false).unwrap();
+        let three_diff = commit_range_file_diff(&path, "main", "feature", "theirs.txt", true).unwrap();
+        assert!(two_diff.contains("theirs.txt"), "{two_diff}");
+        assert!(three_diff.is_empty(), "{three_diff}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
