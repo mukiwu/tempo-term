@@ -1433,6 +1433,108 @@ fn branch_tip_time(branch: &git2::Branch<'_>) -> i64 {
         .unwrap_or(0)
 }
 
+/// 一個可以拿來當比較基準的 ref。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ComparisonBase {
+    /// ref 的短名字，例如 `upstream/main`、`origin/local/pending-prs`、`master`。
+    pub name: String,
+    /// 它為什麼在清單上：`remoteDefault`（某個遠端的預設分支）、
+    /// `upstream`（目前分支的追蹤分支）、`localDefault`（本地的 main/master/develop）。
+    pub kind: String,
+    /// tip commit 的 committer 時間（Unix 秒），拿不到時為 0。
+    #[serde(rename = "lastCommitAt")]
+    pub last_commit_at: i64,
+}
+
+/// 候選基準加上建議值。fallback 的順序留在後端，前端只負責畫 —— 散在前端的話
+/// 兩邊各有一份順序，遲早會不一致。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ComparisonBases {
+    pub bases: Vec<ComparisonBase>,
+    /// 照順序找到的第一個；一個都沒有時是 None，這時前端該讓使用者自己挑，
+    /// 不要猜。
+    pub suggested: Option<String>,
+}
+
+/// 每個遠端的預設分支、目前分支的追蹤分支，以及本地的 main/master/develop。
+///
+/// 遠端預設分支讀的是 `<remote>/HEAD`，那是 clone 時建立的 symbolic ref。它
+/// **不保證存在** —— 用 `git remote add` 手動加的遠端就沒有，要跑過
+/// `git remote set-head <remote> -a` 才會建。所以拿不到就跳過那個遠端，不猜。
+///
+/// 每個遠端都列，不是只有 origin：fork 流程下 `origin` 是自己的 fork、
+/// `upstream` 才是 PR 要開回去的主 repo，兩個都有人要拿來比。
+///
+/// 注意這裡**刻意不沿用** `branches()` 過濾掉 `*/HEAD` 的那段。在 ref chip 的
+/// 脈絡下那個過濾是對的（它只是指標，沒有自己的資訊），但這支要的正是它指到
+/// 哪裡。
+pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let mut bases: Vec<ComparisonBase> = Vec::new();
+
+    let mut push = |name: String, kind: &str| {
+        if bases.iter().any(|b| b.name == name) {
+            return;
+        }
+        let last_commit_at = repo
+            .revparse_single(&name)
+            .ok()
+            .and_then(|obj| obj.peel_to_commit().ok())
+            .map(|c| c.time().seconds())
+            .unwrap_or(0);
+        bases.push(ComparisonBase { name, kind: kind.to_string(), last_commit_at });
+    };
+
+    // 1. 各遠端的預設分支。remotes() 的順序是 git 自己的（字典序），照它走，
+    //    這樣同一個 repo 每次拿到的清單順序一致。
+    if let Ok(remotes) = repo.remotes() {
+        for remote in remotes.iter().flatten() {
+            let head = format!("refs/remotes/{remote}/HEAD");
+            let Ok(reference) = repo.find_reference(&head) else {
+                continue;
+            };
+            // symbolic_target 才是它指到的分支；直接讀 name 只會拿回
+            // "origin/HEAD" 本身。少數 repo 那裡是 peeled 的直接 ref，沒有
+            // symbolic target 可讀，而退回它自己的名字沒有意義，所以跳過。
+            let Some(target) = reference.symbolic_target() else {
+                continue;
+            };
+            let Some(short) = target.strip_prefix("refs/remotes/") else {
+                continue;
+            };
+            push(short.to_string(), "remoteDefault");
+        }
+    }
+
+    // 2. 目前分支的追蹤分支 —— 「我 commit 了但還沒推上去的」。分支沒設追蹤
+    //    （剛開的本地分支）就沒有這一項。
+    if let Ok(head) = repo.head() {
+        if head.is_branch() {
+            if let Some(short) = head.shorthand() {
+                if let Ok(branch) = repo.find_branch(short, git2::BranchType::Local) {
+                    if let Ok(upstream) = branch.upstream() {
+                        if let Ok(Some(name)) = upstream.name() {
+                            push(name.to_string(), "upstream");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. 本地主線，給沒有遠端的 repo。
+    for name in ["main", "master", "develop"] {
+        if repo.find_branch(name, git2::BranchType::Local).is_ok() {
+            push(name.to_string(), "localDefault");
+        }
+    }
+
+    // 建議值就是照這個順序找到的第一個。三種都沒有時回 None：與其猜一個可能
+    // 不相干的分支，不如讓前端問。
+    let suggested = bases.first().map(|b| b.name.clone());
+    Ok(ComparisonBases { bases, suggested })
+}
+
 /// Check out an existing branch.
 pub fn branch_checkout(repo_path: &str, name: &str) -> Result<(), String> {
     let name = name.trim();
@@ -1757,6 +1859,13 @@ pub async fn git_graph_log(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_comparison_bases(repo_path: String) -> Result<ComparisonBases, String> {
+    tauri::async_runtime::spawn_blocking(move || comparison_bases(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -2707,6 +2816,130 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&work);
         let _ = std::fs::remove_dir_all(&bare);
+    }
+
+    /// Builds a repo with one commit on `main` and returns (dir, path).
+    fn repo_with_a_commit(tag: &str) -> (std::path::PathBuf, String) {
+        let dir = temp_repo_dir(tag);
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "hi").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn comparison_bases_lists_every_remote_default_not_just_origin() {
+        // A fork checkout: `origin` is your own copy, `upstream` is the repo the
+        // pull request goes back to. Both are things people compare against, so
+        // both have to be offered.
+        let (dir, path) = repo_with_a_commit("bases-remotes");
+        let (bare_dir, bare) = repo_with_a_commit("bases-remotes-bare");
+        run_git(&path, &["remote", "add", "origin", &bare]).unwrap();
+        run_git(&path, &["remote", "add", "upstream", &bare]).unwrap();
+        run_git(&path, &["fetch", "-q", "origin"]).unwrap();
+        run_git(&path, &["fetch", "-q", "upstream"]).unwrap();
+        // <remote>/HEAD is only written by clone, so a remote added by hand
+        // needs this -- which is exactly why the code skips a remote without
+        // one rather than guessing.
+        run_git(&path, &["remote", "set-head", "origin", "-a"]).unwrap();
+        run_git(&path, &["remote", "set-head", "upstream", "-a"]).unwrap();
+
+        let found = comparison_bases(&path).unwrap();
+        let names: Vec<&str> = found.bases.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"origin/main"), "{names:?}");
+        assert!(names.contains(&"upstream/main"), "{names:?}");
+        // The remote defaults come first, so the suggestion is one of them.
+        assert!(found.suggested.as_deref() == Some("origin/main")
+            || found.suggested.as_deref() == Some("upstream/main"));
+        for base in &found.bases {
+            if base.name.starts_with("origin/") || base.name.starts_with("upstream/") {
+                assert_eq!(base.kind, "remoteDefault");
+                assert!(base.last_commit_at > 0, "{base:?}");
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&bare_dir);
+    }
+
+    #[test]
+    fn comparison_bases_skips_a_remote_with_no_head_and_falls_back_to_local() {
+        // No `git remote set-head`, so there is no origin/HEAD to read. Guessing
+        // "origin/main" here would be wrong on a repo whose default is
+        // something else, so the remote is skipped and the local main answers.
+        let (dir, path) = repo_with_a_commit("bases-nohead");
+        let (bare_dir, bare) = repo_with_a_commit("bases-nohead-bare");
+        run_git(&path, &["remote", "add", "origin", &bare]).unwrap();
+        run_git(&path, &["fetch", "-q", "origin"]).unwrap();
+        // git 2.47 and later write <remote>/HEAD on fetch as well as on clone,
+        // so the case being tested has to be made rather than assumed: this is
+        // the repo that has been fetched from a remote whose HEAD was never
+        // resolved, which is what `git remote add` by hand leaves behind on
+        // older git.
+        run_git(&path, &["remote", "set-head", "origin", "-d"]).unwrap();
+
+        let found = comparison_bases(&path).unwrap();
+        let names: Vec<&str> = found.bases.iter().map(|b| b.name.as_str()).collect();
+        assert!(!names.iter().any(|n| n.starts_with("origin/")), "{names:?}");
+        assert_eq!(found.suggested.as_deref(), Some("main"));
+        assert_eq!(found.bases[0].kind, "localDefault");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&bare_dir);
+    }
+
+    #[test]
+    fn comparison_bases_offers_the_branch_its_own_upstream() {
+        // "What have I committed but not pushed" is a different question from
+        // "what does my branch change against the mainline", so the tracking
+        // branch is its own entry.
+        let (dir, path) = repo_with_a_commit("bases-upstream");
+        let (bare_dir, bare) = repo_with_a_commit("bases-upstream-bare");
+        run_git(&path, &["remote", "add", "origin", &bare]).unwrap();
+        run_git(&path, &["fetch", "-q", "origin"]).unwrap();
+        // An upstream of its own, not the mainline: those are two different
+        // questions and the list carries both.
+        run_git(&bare, &["checkout", "-q", "-b", "feature"]).unwrap();
+        run_git(&path, &["fetch", "-q", "origin"]).unwrap();
+        run_git(&path, &["checkout", "-q", "-b", "feature"]).unwrap();
+        run_git(&path, &["branch", "--set-upstream-to", "origin/feature", "feature"]).unwrap();
+
+        let found = comparison_bases(&path).unwrap();
+        let tracked = found.bases.iter().find(|b| b.kind == "upstream");
+        assert_eq!(tracked.map(|b| b.name.as_str()), Some("origin/feature"));
+
+        // And when the branch tracks the mainline itself, that is one row, not
+        // the same ref listed twice under two headings.
+        run_git(&path, &["branch", "--set-upstream-to", "origin/main", "feature"]).unwrap();
+        let again = comparison_bases(&path).unwrap();
+        assert_eq!(again.bases.iter().filter(|b| b.name == "origin/main").count(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&bare_dir);
+    }
+
+    #[test]
+    fn comparison_bases_says_nothing_rather_than_guessing() {
+        // A repo with no remote and a branch called neither main nor master:
+        // there is no sensible mainline to offer, so the frontend has to ask.
+        let dir = temp_repo_dir("bases-empty");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "wip"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "hi").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+
+        let found = comparison_bases(&path).unwrap();
+        assert!(found.bases.is_empty(), "{:?}", found.bases);
+        assert_eq!(found.suggested, None);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn temp_repo_dir(tag: &str) -> std::path::PathBuf {
