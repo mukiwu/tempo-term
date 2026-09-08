@@ -551,9 +551,8 @@ describe("GitGraph working-tree row keyboard navigation", () => {
     expect(onSelectCommit).toHaveBeenCalledWith(commits[0], { shiftKey: false });
   });
 
-  it("ignores ArrowUp and the Shift combos on the working-tree row", () => {
-    // There is no row above it, and the Shift keys walk commit ancestry, which
-    // the working tree is not part of.
+  it("ignores ArrowUp and Shift+ArrowUp on the working-tree row", () => {
+    // Nothing sits above it, and Shift+Up has no line to follow from there.
     const onSelectCommit = vi.fn();
     render(
       <GitGraph
@@ -567,8 +566,95 @@ describe("GitGraph working-tree row keyboard navigation", () => {
     );
     const scroller = container("msg c");
     fireEvent.keyDown(scroller, { key: "ArrowUp" });
-    fireEvent.keyDown(scroller, { key: "ArrowDown", shiftKey: true });
     fireEvent.keyDown(scroller, { key: "ArrowUp", shiftKey: true });
     expect(onSelectCommit).not.toHaveBeenCalled();
+  });
+
+  describe("following the dashed segment", () => {
+    // HEAD is the second row: another branch has a newer commit, so the row
+    // below the working tree and the commit its line runs to are different.
+    const head = commit("head", [], "msg head");
+    head.refs = [{ name: "master", kind: "head" }];
+    const withHead = [commit("newer", ["head"], "msg newer"), head];
+
+    it("Shift+ArrowDown goes to HEAD, not to the row underneath", () => {
+      const onSelectCommit = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "workspace" }}
+          onSelectCommit={onSelectCommit}
+          onSelectWorkspace={vi.fn()}
+          uncommitted={{ staged: 1, unstaged: 0 }}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowDown", shiftKey: true });
+      expect(onSelectCommit).toHaveBeenCalledWith(head, { shiftKey: false });
+    });
+
+    it("plain ArrowDown still moves by row", () => {
+      const onSelectCommit = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "workspace" }}
+          onSelectCommit={onSelectCommit}
+          onSelectWorkspace={vi.fn()}
+          uncommitted={{ staged: 1, unstaged: 0 }}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowDown" });
+      expect(onSelectCommit).toHaveBeenCalledWith(withHead[0], { shiftKey: false });
+    });
+
+    it("Shift+ArrowUp from HEAD follows the segment back to the row", () => {
+      const onSelectWorkspace = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "single", commit: head }}
+          onSelectCommit={vi.fn()}
+          onSelectWorkspace={onSelectWorkspace}
+          uncommitted={{ staged: 1, unstaged: 0 }}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowUp", shiftKey: true });
+      expect(onSelectWorkspace).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not follow it from a commit that is not HEAD", () => {
+      const onSelectWorkspace = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "single", commit: withHead[0] }}
+          onSelectCommit={vi.fn()}
+          onSelectWorkspace={onSelectWorkspace}
+          uncommitted={{ staged: 1, unstaged: 0 }}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowUp", shiftKey: true });
+      expect(onSelectWorkspace).not.toHaveBeenCalled();
+    });
+
+    it("does not follow it when the row is switched off", () => {
+      const onSelectWorkspace = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "single", commit: head }}
+          onSelectCommit={vi.fn()}
+          onSelectWorkspace={onSelectWorkspace}
+          uncommitted={null}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowUp", shiftKey: true });
+      expect(onSelectWorkspace).not.toHaveBeenCalled();
+    });
   });
 });

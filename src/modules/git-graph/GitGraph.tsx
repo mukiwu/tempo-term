@@ -175,15 +175,29 @@ export function GitGraph({
     }
     // The working-tree row is stepped on and off by position, not by the hash
     // walk below: it has no hash, so `commits.findIndex` would answer -1 for it
-    // and every arrow key would fall through and do nothing. Its only exit is
-    // down onto the newest commit — there is no row above it, and the Shift
-    // combos (walk to first parent, follow a lane) are about commit ancestry,
-    // which the working tree has no place in.
+    // and every arrow key would fall through and do nothing.
+    //
+    // Plain arrows move by row, Shift follows the line. So a plain Down lands
+    // on the row underneath — the newest commit — while Shift+Down follows the
+    // dashed segment to HEAD, which is what the working tree actually sits on
+    // and where that segment is drawn to. Those are the same row in the common
+    // case and different ones as soon as another branch has newer commits;
+    // taking the keyboard down to the newest commit while the line clearly ran
+    // somewhere else was the graph and the keys telling different stories.
     if (isWorkspaceSelected) {
       if (event.key === "ArrowDown" && !event.shiftKey) {
         event.preventDefault();
         onSelectCommit(commits[0], { shiftKey: false });
+        return;
       }
+      if (event.key === "ArrowDown" && event.shiftKey) {
+        const head = commits.find(isCurrentCommit);
+        if (head) {
+          event.preventDefault();
+          onSelectCommit(head, { shiftKey: false });
+        }
+      }
+      // Nothing sits above this row, and Shift+Up has no line to follow.
       return;
     }
     if (!activeHash) {
@@ -235,6 +249,15 @@ export function GitGraph({
       const targetIndex = laneContinuationRowIndex(edges, currentIndex);
       if (targetIndex !== null) {
         onSelectCommit(commits[targetIndex], { shiftKey: false });
+      } else if (
+        showUncommitted &&
+        onSelectWorkspace &&
+        commits[currentIndex].hash === headHash
+      ) {
+        // Only the dashed segment continues HEAD's lane upward — no commit
+        // does, since that lane is reserved — and following the line is what
+        // this key means. Checked after a real continuation, never instead.
+        onSelectWorkspace();
       } else if (isComparing) {
         onSelectCommit(commits[currentIndex], { shiftKey: false });
       }
