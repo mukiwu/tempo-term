@@ -125,39 +125,38 @@ describe("DiffTabContent", () => {
     expect(css).toContain("font-size: 20px");
   });
 
-  it("folds expanded unchanged regions back up", async () => {
-    const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`);
+  it("opens an unchanged stretch by twenty lines, or all of it, on both sides", async () => {
+    const lines = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`);
     vi.mocked(gitFileAtRev).mockResolvedValue(lines.join("\n") + "\n");
     vi.mocked(fsReadFile).mockResolvedValue(
-      lines.map((line, i) => (i === 9 ? "changed" : line)).join("\n") + "\n",
+      lines.map((line, i) => (i === 29 ? "changed" : line)).join("\n") + "\n",
     );
 
     const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
 
-    const bars = () => container.querySelectorAll(".cm-collapsedLines").length;
-    const backs = () => container.querySelectorAll(".cm-diff-fold");
-    // Two unchanged stretches (above and below the change), one bar each per
-    // side of the diff.
-    await waitFor(() => expect(bars()).toBe(4));
+    const bars = () => [...container.querySelectorAll<HTMLElement>(".cm-diff-run")];
+    const hidden = () => bars().map((bar) => Number(bar.dataset.lines));
+    // Two stretches, above and below the change, one bar each per side.
+    await waitFor(() => expect(bars().length).toBe(4));
+    // Three lines of context are kept either side of the change, so 26 of the
+    // 29 lines above it are hidden and 28 of the 31 below -- 31 because the
+    // trailing newline leaves a last, empty line.
+    expect(hidden()).toEqual([26, 28, 26, 28]);
 
-    // Expanding a stretch is one-way in the library: the bar is consumed. The
-    // gutter's unfold icon opens both sides at once, same as the bar does.
-    expect(container.querySelectorAll(".cm-diff-unfold").length).toBe(4);
-    fireEvent.mouseDown(container.querySelector(".cm-diff-unfold")!);
-    await waitFor(() => expect(bars()).toBe(2));
-    fireEvent.click(container.querySelector(".cm-collapsedLines")!);
-    await waitFor(() => expect(bars()).toBe(0));
+    // Twenty lines at a time, from whichever end was asked for -- the reason
+    // the bars are ours rather than the library's, whose bar only ever opens
+    // the lot.
+    fireEvent.mouseDown(bars()[0].querySelector('[aria-label="diffRunExpandDown"]')!);
+    await waitFor(() => expect(hidden()[0]).toBe(6));
+    // And the other side moved with it, or the two would no longer be reading
+    // the same stretch.
+    expect(hidden()).toEqual([6, 28, 6, 28]);
 
-    // Each expanded stretch grows its own fold-back bar where the old one
-    // was, and folding one leaves the other open.
-    await waitFor(() => expect(backs().length).toBe(4));
-    fireEvent.mouseDown(backs()[0]);
-    await waitFor(() => expect(bars()).toBe(2));
-    expect(backs().length).toBe(2);
+    fireEvent.mouseDown(bars()[1].querySelector('[aria-label="diffRunExpandAll"]')!);
+    await waitFor(() => expect(bars().length).toBe(2));
   });
 
-  it("folds expanded unchanged regions back up inline too", async () => {
-    useSettingsStore.setState({ diffUnified: true });
+  it("folds an opened stretch back up from the gutter", async () => {
     const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`);
     vi.mocked(gitFileAtRev).mockResolvedValue(lines.join("\n") + "\n");
     vi.mocked(fsReadFile).mockResolvedValue(
@@ -166,20 +165,47 @@ describe("DiffTabContent", () => {
 
     const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
 
-    const bars = () => container.querySelectorAll(".cm-collapsedLines").length;
-    await waitFor(() => expect(bars()).toBeGreaterThan(0));
-    const collapsed = bars();
+    const bars = () => container.querySelectorAll(".cm-diff-run").length;
+    const backs = () => container.querySelectorAll(".cm-diff-fold");
+    await waitFor(() => expect(bars()).toBe(4));
 
-    fireEvent.click(container.querySelector(".cm-collapsedLines")!);
-    await waitFor(() => expect(bars()).toBeLessThan(collapsed));
+    // Opened all the way, a stretch leaves no bar behind, so the way back has
+    // to live somewhere else: the gutter grows a fold icon on its first line.
+    fireEvent.mouseDown(
+      container.querySelector('.cm-diff-run [aria-label="diffRunExpandAll"]')!,
+    );
+    await waitFor(() => expect(bars()).toBe(2));
+    await waitFor(() => expect(backs().length).toBe(2));
 
-    // The expanded stretch grows a fold control in its own gutter, on the
-    // first line it revealed.
-    const back = container.querySelector(".cm-diff-fold");
-    expect(back).toBeTruthy();
-    fireEvent.mouseDown(back!);
-    await waitFor(() => expect(bars()).toBe(collapsed));
-    expect(container.querySelector(".cm-diff-fold")).toBeNull();
+    fireEvent.mouseDown(backs()[0]);
+    await waitFor(() => expect(bars()).toBe(4));
+    expect(backs().length).toBe(0);
+  });
+
+  it("names the declaration the hidden lines lead into", async () => {
+    const before = [
+      "use std::fmt;",
+      "",
+      "fn build_log_refs() -> Vec<String> {",
+      ...Array.from({ length: 30 }, (_, i) => `    let x${i} = ${i};`),
+      "    let tail = 1;",
+      "}",
+    ];
+    vi.mocked(gitFileAtRev).mockResolvedValue(before.join("\n") + "\n");
+    vi.mocked(fsReadFile).mockResolvedValue(
+      before.map((line) => (line === "    let tail = 1;" ? "    let tail = 999;" : line)).join("\n") +
+        "\n",
+    );
+
+    const { container } = render(<DiffTabContent path="/repo/a.rs" staged={false} />);
+
+    // What GitHub puts after the `@@`, and what the library's bar has no room
+    // to say: the changes under this bar are inside this declaration.
+    await waitFor(() => expect(container.querySelectorAll(".cm-diff-run").length).toBe(2));
+    console.log(
+      "[names]",
+      [...container.querySelectorAll(".cm-diff-run")].map((el) => el.textContent),
+    );
   });
 
   it("renders a saved review comment as a card inside the diff", async () => {

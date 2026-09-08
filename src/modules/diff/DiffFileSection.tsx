@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { gitFileAtRev } from "@/modules/source-control/lib/gitBridge";
@@ -9,7 +9,6 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { changedLines, estimatedRows, type FileDiffStats } from "./lib/parseDiffStats";
 import {
   buildDiffViews,
-  collapseDiffRegion,
   destroyDiffViews,
   diffSideView,
   type DiffViews,
@@ -236,13 +235,6 @@ export function DiffFileSection({
   // never lands in the dependencies of the effect that builds the editors.
   const docsRef = useRef<DiffDocs | null>(null);
   docsRef.current = docs;
-  const collapseRegion = useCallback((side: "a" | "b", pos: number) => {
-    const views = viewsRef.current;
-    if (views) {
-      collapseDiffRegion(views, side, pos, docsRef.current?.left ?? "");
-    }
-  }, []);
-
   useEffect(() => {
     const parent = hostRef.current;
     if (!docs || !parent || hidden || !mount) {
@@ -263,7 +255,11 @@ export function DiffFileSection({
       unified,
       unchangedLines: t("diffUnchangedLines"),
       foldLabels: { fold: t("diffCollapseUnchanged"), unfold: t("diffExpandUnchanged") },
-      onCollapseRegion: collapseRegion,
+      runLabels: {
+        up: t("diffRunExpandUp"),
+        down: t("diffRunExpandDown"),
+        all: t("diffRunExpandAll"),
+      },
       commentHandlers,
       cancelled: () => cancelled,
     }).then((built) => {
