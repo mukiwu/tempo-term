@@ -1180,6 +1180,12 @@ pub fn file_at_rev(repo_path: &str, rev: &str, path: &str) -> Result<String, Str
             if err.contains("does not exist")
                 || err.contains("exists on disk, but not in")
                 || err.contains("is in the index, but not at stage")
+                // Some paths with no entry are refused as an unresolvable
+                // argument rather than reported as a missing file -- seen on an
+                // untracked file in a directory holding no tracked ones. Which
+                // wording git picks varies by repository and the caller cannot
+                // tell them apart; both mean the same thing here.
+                || err.contains("unknown revision or path not in the working tree")
                 || err.contains("invalid object name 'HEAD'") =>
         {
             Ok(String::new())
@@ -2883,6 +2889,29 @@ mod tests {
         // (all-added diff), not an error.
         assert_eq!(file_at_rev(&path, "HEAD", "a.txt").unwrap(), "");
         assert_eq!(file_at_rev(&path, ":", "a.txt").unwrap(), "staged\n");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_path_git_will_not_resolve_reads_as_empty() {
+        // The other half of "not on this side". Reading the index version of a
+        // path git has no entry for can fail as an unresolvable *argument*
+        // rather than as a missing file, and a surface that turned that into an
+        // error showed "could not load" over a file it had just listed.
+        let dir = temp_repo_dir("unresolvable");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join(".gitignore"), "secrets/").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        std::fs::create_dir_all(dir.join("secrets")).unwrap();
+        std::fs::write(dir.join("secrets/key.txt"), "shh").unwrap();
+
+        assert_eq!(file_at_rev(&path, ":", "secrets/key.txt").unwrap(), "");
+        assert_eq!(file_at_rev(&path, "HEAD", "secrets/key.txt").unwrap(), "");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
