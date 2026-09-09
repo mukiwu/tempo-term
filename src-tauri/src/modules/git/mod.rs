@@ -201,7 +201,7 @@ pub fn status(repo_path: &str) -> Result<GitStatus, String> {
     let mut options = StatusOptions::new();
     // git2 includes ignored files by default, which is not what any surface
     // reading this wants: `git status` lists no such thing and neither should
-    // the panel. `worktree_dirty_count` below already turns it off.
+    // the pane. `worktree_dirty_count` below already turns it off.
     options
         .include_untracked(true)
         .recurse_untracked_dirs(true)
@@ -2728,7 +2728,7 @@ mod tests {
 
     #[test]
     fn status_leaves_ignored_files_out() {
-        // git2's default is to report them, so the panel listed a repo's
+        // git2's default is to report them, so the pane listed a repo's
         // ignored files as untracked -- next to the ones git really does call
         // untracked, with no way to tell which was which.
         let dir = temp_repo_dir("ignored-status");
