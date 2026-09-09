@@ -1,7 +1,7 @@
 import { getChunks, mergeViewSiblings } from "@codemirror/merge";
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
-import { CHEVRONS_DOWN, CHEVRONS_UP, lucideIcon, UNFOLD_VERTICAL } from "./lucideDom";
+import { CHEVRONS_DOWN, CHEVRONS_UP, lucideIcon } from "./lucideDom";
 import { withGutterHint } from "./gutterHint";
 
 /**
@@ -48,8 +48,6 @@ export interface RunLabels {
   unchanged: string;
   up: string;
   down: string;
-  all: string;
-  fold: string;
 }
 
 /** Open part of a run, or all of it. `start` is the run's first line. */
@@ -237,6 +235,9 @@ export class RunWidget extends WidgetType {
     // edge sits off the side of any file wider than the window.
     const actions = document.createElement("span");
     actions.className = "cm-diff-run-actions";
+    // Two arrows, and opening the lot is the gutter's icon beside them rather
+    // than a third button here: one control, one place.
+    //
     // Which edge each arrow opens, and why one of them can be dead: the down
     // arrow grows the visible code above the bar downwards, so a bar with
     // nothing above it -- the first thing in the file -- has no place to grow
@@ -248,7 +249,6 @@ export class RunWidget extends WidgetType {
       button(this.labels.down, CHEVRONS_DOWN, !this.atStart, () =>
         open(view, this.start, "top"),
       ),
-      button(this.labels.all, UNFOLD_VERTICAL, true, () => open(view, this.start, "all")),
     );
     outer.append(actions);
     const count = document.createElement("span");

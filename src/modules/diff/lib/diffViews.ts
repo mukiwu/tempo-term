@@ -80,7 +80,7 @@ export interface DiffViewOptions {
   /** Localized "$ unchanged lines" for the collapsed bars. */
   unchangedLines: string;
   foldLabels: { fold: string; unfold: string };
-  runLabels: { up: string; down: string; all: string };
+  runLabels: { up: string; down: string };
   commentHandlers: (side: "a" | "b") => CommentHandlers;
   /**
    * Checked after the grammar loads: the caller's effect may have been torn
@@ -119,8 +119,6 @@ export async function buildDiffViews(options: DiffViewOptions): Promise<DiffView
     unchanged: unchangedLines,
     up: runLabels.up,
     down: runLabels.down,
-    all: runLabels.all,
-    fold: foldLabels.fold,
   };
 
   const extensions = [

@@ -172,8 +172,9 @@ describe("DiffTabContent", () => {
     fireEvent.mouseDown(bars()[0].querySelector('[aria-label="diffRunExpandUp"]')!);
     await waitFor(() => expect(bars().length).toBe(2));
 
-    fireEvent.mouseDown(bars()[0].querySelector('[aria-label="diffRunExpandAll"]')!);
-    await waitFor(() => expect(bars().length).toBe(0));
+    // Opening the lot is the gutter's icon beside the bar rather than a third
+    // button on it; the test next door presses that, since jsdom resolves a
+    // gutter click by coordinate and every click lands on the first block.
 
 
   });
@@ -191,11 +192,13 @@ describe("DiffTabContent", () => {
     const backs = () => container.querySelectorAll(".cm-diff-fold");
     await waitFor(() => expect(bars()).toBe(4));
 
+    // jsdom has no layout, so a gutter click carries no usable coordinate and
+    // the view resolves every one to the first block. That is the first bar
+    // here, which is the one this test is about.
+
     // Opened all the way, a stretch leaves no bar behind, so the way back has
     // to live somewhere else: the gutter grows a fold icon on its first line.
-    fireEvent.mouseDown(
-      container.querySelector('.cm-diff-run [aria-label="diffRunExpandAll"]')!,
-    );
+    fireEvent.mouseDown(container.querySelector(".cm-diff-unfold")!);
     await waitFor(() => expect(bars()).toBe(2));
     await waitFor(() => expect(backs().length).toBe(2));
 
