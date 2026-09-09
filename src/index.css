@@ -464,10 +464,14 @@ textarea:focus-visible,
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The gutter element carries the row's height as an inline style, so filling
-     it is what actually centres the icon — without this the marker is only as
-     tall as the glyph and sits against the top of the row. */
-  height: 100%;
+  /* The gutter element carries the whole line block's height as an inline
+     style, so one text row is the box to centre in — filling the element
+     centres on the block instead, which drops the icon below the line's number
+     whenever that block is taller than a row (a wrapped line, a line with a
+     comment card, a line the merge view padded for alignment). Without a
+     height at all the marker is only as tall as the glyph and sits against the
+     top of the row. */
+  height: 1lh;
   padding: 0 2px;
   color: var(--color-fg-subtle);
 }

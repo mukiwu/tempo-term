@@ -59,8 +59,14 @@ export function gitPush(repoPath: string): Promise<string> {
   return invoke<string>("git_push", { repoPath });
 }
 
-/** rev is "HEAD" (last commit) or ":" (the index). Missing at rev = "". */
-export function gitFileAtRev(repoPath: string, rev: "HEAD" | ":", path: string): Promise<string> {
+/**
+ * A file as of `rev`. "HEAD" is the last commit and ":" is the index; any
+ * other rev -- a branch, a tag, a hash -- is resolved by the command, which
+ * refuses one it cannot resolve rather than handing it to git's argv.
+ *
+ * Missing at that rev is an empty document, not an error.
+ */
+export function gitFileAtRev(repoPath: string, rev: string, path: string): Promise<string> {
   return invoke<string>("git_file_at_rev", { repoPath, rev, path });
 }
 

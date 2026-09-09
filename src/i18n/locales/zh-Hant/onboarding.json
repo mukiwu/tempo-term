@@ -27,6 +27,11 @@
     "installing": "安裝中…",
     "failed": "安裝失敗"
   },
+  "failure": {
+    "title": "安裝未完成",
+    "detail": "安裝程式回報：{{reason}}（結束碼 {{code}}）",
+    "noDetail": "安裝程式沒有提供詳細原因（結束碼 {{code}}）。可能是網路連線、Windows App Installer／WinGet 未啟用、權限不足，或被安全性軟體攔截。"
+  },
   "actions": {
     "install": "安裝",
     "update": "更新",

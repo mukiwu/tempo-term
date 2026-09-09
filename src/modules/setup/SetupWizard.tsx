@@ -53,6 +53,7 @@ export function SetupWizard() {
   const [step, setStep] = useState(0);
   const [installing, setInstalling] = useState<ToolId | null>(null);
   const [failed, setFailed] = useState<Set<ToolId>>(new Set());
+  const [failureReasons, setFailureReasons] = useState<Partial<Record<ToolId, string>>>({});
   const [logLines, setLogLines] = useState<string[]>([]);
   const logBoxRef = useRef<HTMLDivElement | null>(null);
   // Guards against setState after unmount: install streams and detection resolve
@@ -143,24 +144,40 @@ export function SetupWizard() {
         next.delete(id);
         return next;
       });
+      setFailureReasons((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       let code = -1;
+      const outputLines: string[] = [];
       try {
         code = await installTool(id, (line) => {
+          outputLines.push(line);
           if (mountedRef.current) setLogLines((prev) => [...prev, line]);
         });
       } catch (err) {
-        if (mountedRef.current) setLogLines((prev) => [...prev, String(err)]);
+        const message = installErrorMessage(err);
+        outputLines.push(message);
+        if (mountedRef.current) setLogLines((prev) => [...prev, message]);
       }
       if (!mountedRef.current) {
         return;
       }
       if (code !== 0) {
         setFailed((prev) => new Set(prev).add(id));
+        const lastOutput = [...outputLines].reverse().find((line) => line.trim().length > 0);
+        setFailureReasons((prev) => ({
+          ...prev,
+          [id]: lastOutput
+            ? t("failure.detail", { reason: lastOutput, code })
+            : t("failure.noDetail", { code }),
+        }));
       }
       setInstalling(null);
       await refresh();
     },
-    [installing, refresh],
+    [installing, refresh, t],
   );
 
   const busy = installing !== null;
@@ -200,6 +217,16 @@ export function SetupWizard() {
             <StatusPill phase={phase} versionUnknown={status?.version == null} t={t} />
           </div>
           <p className="mt-2 text-sm leading-relaxed text-fg-muted">{t(`desc.${meta.name}`)}</p>
+
+          {failed.has(meta.id) && failureReasons[meta.id] ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs leading-relaxed text-danger"
+            >
+              <div className="font-medium">{t("failure.title")}</div>
+              <div className="mt-0.5 break-words">{failureReasons[meta.id]}</div>
+            </div>
+          ) : null}
 
           {logLines.length > 0 ? (
             <div
@@ -265,6 +292,22 @@ export function SetupWizard() {
       </div>
     </div>
   );
+}
+
+function installErrorMessage(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+  return String(error);
 }
 
 /** The progress rail: one node per tool, with the current one highlighted and

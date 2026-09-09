@@ -16,6 +16,13 @@ interface ComboboxProps {
   size?: "sm" | "md";
   /** Override the text size (trigger and options), e.g. "text-[13px]". */
   textClassName?: string;
+  /**
+   * Replace the trigger's padding preset, e.g. "px-2 py-1" to line the box up
+   * with a neighbouring control that isn't a Combobox. Replaces rather than
+   * appends: two padding utilities in one class list would leave which one
+   * wins up to stylesheet order, not to the caller.
+   */
+  fieldClassName?: string;
   /** Show trigger value and options in full instead of ellipsizing them. */
   noTruncate?: boolean;
 }
@@ -36,6 +43,7 @@ export function Combobox({
   dropUp = false,
   size = "md",
   textClassName,
+  fieldClassName,
   noTruncate = false,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
@@ -43,7 +51,7 @@ export function Combobox({
   const dense = size === "sm";
   const textClass = textClassName ?? (dense ? "text-xs" : "text-sm");
   const clipClass = noTruncate ? "whitespace-nowrap" : "truncate";
-  const fieldClass = `${dense ? "px-2 py-0.5" : "px-3 py-2"} ${textClass}`;
+  const fieldClass = `${fieldClassName ?? (dense ? "px-2 py-0.5" : "px-3 py-2")} ${textClass}`;
   const optionClass = `${dense ? "px-2 py-1" : "px-3 py-2"} ${textClass}`;
 
   useEffect(() => {

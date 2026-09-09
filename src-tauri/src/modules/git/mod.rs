@@ -102,7 +102,7 @@ pub enum CommitOrder {
 /// `deny_unknown_fields` 是刻意的：搭配 `default`，一個拼錯或過時的欄位名
 /// （例如改名前的 `branch`）會安靜地取預設值，篩選就變成「全部分支」而且不
 /// 報錯。寧可讓它在反序列化階段就失敗、把錯誤送回前端。
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct GraphOptions {
     /// 篩選用的分支清單；空清單代表「全部分支」。
@@ -111,6 +111,21 @@ pub struct GraphOptions {
     pub include_tags: bool,
     pub include_stashes: bool,
     pub order: CommitOrder,
+}
+
+/// 對齊工具列的預設（遠端與標籤開、stash 關），不是「全部 false」。
+/// 這幾個開關現在真的會拿掉 ref 裝飾，衍生出來的 all-false 預設等於「什麼
+/// 都不標」——跟使用者打開分頁看到的畫面對不起來。
+impl Default for GraphOptions {
+    fn default() -> Self {
+        Self {
+            branches: Vec::new(),
+            include_remotes: true,
+            include_tags: true,
+            include_stashes: false,
+            order: CommitOrder::default(),
+        }
+    }
 }
 
 /// 把排序選項翻成 git log 旗標。純函式方便測試。
@@ -126,7 +141,11 @@ fn order_flag(order: CommitOrder) -> &'static str {
 /// 否則 `--remotes` 會把所有遠端分支的歷史聯集進來，預設開關全開時篩選
 /// 形同失效；沒指定分支才用 --branches 含全部本地分支，並依開關疊加其他
 /// ref 範圍。
-fn build_log_refs(options: &GraphOptions) -> Vec<String> {
+///
+/// `stash_tips` 是 stash_commits() 讀出來的 stash commit，開關關掉時傳空片段。
+/// 之所以不像 remote/tag 那樣給一個旗標，是因為 git 沒有「所有 stash」的旗標：
+/// refs/stash 只指到最新一筆，其餘藏在它的 reflog 裡，只能把 hash 一個個列出來。
+fn build_log_refs(options: &GraphOptions, stash_tips: &[String]) -> Vec<String> {
     let picked: Vec<String> = options
         .branches
         .iter()
@@ -144,10 +163,63 @@ fn build_log_refs(options: &GraphOptions) -> Vec<String> {
     if options.include_tags {
         refs.push("--tags".to_string());
     }
-    if options.include_stashes {
-        refs.push("--glob=refs/stash".to_string());
-    }
+    refs.extend(stash_tips.iter().cloned());
     refs
+}
+
+/// refs/stash 的 reflog 讀出來的 stash 全貌。
+#[derive(Debug, Default, PartialEq, Eq)]
+struct StashCommits {
+    /// 每筆 stash 的 commit hash，reflog 順序（[0] 就是 stash@{0}）。
+    tips: Vec<String>,
+    /// git 為 stash 造的 index／untracked 輔助 commit。
+    helpers: Vec<String>,
+}
+
+/// 解析 `git rev-list --no-walk --parents -g refs/stash` 的輸出。純函式方便測試。
+///
+/// 每行是「stash hash + 它的 parent」。第一個 parent 是 stash 當下的 HEAD，屬於
+/// 真正的歷史、要留著；第二個以後是 git 自己造的 index／untracked 快照
+/// （`-u` 的 stash 會有三個 parent），使用者沒提交過這些東西，畫進線圖只是雜訊。
+fn parse_stash_commits(stdout: &str) -> StashCommits {
+    let mut out = StashCommits::default();
+    for line in stdout.lines() {
+        let mut hashes = line.split_whitespace();
+        let Some(tip) = hashes.next() else {
+            continue;
+        };
+        out.tips.push(tip.to_string());
+        // skip(1) 跳過 stash 的基底 commit，只收輔助 commit。
+        out.helpers.extend(hashes.skip(1).map(str::to_string));
+    }
+    out
+}
+
+/// 讀出 repo 裡所有的 stash。沒有任何 stash 時 `git rev-list` 會非零退出
+/// （`unknown revision refs/stash`），當成「沒有 stash」而不是錯誤。
+fn stash_commits(repo_path: &str) -> StashCommits {
+    let stdout = run_git(
+        repo_path,
+        &["rev-list", "--no-walk", "--parents", "-g", "refs/stash"],
+    )
+    .unwrap_or_default();
+    parse_stash_commits(&stdout)
+}
+
+/// 依顯示開關濾掉 commit 上的 ref 裝飾。
+///
+/// 只把 ref 移出 `git log` 的走訪範圍是不夠的：`--decorate` 照樣會標出落在
+/// 既有 commit 上的 `origin/x`、`tag: v1`。遠端分支和標籤絕大多數都指在本地
+/// 歷史走得到的 commit 上，所以少了這一步，關掉開關看起來完全沒反應。
+fn filter_refs(refs: Vec<GraphRef>, options: &GraphOptions) -> Vec<GraphRef> {
+    refs.into_iter()
+        .filter(|r| match r.kind.as_str() {
+            "remote" => options.include_remotes,
+            "tag" => options.include_tags,
+            "stash" => options.include_stashes,
+            _ => true,
+        })
+        .collect()
 }
 
 /// Short code for the staged (index vs HEAD) side of a status, if any.
@@ -199,7 +271,13 @@ pub fn status(repo_path: &str) -> Result<GitStatus, String> {
         .and_then(|h| h.shorthand().map(|s| s.to_string()));
 
     let mut options = StatusOptions::new();
-    options.include_untracked(true).recurse_untracked_dirs(true);
+    // git2 includes ignored files by default, which is not what any surface
+    // reading this wants: `git status` lists no such thing and neither should
+    // the pane. `worktree_dirty_count` below already turns it off.
+    options
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false);
     let statuses = repo
         .statuses(Some(&mut options))
         .map_err(|e| e.message().to_string())?;
@@ -1138,13 +1216,28 @@ pub fn diff(repo_path: &str, staged: bool) -> Result<String, String> {
     }
 }
 
-/// Content of `path` at `rev`, where rev is limited to "HEAD" (last commit)
-/// or ":" (the index) — the only two versions the diff tab compares against.
-/// A file missing at that rev is an empty document, not an error, so new
-/// files diff as all-added.
+/// Content of `path` at `rev`. "HEAD" is the last commit and ":" is the index;
+/// anything else is resolved as a rev, so a branch, tag or hash can be read
+/// too — the comparison base in #398 needs that.
+///
+/// The two-value whitelist that used to stand here was doing double duty: it
+/// picked the supported revs *and*, as a side effect, validated them, since a
+/// literal cannot be anything else. Opening it up means the validation has to
+/// be said out loud, so the rev is resolved with `rev-parse --verify` before it
+/// is used. That both rejects nonsense and keeps a value that happens to look
+/// like an option out of the argv (`ensure_not_flag` only catches a leading
+/// dash).
+///
+/// A file missing at that rev is an empty document, not an error, so new files
+/// diff as all-added.
 pub fn file_at_rev(repo_path: &str, rev: &str, path: &str) -> Result<String, String> {
+    ensure_not_flag(rev)?;
     if rev != "HEAD" && rev != ":" {
-        return Err(format!("unsupported rev: {rev}"));
+        // `--verify` makes rev-parse fail rather than echo the string back,
+        // and `^{commit}` refuses a tree or a blob: what is wanted here is a
+        // point in history, not any object that happens to be nameable.
+        run_git(repo_path, &["rev-parse", "--verify", "--quiet", &format!("{rev}^{{commit}}")])
+            .map_err(|_| format!("unknown rev: {rev}"))?;
     }
     ensure_not_flag(path)?;
     // "HEAD:path" names the committed version; ":path" (single colon) names
@@ -1165,6 +1258,12 @@ pub fn file_at_rev(repo_path: &str, rev: &str, path: &str) -> Result<String, Str
             if err.contains("does not exist")
                 || err.contains("exists on disk, but not in")
                 || err.contains("is in the index, but not at stage")
+                // Some paths with no entry are refused as an unresolvable
+                // argument rather than reported as a missing file -- seen on an
+                // untracked file in a directory holding no tracked ones. Which
+                // wording git picks varies by repository and the caller cannot
+                // tell them apart; both mean the same thing here.
+                || err.contains("unknown revision or path not in the working tree")
                 || err.contains("invalid object name 'HEAD'") =>
         {
             Ok(String::new())
@@ -1316,7 +1415,6 @@ pub fn graph_log(
     options: &GraphOptions,
 ) -> Result<GraphLog, String> {
     let limit = limit.clamp(1, 2000);
-    let max_count = format!("--max-count={}", limit + 1);
     let skip_arg = format!("--skip={skip}");
 
     // 分支清單是從前端的選單挑出來的，正常不會有幾百筆。設上限的理由是超長的
@@ -1346,7 +1444,17 @@ pub fn graph_log(
         }
     }
 
-    let ref_args = build_log_refs(options);
+    // 只有「全部分支」模式才疊加 stash，跟 remote/tag 開關同一個規則。
+    let stashes = if options.include_stashes {
+        stash_commits(repo_path)
+    } else {
+        StashCommits::default()
+    };
+
+    let ref_args = build_log_refs(options, &stashes.tips);
+    // 輔助 commit 會在下面被濾掉，所以多抓它們的份，否則整頁被扣掉幾筆之後
+    // has_more 會提早變成 false，把還沒讀到的歷史藏起來。
+    let max_count = format!("--max-count={}", limit + 1 + stashes.helpers.len());
     let mut args: Vec<&str> = vec![
         "log",
         order_flag(options.order),
@@ -1361,12 +1469,56 @@ pub fn graph_log(
     // 空 repo（還沒任何 commit）會讓 git log 非零退出，當成空線圖。
     let stdout = run_git(repo_path, &args).unwrap_or_default();
 
-    let mut commits: Vec<GraphCommit> = stdout.lines().filter_map(parse_graph_commit).collect();
+    let mut commits: Vec<GraphCommit> = stdout
+        .lines()
+        .filter_map(parse_graph_commit)
+        .map(|mut c| {
+            c.refs = filter_refs(c.refs, options);
+            c
+        })
+        .collect();
+    // %h 是縮寫 hash，stash 那邊拿到的是完整 SHA，所以比前綴。縮寫本來就保證
+    // 在這個 repo 內唯一，前綴相符即同一個 commit。
+    //
+    // parents 也要一起清：一個指向已被移除的 commit 的 parent 是懸空的，而前端
+    // 的 lane 配置會替每個 parent 佔一條線且永遠等不到它被釋放。四筆 stash 就
+    // 足以把 lane 撐過 maxLane，超出的 lane 會被壓到同一欄，兩個節點疊在同一個
+    // x 上，看起來就多出一條根本不存在的父子線。
+    if !stashes.helpers.is_empty() {
+        let is_helper =
+            |hash: &str| !hash.is_empty() && stashes.helpers.iter().any(|h| h.starts_with(hash));
+        commits.retain(|c| !is_helper(&c.hash));
+        for commit in &mut commits {
+            commit.parents.retain(|p| !is_helper(p));
+        }
+    }
+    label_stashes(&mut commits, &stashes.tips);
     let has_more = commits.len() > limit;
     if has_more {
         commits.truncate(limit);
     }
     Ok(GraphLog { commits, has_more })
+}
+
+/// 把每筆 stash 標成 `stash@{n}`，對齊 `git stash list` 的叫法。
+///
+/// git 只會裝飾 `refs/stash`（也就是 stash@{0}），較舊的那幾筆在 reflog 裡、
+/// 沒有 ref 可標，不補的話它們會變成一排沒有任何標籤的 "WIP on ..." commit。
+fn label_stashes(commits: &mut [GraphCommit], tips: &[String]) {
+    for (index, tip) in tips.iter().enumerate() {
+        let name = format!("stash@{{{index}}}");
+        for commit in commits.iter_mut() {
+            if commit.hash.is_empty() || !tip.starts_with(&commit.hash) {
+                continue;
+            }
+            commit.refs.retain(|r| r.kind != "stash");
+            commit.refs.push(GraphRef {
+                name: name.clone(),
+                kind: "stash".to_string(),
+            });
+            break;
+        }
+    }
 }
 
 /// 列出本地與遠端分支，標出目前所在分支與是否為遠端。
@@ -1431,6 +1583,108 @@ fn branch_tip_time(branch: &git2::Branch<'_>) -> i64 {
         .peel_to_commit()
         .map(|c| c.time().seconds())
         .unwrap_or(0)
+}
+
+/// 一個可以拿來當比較基準的 ref。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ComparisonBase {
+    /// ref 的短名字，例如 `upstream/main`、`origin/local/pending-prs`、`master`。
+    pub name: String,
+    /// 它為什麼在清單上：`remoteDefault`（某個遠端的預設分支）、
+    /// `upstream`（目前分支的追蹤分支）、`localDefault`（本地的 main/master/develop）。
+    pub kind: String,
+    /// tip commit 的 committer 時間（Unix 秒），拿不到時為 0。
+    #[serde(rename = "lastCommitAt")]
+    pub last_commit_at: i64,
+}
+
+/// 候選基準加上建議值。fallback 的順序留在後端，前端只負責畫 —— 散在前端的話
+/// 兩邊各有一份順序，遲早會不一致。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ComparisonBases {
+    pub bases: Vec<ComparisonBase>,
+    /// 照順序找到的第一個；一個都沒有時是 None，這時前端該讓使用者自己挑，
+    /// 不要猜。
+    pub suggested: Option<String>,
+}
+
+/// 每個遠端的預設分支、目前分支的追蹤分支，以及本地的 main/master/develop。
+///
+/// 遠端預設分支讀的是 `<remote>/HEAD`，那是 clone 時建立的 symbolic ref。它
+/// **不保證存在** —— 用 `git remote add` 手動加的遠端就沒有，要跑過
+/// `git remote set-head <remote> -a` 才會建。所以拿不到就跳過那個遠端，不猜。
+///
+/// 每個遠端都列，不是只有 origin：fork 流程下 `origin` 是自己的 fork、
+/// `upstream` 才是 PR 要開回去的主 repo，兩個都有人要拿來比。
+///
+/// 注意這裡**刻意不沿用** `branches()` 過濾掉 `*/HEAD` 的那段。在 ref chip 的
+/// 脈絡下那個過濾是對的（它只是指標，沒有自己的資訊），但這支要的正是它指到
+/// 哪裡。
+pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let mut bases: Vec<ComparisonBase> = Vec::new();
+
+    let mut push = |name: String, kind: &str| {
+        if bases.iter().any(|b| b.name == name) {
+            return;
+        }
+        let last_commit_at = repo
+            .revparse_single(&name)
+            .ok()
+            .and_then(|obj| obj.peel_to_commit().ok())
+            .map(|c| c.time().seconds())
+            .unwrap_or(0);
+        bases.push(ComparisonBase { name, kind: kind.to_string(), last_commit_at });
+    };
+
+    // 1. 各遠端的預設分支。remotes() 的順序是 git 自己的（字典序），照它走，
+    //    這樣同一個 repo 每次拿到的清單順序一致。
+    if let Ok(remotes) = repo.remotes() {
+        for remote in remotes.iter().flatten() {
+            let head = format!("refs/remotes/{remote}/HEAD");
+            let Ok(reference) = repo.find_reference(&head) else {
+                continue;
+            };
+            // symbolic_target 才是它指到的分支；直接讀 name 只會拿回
+            // "origin/HEAD" 本身。少數 repo 那裡是 peeled 的直接 ref，沒有
+            // symbolic target 可讀，而退回它自己的名字沒有意義，所以跳過。
+            let Some(target) = reference.symbolic_target() else {
+                continue;
+            };
+            let Some(short) = target.strip_prefix("refs/remotes/") else {
+                continue;
+            };
+            push(short.to_string(), "remoteDefault");
+        }
+    }
+
+    // 2. 目前分支的追蹤分支 —— 「我 commit 了但還沒推上去的」。分支沒設追蹤
+    //    （剛開的本地分支）就沒有這一項。
+    if let Ok(head) = repo.head() {
+        if head.is_branch() {
+            if let Some(short) = head.shorthand() {
+                if let Ok(branch) = repo.find_branch(short, git2::BranchType::Local) {
+                    if let Ok(upstream) = branch.upstream() {
+                        if let Ok(Some(name)) = upstream.name() {
+                            push(name.to_string(), "upstream");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. 本地主線，給沒有遠端的 repo。
+    for name in ["main", "master", "develop"] {
+        if repo.find_branch(name, git2::BranchType::Local).is_ok() {
+            push(name.to_string(), "localDefault");
+        }
+    }
+
+    // 建議值就是照這個順序找到的第一個。三種都沒有時回 None：與其猜一個可能
+    // 不相干的分支，不如讓前端問。
+    let suggested = bases.first().map(|b| b.name.clone());
+    Ok(ComparisonBases { bases, suggested })
 }
 
 /// Check out an existing branch.
@@ -1653,12 +1907,33 @@ pub fn commit_file_diff(repo_path: &str, commit: &str, file: &str) -> Result<Str
     Ok(diff)
 }
 
+/// The two ends of a range as git argv, either two-dot or three-dot.
+///
+/// Two-dot is the literal difference between the two trees. Three-dot starts
+/// from where they diverged, which is what "what does this branch change"
+/// means -- without it, every commit the other side gained in the meantime is
+/// counted as yours.
+///
+/// It is one helper because the file list and the per-file diff have to agree.
+/// They are two commands running two git invocations, and if only one of them
+/// learns about three-dot the list and the diffs disagree by exactly the
+/// commits made on the base since the branch left it -- silently, with no
+/// error, just a file too many or too few.
+fn range_spec(from: &str, to: &str, merge_base: bool) -> String {
+    if merge_base {
+        format!("{from}...{to}")
+    } else {
+        format!("{from}..{to}")
+    }
+}
+
 /// 兩個任意 commit 之間變更的檔案清單(`git diff --name-status from to`)。
 /// 不像 commit_details 限定「對第一個 parent」，from/to 可以是歷史上任意兩點。
 pub fn commit_range_files(
     repo_path: &str,
     from: &str,
     to: &str,
+    merge_base: bool,
 ) -> Result<Vec<CommitFileChange>, String> {
     let from = from.trim();
     let to = to.trim();
@@ -1668,7 +1943,8 @@ pub fn commit_range_files(
     ensure_not_flag(from)?;
     ensure_not_flag(to)?;
 
-    let name_status = run_git(repo_path, &["diff", "--name-status", from, to])?;
+    let spec = range_spec(from, to, merge_base);
+    let name_status = run_git(repo_path, &["diff", "--name-status", &spec])?;
     let files = name_status
         .lines()
         .filter_map(parse_name_status_line)
@@ -1682,6 +1958,7 @@ pub fn commit_range_file_diff(
     from: &str,
     to: &str,
     file: &str,
+    merge_base: bool,
 ) -> Result<String, String> {
     let from = from.trim();
     let to = to.trim();
@@ -1691,7 +1968,8 @@ pub fn commit_range_file_diff(
     ensure_not_flag(from)?;
     ensure_not_flag(to)?;
 
-    run_git(repo_path, &["diff", from, to, "--", file])
+    let spec = range_spec(from, to, merge_base);
+    run_git(repo_path, &["diff", &spec, "--", file])
 }
 
 #[tauri::command]
@@ -1757,6 +2035,13 @@ pub async fn git_graph_log(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_comparison_bases(repo_path: String) -> Result<ComparisonBases, String> {
+    tauri::async_runtime::spawn_blocking(move || comparison_bases(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1907,25 +2192,37 @@ pub async fn git_commit_file_diff(
         .map_err(|e| e.to_string())?
 }
 
+/// `merge_base` absent means two-dot, which is what every caller before #398
+/// wanted; the file list and the per-file diff must be asked the same way or
+/// they disagree without saying so.
 #[tauri::command]
 pub async fn git_commit_range_files(
     repo_path: String,
     from: String,
     to: String,
+    merge_base: Option<bool>,
 ) -> Result<Vec<CommitFileChange>, String> {
-    tauri::async_runtime::spawn_blocking(move || commit_range_files(&repo_path, &from, &to))
+    tauri::async_runtime::spawn_blocking(move || {
+        commit_range_files(&repo_path, &from, &to, merge_base.unwrap_or(false))
+    })
         .await
         .map_err(|e| e.to_string())?
 }
 
+/// `merge_base` absent means two-dot, which is what every caller before #398
+/// wanted; the file list and the per-file diff must be asked the same way or
+/// they disagree without saying so.
 #[tauri::command]
 pub async fn git_commit_range_file_diff(
     repo_path: String,
     from: String,
     to: String,
     file: String,
+    merge_base: Option<bool>,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || commit_range_file_diff(&repo_path, &from, &to, &file))
+    tauri::async_runtime::spawn_blocking(move || {
+        commit_range_file_diff(&repo_path, &from, &to, &file, merge_base.unwrap_or(false))
+    })
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2609,9 +2906,9 @@ mod tests {
         assert!(ensure_not_flag("-x").is_err());
         assert!(ensure_not_flag("--upload-pack=evil").is_err());
 
-        let err = commit_range_files("/no/such/repo", "-x", "HEAD").unwrap_err();
+        let err = commit_range_files("/no/such/repo", "-x", "HEAD", false).unwrap_err();
         assert!(err.to_lowercase().contains("flag"), "got: {err}");
-        let err = commit_range_file_diff("/no/such/repo", "HEAD", "-x", "a.txt").unwrap_err();
+        let err = commit_range_file_diff("/no/such/repo", "HEAD", "-x", "a.txt", false).unwrap_err();
         assert!(err.to_lowercase().contains("flag"), "got: {err}");
     }
 
@@ -2638,15 +2935,59 @@ mod tests {
 
         // first..third skips the middle commit entirely — proves this isn't
         // limited to adjacent parent-child pairs like commit_details is.
-        let files = commit_range_files(&path, &first, &third).unwrap();
+        let files = commit_range_files(&path, &first, &third, false).unwrap();
         let mut paths: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
         paths.sort();
         assert_eq!(paths, vec!["a.txt", "b.txt"]);
         assert!(files.iter().any(|f| f.path == "a.txt" && f.status == "M"));
         assert!(files.iter().any(|f| f.path == "b.txt" && f.status == "A"));
 
-        let diff = commit_range_file_diff(&path, &first, &third, "a.txt").unwrap();
+        let diff = commit_range_file_diff(&path, &first, &third, "a.txt", false).unwrap();
         assert!(diff.contains("+line2"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn three_dot_ignores_what_the_base_gained_after_the_branch_left_it() {
+        // main and feature both move after they diverge. Two-dot compares the
+        // two tips, so main's own new file reads as something feature deleted;
+        // three-dot starts from where they parted and reports only feature's
+        // work. Getting this wrong is what makes "what does my branch change"
+        // list files the branch never touched.
+        let dir = temp_repo_dir("range-threedot");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "hi").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        run_git(&path, &["checkout", "-q", "-b", "feature"]).unwrap();
+        std::fs::write(dir.join("mine.txt"), "feature").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "feature work"]).unwrap();
+        run_git(&path, &["checkout", "-q", "main"]).unwrap();
+        std::fs::write(dir.join("theirs.txt"), "main").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "main moves on"]).unwrap();
+
+        let two = commit_range_files(&path, "main", "feature", false).unwrap();
+        let three = commit_range_files(&path, "main", "feature", true).unwrap();
+        let names = |v: &[CommitFileChange]| {
+            let mut n: Vec<String> = v.iter().map(|f| f.path.clone()).collect();
+            n.sort();
+            n
+        };
+        assert_eq!(names(&two), vec!["mine.txt".to_string(), "theirs.txt".to_string()]);
+        assert_eq!(names(&three), vec!["mine.txt".to_string()]);
+
+        // And the per-file diff has to answer the same way, or the list and
+        // the diffs describe different comparisons.
+        let two_diff = commit_range_file_diff(&path, "main", "feature", "theirs.txt", false).unwrap();
+        let three_diff = commit_range_file_diff(&path, "main", "feature", "theirs.txt", true).unwrap();
+        assert!(two_diff.contains("theirs.txt"), "{two_diff}");
+        assert!(three_diff.is_empty(), "{three_diff}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2709,6 +3050,130 @@ mod tests {
         let _ = std::fs::remove_dir_all(&bare);
     }
 
+    /// Builds a repo with one commit on `main` and returns (dir, path).
+    fn repo_with_a_commit(tag: &str) -> (std::path::PathBuf, String) {
+        let dir = temp_repo_dir(tag);
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "hi").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn comparison_bases_lists_every_remote_default_not_just_origin() {
+        // A fork checkout: `origin` is your own copy, `upstream` is the repo the
+        // pull request goes back to. Both are things people compare against, so
+        // both have to be offered.
+        let (dir, path) = repo_with_a_commit("bases-remotes");
+        let (bare_dir, bare) = repo_with_a_commit("bases-remotes-bare");
+        run_git(&path, &["remote", "add", "origin", &bare]).unwrap();
+        run_git(&path, &["remote", "add", "upstream", &bare]).unwrap();
+        run_git(&path, &["fetch", "-q", "origin"]).unwrap();
+        run_git(&path, &["fetch", "-q", "upstream"]).unwrap();
+        // <remote>/HEAD is only written by clone, so a remote added by hand
+        // needs this -- which is exactly why the code skips a remote without
+        // one rather than guessing.
+        run_git(&path, &["remote", "set-head", "origin", "-a"]).unwrap();
+        run_git(&path, &["remote", "set-head", "upstream", "-a"]).unwrap();
+
+        let found = comparison_bases(&path).unwrap();
+        let names: Vec<&str> = found.bases.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"origin/main"), "{names:?}");
+        assert!(names.contains(&"upstream/main"), "{names:?}");
+        // The remote defaults come first, so the suggestion is one of them.
+        assert!(found.suggested.as_deref() == Some("origin/main")
+            || found.suggested.as_deref() == Some("upstream/main"));
+        for base in &found.bases {
+            if base.name.starts_with("origin/") || base.name.starts_with("upstream/") {
+                assert_eq!(base.kind, "remoteDefault");
+                assert!(base.last_commit_at > 0, "{base:?}");
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&bare_dir);
+    }
+
+    #[test]
+    fn comparison_bases_skips_a_remote_with_no_head_and_falls_back_to_local() {
+        // No `git remote set-head`, so there is no origin/HEAD to read. Guessing
+        // "origin/main" here would be wrong on a repo whose default is
+        // something else, so the remote is skipped and the local main answers.
+        let (dir, path) = repo_with_a_commit("bases-nohead");
+        let (bare_dir, bare) = repo_with_a_commit("bases-nohead-bare");
+        run_git(&path, &["remote", "add", "origin", &bare]).unwrap();
+        run_git(&path, &["fetch", "-q", "origin"]).unwrap();
+        // git 2.47 and later write <remote>/HEAD on fetch as well as on clone,
+        // so the case being tested has to be made rather than assumed: this is
+        // the repo that has been fetched from a remote whose HEAD was never
+        // resolved, which is what `git remote add` by hand leaves behind on
+        // older git.
+        run_git(&path, &["remote", "set-head", "origin", "-d"]).unwrap();
+
+        let found = comparison_bases(&path).unwrap();
+        let names: Vec<&str> = found.bases.iter().map(|b| b.name.as_str()).collect();
+        assert!(!names.iter().any(|n| n.starts_with("origin/")), "{names:?}");
+        assert_eq!(found.suggested.as_deref(), Some("main"));
+        assert_eq!(found.bases[0].kind, "localDefault");
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&bare_dir);
+    }
+
+    #[test]
+    fn comparison_bases_offers_the_branch_its_own_upstream() {
+        // "What have I committed but not pushed" is a different question from
+        // "what does my branch change against the mainline", so the tracking
+        // branch is its own entry.
+        let (dir, path) = repo_with_a_commit("bases-upstream");
+        let (bare_dir, bare) = repo_with_a_commit("bases-upstream-bare");
+        run_git(&path, &["remote", "add", "origin", &bare]).unwrap();
+        run_git(&path, &["fetch", "-q", "origin"]).unwrap();
+        // An upstream of its own, not the mainline: those are two different
+        // questions and the list carries both.
+        run_git(&bare, &["checkout", "-q", "-b", "feature"]).unwrap();
+        run_git(&path, &["fetch", "-q", "origin"]).unwrap();
+        run_git(&path, &["checkout", "-q", "-b", "feature"]).unwrap();
+        run_git(&path, &["branch", "--set-upstream-to", "origin/feature", "feature"]).unwrap();
+
+        let found = comparison_bases(&path).unwrap();
+        let tracked = found.bases.iter().find(|b| b.kind == "upstream");
+        assert_eq!(tracked.map(|b| b.name.as_str()), Some("origin/feature"));
+
+        // And when the branch tracks the mainline itself, that is one row, not
+        // the same ref listed twice under two headings.
+        run_git(&path, &["branch", "--set-upstream-to", "origin/main", "feature"]).unwrap();
+        let again = comparison_bases(&path).unwrap();
+        assert_eq!(again.bases.iter().filter(|b| b.name == "origin/main").count(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&bare_dir);
+    }
+
+    #[test]
+    fn comparison_bases_says_nothing_rather_than_guessing() {
+        // A repo with no remote and a branch called neither main nor master:
+        // there is no sensible mainline to offer, so the frontend has to ask.
+        let dir = temp_repo_dir("bases-empty");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "wip"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "hi").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+
+        let found = comparison_bases(&path).unwrap();
+        assert!(found.bases.is_empty(), "{:?}", found.bases);
+        assert_eq!(found.suggested, None);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn temp_repo_dir(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "tempoterm-git-{}-{}",
@@ -2718,6 +3183,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn status_leaves_ignored_files_out() {
+        // git2's default is to report them, so the pane listed a repo's
+        // ignored files as untracked -- next to the ones git really does call
+        // untracked, with no way to tell which was which.
+        let dir = temp_repo_dir("ignored-status");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join(".gitignore"), "secrets/").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        std::fs::create_dir_all(dir.join("secrets")).unwrap();
+        std::fs::write(dir.join("secrets/key.txt"), "shh").unwrap();
+        std::fs::write(dir.join("seen.txt"), "hello").unwrap();
+
+        let found = status(&path).unwrap();
+        let untracked: Vec<&str> = found.unstaged.iter().map(|f| f.path.as_str()).collect();
+        // The one git would list, and not the one it would not.
+        assert!(untracked.contains(&"seen.txt"), "{untracked:?}");
+        assert!(!untracked.iter().any(|p| p.starts_with("secrets")), "{untracked:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -2873,6 +3364,63 @@ mod tests {
     }
 
     #[test]
+    fn a_path_git_will_not_resolve_reads_as_empty() {
+        // The other half of "not on this side". Reading the index version of a
+        // path git has no entry for can fail as an unresolvable *argument*
+        // rather than as a missing file, and a surface that turned that into an
+        // error showed "could not load" over a file it had just listed.
+        let dir = temp_repo_dir("unresolvable");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join(".gitignore"), "secrets/").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        std::fs::create_dir_all(dir.join("secrets")).unwrap();
+        std::fs::write(dir.join("secrets/key.txt"), "shh").unwrap();
+
+        assert_eq!(file_at_rev(&path, ":", "secrets/key.txt").unwrap(), "");
+        assert_eq!(file_at_rev(&path, "HEAD", "secrets/key.txt").unwrap(), "");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn file_at_rev_reads_any_rev_and_refuses_one_that_is_not() {
+        // The comparison base is a branch or a tag, so the two-value whitelist
+        // had to go; what replaces it is a real resolve, which still says no.
+        let dir = temp_repo_dir("far-anyrev");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "first").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "second").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "second"]).unwrap();
+        run_git(&path, &["tag", "v1"]).unwrap();
+        run_git(&path, &["checkout", "-q", "-b", "later"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "third").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "third"]).unwrap();
+
+        assert_eq!(file_at_rev(&path, "v1", "a.txt").unwrap().trim(), "second");
+        assert_eq!(file_at_rev(&path, "main", "a.txt").unwrap().trim(), "second");
+        assert_eq!(file_at_rev(&path, "HEAD", "a.txt").unwrap().trim(), "third");
+        // Still an empty document rather than an error when the file is not
+        // there at that rev -- that is what makes a new file diff as all-added.
+        assert_eq!(file_at_rev(&path, "main", "nope.txt").unwrap(), "");
+        // Nonsense is refused rather than reaching git's argv.
+        assert!(file_at_rev(&path, "no-such-branch", "a.txt").is_err());
+        assert!(file_at_rev(&path, "--upload-pack=touch", "a.txt").is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn restore_file_reverts_unstaged_change() {
         let dir = temp_repo_dir("restore_file");
         let path = dir.to_string_lossy().to_string();
@@ -2895,8 +3443,16 @@ mod tests {
 
     #[test]
     fn build_log_refs_show_all_default() {
+        // 預設是工具列的預設：本地分支 + 遠端 + 標籤，不含 stash。
         let options = GraphOptions::default();
-        assert_eq!(build_log_refs(&options), vec!["--branches".to_string()]);
+        assert_eq!(
+            build_log_refs(&options, &[]),
+            vec![
+                "--branches".to_string(),
+                "--remotes".to_string(),
+                "--tags".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -2905,7 +3461,7 @@ mod tests {
             branches: vec!["main".to_string()],
             ..GraphOptions::default()
         };
-        assert_eq!(build_log_refs(&options), vec!["main".to_string()]);
+        assert_eq!(build_log_refs(&options, &[]), vec!["main".to_string()]);
     }
 
     #[test]
@@ -2919,7 +3475,10 @@ mod tests {
             include_stashes: true,
             order: CommitOrder::Date,
         };
-        assert_eq!(build_log_refs(&options), vec!["main".to_string()]);
+        assert_eq!(
+            build_log_refs(&options, &["deadbeef".to_string()]),
+            vec!["main".to_string()]
+        );
     }
 
     #[test]
@@ -2930,8 +3489,112 @@ mod tests {
             ..GraphOptions::default()
         };
         assert_eq!(
-            build_log_refs(&options),
+            build_log_refs(&options, &[]),
             vec!["main".to_string(), "origin/feature".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_stash_commits_splits_tips_from_helpers() {
+        // 每行是「stash + parent」。第一個 parent 是 stash 當下的 HEAD（真實
+        // 歷史），第二個以後才是 index／untracked 快照。第一行是 `stash -u`，
+        // 所以有三個 parent。
+        let parsed = parse_stash_commits(
+            "aaa1 base1 idx1 untracked1\nbbb2 base2 idx2\n",
+        );
+        assert_eq!(parsed.tips, vec!["aaa1".to_string(), "bbb2".to_string()]);
+        assert_eq!(
+            parsed.helpers,
+            vec!["idx1".to_string(), "untracked1".to_string(), "idx2".to_string()]
+        );
+        // 基底 commit 不能被當成輔助 commit，否則真實歷史會被濾掉。
+        assert!(!parsed.helpers.contains(&"base1".to_string()));
+        assert!(!parsed.helpers.contains(&"base2".to_string()));
+    }
+
+    #[test]
+    fn parse_stash_commits_of_nothing_is_empty() {
+        // 沒有任何 stash 時 `git rev-list` 非零退出，呼叫端會餵進空字串。
+        assert_eq!(parse_stash_commits(""), StashCommits::default());
+    }
+
+    #[test]
+    fn filter_refs_drops_the_kinds_their_toggle_turned_off() {
+        // 把 ref 移出 git log 的走訪範圍不會拿掉裝飾：遠端分支和標籤幾乎都指在
+        // 本地歷史走得到的 commit 上，少了這層過濾，關掉開關看起來毫無反應。
+        let refs = vec![
+            GraphRef { name: "main".into(), kind: "head".into() },
+            GraphRef { name: "v1".into(), kind: "tag".into() },
+            GraphRef { name: "origin/main".into(), kind: "remote".into() },
+            GraphRef { name: "stash@{0}".into(), kind: "stash".into() },
+        ];
+        let off = GraphOptions {
+            include_remotes: false,
+            include_tags: false,
+            ..GraphOptions::default()
+        };
+        assert_eq!(
+            filter_refs(refs.clone(), &off),
+            vec![GraphRef { name: "main".into(), kind: "head".into() }]
+        );
+
+        let on = GraphOptions {
+            include_remotes: true,
+            include_tags: true,
+            include_stashes: true,
+            ..GraphOptions::default()
+        };
+        assert_eq!(filter_refs(refs.clone(), &on), refs);
+
+        let stashes_off = GraphOptions {
+            include_remotes: true,
+            include_tags: true,
+            include_stashes: false,
+            ..GraphOptions::default()
+        };
+        assert_eq!(
+            filter_refs(refs, &stashes_off),
+            vec![
+                GraphRef { name: "main".into(), kind: "head".into() },
+                GraphRef { name: "v1".into(), kind: "tag".into() },
+                GraphRef { name: "origin/main".into(), kind: "remote".into() },
+            ]
+        );
+    }
+
+    #[test]
+    fn label_stashes_names_every_stash_the_way_git_stash_list_does() {
+        // git 只裝飾 refs/stash（stash@{0}）；較舊的在 reflog 裡，沒有 ref 可標，
+        // 不補的話會變成一排沒有標籤的 "WIP on ..." commit。
+        let mut commits = vec![
+            GraphCommit {
+                hash: "aaa1111".into(),
+                parents: vec![],
+                author: "A".into(),
+                date: "2024-01-01 00:00".into(),
+                refs: vec![GraphRef { name: "stash".into(), kind: "stash".into() }],
+                message: "WIP on main".into(),
+            },
+            GraphCommit {
+                hash: "bbb2222".into(),
+                parents: vec![],
+                author: "A".into(),
+                date: "2024-01-01 00:00".into(),
+                refs: vec![],
+                message: "WIP on main".into(),
+            },
+        ];
+        label_stashes(
+            &mut commits,
+            &["aaa1111ffff".to_string(), "bbb2222ffff".to_string()],
+        );
+        assert_eq!(
+            commits[0].refs,
+            vec![GraphRef { name: "stash@{0}".into(), kind: "stash".into() }]
+        );
+        assert_eq!(
+            commits[1].refs,
+            vec![GraphRef { name: "stash@{1}".into(), kind: "stash".into() }]
         );
     }
 
@@ -2970,9 +3633,11 @@ mod tests {
     fn build_log_refs_blank_entries_fall_back_to_show_all() {
         let options = GraphOptions {
             branches: vec!["   ".to_string(), "".to_string()],
+            include_remotes: false,
+            include_tags: false,
             ..GraphOptions::default()
         };
-        assert_eq!(build_log_refs(&options), vec!["--branches".to_string()]);
+        assert_eq!(build_log_refs(&options, &[]), vec!["--branches".to_string()]);
     }
 
     #[test]
@@ -2984,15 +3649,134 @@ mod tests {
             include_stashes: true,
             order: CommitOrder::Date,
         };
+        // stash 以 commit hash 逐筆列出，不是旗標——git 沒有「所有 stash」的
+        // 旗標，而 `--glob=refs/stash` 因為不含萬用字元會被 git 當成前綴、
+        // 展開成 refs/stash/*，永遠匹配不到東西。
         assert_eq!(
-            build_log_refs(&options),
+            build_log_refs(&options, &["aaa1".to_string(), "bbb2".to_string()]),
             vec![
                 "--branches".to_string(),
                 "--remotes".to_string(),
                 "--tags".to_string(),
-                "--glob=refs/stash".to_string(),
+                "aaa1".to_string(),
+                "bbb2".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn graph_log_shows_every_stash_without_its_helper_commits() {
+        let dir = temp_repo_dir("graph-stash");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.name", "Test"]).unwrap();
+        run_git(&path, &["config", "user.email", "test@example.com"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        run_git(&path, &["add", "a.txt"]).unwrap();
+        run_git(&path, &["commit", "-m", "first"]).unwrap();
+
+        // 兩筆 stash：只有較新的那筆有 refs/stash 這個 ref，舊的在 reflog 裡。
+        std::fs::write(dir.join("a.txt"), "older\n").unwrap();
+        run_git(&path, &["stash"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "newer\n").unwrap();
+        run_git(&path, &["stash"]).unwrap();
+
+        let off = graph_log(&path, 50, 0, &GraphOptions::default()).unwrap();
+        assert!(
+            !off.commits.iter().any(|c| c.message.starts_with("WIP on")),
+            "開關關著不該畫出 stash: {:?}",
+            off.commits.iter().map(|c| &c.message).collect::<Vec<_>>()
+        );
+
+        let options = GraphOptions {
+            include_stashes: true,
+            ..GraphOptions::default()
+        };
+        let on = graph_log(&path, 50, 0, &options).unwrap();
+
+        // 兩筆都要在，而且都被標成 stash@{n}——舊的那筆沒有 ref 可以裝飾。
+        let stash_names: Vec<String> = on
+            .commits
+            .iter()
+            .flat_map(|c| c.refs.iter())
+            .filter(|r| r.kind == "stash")
+            .map(|r| r.name.clone())
+            .collect();
+        assert_eq!(
+            stash_names,
+            vec!["stash@{0}".to_string(), "stash@{1}".to_string()]
+        );
+
+        // git 為 stash 造的 index 快照不是使用者的歷史，不該出現在線圖上。
+        assert!(
+            !on.commits.iter().any(|c| c.message.starts_with("index on")),
+            "輔助 commit 漏進線圖: {:?}",
+            on.commits.iter().map(|c| &c.message).collect::<Vec<_>>()
+        );
+
+        // 每個 parent 都必須指到還在清單裡的 commit。懸空的 parent 會讓前端的
+        // lane 配置佔著一條永遠等不到的線，lane 一超過 maxLane 就被壓到同一欄，
+        // 兩個節點疊在同一個 x 上、畫出一條不存在的父子線。
+        let present: Vec<&str> = on.commits.iter().map(|c| c.hash.as_str()).collect();
+        for commit in &on.commits {
+            for parent in &commit.parents {
+                assert!(
+                    present.iter().any(|h| h == parent),
+                    "{} 的 parent {parent} 不在線圖裡",
+                    commit.hash
+                );
+            }
+        }
+        // 每筆 stash 只該剩下它的基底 commit 這一個 parent。
+        let stash_rows: Vec<&GraphCommit> = on
+            .commits
+            .iter()
+            .filter(|c| c.refs.iter().any(|r| r.kind == "stash"))
+            .collect();
+        assert_eq!(stash_rows.len(), 2);
+        for commit in stash_rows {
+            assert_eq!(commit.parents.len(), 1, "stash 還帶著輔助 parent: {commit:?}");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn graph_log_hides_remote_and_tag_chips_when_their_toggle_is_off() {
+        let dir = temp_repo_dir("graph-decorations");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.name", "Test"]).unwrap();
+        run_git(&path, &["config", "user.email", "test@example.com"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        run_git(&path, &["add", "a.txt"]).unwrap();
+        run_git(&path, &["commit", "-m", "first"]).unwrap();
+        run_git(&path, &["tag", "v1"]).unwrap();
+        // 遠端分支和本地 HEAD 指在同一個 commit——這是實務上的常態，也正是
+        // 「把 ref 移出走訪範圍」擋不掉裝飾的情境。
+        run_git(&path, &["update-ref", "refs/remotes/origin/main", "HEAD"]).unwrap();
+
+        let on = GraphOptions {
+            include_remotes: true,
+            include_tags: true,
+            ..GraphOptions::default()
+        };
+        let refs = &graph_log(&path, 10, 0, &on).unwrap().commits[0].refs;
+        assert!(refs.iter().any(|r| r.kind == "tag" && r.name == "v1"));
+        assert!(refs.iter().any(|r| r.kind == "remote" && r.name == "origin/main"));
+
+        let off = GraphOptions {
+            include_remotes: false,
+            include_tags: false,
+            ..GraphOptions::default()
+        };
+        let refs = &graph_log(&path, 10, 0, &off).unwrap().commits[0].refs;
+        assert!(!refs.iter().any(|r| r.kind == "tag"), "標籤沒被關掉: {refs:?}");
+        assert!(!refs.iter().any(|r| r.kind == "remote"), "遠端沒被關掉: {refs:?}");
+        // 本地分支不受這兩個開關影響。
+        assert!(refs.iter().any(|r| r.kind == "head" && r.name == "main"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
 
@@ -3005,6 +3789,17 @@ mod tests {
     #[test]
     fn graph_options_default_order_is_date() {
         assert_eq!(GraphOptions::default().order, CommitOrder::Date);
+    }
+
+    #[test]
+    fn graph_options_default_matches_the_toolbar() {
+        // 開關會拿掉 ref 裝飾，所以衍生的 all-false 預設會變成「什麼都不標」。
+        // 這些預設要跟 GitGraphTabContent 的 useState 初值一致。
+        let defaults = GraphOptions::default();
+        assert!(defaults.include_remotes);
+        assert!(defaults.include_tags);
+        assert!(!defaults.include_stashes);
+        assert!(defaults.branches.is_empty());
     }
 
     #[test]

@@ -27,6 +27,11 @@
     "installing": "Installing…",
     "failed": "Install failed"
   },
+  "failure": {
+    "title": "Installation did not complete",
+    "detail": "The installer reported: {{reason}} (exit code {{code}})",
+    "noDetail": "The installer did not provide a detailed reason (exit code {{code}}). Common causes include a network problem, Windows App Installer/WinGet being unavailable, insufficient permissions, or security software blocking the install."
+  },
   "actions": {
     "install": "Install",
     "update": "Update",

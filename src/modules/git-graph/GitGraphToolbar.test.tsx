@@ -116,6 +116,23 @@ describe("GitGraphToolbar responsive layout", () => {
     expect(screen.queryByLabelText(labels.refresh)).not.toBeInTheDocument();
   });
 
+  it("drops the HEAD button before compact, and the overflow menu carries it again", () => {
+    renderToolbar({ currentBranch: "feature/x" });
+    const switchLabel = `${labels.switchBranch} (${labels.head}: feature/x)`;
+
+    setToolbarWidth(1200);
+    expect(screen.getByRole("button", { name: switchLabel })).toBeInTheDocument();
+
+    // Gone well before the full compact fold: right-clicking a branch chip in
+    // the graph already offers checkout, so nothing here is the only way in.
+    setToolbarWidth(800);
+    expect(screen.queryByRole("button", { name: switchLabel })).not.toBeInTheDocument();
+
+    setToolbarWidth(360);
+    fireEvent.click(screen.getByLabelText(labels.more));
+    expect(screen.getByText(`${labels.head}: feature/x`)).toBeInTheDocument();
+  });
+
   it("keeps the branch dropdown and search reachable when compact", () => {
     renderToolbar();
     setToolbarWidth(360);
@@ -238,6 +255,19 @@ describe("GitGraphToolbar worktree selector", () => {
 
     expect(screen.queryByText(`${labels.worktree}:`)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(labels.worktree)).not.toBeInTheDocument();
+  });
+
+  it("steps aside on a narrow row, where the worktree manager still opens them", () => {
+    renderToolbar({ worktrees: twoWorktrees, currentWorktreePath: "/repos/app" });
+
+    setToolbarWidth(1200);
+    expect(screen.getAllByLabelText(labels.worktree).length).toBeGreaterThan(0);
+
+    // "<folder> (<branch>)" is the widest thing on the row, so it gives way
+    // first — long before the row would actually break.
+    setToolbarWidth(900);
+    expect(screen.queryByLabelText(labels.worktree)).not.toBeInTheDocument();
+    expect(screen.queryByText(`${labels.worktree}:`)).not.toBeInTheDocument();
   });
 
   it("shows the current worktree as the selected value when there are several", () => {

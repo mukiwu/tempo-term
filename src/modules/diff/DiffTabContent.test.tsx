@@ -29,6 +29,7 @@ import { useDiffCommentStore } from "./lib/diffCommentStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { DEFAULT_FONT_SIZE, useFontStore } from "@/stores/fontStore";
 import { leaf } from "@/modules/terminal/lib/terminalLayout";
 
 describe("DiffTabContent", () => {
@@ -39,6 +40,7 @@ describe("DiffTabContent", () => {
     useSessionStatusStore.setState({ statuses: {}, agents: {}, sessionIds: {} });
     // Most tests are not about the one-time hint; dedicated cases flip it back.
     useSettingsStore.setState({ diffCommentHintSeen: true, diffUnified: false });
+    useFontStore.setState({ fontSize: DEFAULT_FONT_SIZE });
   });
 
   it("compares index vs working tree for an unstaged diff", async () => {
@@ -106,6 +108,21 @@ describe("DiffTabContent", () => {
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeNull());
     expect(container.querySelector(".diff-inline-view .cm-editor")).toBeTruthy();
     expect(container.querySelector(".cm-deletedChunk")).toBeTruthy();
+  });
+
+  it("sets the diff type size from the font setting", async () => {
+    useFontStore.setState({ fontSize: 20 });
+    vi.mocked(gitFileAtRev).mockResolvedValue("old line\n");
+    vi.mocked(fsReadFile).mockResolvedValue("new line\n");
+
+    const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
+
+    await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
+    // The size lands in the theme CodeMirror injects, not on the elements.
+    const css = Array.from(document.querySelectorAll("style"))
+      .map((tag) => tag.textContent ?? "")
+      .join("");
+    expect(css).toContain("font-size: 20px");
   });
 
   it("folds expanded unchanged regions back up", async () => {
@@ -280,5 +297,37 @@ describe("DiffTabContent", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "diffSendToAgent" }));
     expect(await screen.findByRole("menuitem", { name: "diffNoAgentSession" })).toBeDisabled();
+  });
+
+  it("diffs a big file precisely when its changes are scattered", async () => {
+    // @codemirror/merge's default diff config gives up on a differing range
+    // past a few thousand characters and marks the whole of it as replaced.
+    // What trips it is not size alone but changes spread out inside one — a
+    // resource file with lines added in four places used to render as the
+    // entire file deleted and added back. 600 lines with four insertion
+    // points is the smallest shape that reproduces it (31 lines falsely
+    // marked deleted before this change).
+    const base = Array.from(
+      { length: 600 },
+      (_, i) => `    const value${i} = computeSomething(${i}, "an argument");`,
+    );
+    const insertAt = new Set([120, 240, 360, 480]);
+    const withAdditions: string[] = [];
+    base.forEach((line, i) => {
+      if (insertAt.has(i)) {
+        withAdditions.push("    const brandNew = 1;", "    const alsoNew = 2;");
+      }
+      withAdditions.push(line);
+    });
+    vi.mocked(gitFileAtRev).mockResolvedValue(base.join("\n") + "\n");
+    vi.mocked(fsReadFile).mockResolvedValue(withAdditions.join("\n") + "\n");
+
+    const { container } = render(<DiffTabContent path="/repo/big.ts" staged={false} />);
+
+    await waitFor(() =>
+      expect(container.querySelectorAll(".cm-merge-b .cm-changedLine").length).toBeGreaterThan(0),
+    );
+    // Nothing was removed, so the old side carries no changed line at all.
+    expect(container.querySelectorAll(".cm-merge-a .cm-changedLine").length).toBe(0);
   });
 });

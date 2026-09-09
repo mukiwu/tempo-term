@@ -35,6 +35,14 @@ struct ToolSpec {
     windows_install: &'static str,
 }
 
+/// WinGet is not available on every supported Windows installation (notably
+/// older Windows 10 images and machines without the App Installer package).
+/// Keep a Node-only fallback so the first-run wizard can bootstrap the runtime
+/// without assuming that Node/npm already exists. PowerShell and msiexec are
+/// part of Windows, and the release index lets us avoid baking a stale Node
+/// version into the application.
+const WINDOWS_NODE_INSTALL: &str = "winget install -e --id OpenJS.NodeJS --accept-package-agreements --accept-source-agreements || powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference = 'Stop'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432.ToLower() } else { $env:PROCESSOR_ARCHITECTURE.ToLower() }; if ($arch -eq 'amd64') { $arch = 'x64' } elseif ($arch -eq 'arm64') { $arch = 'arm64' } else { $arch = 'x86' }; $release = Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' | Where-Object { $_.lts } | Select-Object -First 1; if (-not $release) { Write-Error 'Could not find the latest Node.js LTS release'; exit 1 }; $msi = Join-Path $env:TEMP ('node-' + [guid]::NewGuid().ToString() + '.msi'); $url = 'https://nodejs.org/dist/' + $release.version + '/node-' + $release.version + '-' + $arch + '.msi'; Write-Output ('Downloading ' + $url); Invoke-WebRequest -Uri $url -OutFile $msi; $result = Start-Process msiexec.exe -ArgumentList @('/i', $msi, '/qn', '/norestart') -Wait -PassThru; Remove-Item -LiteralPath $msi -Force -ErrorAction SilentlyContinue; if ($result.ExitCode -ne 0) { Write-Error ('Node.js MSI installation failed with exit code ' + $result.ExitCode) }; exit $result.ExitCode\"";
+
 /// The tool registry. Keep in sync with the frontend `setup/lib/registry.ts`.
 const TOOLS: &[ToolSpec] = &[
     ToolSpec {
@@ -42,7 +50,7 @@ const TOOLS: &[ToolSpec] = &[
         bin: "node",
         min_version: Some("18"),
         mac_install: "brew install node",
-        windows_install: "winget install -e --id OpenJS.NodeJS --accept-package-agreements --accept-source-agreements",
+        windows_install: WINDOWS_NODE_INSTALL,
     },
     ToolSpec {
         id: "git",
@@ -203,6 +211,12 @@ fn search_dirs(
             dirs.push(PathBuf::from(appdata).join("npm"));
         }
         if let Some(localappdata) = localappdata {
+            // WinGet is exposed by App Installer through this per-user alias
+            // directory, which is frequently absent from a GUI-launched PATH.
+            dirs.push(PathBuf::from(localappdata).join("Microsoft").join("WindowsApps"));
+            // Some users install Node for the current user instead of into
+            // Program Files, so include its default location too.
+            dirs.push(PathBuf::from(localappdata).join("Programs").join("nodejs"));
             // The antigravity installer writes agy.exe here and never touches
             // PATH, so detection must probe it directly.
             dirs.push(PathBuf::from(localappdata).join("agy").join("bin"));
@@ -754,7 +768,18 @@ fn run_install(cmd: &str, on_output: &Channel<String>) -> Result<i32, String> {
     }
 
     let status = child.wait().map_err(|e| e.to_string())?;
-    Ok(status.code().unwrap_or(-1))
+    Ok(normalize_install_exit_code(status.code().unwrap_or(-1)))
+}
+
+/// Windows Installer uses 3010 for "completed successfully; reboot required".
+/// Treat it as success so a Node MSI install is not shown as failed when the
+/// machine has pending installer actions. Other non-zero codes remain errors.
+fn normalize_install_exit_code(code: i32) -> i32 {
+    if cfg!(target_os = "windows") && code == 3010 {
+        0
+    } else {
+        code
+    }
 }
 
 #[cfg(test)]
@@ -815,6 +840,10 @@ mod tests {
         assert!(win.contains(&PathBuf::from(r"C:\Program Files\nodejs")));
         // npm global shims live under %APPDATA%\npm.
         assert!(win.contains(&PathBuf::from(appdata).join("npm")));
+        // WinGet's App Installer alias and per-user Node installations both
+        // live below %LOCALAPPDATA%, outside the PATH of some GUI launches.
+        assert!(win.contains(&PathBuf::from(localappdata).join("Microsoft").join("WindowsApps")));
+        assert!(win.contains(&PathBuf::from(localappdata).join("Programs").join("nodejs")));
         // The antigravity installer drops agy.exe under %LOCALAPPDATA%\agy\bin.
         assert!(win.contains(&PathBuf::from(localappdata).join("agy").join("bin")));
         assert!(win.contains(&PathBuf::from(home).join("scoop").join("shims")));
@@ -834,6 +863,29 @@ mod tests {
         assert!(unix.contains(&PathBuf::from("/usr/local/bin")));
         let win = search_dirs(None, None, None, None, true);
         assert!(win.contains(&PathBuf::from(r"C:\ProgramData\chocolatey\bin")));
+    }
+
+    #[test]
+    fn windows_node_install_does_not_require_winget_or_node() {
+        // The fallback is intentionally part of the command string because it
+        // must work on a clean Windows machine before node/npm exists.
+        assert!(WINDOWS_NODE_INSTALL.contains("winget install"));
+        assert!(WINDOWS_NODE_INSTALL.contains("|| powershell"));
+        assert!(WINDOWS_NODE_INSTALL.contains("nodejs.org/dist/index.json"));
+        assert!(WINDOWS_NODE_INSTALL.contains("msiexec.exe"));
+    }
+
+    #[test]
+    fn only_windows_reboot_required_is_normalized_as_success() {
+        // The helper is platform-gated internally, so this assertion remains
+        // portable while documenting the Windows Installer contract.
+        assert_eq!(normalize_install_exit_code(0), 0);
+        assert_eq!(normalize_install_exit_code(1), 1);
+        if cfg!(target_os = "windows") {
+            assert_eq!(normalize_install_exit_code(3010), 0);
+        } else {
+            assert_eq!(normalize_install_exit_code(3010), 3010);
+        }
     }
 
     #[test]

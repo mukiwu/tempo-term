@@ -92,7 +92,12 @@ export function BranchFilter({
       : `${selected[0]} +${selected.length - 1}`;
 
   return (
-    <div ref={wrapRef} className="relative w-64 shrink-0">
+    // Wide by default so a branch name reads without hovering, but allowed to
+    // give ground: `shrink-0` here meant a crowded toolbar could not reclaim
+    // any of these 16rem, so the filter simply overlapped whatever sat next to
+    // it. The floor keeps it usable rather than letting it collapse to nothing,
+    // and the trigger text truncates on the way down.
+    <div ref={wrapRef} className="relative w-64 min-w-[8rem]">
       <button
         type="button"
         aria-label={labels.ariaLabel}
