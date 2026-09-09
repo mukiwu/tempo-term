@@ -2,6 +2,7 @@ import { getChunks, mergeViewSiblings } from "@codemirror/merge";
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import { CHEVRONS_DOWN, CHEVRONS_UP, lucideIcon, UNFOLD_VERTICAL } from "./lucideDom";
+import { withGutterHint } from "./gutterHint";
 
 /**
  * The unchanged stretches of a diff, folded into a bar of our own.
@@ -185,7 +186,6 @@ function button(
   el.className = "cm-diff-run-btn";
   el.disabled = !enabled;
   el.append(lucideIcon(paths, 12));
-  el.title = label;
   el.setAttribute("aria-label", label);
   el.addEventListener("mousedown", (event) => {
     // The editor would otherwise take the click as a click on the text.
@@ -195,7 +195,11 @@ function button(
       onClick();
     }
   });
-  return el;
+  // The app's own hover hint rather than `title`, which the macOS WebView is
+  // unreliable about and which a split diff's overflow would clip -- the same
+  // reason the fold gutter next door uses it. A dead arrow gets none: a
+  // control that will not act should not describe an act.
+  return enabled ? withGutterHint(el, label) : el;
 }
 
 export class RunWidget extends WidgetType {
