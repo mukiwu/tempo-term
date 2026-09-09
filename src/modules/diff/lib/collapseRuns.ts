@@ -359,7 +359,10 @@ const theme = EditorView.baseTheme({
     alignItems: "center",
     gap: "8px",
     padding: "1px 8px",
-    fontSize: "11px",
+    // Relative, not a fixed 11px: the editor's own size comes from the app's
+    // diff font setting, and the library's bar inherited it. A number written
+    // here would ignore that setting -- and stay tiny next to 18px code.
+    fontSize: "0.85em",
     lineHeight: "1.6",
     color: "var(--color-fg-subtle, #888)",
     background: "var(--color-bg-elevated, rgba(127,127,127,0.08))",
@@ -378,6 +381,9 @@ const theme = EditorView.baseTheme({
     opacity: 0.9,
   },
   ".cm-diff-run-actions": { display: "flex", gap: "1px", flexShrink: 0 },
+  // The icons are built at a fixed pixel size, so they are sized here in the
+  // bar's own em to follow the text they sit beside.
+  ".cm-diff-run-btn svg": { width: "1.1em", height: "1.1em" },
   ".cm-diff-run-btn": {
     display: "flex",
     alignItems: "center",
