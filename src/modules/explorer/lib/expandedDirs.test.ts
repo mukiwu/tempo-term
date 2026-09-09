@@ -58,6 +58,19 @@ describe("expandedDirs", () => {
     expect(map[`/root-${MAX_ROOTS + 2}`]).toBeDefined();
   });
 
+  it("refreshes a reused root before applying the root cap", () => {
+    let map: ExpandedDirs = {};
+    for (let i = 0; i < MAX_ROOTS; i += 1) {
+      map = rememberDir(map, `/root-${i}`, `/root-${i}/src`);
+    }
+
+    map = rememberDir(map, "/root-0", "/root-0/src");
+    map = rememberDir(map, "/root-new", "/root-new/src");
+
+    expect(map["/root-0"]).toBeDefined();
+    expect(map["/root-1"]).toBeUndefined();
+  });
+
   it("forgets a single collapsed folder and leaves its siblings alone", () => {
     let map = rememberDir({}, "/root", "/root/src");
     map = rememberDir(map, "/root", "/root/docs");

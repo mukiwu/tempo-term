@@ -42,20 +42,28 @@ export function isDirRemembered(
 
 /**
  * Records `path` as expanded under `root`, moving it to the end (most recent)
- * if it was already there. Returns `map` unchanged when it is already the last
- * entry, so a redundant write cannot trigger a re-persist.
+ * if it was already there. Touching a folder also refreshes its root's LRU
+ * position, even when the folder was already the most recent one.
  */
 export function rememberDir(map: ExpandedDirs, root: string | null, path: string): ExpandedDirs {
   if (!root) {
     return map;
   }
   const current = map[root] ?? [];
-  if (current[current.length - 1] === path) {
+  const paths =
+    current[current.length - 1] === path
+      ? current
+      : [...current.filter((p) => p !== path), path].slice(-MAX_DIRS_PER_ROOT);
+  const roots = Object.keys(map);
+  if (roots[roots.length - 1] === root && paths === current) {
     return map;
   }
-  const paths = current.filter((p) => p !== path);
-  paths.push(path);
-  return capRoots({ ...map, [root]: paths.slice(-MAX_DIRS_PER_ROOT) }, root);
+  // Delete and re-add the root so object key order reflects the last root the
+  // user touched. `capRoots` uses that order as the bounded LRU.
+  const next = { ...map };
+  delete next[root];
+  next[root] = paths;
+  return capRoots(next, root);
 }
 
 /** Drops `path` from `root`'s remembered set (the user collapsed it). */
@@ -83,7 +91,7 @@ export function forgetRoot(map: ExpandedDirs, root: string | null): ExpandedDirs
 /**
  * Trims the map down to {@link MAX_ROOTS}, always keeping `keep` (the root
  * just written to) and dropping from the front — object key order is insertion
- * order for these string keys, so the front is the root opened longest ago.
+ * order for these string keys, so the front is the root touched longest ago.
  */
 function capRoots(map: ExpandedDirs, keep: string): ExpandedDirs {
   const roots = Object.keys(map);

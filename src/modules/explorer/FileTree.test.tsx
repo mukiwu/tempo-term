@@ -3,6 +3,8 @@ import { render } from "@testing-library/react";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { FileTree } from "./FileTree";
 import { useTabsStore } from "@/stores/tabsStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useExplorerStore } from "@/stores/explorerStore";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -322,6 +324,23 @@ describe("FileTree expand-all", () => {
     // cascade skips it, not the user's own explicit choice to look inside.
     fireEvent.click(screen.getByText("node_modules"));
     expect(await screen.findByText("some-pkg")).toBeInTheDocument();
+  });
+
+  it("loads a restored heavy directory even when expand-all is already signalled", async () => {
+    const { fsReadDir } = await import("./lib/fsBridge");
+    vi.mocked(fsReadDir).mockResolvedValue([
+      { name: "some-pkg", path: "/p/node_modules/some-pkg", is_dir: false, size: 0 },
+    ]);
+    useWorkspaceStore.setState({ rootPath: "/p" });
+    useExplorerStore.setState({ expandedDirs: { "/p": ["/p/node_modules"] } });
+
+    const entries = [{ name: "node_modules", path: "/p/node_modules", is_dir: true, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} expandSignal={1} />);
+
+    expect(await screen.findByText("some-pkg")).toBeInTheDocument();
+    expect(fsReadDir).toHaveBeenCalledWith("/p/node_modules");
+    useWorkspaceStore.setState({ rootPath: null });
+    useExplorerStore.setState({ expandedDirs: {} });
   });
 });
 

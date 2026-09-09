@@ -148,12 +148,16 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
 
   // A node restored as expanded mounts with `children` still null, so nothing
   // would render beneath it until something kicks off the first fetch — that
-  // is normally expand()'s job, and on a restore nobody calls it. Mount-only:
-  // every later expand goes through expand() itself. Skipped when expandSignal
-  // arrives already nonzero, since the expand-all effect above fires on mount
-  // too and would duplicate the fetch.
+  // is normally expand()'s job, and on a restore nobody calls it. A heavy
+  // directory is deliberately skipped by the expand-all effect above, so it
+  // still needs this mount fetch even when an inherited expandSignal is
+  // already nonzero. Other nodes skip it because their expand-all effect has
+  // already started the same fetch.
   useEffect(() => {
-    if (expanded && !expandSignal) {
+    if (
+      expanded &&
+      (!expandSignal || (entry.is_dir && AUTO_EXPAND_EXCLUDED_DIRS.has(entry.name)))
+    ) {
       void expand();
     }
   }, []);
