@@ -25,8 +25,14 @@ export const UNFOLD_VERTICAL = [
   "m15 19-3 3-3-3",
   "m15 5-3-3-3 3",
 ];
-export const CHEVRONS_UP = ["m17 11-5-5-5 5", "m17 18-5-5-5 5"];
-export const CHEVRONS_DOWN = ["m7 6 5 5 5-5", "m7 13 5 5 5-5"];
+/**
+ * The two step controls on a collapsed-run bar. They are "from line" arrows
+ * rather than plain chevrons because that is exactly what the buttons do: the
+ * line is the edge of the bar, and the arrow is the direction the code grows
+ * away from it.
+ */
+export const ARROW_UP_FROM_LINE = ["m18 9-6-6-6 6", "M12 3v14", "M5 21h14"];
+export const ARROW_DOWN_FROM_LINE = ["M19 3H5", "M12 21V7", "m6 15 6 6 6-6"];
 export const MESSAGE_SQUARE_PLUS = [
   "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z",
   "M12 8v6",

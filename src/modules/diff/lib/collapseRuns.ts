@@ -1,7 +1,7 @@
 import { getChunks, mergeViewSiblings } from "@codemirror/merge";
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
-import { CHEVRONS_DOWN, CHEVRONS_UP, lucideIcon } from "./lucideDom";
+import { ARROW_DOWN_FROM_LINE, ARROW_UP_FROM_LINE, lucideIcon } from "./lucideDom";
 import { withGutterHint } from "./gutterHint";
 
 /**
@@ -243,10 +243,10 @@ export class RunWidget extends WidgetType {
     // nothing above it -- the first thing in the file -- has no place to grow
     // from. The up arrow is the same story at the end of the file.
     actions.append(
-      button(this.labels.up, CHEVRONS_UP, !this.atEnd, () =>
+      button(this.labels.up, ARROW_UP_FROM_LINE, !this.atEnd, () =>
         open(view, this.start, "bottom"),
       ),
-      button(this.labels.down, CHEVRONS_DOWN, !this.atStart, () =>
+      button(this.labels.down, ARROW_DOWN_FROM_LINE, !this.atStart, () =>
         open(view, this.start, "top"),
       ),
     );
