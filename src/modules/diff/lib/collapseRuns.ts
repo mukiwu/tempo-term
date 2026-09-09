@@ -24,7 +24,14 @@ import { CHEVRONS_DOWN, CHEVRONS_UP, lucideIcon, UNFOLD_VERTICAL } from "./lucid
 const MARGIN = 3;
 /** Shorter runs are not worth a bar: the bar is a line of its own. */
 const MIN_RUN = 5;
-/** Lines one press of the up/down control reveals. */
+/**
+ * Lines one press of the up/down control reveals.
+ *
+ * Twenty because that is what GitHub's expander and VS Code's
+ * `revealLineCount` both do, so it is the number a reader's hand already
+ * expects. What matters more than the number is what it leaves behind, which
+ * is what `MIN_RUN` settles below.
+ */
 export const STEP = 20;
 
 /** How much of one run the reader has opened, from each end. */
@@ -304,7 +311,11 @@ function decorations(state: EditorState, labels: RunLabels): DecorationSet {
     const how = open.get(run.from) ?? NOTHING;
     const first = doc.lineAt(run.from).number + how.top;
     const last = doc.lineAt(run.to).number - how.bottom;
-    if (last - first + 1 < 1) {
+    // A bar costs a row of its own, so one hiding three lines hides less than
+    // it takes. Below the size a run has to reach to be folded at all, the
+    // rest is simply shown -- which is also what stops a press of the arrow
+    // from leaving a two-line sliver behind.
+    if (last - first + 1 < MIN_RUN) {
       continue;
     }
     const from = doc.line(Math.max(1, Math.min(first, doc.lines))).from;

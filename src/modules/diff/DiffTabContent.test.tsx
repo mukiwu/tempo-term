@@ -167,8 +167,13 @@ describe("DiffTabContent", () => {
     // the same stretch.
     expect(hidden()).toEqual([6, 28, 6, 28]);
 
-    fireEvent.mouseDown(bars()[1].querySelector('[aria-label="diffRunExpandAll"]')!);
+    // Pressing again would leave four lines hidden behind a bar that takes a
+    // row to say so, so the last of them are simply shown.
+    fireEvent.mouseDown(bars()[0].querySelector('[aria-label="diffRunExpandUp"]')!);
     await waitFor(() => expect(bars().length).toBe(2));
+
+    fireEvent.mouseDown(bars()[0].querySelector('[aria-label="diffRunExpandAll"]')!);
+    await waitFor(() => expect(bars().length).toBe(0));
 
 
   });
