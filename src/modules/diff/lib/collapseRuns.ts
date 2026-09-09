@@ -414,3 +414,36 @@ export function collapseRunsExtension(labels: RunLabels): Extension {
 export function openedRuns(state: EditorState): ReadonlyMap<number, Opened> {
   return state.field(opened, false) ?? new Map();
 }
+
+/**
+ * The stretch a position belongs to, by the position that stretch is keyed on.
+ *
+ * The gutter knows where a bar is drawn, which is not where its stretch
+ * starts: opening the top edge moves the bar down while the stretch keeps the
+ * key it was opened under. Asking by containment gets the same answer either
+ * way.
+ */
+export function runKeyAt(state: EditorState, pos: number): number | null {
+  for (const run of runsOf(state)) {
+    if (pos >= run.from && pos <= run.to) {
+      return run.from;
+    }
+  }
+  return null;
+}
+
+/** Stretches that still hide something, so still have a bar of their own. */
+export function barredRuns(state: EditorState): ReadonlySet<number> {
+  const doc = state.doc;
+  const open = openedRuns(state);
+  const out = new Set<number>();
+  for (const run of runsOf(state)) {
+    const how = open.get(run.from) ?? NOTHING;
+    const first = doc.lineAt(run.from).number + how.top;
+    const last = doc.lineAt(run.to).number - how.bottom;
+    if (last - first + 1 >= MIN_RUN) {
+      out.add(run.from);
+    }
+  }
+  return out;
+}
