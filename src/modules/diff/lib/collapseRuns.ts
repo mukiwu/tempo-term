@@ -1,7 +1,12 @@
 import { getChunks, mergeViewSiblings } from "@codemirror/merge";
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
-import { ARROW_DOWN_FROM_LINE, ARROW_UP_FROM_LINE, lucideIcon } from "./lucideDom";
+import {
+  ARROW_DOWN_FROM_LINE,
+  ARROW_UP_FROM_LINE,
+  lucideIcon,
+  type IconStroke,
+} from "./lucideDom";
 import { withGutterHint } from "./gutterHint";
 
 /**
@@ -175,7 +180,7 @@ function leadsInto(state: EditorState, run: Run): string {
 
 function button(
   label: string,
-  paths: readonly string[],
+  paths: readonly IconStroke[],
   enabled: boolean,
   onClick: () => void,
 ): HTMLElement {
