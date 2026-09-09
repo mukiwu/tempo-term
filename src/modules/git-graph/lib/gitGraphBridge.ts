@@ -126,8 +126,18 @@ export function gitCommitRangeFiles(
   repoPath: string,
   from: string,
   to: string,
+  /** Three-dot: start from where the two diverged. Two-dot without it, which
+   * is what the graph's own compare has always meant. Whatever is passed here
+   * must be passed to gitCommitRangeFileDiff too, or the list of files and the
+   * diffs of them describe different comparisons. */
+  mergeBase?: boolean,
 ): Promise<CommitFileChange[]> {
-  return invoke<CommitFileChange[]>("git_commit_range_files", { repoPath, from, to });
+  return invoke<CommitFileChange[]>("git_commit_range_files", {
+    repoPath,
+    from,
+    to,
+    mergeBase,
+  });
 }
 
 /** Read a single file's diff between two arbitrary commits. */
@@ -136,8 +146,16 @@ export function gitCommitRangeFileDiff(
   from: string,
   to: string,
   file: string,
+  /** See gitCommitRangeFiles: the pair has to agree. */
+  mergeBase?: boolean,
 ): Promise<string> {
-  return invoke<string>("git_commit_range_file_diff", { repoPath, from, to, file });
+  return invoke<string>("git_commit_range_file_diff", {
+    repoPath,
+    from,
+    to,
+    file,
+    mergeBase,
+  });
 }
 
 /** One worktree of the repository, from `git worktree list`. */

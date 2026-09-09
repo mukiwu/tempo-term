@@ -50,7 +50,8 @@
     "viewFolder": "Group by folder",
     "viewFlat": "Flat view",
     "expandFolder": "Expand {{name}}",
-    "collapseFolder": "Collapse {{name}}"
+    "collapseFolder": "Collapse {{name}}",
+    "openChangesInTab": "Open these changes in a tab"
   },
   "menu": {
     "createBranchHere": "Create branch here… (git branch)",

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
   ChevronUp,
+  Loader2,
   Send,
   SquareSplitHorizontal,
   SquareSplitVertical,
@@ -11,11 +12,19 @@ import {
 import { PaneHeader } from "@/components/PaneHeader";
 import { Tooltip } from "@/components/Tooltip";
 import { ContextMenu } from "@/components/ContextMenu";
-import { gitDiff, gitResolveRepo, gitStatus } from "@/modules/source-control/lib/gitBridge";
+import {
+  gitDiff,
+  gitDiffFromBase,
+  gitResolveRepo,
+  gitResolveRev,
+  gitStatus,
+} from "@/modules/source-control/lib/gitBridge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { buildFileTree, flattenFileTree } from "@/lib/fileTree";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changedLines, parseDiffStats, type FileDiffStats } from "./lib/parseDiffStats";
+import { BaseSelector } from "./BaseSelector";
+import { baseFor, useComparisonBaseStore } from "./lib/comparisonBaseStore";
 import { agentTargetMenuItems } from "./lib/sendComments";
 import { changeAtViewportTop } from "./lib/changeAtTop";
 import { useAllChangesLinkStore } from "./lib/allChangesLinkStore";
@@ -50,6 +59,10 @@ const MOUNT_MARGIN = "800px";
 
 /** Breathing room above a change that navigation lands on. */
 const LANDING_GAP = 8;
+
+/** How long a scan may take before the page admits it is out of date. Below
+ * this an indicator would flash rather than inform. */
+const SLOW_SCAN_MS = 200;
 
 /**
  * Below this the header's numbers start costing the pane its own name, so the
@@ -90,6 +103,7 @@ function toChangedFile(
     staged,
     status: file.status,
     stats: stats.get(file.path) ?? null,
+    from: stats.get(file.path)?.from,
   };
 }
 
@@ -117,6 +131,10 @@ export function AllChangesTabContent({
   const unified = useSettingsStore((s) => s.diffUnified);
   const toggleUnified = useSettingsStore((s) => s.toggleDiffUnified);
   const unsent = useUnsentCommentCount();
+  const byRepo = useComparisonBaseStore((s) => s.byRepo);
+  const includeUncommitted = useComparisonBaseStore((s) => s.includeUncommitted);
+  const setIncludeUncommitted = useComparisonBaseStore((s) => s.setIncludeUncommitted);
+  const clearBase = useComparisonBaseStore((s) => s.clear);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -125,7 +143,41 @@ export function AllChangesTabContent({
   const [resolved, setResolved] = useState(false);
   const [files, setFiles] = useState<ChangedFiles | null>(null);
   const [error, setError] = useState(false);
+  /**
+   * The rev behind the base, when git no longer has it.
+   *
+   * Its own state rather than one more way to say "load failed", because it
+   * is the one failure here with a cause worth naming and a way out. A base
+   * chosen at the start of a session can be gone by the middle of it -- the
+   * branch merged and deleted, or the remote-tracking ref pruned by a fetch,
+   * or the commits in a range rebased away -- and the page would sit there
+   * saying only that something went wrong, about a name it was still
+   * displaying in the header.
+   */
+  const [gone, setGone] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // The rev every section reads its "before" document at. Null while the
+  // base is the working tree, where the two sides are HEAD/index/disk and
+  // each section already knows which.
+  const [baseRev, setBaseRev] = useState<string | null>(null);
+  // The far end, when there is one. Each file's "after" document is read here
+  // instead of from disk -- a range does not involve the working tree.
+  const [baseTo, setBaseTo] = useState<string | null>(null);
+  /**
+   * A scan is in flight and has been long enough to be worth saying so.
+   *
+   * Not simply "a scan is running": on a local repo that is a few tens of
+   * milliseconds, and an indicator that appears and vanishes inside a tenth of
+   * a second reads as a glitch rather than as work. The panel next door has
+   * the same problem from the other end -- MIN_REFRESH_MS holds its spinner up
+   * so it can be seen at all.
+   *
+   * What it is really for is the case speed hides: until the new scan lands,
+   * the page is still showing the previous base's files under the new base's
+   * name. At 80ms nobody sees it; on a wide divergence or a cold cache it sits
+   * there looking correct and being wrong.
+   */
+  const [stale, setStale] = useState(false);
   // The panel's refresh button asks for a rescan too: while this page has the
   // pane, that button is the only refresh control on screen, and the panel's
   // list and this one have to move together.
@@ -198,6 +250,10 @@ export function AllChangesTabContent({
   // elsewhere); cheap enough that no file watcher is needed. The same key is
   // handed to every section, so the files already up re-read their own two
   // documents rather than keeping whatever they loaded first.
+  // The listing belongs to a page that is up; a panel left holding one after
+  // the page closed would offer rows that scroll nothing.
+  useEffect(() => () => useAllChangesLinkStore.getState().setListing(paneId, null), []);
+
   useEffect(() => {
     const bump = () => setRefreshKey((key) => key + 1);
     window.addEventListener("focus", bump);
@@ -210,6 +266,89 @@ export function AllChangesTabContent({
       return;
     }
     let cancelled = false;
+    async function scanFromBase(
+      repoPath: string,
+      from: string,
+      to: string | undefined,
+    ) {
+      // One comparison, not two halves: `git diff <merge-base>` already covers
+      // what was committed on this branch and what is still on disk. The file
+      // list comes out of that same diff rather than from status, so the list
+      // and the counts cannot disagree -- and so the page is one git call
+      // instead of three.
+      try {
+        // Two named points are compared literally (two-dot): neither of them is
+        // the line the other left, so a merge base would answer a question
+        // nobody asked. A ref goes three-dot, and only then does the
+        // uncommitted switch mean anything.
+        // `git diff` only reports tracked files, so a file created and not
+        // added is invisible to it -- while the checkbox next door says
+        // uncommitted work is included. `git status` is the only thing that
+        // knows about one, so it is asked too, and only where the answer can
+        // differ: a range has no working tree in it at either end, and with
+        // the switch off the comparison stops at the last commit.
+        const alsoOnDisk = to === undefined && includeUncommitted;
+        const [{ rev, diff }, status] = await Promise.all([
+          gitDiffFromBase(repoPath, from, to === undefined, includeUncommitted, to),
+          alsoOnDisk ? gitStatus(repoPath) : Promise.resolve(null),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        const stats = parseDiffStats(diff);
+        setError(false);
+        setGone(null);
+        setBaseRev(rev);
+        setBaseTo(to ?? null);
+        const listed = [...stats.keys()].map((path) => ({
+          path,
+          // What the diff itself says happened to the file. There is no status
+          // to ask here -- a comparison of two points in history is not about
+          // the working tree -- but the diff carries the same letters.
+          status: stats.get(path)?.status ?? "M",
+        }));
+        for (const file of status?.unstaged ?? []) {
+          if (file.status === "?" && !stats.has(file.path)) {
+            listed.push({ path: file.path, status: "?" });
+          }
+        }
+        const ordered = flattenFileTree(buildFileTree(listed));
+        setFiles({
+          staged: [],
+          unstaged: ordered.map((file) => toChangedFile(repoPath, file, false, stats)),
+        });
+        // Hand the panel the same list, in the same order, so the two are one
+        // index of one comparison rather than two lists that happen to be
+        // side by side.
+        useAllChangesLinkStore.getState().setListing(paneId, {
+          label: to ? `${from}..${to}` : from,
+          range: to !== undefined,
+          files: ordered.map((file) => ({ rel: file.path, status: file.status })),
+        });
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        // Ask which failure this was before reporting one. A rev git cannot
+        // resolve is the likely cause and the only one with an answer, so it
+        // is worth one extra call on a path that has already failed.
+        for (const rev of to === undefined ? [from] : [from, to]) {
+          const known = await gitResolveRev(repoPath, rev)
+            .then((sha) => sha !== null)
+            // A failed question is not a missing ref; fall through to the
+            // generic message rather than blaming the base.
+            .catch(() => true);
+          if (cancelled) {
+            return;
+          }
+          if (!known) {
+            setGone(rev);
+            return;
+          }
+        }
+        setError(true);
+      }
+    }
     async function scan(repoPath: string) {
       try {
         // `gitDiff` compares one side or the other, never both, so the staged
@@ -227,6 +366,7 @@ export function AllChangesTabContent({
         const stagedStats = parseDiffStats(stagedDiff);
         const workingStats = parseDiffStats(workingDiff);
         setError(false);
+        setGone(null);
         // Stacked the way the Source Control panel draws its tree — folders
         // before files at each level, each alphabetical — rather than in the
         // order status happens to report. A page of dozens of files reads
@@ -247,11 +387,37 @@ export function AllChangesTabContent({
         }
       }
     }
-    void scan(repo);
+    const base = baseFor(byRepo, repo);
+    const slow = window.setTimeout(() => {
+      if (!cancelled) {
+        setStale(true);
+      }
+    }, SLOW_SCAN_MS);
+    const done = () => {
+      window.clearTimeout(slow);
+      if (!cancelled) {
+        setStale(false);
+      }
+    };
+    if (base.kind === "ref") {
+      void scanFromBase(repo, base.name, undefined).finally(done);
+    } else if (base.kind === "range") {
+      void scanFromBase(repo, base.from, base.to).finally(done);
+    } else {
+      setBaseRev(null);
+      setBaseTo(null);
+      // Back to the working tree: the panel's own list is right again.
+      useAllChangesLinkStore.getState().setListing(paneId, null);
+      void scan(repo).finally(done);
+    }
     return () => {
       cancelled = true;
+      window.clearTimeout(slow);
     };
-  }, [repo, reloadKey]);
+    // Re-scans when the base changes, which is the whole point of the
+    // selector; `byRepo` is the store's map, so any repo's base moving
+    // re-runs this, and the one that matters is read out of it above.
+  }, [repo, reloadKey, byRepo, includeUncommitted]);
 
   const ordered = useMemo(
     () => (files ? [...files.staged, ...files.unstaged] : []),
@@ -648,12 +814,47 @@ export function AllChangesTabContent({
     }
   }, [pending, handleEpoch]);
 
+  /**
+   * The base as something an effect can be keyed on. `byRepo` is a new map on
+   * every write, so it moves when any repo's base does; the value for this
+   * repo, flattened, moves only when this page's comparison does.
+   */
+  const baseKey = useMemo(() => JSON.stringify(baseFor(byRepo, repo)), [byRepo, repo]);
+
   // Open on the first change rather than above it, so the counter starts at
   // 1/N and there is a change on screen to read — the same landing the
   // single-file tab makes, and cheap here because the collapsed run at the top
   // of the first file leaves it only a little way down. Once per scan: a
   // reload must not haul the reader back to the top of the page.
   const landed = useRef(false);
+
+  /**
+   * A different base is a different page: other files, in another order, of a
+   * comparison the reader has not read a line of. The offset they were at
+   * measured the page that is gone, so it goes back to the top.
+   *
+   * To the very top, and the landing below is left switched off rather than
+   * armed again. Opening on the first change is right for a page that appears
+   * — it is why the tab was opened — but a page that has just been pointed at
+   * something else is first asked what it now holds, and the answer is the
+   * heading with the file count on it, which the landing scrolls away.
+   *
+   * The base only. A rescan of the same comparison — the window regaining
+   * focus, the panel's refresh button — is the page they are already reading,
+   * and dragging them to the top of it every time they alt-tab back would be a
+   * bug of its own.
+   */
+  const shownBase = useRef(baseKey);
+  useEffect(() => {
+    if (shownBase.current === baseKey) {
+      return;
+    }
+    shownBase.current = baseKey;
+    landed.current = true;
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [baseKey]);
   useEffect(() => {
     if (landed.current || changes.length === 0) {
       return;
@@ -698,6 +899,10 @@ export function AllChangesTabContent({
             expanded={expanded.has(file.key)}
             onExpand={() => onExpand(file.key)}
             collapsed={collapsed.has(file.key)}
+            baseRev={baseRev}
+            // A range reads its far end; a ref with the switch off stops at
+            // HEAD; otherwise the file on disk.
+            baseTo={baseTo ?? (baseRev !== null && !includeUncommitted ? "HEAD" : null)}
             onToggleCollapse={() => onToggleCollapse(file.key)}
             reserved={heightsRef.current.get(file.key) ?? 0}
             onMeasure={onMeasure}
@@ -718,17 +923,44 @@ export function AllChangesTabContent({
     <div ref={rootRef} className="relative flex h-full flex-col bg-bg">
       <PaneHeader
         left={
-          // Clips its own content: the actions opposite never shrink, so
-          // anything that overruns here would be painted over them.
-          <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-            <span className="min-w-0 truncate text-xs text-fg-muted">{t("allChanges")}</span>
-            {/* Named now so that comparing against another ref later reads as
-                a different thing rather than a redefinition of this one. */}
+          // Not `overflow-hidden` any more, though the actions opposite still
+          // never shrink: the base selector's list hangs out of this row, and a
+          // clip here cut it down to the sliver that fits a 28px header. The
+          // title truncates itself instead, which bounds this side just the
+          // same -- the selector's own width is fixed.
+          <div className="flex min-w-0 items-center gap-2">
             {!narrow && (
-              <span className="shrink-0 text-xs text-fg-subtle">
-                {t("allChangesUncommitted")}
-              </span>
+              <span className="min-w-0 truncate text-xs text-fg-muted">{t("allChanges")}</span>
             )}
+            {/* What the page is comparing against. It stands where the
+                "(uncommitted)" label used to: that label was naming the
+                comparison all along, and this says the same thing when it is
+                the working tree while being able to say something else. */}
+            <BaseSelector repo={repo} narrow={narrow} />
+            {/* Only with a ref for a base. Against the working tree there is
+                nothing to include or leave out -- everything on the page is
+                uncommitted by definition -- and against a range neither end is
+                on disk, so there is nothing for it to say either. A control
+                that can never do anything is absent rather than greyed out for
+                people to wonder about. */}
+            {baseRev !== null && baseTo === null && !narrow && (
+              <label className="flex shrink-0 select-none items-center gap-1.5 text-xs text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={includeUncommitted}
+                  onChange={(e) => setIncludeUncommitted(e.target.checked)}
+                  className="h-3 w-3 accent-accent"
+                />
+                {t("baseIncludeUncommitted")}
+              </label>
+            )}
+            {/* Last, after both controls rather than between them. The
+                selector and this checkbox are one thought -- what is being
+                compared -- and a spinner appearing between them shoves the
+                checkbox sideways every time a scan runs long. At the end, only
+                empty space moves. It says "still working"; the dimmed list
+                below says which part is out of date. */}
+            {stale && <Loader2 size={12} className="shrink-0 animate-spin text-fg-subtle" />}
           </div>
         }
         actions={
@@ -821,12 +1053,36 @@ export function AllChangesTabContent({
       />
       {resolved && !repo ? (
         <p className="px-3 py-2 text-xs text-fg-subtle">{t("noRepo")}</p>
+      ) : gone ? (
+        <div className="flex flex-col items-start gap-1.5 px-3 py-2 text-xs">
+          <p className="text-danger">{t("baseGone", { name: gone })}</p>
+          {/* The selector in the header is the other way out, and it was
+              there all along; this is the one for a reader who just wants
+              the page back. */}
+          <button
+            type="button"
+            onClick={() => repo && clearBase(repo)}
+            className="rounded border border-border px-2 py-0.5 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+          >
+            {t("baseBackToWorktree")}
+          </button>
+        </div>
       ) : error ? (
         <p className="px-3 py-2 text-xs text-danger">{t("diffLoadError")}</p>
       ) : empty ? (
         <p className="px-3 py-2 text-xs text-fg-subtle">{t("noChanges")}</p>
       ) : (
-        <div ref={scrollRef} onScroll={trackPosition} className="min-h-0 flex-1 overflow-auto">
+        <div
+          ref={scrollRef}
+          onScroll={trackPosition}
+          // Dimmed, not covered: these are still the files the reader was
+          // reading a moment ago, and they stay scrollable and readable. What
+          // the dimming says is only that they belong to the base that was
+          // named here before, not the one named now.
+          className={`min-h-0 flex-1 overflow-auto transition-opacity ${
+            stale ? "opacity-50" : ""
+          }`}
+        >
           {files && renderGroup(files.staged, t("stagedChanges"))}
           {files && renderGroup(files.unstaged, t("changes"))}
         </div>

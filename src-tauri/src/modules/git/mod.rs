@@ -1687,6 +1687,119 @@ pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
     Ok(ComparisonBases { bases, suggested })
 }
 
+/// 一個標籤,加上它的時間 —— 前端用它跟分支一起排「最近動過的」。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TagInfo {
+    pub name: String,
+    /// 附註標籤是打標籤的時間,輕量標籤是那個 commit 的時間;拿不到為 0。
+    #[serde(rename = "lastCommitAt")]
+    pub last_commit_at: i64,
+}
+
+/// 列出所有標籤。
+///
+/// 比較基準的選單要的是「有名字的東西」,而標籤和分支一樣是名字 —— 「和上一版
+/// 差在哪」是會重複問的問題。這之前沒有指令可用:標籤只在 git log 的裝飾裡被
+/// 解析出來,那是給 ref chip 用的,拿不到不在最近幾百個 commit 上的標籤。
+pub fn tags(repo_path: &str) -> Result<Vec<TagInfo>, String> {
+    let out = run_git(
+        repo_path,
+        &["for-each-ref", "--format=%(refname:short)%09%(creatordate:unix)", "refs/tags"],
+    )?;
+    Ok(out
+        .lines()
+        .filter_map(|line| {
+            let (name, when) = line.split_once('\t')?;
+            if name.is_empty() {
+                return None;
+            }
+            Some(TagInfo {
+                name: name.to_string(),
+                last_commit_at: when.trim().parse().unwrap_or(0),
+            })
+        })
+        .collect())
+}
+
+/// 解不出來是 `Ok(None)` 而不是 `Err`:那是這支要回答的問題,不是它失敗了。
+pub fn resolve_rev(repo_path: &str, rev: &str) -> Result<Option<String>, String> {
+    let rev = rev.trim();
+    if rev.is_empty() {
+        return Ok(None);
+    }
+    ensure_not_flag(rev)?;
+    Ok(
+        run_git(repo_path, &["rev-parse", "--verify", "--quiet", &format!("{rev}^{{commit}}")])
+            .ok()
+            .map(|out| out.trim().to_string())
+            .filter(|sha| !sha.is_empty()),
+    )
+}
+
+/// 一次比較的結果:解出來的起點,加上它對工作區的完整 diff。
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct BaseDiff {
+    /// 解出來的起點 sha。前端拿它去讀每個檔在那一版的內容,所以要跟下面那份
+    /// diff 是同一個點 —— 各自再解一次會在別人正好 push 的時候對不起來。
+    pub rev: String,
+    /// `git diff <rev>` 的輸出:那個起點和工作區之間的全部差異。
+    pub diff: String,
+}
+
+/// `base` 和工作區之間的差異,合成一份。
+///
+/// #398 談定的是「拿 merge base 對工作區跑一次」而不是拼兩段:已 commit 的和
+/// 還沒 commit 的接在一起看,reviewer 一次看到總量比較好判斷。所以這裡不是
+/// `from..to` —— 右邊不是某個 commit,是磁碟上的檔案。
+///
+/// `merge_base` 為真時起點是分家那一點,而不是 `base` 現在的樣子:否則主線在
+/// 你離開之後多出來的 commit 會被算成你的變更。
+/// `to` names the far end. Absent it is the working tree (or HEAD, per
+/// `include_uncommitted`); naming a commit makes this a comparison between
+/// two points, where neither end is anything on disk and the uncommitted
+/// flag has nothing to say.
+pub fn diff_from_base(
+    repo_path: &str,
+    base: &str,
+    merge_base: bool,
+    include_uncommitted: bool,
+    to: Option<&str>,
+) -> Result<BaseDiff, String> {
+    let base = base.trim();
+    if base.is_empty() {
+        return Err("base is required".to_string());
+    }
+    ensure_not_flag(base)?;
+    let rev = if merge_base {
+        run_git(repo_path, &["merge-base", base, "HEAD"])?.trim().to_string()
+    } else {
+        run_git(repo_path, &["rev-parse", "--verify", "--quiet", &format!("{base}^{{commit}}")])
+            .map_err(|_| format!("unknown rev: {base}"))?
+            .trim()
+            .to_string()
+    };
+    if rev.is_empty() {
+        return Err(format!("no common history with {base}"));
+    }
+    // No second end means the working tree, which is the whole point of this
+    // command; naming HEAD instead stops at the last commit, for reading back
+    // what a branch changed without the mess still on disk.
+    let diff = match to {
+        // Two named points: the working tree is not involved either side, so
+        // the uncommitted flag has nothing to say about it.
+        Some(to) => {
+            let to = to.trim();
+            ensure_not_flag(to)?;
+            run_git(repo_path, &["rev-parse", "--verify", "--quiet", &format!("{to}^{{commit}}")])
+                .map_err(|_| format!("unknown rev: {to}"))?;
+            run_git(repo_path, &["diff", &rev, to])?
+        }
+        None if include_uncommitted => run_git(repo_path, &["diff", &rev])?,
+        None => run_git(repo_path, &["diff", &rev, "HEAD"])?,
+    };
+    Ok(BaseDiff { rev, diff })
+}
+
 /// Check out an existing branch.
 pub fn branch_checkout(repo_path: &str, name: &str) -> Result<(), String> {
     let name = name.trim();
@@ -2190,6 +2303,41 @@ pub async fn git_commit_file_diff(
     tauri::async_runtime::spawn_blocking(move || commit_file_diff(&repo_path, &commit, &file))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_tags(repo_path: String) -> Result<Vec<TagInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || tags(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_resolve_rev(repo_path: String, rev: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || resolve_rev(&repo_path, &rev))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_diff_from_base(
+    repo_path: String,
+    base: String,
+    merge_base: Option<bool>,
+    include_uncommitted: Option<bool>,
+    to: Option<String>,
+) -> Result<BaseDiff, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        diff_from_base(
+            &repo_path,
+            &base,
+            merge_base.unwrap_or(true),
+            include_uncommitted.unwrap_or(true),
+            to.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// `merge_base` absent means two-dot, which is what every caller before #398
@@ -3305,6 +3453,105 @@ mod tests {
         let staged_diff = diff(&path, true).unwrap();
         assert!(staged_diff.contains("a.txt"));
         assert!(staged_diff.contains("+hello world"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tags_are_listed_with_a_time_to_sort_them_by() {
+        // The base picker offers names, and a tag is a name -- "what changed
+        // since the last release" is a question people ask more than once.
+        // Both kinds: an annotated tag carries its own date, a lightweight one
+        // borrows the commit's.
+        let (dir, path) = repo_with_a_commit("tags-list");
+        run_git(&path, &["tag", "v0.1"]).unwrap();
+        run_git(&path, &["tag", "-a", "v0.2", "-m", "release"]).unwrap();
+
+        let found = tags(&path).unwrap();
+        let names: Vec<&str> = found.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"v0.1"), "{names:?}");
+        assert!(names.contains(&"v0.2"), "{names:?}");
+        for tag in &found {
+            assert!(tag.last_commit_at > 0, "{tag:?}");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_rev_answers_the_question_rather_than_failing() {
+        // The base box asks this before it acts: a hash pasted from a pull
+        // request is the one thing its list cannot vouch for. "No" is an
+        // answer, so it comes back as None rather than as an error.
+        let (dir, path) = repo_with_a_commit("resolve-rev");
+        run_git(&path, &["tag", "v9"]).unwrap();
+        let head = run_git(&path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+        assert_eq!(resolve_rev(&path, "HEAD").unwrap().as_deref(), Some(head.as_str()));
+        assert_eq!(resolve_rev(&path, "main").unwrap().as_deref(), Some(head.as_str()));
+        assert_eq!(resolve_rev(&path, "v9").unwrap().as_deref(), Some(head.as_str()));
+        // A short hash resolves to the whole one, which is what makes the
+        // paste-a-prefix case work.
+        assert_eq!(resolve_rev(&path, &head[..7]).unwrap().as_deref(), Some(head.as_str()));
+
+        assert_eq!(resolve_rev(&path, "no-such-thing").unwrap(), None);
+        assert_eq!(resolve_rev(&path, "deadbeef").unwrap(), None);
+        assert_eq!(resolve_rev(&path, "").unwrap(), None);
+        // A value shaped like an option is refused outright rather than
+        // answered, since answering means putting it in git's argv.
+        assert!(resolve_rev(&path, "--upload-pack=x").is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_base_can_be_compared_with_or_without_what_is_still_on_disk() {
+        // Same base, two questions: "what does this branch change" and "what
+        // does it change that I have actually committed". The second is what
+        // you read before pushing.
+        let (dir, path) = repo_with_a_commit("base-uncommitted");
+        run_git(&path, &["checkout", "-q", "-b", "feature"]).unwrap();
+        std::fs::write(dir.join("committed.txt"), "done").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "committed work"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "still editing").unwrap();
+
+        let with = diff_from_base(&path, "main", true, true, None).unwrap();
+        assert!(with.diff.contains("committed.txt"), "{}", with.diff);
+        assert!(with.diff.contains("a.txt"), "{}", with.diff);
+
+        let without = diff_from_base(&path, "main", true, false, None).unwrap();
+        assert!(without.diff.contains("committed.txt"), "{}", without.diff);
+        assert!(!without.diff.contains("a.txt"), "{}", without.diff);
+
+        // Both read from the same point, so a file's "before" is the same
+        // either way.
+        assert_eq!(with.rev, without.rev);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_named_points_leave_the_working_tree_out_of_it() {
+        // A range picked out of the graph: neither end is on disk, so an edit
+        // in the buffer must not turn up in it however the uncommitted flag is
+        // set. Two-dot as well -- these are two points, not a branch and the
+        // line it left.
+        let (dir, path) = repo_with_a_commit("range-two-points");
+        std::fs::write(dir.join("b.txt"), "second").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "second"]).unwrap();
+        let second = run_git(&path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        std::fs::write(dir.join("scratch.txt"), "not committed").unwrap();
+
+        let found = diff_from_base(&path, "main~1", false, true, Some(&second)).unwrap();
+        assert!(found.diff.contains("b.txt"), "{}", found.diff);
+        assert!(!found.diff.contains("scratch.txt"), "{}", found.diff);
+
+        // The far end is checked like the near one: nonsense is refused rather
+        // than reaching git's argv.
+        assert!(diff_from_base(&path, "main", false, true, Some("no-such-rev")).is_err());
+        assert!(diff_from_base(&path, "main", false, true, Some("--upload-pack=x")).is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

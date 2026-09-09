@@ -36,6 +36,7 @@ const LABELS = {
   noDiff: "No diff",
   noFileSelected: "Select a file",
   close: "Close",
+  openInTab: "Open in a tab",
   compareBadge: "Comparing",
   diffTab: "Diff",
   aiTab: "AI Explain",

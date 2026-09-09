@@ -50,7 +50,8 @@
     "viewFolder": "依資料夾分組",
     "viewFlat": "扁平檢視",
     "expandFolder": "展開 {{name}}",
-    "collapseFolder": "收合 {{name}}"
+    "collapseFolder": "收合 {{name}}",
+    "openChangesInTab": "在分頁開啟這些變更"
   },
   "menu": {
     "createBranchHere": "在這裡建立分支… (git branch)",

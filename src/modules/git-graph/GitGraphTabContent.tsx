@@ -40,6 +40,7 @@ import { uncommittedRowSummary } from "./lib/uncommittedRow";
 import { splitRemoteRef } from "./lib/remoteRef";
 import type { RefChipOptions } from "./lib/refChips";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { readComparison } from "@/modules/diff/lib/comparisonBaseStore";
 import { withMinDuration } from "@/lib/withMinDuration";
 import type {
   Branch,
@@ -80,6 +81,29 @@ function getErrorMessage(error: unknown): string {
     return error;
   }
   return "Unexpected error";
+}
+
+/**
+ * What the details panel's "open in a tab" button does for a selection, or
+ * nothing when the selection has no two ends to read a diff between. A single
+ * commit reads as the range from its parent, which is what "the changes in
+ * this commit" means; a root commit has no parent to compare against, and the
+ * working-tree row is not a commit at all.
+ */
+function openChangesInTab(
+  repo: string | null,
+  selection: GraphSelection,
+): (() => void) | undefined {
+  if (!repo) {
+    return undefined;
+  }
+  if (selection.mode === "compare") {
+    return () => readComparison(repo, selection.from.hash, selection.to.hash);
+  }
+  if (selection.mode === "single" && selection.commit.parents.length > 0) {
+    return () => readComparison(repo, selection.commit.hash);
+  }
+  return undefined;
 }
 
 export function GitGraphTabContent() {
@@ -517,6 +541,7 @@ export function GitGraphTabContent() {
     noFileSelected: t("details.noFileSelected"),
     close: t("details.close"),
     compareBadge: t("details.compareBadge"),
+    openInTab: t("details.openChangesInTab"),
     diffTab: t("details.diffTab"),
     aiTab: t("details.aiTab"),
     aiGenerate: t("details.aiGenerate"),
@@ -766,6 +791,7 @@ export function GitGraphTabContent() {
                 onClose={() => setSelection(null)}
                 uncommitted={status}
                 headHash={headHash}
+                onOpenInTab={openChangesInTab(repo, selection)}
                 labels={detailsLabels}
               />
             </div>
