@@ -133,6 +133,21 @@ describe("parseDiffStats", () => {
     expect([...parseDiffStats(diff).keys()]).toEqual(["has space.ts"]);
   });
 
+  it("decodes a non-ASCII path git escaped as UTF-8 octal bytes", () => {
+    const escapedPath = "\\346\\234\\254\\350\\252\\236.ts";
+    const diff = [
+      `diff --git "a/${escapedPath}" "b/${escapedPath}"`,
+      `--- "a/${escapedPath}"`,
+      `+++ "b/${escapedPath}"`,
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+      "",
+    ].join("\n");
+
+    expect([...parseDiffStats(diff).keys()]).toEqual(["本語.ts"]);
+  });
+
   it("estimates the rows a collapsed comparison renders", () => {
     const stats = {
       added: 4,

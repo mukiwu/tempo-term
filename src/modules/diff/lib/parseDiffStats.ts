@@ -27,22 +27,68 @@ export interface FileDiffStats {
 
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
+/** C-style escapes git may use inside a quoted path. */
+const SIMPLE_ESCAPES: Record<string, string> = {
+  a: "\x07",
+  b: "\b",
+  t: "\t",
+  n: "\n",
+  v: "\v",
+  f: "\f",
+  r: "\r",
+  "\\": "\\",
+  '"': '"',
+};
+
 /**
- * Unquote a path git wrote with `core.quotePath` on. Only the quotes and the
- * C-style escapes git actually emits are handled; an octal escape is left as
- * written, which at worst means the lookup misses and the section falls back
- * to counting the documents it loaded.
+ * Unquote a path git wrote with `core.quotePath` on. Git emits non-ASCII
+ * UTF-8 bytes as three-digit octal escapes, so decode those bytes together
+ * rather than leaving them in the repo-relative lookup key.
  */
 function unquote(path: string): string {
   if (!path.startsWith('"') || !path.endsWith('"')) {
     return path;
   }
-  return path
-    .slice(1, -1)
-    .replace(/\\t/g, "\t")
-    .replace(/\\n/g, "\n")
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, "\\");
+  const body = path.slice(1, -1);
+  const output: string[] = [];
+  const octalBytes: number[] = [];
+  const flushOctalBytes = () => {
+    if (octalBytes.length > 0) {
+      output.push(new TextDecoder("utf-8").decode(new Uint8Array(octalBytes)));
+      octalBytes.length = 0;
+    }
+  };
+
+  for (let i = 0; i < body.length; i += 1) {
+    if (body[i] !== "\\") {
+      flushOctalBytes();
+      output.push(body[i]);
+      continue;
+    }
+
+    const escaped = body[i + 1];
+    if (escaped === undefined) {
+      flushOctalBytes();
+      output.push("\\");
+      continue;
+    }
+
+    if (/^[0-7]$/.test(escaped)) {
+      const octal = body.slice(i + 1, i + 4).match(/^[0-7]{1,3}/)?.[0];
+      if (octal) {
+        octalBytes.push(Number.parseInt(octal, 8));
+        i += octal.length;
+        continue;
+      }
+    }
+
+    flushOctalBytes();
+    output.push(SIMPLE_ESCAPES[escaped] ?? escaped);
+    i += 1;
+  }
+
+  flushOctalBytes();
+  return output.join("");
 }
 
 /** Drop the a/ or b/ git puts in front of a path, quotes stripped first. */
