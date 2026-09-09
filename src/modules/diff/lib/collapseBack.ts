@@ -1,6 +1,6 @@
 import { gutter, GutterMarker } from "@codemirror/view";
 import { type Extension } from "@codemirror/state";
-import { foldRun, openedRuns } from "./collapseRuns";
+import { foldRun, openedRuns, RunWidget, unfoldRun } from "./collapseRuns";
 import { FOLD_VERTICAL, lucideIcon, UNFOLD_VERTICAL } from "./lucideDom";
 import { withGutterHint } from "./gutterHint";
 
@@ -42,15 +42,25 @@ export function collapseBackExtension(labels: { fold: string; unfold: string }):
         openedRuns(view.state).has(line.from)
           ? new IconMarker(line.from, "fold", labels.fold)
           : null,
+      widgetMarker: (_view, widget, block) =>
+        widget instanceof RunWidget ? new IconMarker(block.from, "unfold", labels.unfold) : null,
       lineMarkerChange: (update) =>
         openedRuns(update.startState) !== openedRuns(update.state),
       domEventHandlers: {
         mousedown(view, block, event) {
-          if (!openedRuns(view.state).has(block.from)) {
+          if (openedRuns(view.state).has(block.from)) {
+            event.preventDefault();
+            foldRun(view, block.from);
+            return true;
+          }
+          // A collapsed stretch is one block, so its gutter cell covers more
+          // than the line it starts on; that is what tells the two apart.
+          const line = view.state.doc.lineAt(block.from);
+          if (block.to <= line.to) {
             return false;
           }
           event.preventDefault();
-          foldRun(view, block.from);
+          unfoldRun(view, block.from);
           return true;
         },
       },

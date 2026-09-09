@@ -25,6 +25,8 @@ export const UNFOLD_VERTICAL = [
   "m15 19-3 3-3-3",
   "m15 5-3-3-3 3",
 ];
+export const CHEVRONS_UP = ["m17 11-5-5-5 5", "m17 18-5-5-5 5"];
+export const CHEVRONS_DOWN = ["m7 6 5 5 5-5", "m7 13 5 5 5-5"];
 export const MESSAGE_SQUARE_PLUS = [
   "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z",
   "M12 8v6",

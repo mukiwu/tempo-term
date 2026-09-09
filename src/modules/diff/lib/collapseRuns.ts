@@ -1,6 +1,7 @@
 import { getChunks, mergeViewSiblings } from "@codemirror/merge";
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
+import { CHEVRONS_DOWN, CHEVRONS_UP, lucideIcon, UNFOLD_VERTICAL } from "./lucideDom";
 
 /**
  * The unchanged stretches of a diff, folded into a bar of our own.
@@ -166,27 +167,39 @@ function leadsInto(state: EditorState, run: Run): string {
   return "";
 }
 
-function button(label: string, text: string, onClick: () => void): HTMLElement {
+function button(
+  label: string,
+  paths: readonly string[],
+  enabled: boolean,
+  onClick: () => void,
+): HTMLElement {
   const el = document.createElement("button");
   el.type = "button";
   el.className = "cm-diff-run-btn";
-  el.textContent = text;
+  el.disabled = !enabled;
+  el.append(lucideIcon(paths, 12));
   el.title = label;
   el.setAttribute("aria-label", label);
   el.addEventListener("mousedown", (event) => {
     // The editor would otherwise take the click as a click on the text.
     event.preventDefault();
     event.stopPropagation();
-    onClick();
+    if (enabled) {
+      onClick();
+    }
   });
   return el;
 }
 
-class RunWidget extends WidgetType {
+export class RunWidget extends WidgetType {
   constructor(
     readonly start: number,
     readonly lines: number,
     readonly name: string,
+    /** Nothing above this bar: it is the first thing in the file. */
+    readonly atStart: boolean,
+    /** Nothing below it: it runs to the end of the file. */
+    readonly atEnd: boolean,
     readonly labels: RunLabels,
   ) {
     super();
@@ -194,7 +207,11 @@ class RunWidget extends WidgetType {
 
   eq(other: RunWidget): boolean {
     return (
-      other.start === this.start && other.lines === this.lines && other.name === this.name
+      other.start === this.start &&
+      other.lines === this.lines &&
+      other.name === this.name &&
+      other.atStart === this.atStart &&
+      other.atEnd === this.atEnd
     );
   }
 
@@ -204,6 +221,25 @@ class RunWidget extends WidgetType {
     // The number as data as well as words: the words are localized, and both
     // styling and tests want the number without parsing a sentence.
     outer.dataset.lines = String(this.lines);
+    // Everything left-aligned and in one run of content. A block widget is as
+    // wide as the document, not as the pane, so anything pushed to its right
+    // edge sits off the side of any file wider than the window.
+    const actions = document.createElement("span");
+    actions.className = "cm-diff-run-actions";
+    // Which edge each arrow opens, and why one of them can be dead: the down
+    // arrow grows the visible code above the bar downwards, so a bar with
+    // nothing above it -- the first thing in the file -- has no place to grow
+    // from. The up arrow is the same story at the end of the file.
+    actions.append(
+      button(this.labels.up, CHEVRONS_UP, !this.atEnd, () =>
+        open(view, this.start, "bottom"),
+      ),
+      button(this.labels.down, CHEVRONS_DOWN, !this.atStart, () =>
+        open(view, this.start, "top"),
+      ),
+      button(this.labels.all, UNFOLD_VERTICAL, true, () => open(view, this.start, "all")),
+    );
+    outer.append(actions);
     const count = document.createElement("span");
     count.className = "cm-diff-run-count";
     count.textContent = this.labels.unchanged.replace("$", String(this.lines));
@@ -214,14 +250,6 @@ class RunWidget extends WidgetType {
       name.textContent = this.name;
       outer.append(name);
     }
-    const actions = document.createElement("span");
-    actions.className = "cm-diff-run-actions";
-    actions.append(
-      button(this.labels.up, "↑", () => open(view, this.start, "top")),
-      button(this.labels.down, "↓", () => open(view, this.start, "bottom")),
-      button(this.labels.all, "⤢", () => open(view, this.start, "all")),
-    );
-    outer.append(actions);
     return outer;
   }
 
@@ -256,6 +284,11 @@ function open(view: EditorView, start: number, how: "top" | "bottom" | "all") {
   pair?.other.dispatch({ effects: openRun.of({ start: pair.start, how }) });
 }
 
+/** Open a run all the way on both sides — what the gutter's icon does. */
+export function unfoldRun(view: EditorView, start: number): void {
+  open(view, start, "all");
+}
+
 /** Fold a run back up on both sides. */
 export function foldRun(view: EditorView, start: number): void {
   view.dispatch({ effects: closeRun.of(start) });
@@ -279,9 +312,20 @@ function decorations(state: EditorState, labels: RunLabels): DecorationSet {
     if (to <= from) {
       continue;
     }
+    const atEnd = to >= doc.length;
     ranges.push(
       Decoration.replace({
-        widget: new RunWidget(run.from, last - first + 1, leadsInto(state, run), labels),
+        widget: new RunWidget(
+          run.from,
+          last - first + 1,
+          // The last stretch in the file leads into nothing: there is no
+          // change below it to be inside anything, so naming a declaration
+          // there would be answering a question nobody asked.
+          atEnd ? "" : leadsInto(state, run),
+          from === 0,
+          atEnd,
+          labels,
+        ),
         block: true,
       }).range(from, to),
     );
@@ -313,8 +357,10 @@ const theme = EditorView.baseTheme({
     fontStyle: "italic",
     opacity: 0.9,
   },
-  ".cm-diff-run-actions": { display: "flex", gap: "2px", marginLeft: "auto" },
+  ".cm-diff-run-actions": { display: "flex", gap: "1px", flexShrink: 0 },
   ".cm-diff-run-btn": {
+    display: "flex",
+    alignItems: "center",
     border: "none",
     background: "transparent",
     color: "inherit",
@@ -324,7 +370,11 @@ const theme = EditorView.baseTheme({
     lineHeight: "1.4",
     borderRadius: "3px",
   },
-  ".cm-diff-run-btn:hover": { background: "var(--color-bg, rgba(127,127,127,0.2))", color: "var(--color-fg, inherit)" },
+  ".cm-diff-run-btn:hover:not(:disabled)": {
+    background: "var(--color-bg, rgba(127,127,127,0.2))",
+    color: "var(--color-fg, inherit)",
+  },
+  ".cm-diff-run-btn:disabled": { opacity: "0.3", cursor: "default" },
 });
 
 /** Our own collapsed-runs bars, in place of the library's `collapseUnchanged`. */

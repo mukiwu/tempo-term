@@ -143,10 +143,25 @@ describe("DiffTabContent", () => {
     // trailing newline leaves a last, empty line.
     expect(hidden()).toEqual([26, 28, 26, 28]);
 
+    // The last stretch runs to the end of the file, so there is no change
+    // below it for a declaration to contain, and no up arrow to press: both
+    // would be answering a question nobody asked.
+    expect(bars()[1].querySelector(".cm-diff-run-name")).toBeNull();
+    expect(
+      bars()[1].querySelector<HTMLButtonElement>('[aria-label="diffRunExpandUp"]')!.disabled,
+    ).toBe(true);
+    expect(bars()[0].querySelector(".cm-diff-run-name")).toBeTruthy();
+
+    // The first bar is the top of the file, so the arrow that grows the code
+    // above it downwards has nothing to grow from and is dead.
+    expect(
+      bars()[0].querySelector<HTMLButtonElement>('[aria-label="diffRunExpandDown"]')!.disabled,
+    ).toBe(true);
+
     // Twenty lines at a time, from whichever end was asked for -- the reason
     // the bars are ours rather than the library's, whose bar only ever opens
     // the lot.
-    fireEvent.mouseDown(bars()[0].querySelector('[aria-label="diffRunExpandDown"]')!);
+    fireEvent.mouseDown(bars()[0].querySelector('[aria-label="diffRunExpandUp"]')!);
     await waitFor(() => expect(hidden()[0]).toBe(6));
     // And the other side moved with it, or the two would no longer be reading
     // the same stretch.
@@ -154,6 +169,8 @@ describe("DiffTabContent", () => {
 
     fireEvent.mouseDown(bars()[1].querySelector('[aria-label="diffRunExpandAll"]')!);
     await waitFor(() => expect(bars().length).toBe(2));
+
+
   });
 
   it("folds an opened stretch back up from the gutter", async () => {
