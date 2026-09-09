@@ -199,7 +199,13 @@ pub fn status(repo_path: &str) -> Result<GitStatus, String> {
         .and_then(|h| h.shorthand().map(|s| s.to_string()));
 
     let mut options = StatusOptions::new();
-    options.include_untracked(true).recurse_untracked_dirs(true);
+    // git2 includes ignored files by default, which is not what any surface
+    // reading this wants: `git status` lists no such thing and neither should
+    // the panel. `worktree_dirty_count` below already turns it off.
+    options
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false);
     let statuses = repo
         .statuses(Some(&mut options))
         .map_err(|e| e.message().to_string())?;
@@ -2718,6 +2724,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn status_leaves_ignored_files_out() {
+        // git2's default is to report them, so the panel listed a repo's
+        // ignored files as untracked -- next to the ones git really does call
+        // untracked, with no way to tell which was which.
+        let dir = temp_repo_dir("ignored-status");
+        let path = dir.to_string_lossy().to_string();
+        run_git(&path, &["init", "-b", "main"]).unwrap();
+        run_git(&path, &["config", "user.email", "t@t.dev"]).unwrap();
+        run_git(&path, &["config", "user.name", "Tester"]).unwrap();
+        std::fs::write(dir.join(".gitignore"), "secrets/").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "init"]).unwrap();
+        std::fs::create_dir_all(dir.join("secrets")).unwrap();
+        std::fs::write(dir.join("secrets/key.txt"), "shh").unwrap();
+        std::fs::write(dir.join("seen.txt"), "hello").unwrap();
+
+        let found = status(&path).unwrap();
+        let untracked: Vec<&str> = found.unstaged.iter().map(|f| f.path.as_str()).collect();
+        // The one git would list, and not the one it would not.
+        assert!(untracked.contains(&"seen.txt"), "{untracked:?}");
+        assert!(!untracked.iter().any(|p| p.starts_with("secrets")), "{untracked:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
