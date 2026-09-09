@@ -216,6 +216,7 @@ fn filter_refs(refs: Vec<GraphRef>, options: &GraphOptions) -> Vec<GraphRef> {
         .filter(|r| match r.kind.as_str() {
             "remote" => options.include_remotes,
             "tag" => options.include_tags,
+            "stash" => options.include_stashes,
             _ => true,
         })
         .collect()
@@ -3102,6 +3103,7 @@ mod tests {
             GraphRef { name: "main".into(), kind: "head".into() },
             GraphRef { name: "v1".into(), kind: "tag".into() },
             GraphRef { name: "origin/main".into(), kind: "remote".into() },
+            GraphRef { name: "stash@{0}".into(), kind: "stash".into() },
         ];
         let off = GraphOptions {
             include_remotes: false,
@@ -3116,9 +3118,25 @@ mod tests {
         let on = GraphOptions {
             include_remotes: true,
             include_tags: true,
+            include_stashes: true,
             ..GraphOptions::default()
         };
         assert_eq!(filter_refs(refs.clone(), &on), refs);
+
+        let stashes_off = GraphOptions {
+            include_remotes: true,
+            include_tags: true,
+            include_stashes: false,
+            ..GraphOptions::default()
+        };
+        assert_eq!(
+            filter_refs(refs, &stashes_off),
+            vec![
+                GraphRef { name: "main".into(), kind: "head".into() },
+                GraphRef { name: "v1".into(), kind: "tag".into() },
+                GraphRef { name: "origin/main".into(), kind: "remote".into() },
+            ]
+        );
     }
 
     #[test]
