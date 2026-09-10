@@ -178,7 +178,10 @@ describe("AllChangesTabContent", () => {
     const section = container.querySelector<HTMLElement>('[data-diff-file="w:new.ts"]');
     expect(within(section!).getByText("+2")).toBeInTheDocument();
     expect(within(section!).getByText("−0")).toBeInTheDocument();
-    expect(screen.getAllByText("+2").length).toBe(2);
+    // Awaited, not asserted outright: the page total is not measured here but
+    // reported up by the section that measured it, so it lands a render after
+    // the section's own number and after the merge view this test waited for.
+    await waitFor(() => expect(screen.getAllByText("+2").length).toBe(2));
   });
 
   it("folds a file that changes more lines than the page can carry", async () => {
