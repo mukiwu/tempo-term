@@ -63,13 +63,16 @@ function diffFor(path: string) {
   ].join("\n");
 }
 
+/** The pane the tests mount their page into. */
+const PANE = "leaf-1";
+
 describe("AllChangesTabContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useWorkspaceStore.setState({ rootPath: "/repo" });
     useDiffCommentStore.setState({ comments: [] });
     useSettingsStore.setState({ diffUnified: false });
-    useAllChangesLinkStore.setState({ file: null, showing: null, rescan: 0 });
+    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {} });
     vi.mocked(gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitDiff).mockResolvedValue("");
     vi.mocked(gitFileAtRev).mockResolvedValue("");
@@ -89,7 +92,7 @@ describe("AllChangesTabContent", () => {
     vi.mocked(gitFileAtRev).mockResolvedValue("keep\ngone\n");
     vi.mocked(fsReadFile).mockResolvedValue("keep\none\ntwo\nthree\n");
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
 
     // One scan per side: `git diff` compares against one of them, never both.
     await waitFor(() => expect(gitDiff).toHaveBeenCalledTimes(2));
@@ -133,7 +136,7 @@ describe("AllChangesTabContent", () => {
       ],
     });
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
 
     await waitFor(() =>
       expect(container.querySelectorAll("[data-diff-file]").length).toBe(4),
@@ -152,7 +155,7 @@ describe("AllChangesTabContent", () => {
       unstaged: [{ path: "b.ts", staged: false, status: "M" }],
     });
 
-    render(<AllChangesTabContent />);
+    render(<AllChangesTabContent paneId={PANE} />);
 
     // Staged: HEAD against the index. Working tree: the index against the file.
     await waitFor(() => expect(gitFileAtRev).toHaveBeenCalledWith("/repo", "HEAD", "a.ts"));
@@ -172,7 +175,7 @@ describe("AllChangesTabContent", () => {
     vi.mocked(gitFileAtRev).mockResolvedValue("");
     vi.mocked(fsReadFile).mockResolvedValue("one\ntwo\n");
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
 
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
     // Counted off the documents, since the scan had nothing to say about it —
@@ -204,7 +207,7 @@ describe("AllChangesTabContent", () => {
           ].join("\n"),
     );
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
 
     await waitFor(() => expect(screen.getByText("allChangesFolded:500")).toBeInTheDocument());
     // Folded means not read at all: no documents fetched, no editors built.
@@ -229,7 +232,7 @@ describe("AllChangesTabContent", () => {
       staged ? "" : diffFor("src/a.ts"),
     );
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
 
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
     expect(counter(1)).toBeInTheDocument();
@@ -266,7 +269,7 @@ describe("AllChangesTabContent", () => {
       staged ? "" : diffFor("src/a.ts") + diffFor("src/b.ts") + diffFor("src/c.ts"),
     );
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
     // Wait for the editors, not just the sections: the page registers the
     // handles it measures against as they are built.
     await waitFor(() => expect(container.querySelectorAll(".cm-mergeView").length).toBe(3));
@@ -312,7 +315,7 @@ describe("AllChangesTabContent", () => {
     vi.mocked(gitFileAtRev).mockResolvedValue("keep\ngone\n");
     vi.mocked(fsReadFile).mockResolvedValue("keep\none\n");
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
     const readsBefore = vi.mocked(fsReadFile).mock.calls.length;
 
@@ -345,7 +348,7 @@ describe("AllChangesTabContent", () => {
           ].join("\n"),
     );
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
 
     await waitFor(() => expect(screen.getByText("allChangesBinary")).toBeInTheDocument());
     expect(container.querySelector(".cm-mergeView")).toBeNull();
@@ -384,7 +387,7 @@ describe("AllChangesTabContent", () => {
           ].join("\n"),
     );
 
-    render(<AllChangesTabContent />);
+    render(<AllChangesTabContent paneId={PANE} />);
 
     // Two hunks in the first file and one in the second: the navigation walks
     // the page, not a file.
@@ -404,14 +407,14 @@ describe("AllChangesTabContent", () => {
   it("says so when the workspace is not a repository", async () => {
     vi.mocked(gitResolveRepo).mockResolvedValue(null);
 
-    render(<AllChangesTabContent />);
+    render(<AllChangesTabContent paneId={PANE} />);
 
     await waitFor(() => expect(screen.getByText("noRepo")).toBeInTheDocument());
     expect(gitStatus).not.toHaveBeenCalled();
   });
 
   it("says so when nothing has changed", async () => {
-    render(<AllChangesTabContent />);
+    render(<AllChangesTabContent paneId={PANE} />);
 
     await waitFor(() => expect(screen.getByText("noChanges")).toBeInTheDocument());
   });
@@ -426,7 +429,7 @@ describe("AllChangesTabContent", () => {
       staged ? "" : diffFor("src/a.ts"),
     );
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "allChangesCollapseFile" }));
@@ -435,11 +438,11 @@ describe("AllChangesTabContent", () => {
     // Clicking that row in the panel means "show me this file", so a file the
     // reader had shut comes back rather than landing them on a bare header.
     act(() => {
-      useAllChangesLinkStore.getState().request({ rel: "src/a.ts", staged: false });
+      useAllChangesLinkStore.getState().request(PANE, { rel: "src/a.ts", staged: false });
     });
 
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
-    expect(useAllChangesLinkStore.getState().file).toBeNull();
+    expect(useAllChangesLinkStore.getState().file[PANE]).toBeUndefined();
   });
 
   it("drops a request for a file it does not carry", async () => {
@@ -452,15 +455,15 @@ describe("AllChangesTabContent", () => {
       staged ? "" : diffFor("src/a.ts"),
     );
 
-    const { container } = render(<AllChangesTabContent />);
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
 
     act(() => {
-      useAllChangesLinkStore.getState().request({ rel: "src/gone.ts", staged: false });
+      useAllChangesLinkStore.getState().request(PANE, { rel: "src/gone.ts", staged: false });
     });
 
     // Dropped rather than left pending, or it would fire at some unrelated
     // moment after the next rescan.
-    await waitFor(() => expect(useAllChangesLinkStore.getState().file).toBeNull());
+    await waitFor(() => expect(useAllChangesLinkStore.getState().file[PANE]).toBeUndefined());
   });
 });

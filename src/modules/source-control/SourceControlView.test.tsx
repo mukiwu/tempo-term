@@ -23,7 +23,7 @@ vi.mock("./lib/aiCommit", () => ({
 import { SourceControlView } from "./SourceControlView";
 import * as gitBridge from "./lib/gitBridge";
 import type { GitStatus } from "./lib/gitBridge";
-import { useTabsStore } from "@/stores/tabsStore";
+import { activeAllChangesPane, useTabsStore } from "@/stores/tabsStore";
 import { usePendingGraphSelectionStore } from "@/modules/git-graph/lib/pendingGraphSelectionStore";
 import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
 
@@ -32,6 +32,10 @@ const STATUS_ONE_MODIFIED: GitStatus = {
   staged: [],
   unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
 };
+
+/** The pane the all-changes page opened into, which is what the link is keyed on. */
+const pane = () =>
+  activeAllChangesPane(useTabsStore.getState().tabs, useTabsStore.getState().activeId) ?? "";
 
 describe("SourceControlView row interactions", () => {
   beforeEach(() => {
@@ -42,7 +46,7 @@ describe("SourceControlView row interactions", () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
     useWorkspaceStore.getState().setRoot("/repo");
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
-    useAllChangesLinkStore.setState({ file: null, showing: null, rescan: 0 });
+    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {} });
   });
 
   it("opens the all-changes tab from the panel toolbar", async () => {
@@ -100,7 +104,7 @@ describe("SourceControlView row interactions", () => {
 
     // No second tab: the page in front is asked to scroll to the file.
     expect(useTabsStore.getState().tabs).toHaveLength(1);
-    expect(useAllChangesLinkStore.getState().file).toEqual({
+    expect(useAllChangesLinkStore.getState().file[pane()]).toEqual({
       rel: "src/a.ts",
       staged: false,
     });
@@ -115,7 +119,7 @@ describe("SourceControlView row interactions", () => {
 
     const tabs = useTabsStore.getState().tabs;
     expect(tabs.map((t) => t.kind)).toEqual(["all-changes", "diff"]);
-    expect(useAllChangesLinkStore.getState().file).toBeNull();
+    expect(useAllChangesLinkStore.getState().file[pane()]).toBeUndefined();
   });
 
   it("stands the commit box down while the all-changes page is in front", async () => {
@@ -148,27 +152,31 @@ describe("SourceControlView row interactions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
     act(() => {
-      useAllChangesLinkStore.getState().setShowing({ rel: "src/a.ts", staged: false });
+      useAllChangesLinkStore.getState().setShowing(pane(), { rel: "src/a.ts", staged: false });
     });
 
     expect(screen.getByText("src/a.ts").closest("li")).toHaveAttribute("aria-current", "true");
 
     // The mark is the page's while that page is in front; it goes with it.
     act(() => {
-      useAllChangesLinkStore.getState().setShowing(null);
+      useAllChangesLinkStore.getState().setShowing(pane(), null);
     });
     expect(screen.getByText("src/a.ts").closest("li")).not.toHaveAttribute("aria-current");
   });
 
   it("reloads the all-changes page along with itself", async () => {
     render(<SourceControlView />);
+    // The rescan goes to the page the panel is paired with, so there has to
+    // be one: a split can hold two, and only the one in front is being read
+    // alongside these rows.
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
     await screen.findByText("src/a.ts");
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     // Both are reading one list from one status call, so a refresh that moved
     // only the panel would leave the two disagreeing side by side.
-    await waitFor(() => expect(useAllChangesLinkStore.getState().rescan).toBe(1));
+    await waitFor(() => expect(useAllChangesLinkStore.getState().rescan[pane()]).toBe(1));
   });
 
   it("brings the marked row back into view, and only when it has left", async () => {
@@ -187,7 +195,7 @@ describe("SourceControlView row interactions", () => {
       expect(scrollIntoView).not.toHaveBeenCalled();
 
       act(() => {
-        useAllChangesLinkStore.getState().setShowing({ rel: "src/a.ts", staged: false });
+        useAllChangesLinkStore.getState().setShowing(pane(), { rel: "src/a.ts", staged: false });
       });
 
       expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });

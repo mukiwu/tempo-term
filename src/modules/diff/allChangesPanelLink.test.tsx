@@ -31,7 +31,7 @@ import { gitDiff, gitStatus } from "@/modules/source-control/lib/gitBridge";
 import { SourceControlView } from "@/modules/source-control/SourceControlView";
 import { AllChangesTabContent } from "./AllChangesTabContent";
 import { useAllChangesLinkStore } from "./lib/allChangesLinkStore";
-import { useTabsStore } from "@/stores/tabsStore";
+import { activeAllChangesPane, useTabsStore } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const FILES = ["src/a.ts", "src/b.ts", "src/c.ts"];
@@ -93,13 +93,28 @@ const rowFor = (path: string, mode: string) => {
   return rows[0];
 };
 
+/**
+ * The page is mounted into the pane the tab actually opened, because that is
+ * the pane the panel pairs itself with: the link between them is keyed on it,
+ * so a page mounted under any other name would be talking to nobody.
+ */
+function openThePage(): string {
+  useTabsStore.getState().openAllChangesTab();
+  const { tabs, activeId } = useTabsStore.getState();
+  const pane = activeAllChangesPane(tabs, activeId);
+  if (!pane) {
+    throw new Error("the all-changes page did not open");
+  }
+  return pane;
+}
+
 describe("the Source Control panel beside the all-changes page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     useWorkspaceStore.getState().setRoot("/repo");
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
-    useAllChangesLinkStore.setState({ file: null, showing: null, rescan: 0 });
+    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {} });
     vi.mocked(gitStatus).mockResolvedValue({
       branch: "main",
       staged: [],
@@ -110,6 +125,39 @@ describe("the Source Control panel beside the all-changes page", () => {
     );
   });
 
+  it("keeps two pages apart, and lets one close without taking the other's mark", async () => {
+    // A split mounts two of these pages at once. They scroll independently,
+    // so a single global mark would be whichever scrolled last, and either
+    // one closing would clear it for both.
+    const left = openThePage();
+    const right = "leaf-second";
+    const { unmount } = render(<AllChangesTabContent paneId={left} />);
+    render(<AllChangesTabContent paneId={right} />);
+
+    const store = useAllChangesLinkStore.getState();
+    store.setShowing(left, { rel: "src/a.ts", staged: false });
+    store.setShowing(right, { rel: "src/b.ts", staged: false });
+    expect(useAllChangesLinkStore.getState().showing).toEqual({
+      [left]: { rel: "src/a.ts", staged: false },
+      [right]: { rel: "src/b.ts", staged: false },
+    });
+
+    // A request goes to the page it was made for, and is consumed there.
+    store.request(right, { rel: "src/c.ts", staged: false });
+    expect(useAllChangesLinkStore.getState().file[left]).toBeUndefined();
+
+    unmount();
+
+    // The page that stayed keeps its mark; only the one that went is gone.
+    await waitFor(() =>
+      expect(useAllChangesLinkStore.getState().showing[left]).toBeUndefined(),
+    );
+    expect(useAllChangesLinkStore.getState().showing[right]).toEqual({
+      rel: "src/b.ts",
+      staged: false,
+    });
+  });
+
   it.each([
     ["flat", "flat"],
     ["folder", "folder"],
@@ -117,16 +165,13 @@ describe("the Source Control panel beside the all-changes page", () => {
     // The panel remembers its own view mode, and the tree renders its rows
     // through a different path from the flat list.
     localStorage.setItem("tempoterm-sourcecontrol-view-mode", mode);
+    const pane = openThePage();
     const { container } = render(
       <>
         <SourceControlView />
-        <AllChangesTabContent />
+        <AllChangesTabContent paneId={pane} />
       </>,
     );
-
-    // The page has the pane in front, which is what puts the panel in this
-    // mode at all.
-    useTabsStore.getState().openAllChangesTab();
 
     await waitFor(() => expect(container.querySelectorAll("[data-diff-file]").length).toBe(3));
     const page = container.querySelector<HTMLElement>(".overflow-auto");
@@ -148,13 +193,13 @@ describe("the Source Control panel beside the all-changes page", () => {
 
   it("marks the folder instead when the file inside it is shut away", async () => {
     localStorage.setItem("tempoterm-sourcecontrol-view-mode", "folder");
+    const pane = openThePage();
     const { container } = render(
       <>
         <SourceControlView />
-        <AllChangesTabContent />
+        <AllChangesTabContent paneId={pane} />
       </>,
     );
-    useTabsStore.getState().openAllChangesTab();
     await waitFor(() => expect(container.querySelectorAll("[data-diff-file]").length).toBe(3));
 
     // Shut the folder the files live in. Its rows leave the DOM with it, so

@@ -287,11 +287,28 @@ export function allChangesPaneActive(
   tabs: readonly Tab[],
   activeId: string | null,
 ): boolean {
+  return activeAllChangesPane(tabs, activeId) !== null;
+}
+
+/**
+ * Which pane the all-changes page in front is, by leaf id, or null when the
+ * pane in front is something else.
+ *
+ * A split can have two of those pages mounted at once, each scrolled its own
+ * way, so "is one in front" is not enough to pair the panel with a page: the
+ * panel's rows belong to exactly one of them, and this says which.
+ */
+export function activeAllChangesPane(
+  tabs: readonly Tab[],
+  activeId: string | null,
+): string | null {
   const tab = tabs.find((t) => t.id === activeId);
   if (!tab) {
-    return false;
+    return null;
   }
-  return findPaneContent(tab.paneTree, tab.activeLeafId)?.kind === "all-changes";
+  return findPaneContent(tab.paneTree, tab.activeLeafId)?.kind === "all-changes"
+    ? tab.activeLeafId
+    : null;
 }
 
 export function tabHasDirtyEditor(

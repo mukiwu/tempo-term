@@ -28,6 +28,13 @@ import {
 } from "./DiffFileSection";
 
 interface AllChangesTabContentProps {
+  /**
+   * The pane this page is in. Everything it publishes to the panel is filed
+   * under it: a split mounts two of these pages, and one global entry each
+   * would have them overwriting one another's mark and clearing it on the way
+   * out.
+   */
+  paneId: string;
   /** Show the shared pane close button (the tab is split). */
   showClose?: boolean;
   onClose?: () => void;
@@ -97,7 +104,11 @@ function toChangedFile(
  * have their editors built, the rest holding their place at the height the
  * scan predicts (or the height they last measured).
  */
-export function AllChangesTabContent({ showClose = false, onClose }: AllChangesTabContentProps) {
+export function AllChangesTabContent({
+  paneId,
+  showClose = false,
+  onClose,
+}: AllChangesTabContentProps) {
   const { t } = useTranslation("sourceControl");
   const { t: tEditor } = useTranslation("editor");
   const rootPath = useWorkspaceStore((s) => s.rootPath);
@@ -118,7 +129,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   // The panel's refresh button asks for a rescan too: while this page has the
   // pane, that button is the only refresh control on screen, and the panel's
   // list and this one have to move together.
-  const rescan = useAllChangesLinkStore((s) => s.rescan);
+  const rescan = useAllChangesLinkStore((s) => s.rescan[paneId] ?? 0);
   // Either trigger moves this, and both only ever count up.
   const reloadKey = refreshKey + rescan;
   const [sendMenu, setSendMenu] = useState<{ x: number; y: number } | null>(null);
@@ -517,7 +528,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       const file = ordered[Math.max(0, at - 1)];
       useAllChangesLinkStore
         .getState()
-        .setShowing(file ? { rel: file.rel, staged: file.staged } : null);
+        .setShowing(paneId, file ? { rel: file.rel, staged: file.staged } : null);
     });
   }, [changes.length, changeTop, ordered, sectionTop]);
 
@@ -546,7 +557,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       if (scrollFrame.current) {
         cancelAnimationFrame(scrollFrame.current);
       }
-      useAllChangesLinkStore.getState().setShowing(null);
+      useAllChangesLinkStore.getState().forget(paneId);
     },
     [],
   );
@@ -610,7 +621,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
     return true;
   }, []);
 
-  const requested = useAllChangesLinkStore((s) => s.file);
+  const requested = useAllChangesLinkStore((s) => s.file[paneId]);
   useEffect(() => {
     // Wait for the scan: there are no sections to scroll to before it lands.
     if (!requested || ordered.length === 0) {
@@ -620,7 +631,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
     // Consumed either way. A row for a file this page does not carry (a stale
     // click, or one raced with a rescan) is dropped rather than left to fire
     // at some unrelated moment later.
-    useAllChangesLinkStore.getState().consume();
+    useAllChangesLinkStore.getState().consume(paneId);
   }, [requested, ordered, scrollToSection]);
 
   useEffect(() => {

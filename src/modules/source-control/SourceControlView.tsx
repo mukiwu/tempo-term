@@ -56,7 +56,7 @@ import { generateCommitMessage } from "./lib/aiCommit";
 import { withMinDuration } from "@/lib/withMinDuration";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { STATUS_COLOR } from "./lib/fileStatus";
-import { activeDiffPane, allChangesPaneActive, useTabsStore } from "@/stores/tabsStore";
+import { activeAllChangesPane, activeDiffPane, useTabsStore } from "@/stores/tabsStore";
 import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { computeHistoryGraphLayout, HISTORY_GRAPH_GEOMETRY } from "./lib/commitGraph";
@@ -153,9 +153,11 @@ function StatusRow({
    * time the page crossed into another file. A selector returning a boolean
    * re-renders the two rows that actually change hands and nothing else.
    */
-  const isShownByPage = useAllChangesLinkStore(
-    (s) => s.showing?.rel === file.path && s.showing?.staged === file.staged,
-  );
+  const pane = useTabsStore((s) => activeAllChangesPane(s.tabs, s.activeId));
+  const isShownByPage = useAllChangesLinkStore((s) => {
+    const showing = pane ? s.showing[pane] : undefined;
+    return showing?.rel === file.path && showing?.staged === file.staged;
+  });
   const onPage = followsPage && isShownByPage;
   const marked = active || onPage;
 
@@ -460,9 +462,11 @@ function FolderRow({
   // A boolean per folder row, for the same reason StatusRow asks per file: a
   // reading taken at the top would re-render the whole tree every time the
   // page crossed into another file.
-  const holdsShownFile = useAllChangesLinkStore((s) =>
-    s.showing ? s.showing.rel.startsWith(`${node.path}/`) : false,
-  );
+  const pane = useTabsStore((s) => activeAllChangesPane(s.tabs, s.activeId));
+  const holdsShownFile = useAllChangesLinkStore((s) => {
+    const showing = pane ? s.showing[pane] : undefined;
+    return showing ? showing.rel.startsWith(`${node.path}/`) : false;
+  });
   // Only while shut. Open, the file's own row carries the mark and marking the
   // folder too would say the same thing twice.
   const onPage = Boolean(followsPage) && isCollapsed && holdsShownFile;
@@ -824,7 +828,8 @@ export function SourceControlView() {
   const toggleAllChangesTab = useTabsStore((s) => s.toggleAllChangesTab);
   // While the all-changes page is the pane in front, this panel is its table
   // of contents rather than a way of opening more tabs.
-  const allChangesInFront = useTabsStore((s) => allChangesPaneActive(s.tabs, s.activeId));
+  const allChangesPane = useTabsStore((s) => activeAllChangesPane(s.tabs, s.activeId));
+  const allChangesInFront = allChangesPane !== null;
   // Which row is "the one on screen": the diff in the foreground pane. Read as
   // two primitives — a selector returning a fresh {path, staged} object would
   // never compare equal, re-rendering the panel on every store change.
@@ -843,15 +848,17 @@ export function SourceControlView() {
       // instead of opening a tab per file, which is the whole point of that
       // page. The right-click menu's "Show Diff" still opens the single-file
       // tab, so nothing is only reachable one way.
-      if (allChangesInFront) {
-        useAllChangesLinkStore.getState().request({ rel: path, staged });
+      // The page in front, not "a page somewhere": a split can hold two, and
+      // the rows being clicked belong to the one being looked at.
+      if (allChangesPane) {
+        useAllChangesLinkStore.getState().request(allChangesPane, { rel: path, staged });
         return;
       }
       if (repoPath) {
         openDiffTab(`${repoPath}/${path}`, staged);
       }
     },
-    [allChangesInFront, repoPath, openDiffTab],
+    [allChangesPane, repoPath, openDiffTab],
   );
 
   const refresh = useCallback(async () => {
@@ -862,7 +869,14 @@ export function SourceControlView() {
     // Whatever else is reading this repo reloads with it: the all-changes page
     // shows the same list, from the same status call, and a refresh that moved
     // only one of them would leave the two disagreeing side by side.
-    useAllChangesLinkStore.getState().requestRescan();
+    // Read at the moment of pressing, not closed over: this callback is
+    // memoised on the repo, and the pane in front changes far more often than
+    // that -- captured, it would still be the answer from the first render.
+    const { tabs, activeId } = useTabsStore.getState();
+    const pane = activeAllChangesPane(tabs, activeId);
+    if (pane) {
+      useAllChangesLinkStore.getState().requestRescan(pane);
+    }
     try {
       await withMinDuration(
         (async () => {
