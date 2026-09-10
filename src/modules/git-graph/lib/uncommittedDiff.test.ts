@@ -67,6 +67,38 @@ describe("sliceFileDiff", () => {
     expect(sliceFileDiff(quoted, "src/od d.ts")).toContain("+x");
   });
 
+  it("finds a non-ASCII path git escaped as octal bytes", () => {
+    // `core.quotePath` is on by default, so every CJK filename reaches us as
+    // octal escapes — while the path to look up came from libgit2 and is raw
+    // UTF-8. Matching literally found nothing here, and nothing is what this
+    // function also returns for a file that genuinely did not change, so the
+    // panel said "no difference" for the file in front of you.
+    const escaped = [
+      'diff --git "a/src/\\344\\270\\255\\346\\226\\207.ts" "b/src/\\344\\270\\255\\346\\226\\207.ts"',
+      "index 111..222 100644",
+      "@@ -1 +1 @@",
+      "+新的一行",
+      "",
+    ].join("\n");
+    const out = sliceFileDiff(escaped, "src/中文.ts");
+    expect(out).toContain("+新的一行");
+  });
+
+  it("finds a non-ASCII path in among files that did not need quoting", () => {
+    const mixed = [
+      'diff --git "a/\\346\\227\\245\\346\\234\\254\\350\\252\\236.ts" "b/\\346\\227\\245\\346\\234\\254\\350\\252\\236.ts"',
+      "@@ -1 +1 @@",
+      "+jp",
+      "diff --git a/plain.ts b/plain.ts",
+      "@@ -1 +1 @@",
+      "+plain",
+      "",
+    ].join("\n");
+    expect(sliceFileDiff(mixed, "日本語.ts")).toContain("+jp");
+    expect(sliceFileDiff(mixed, "日本語.ts")).not.toContain("+plain");
+    expect(sliceFileDiff(mixed, "plain.ts")).toContain("+plain");
+  });
+
   it("still finds the header when the line carries a trailing CR", () => {
     // git ends its own header lines with \n, so this should not come from
     // `git_diff` — but a header that misses by one invisible byte returns

@@ -1,3 +1,4 @@
+import { diffHeaderPath } from "@/lib/gitPath";
 import type { DiffLine } from "../types";
 
 /**
@@ -17,10 +18,13 @@ export function sliceFileDiff(diff: string, path: string): string {
     return "";
   }
   const lines = diff.split("\n");
-  // git writes the header as `diff --git a/<old> b/<new>`, quoting the path
-  // when it holds characters that need escaping. Match on the b-side so a
-  // rename is found under the name the caller knows it by, and accept either
-  // the bare or the quoted form.
+  // git writes the header as `diff --git a/<old> b/<new>`. Match on the b-side
+  // so a rename is found under the name the caller knows it by, and read that
+  // side through the same unquoting the rest of the app uses: `git_diff` shells
+  // out to git, which escapes a non-ASCII path under `core.quotePath`, while
+  // the caller's path came from libgit2 and is raw UTF-8. Comparing the two
+  // literally matches nothing for every CJK filename there is — and here
+  // nothing reads as "this file has no changes on this side".
   //
   // A trailing \r is tolerated. git terminates its own header lines with \n, so
   // this should not arise from `git_diff` — but a header that misses by one
@@ -31,10 +35,7 @@ export function sliceFileDiff(diff: string, path: string): string {
     line.endsWith("\r") ? line.slice(0, -1) : line;
   const isHeaderFor = (line: string): boolean => {
     const bare = withoutCr(line);
-    return (
-      bare.startsWith("diff --git ") &&
-      (bare.endsWith(` b/${path}`) || bare.endsWith(` "b/${path}"`))
-    );
+    return bare.startsWith("diff --git ") && diffHeaderPath(bare) === path;
   };
 
   const start = lines.findIndex(isHeaderFor);
