@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sliceFileDiff, untrackedDiffLines } from "./uncommittedDiff";
+import { sliceFileDiff, splitFileDiffs, untrackedDiffLines } from "./uncommittedDiff";
 
 const TWO_FILES = [
   "diff --git a/src/a.ts b/src/a.ts",
@@ -120,6 +120,95 @@ describe("sliceFileDiff", () => {
     ].join("\n");
     expect(sliceFileDiff(renamed, "src/new.ts")).toContain("rename to src/new.ts");
     expect(sliceFileDiff(renamed, "src/old.ts")).toBe("");
+  });
+});
+
+describe("splitFileDiffs", () => {
+  it("keys every section by its path in one pass", () => {
+    const byPath = splitFileDiffs(TWO_FILES);
+    expect([...byPath.keys()]).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(byPath.get("src/a.ts")).toContain("+new a");
+    expect(byPath.get("src/a.ts")).not.toContain("b.ts");
+    expect(byPath.get("src/b.ts")).toContain("+new b");
+  });
+
+  it("agrees with slicing one file at a time", () => {
+    const byPath = splitFileDiffs(TWO_FILES);
+    for (const path of ["src/a.ts", "src/b.ts"]) {
+      expect(byPath.get(path)).toBe(sliceFileDiff(TWO_FILES, path));
+    }
+  });
+
+  it("prefers the +++ line over the header for a path holding a space", () => {
+    // The header's two halves are split on " b/", which this path contains;
+    // the +++ line names it without that ambiguity.
+    const awkward = [
+      "diff --git a/x b/y.ts b/x b/y.ts",
+      "--- a/x b/y.ts",
+      "+++ b/x b/y.ts",
+      "@@ -1 +1 @@",
+      "+v",
+      "",
+    ].join("\n");
+    expect([...splitFileDiffs(awkward).keys()]).toEqual(["x b/y.ts"]);
+  });
+
+  it("keys a deleted file by its old path, the way git status does", () => {
+    const deleted = [
+      "diff --git a/gone.ts b/gone.ts",
+      "deleted file mode 100644",
+      "--- a/gone.ts",
+      "+++ /dev/null",
+      "@@ -1 +0,0 @@",
+      "-x",
+      "",
+    ].join("\n");
+    expect([...splitFileDiffs(deleted).keys()]).toEqual(["gone.ts"]);
+  });
+
+  it("keys a rename under its new name", () => {
+    const renamed = [
+      "diff --git a/old.ts b/new.ts",
+      "similarity index 90%",
+      "rename from old.ts",
+      "rename to new.ts",
+      "--- a/old.ts",
+      "+++ b/new.ts",
+      "@@ -1 +1 @@",
+      "+v",
+      "",
+    ].join("\n");
+    expect([...splitFileDiffs(renamed).keys()]).toEqual(["new.ts"]);
+  });
+
+  it("keeps a binary file, which has no ---/+++ pair to read", () => {
+    const binary = [
+      "diff --git a/logo.png b/logo.png",
+      "index 111..222 100644",
+      "Binary files a/logo.png and b/logo.png differ",
+      "",
+    ].join("\n");
+    expect([...splitFileDiffs(binary).keys()]).toEqual(["logo.png"]);
+  });
+
+  it("is not derailed by a diff of a diff", () => {
+    // Every line inside a hunk body carries a +/-/space prefix, so the `+++`
+    // and `diff --git` below belong to the content, not to this diff. The
+    // scan for the path stops at the first @@ for exactly this reason.
+    const nested = [
+      "diff --git a/patch.diff b/patch.diff",
+      "--- a/patch.diff",
+      "+++ b/patch.diff",
+      "@@ -1,2 +1,2 @@",
+      "+++ b/somewhere/else.ts",
+      "+@@ -9 +9 @@",
+      "",
+    ].join("\n");
+    expect([...splitFileDiffs(nested).keys()]).toEqual(["patch.diff"]);
+  });
+
+  it("answers an empty map for an empty diff", () => {
+    expect(splitFileDiffs("").size).toBe(0);
   });
 });
 

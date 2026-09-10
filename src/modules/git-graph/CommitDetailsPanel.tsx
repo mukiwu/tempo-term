@@ -15,7 +15,7 @@ import {
   gitCommitRangeFileDiff,
 } from "./lib/gitGraphBridge";
 import { parseDiffLines } from "./lib/parseDiff";
-import { sliceFileDiff, untrackedDiffLines } from "./lib/uncommittedDiff";
+import { splitFileDiffs, untrackedDiffLines } from "./lib/uncommittedDiff";
 import { useVirtualRows } from "./lib/useVirtualRows";
 import { DiffView } from "./DiffView";
 import { DiffExplain } from "./DiffExplain";
@@ -312,6 +312,48 @@ export function CommitDetailsPanel({
     () => (isWorkspace ? (uncommitted?.unstaged ?? NO_FILES) : NO_FILES),
     [isWorkspace, uncommitted],
   );
+  // One `git diff` per side per status, not per file. The panel renders one
+  // file's section out of a whole-side answer, so reading it per click meant a
+  // subprocess and a full re-scan of the diff for every row the reader touched
+  // — the cost of both grows with the repository, not with the file.
+  //
+  // `uncommitted` is a fresh object on every reload, so its identity is the
+  // generation: a status refresh invalidates this without needing a counter.
+  // Checked where it is read rather than cleared from an effect, so it cannot
+  // depend on the order two effects happen to be declared in.
+  const sideDiffs = useRef<{
+    repo: string;
+    status: GitStatus | null | undefined;
+    sides: Map<boolean, Promise<Map<string, string>>>;
+  }>({ repo: "", status: undefined, sides: new Map() });
+
+  const readSideDiff = useCallback(
+    (staged: boolean): Promise<Map<string, string>> => {
+      const cache = sideDiffs.current;
+      if (cache.repo !== repo || cache.status !== uncommitted) {
+        sideDiffs.current = { repo, status: uncommitted, sides: new Map() };
+      }
+      const { sides } = sideDiffs.current;
+      const cached = sides.get(staged);
+      if (cached) {
+        return cached;
+      }
+      // The promise itself is cached, not its result, so clicks that land while
+      // one is still in flight join it instead of starting another.
+      const pending = gitDiff(repo, staged)
+        .then(splitFileDiffs)
+        .catch((e: unknown) => {
+          // A failure must not outlive its reload: cached, it would leave the
+          // panel empty until the next refresh for one transient error.
+          sides.delete(staged);
+          throw e;
+        });
+      sides.set(staged, pending);
+      return pending;
+    },
+    [repo, uncommitted],
+  );
+
   const [details, setDetails] = useState<CommitDetails | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   // Which side of the working tree `selectedFile` was picked from; null outside
@@ -433,7 +475,9 @@ export function CommitDetailsPanel({
           ? fsReadFile(`${repo}/${selectedFile}`).then((contents) =>
               untrackedDiffLines(selectedFile, contents),
             )
-          : gitDiff(repo, side).then((all) => parseDiffLines(sliceFileDiff(all, selectedFile)));
+          : readSideDiff(side).then((byPath) =>
+              parseDiffLines(byPath.get(selectedFile) ?? ""),
+            );
       request
         .then((lines) => {
           if (!cancelled) {
@@ -472,7 +516,7 @@ export function CommitDetailsPanel({
     return () => {
       cancelled = true;
     };
-  }, [repo, selection, selectedFile, selectedStaged, stagedFiles, unstagedFiles]);
+  }, [repo, selection, selectedFile, selectedStaged, stagedFiles, unstagedFiles, readSideDiff]);
 
   // Window the changed-files list inside the left column's single scroll
   // container: the metadata/message header scrolls with it, so the list is

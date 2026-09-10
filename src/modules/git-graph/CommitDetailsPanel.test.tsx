@@ -262,7 +262,11 @@ describe("CommitDetailsPanel compare mode", () => {
 describe("CommitDetailsPanel working-tree mode", () => {
   beforeEach(() => {
     localStorage.clear();
+    // Call history matters here — one test counts how often a side is read —
+    // and this file's mocks are module-level, so they carry over otherwise.
+    vi.mocked(gitDiff).mockClear();
     vi.mocked(gitDiff).mockResolvedValue("");
+    vi.mocked(fsReadFile).mockClear();
     vi.mocked(fsReadFile).mockResolvedValue("");
   });
 
@@ -276,16 +280,20 @@ describe("CommitDetailsPanel working-tree mode", () => {
   };
 
   function renderWorkspace(uncommitted: typeof STATUS | null = STATUS) {
-    render(
+    const ui = (status: typeof STATUS | null) => (
       <CommitDetailsPanel
         repo="/repo"
         selection={{ mode: "workspace" }}
         onClose={() => {}}
-        uncommitted={uncommitted}
+        uncommitted={status}
         headHash="abc1234"
         labels={LABELS}
-      />,
+      />
     );
+    const view = render(ui(uncommitted));
+    return {
+      rerender: (status: typeof STATUS | null) => view.rerender(ui(status)),
+    };
   }
 
   it("splits the files into staged and unstaged groups", async () => {
@@ -336,5 +344,70 @@ describe("CommitDetailsPanel working-tree mode", () => {
     renderWorkspace();
     fireEvent.click(await screen.findByText("src/b.ts"));
     await waitFor(() => expect(gitDiff).toHaveBeenCalledWith("/repo", false));
+  });
+
+  const THREE_UNSTAGED = {
+    branch: "main",
+    staged: [] as typeof STATUS.staged,
+    unstaged: [
+      { path: "src/b.ts", staged: false, status: "M" },
+      { path: "src/c.ts", staged: false, status: "M" },
+      { path: "src/d.ts", staged: false, status: "M" },
+    ],
+  };
+
+  it("reads a side once however many of its files are opened", async () => {
+    // `git_diff` answers for a whole side at a time, so asking again per row
+    // re-runs the subprocess and re-scans the entire diff — a cost that grows
+    // with the repository rather than with the file being read.
+    renderWorkspace(THREE_UNSTAGED);
+    await screen.findByText("src/b.ts");
+    await waitFor(() => expect(gitDiff).toHaveBeenCalledWith("/repo", false));
+    fireEvent.click(screen.getByText("src/c.ts"));
+    fireEvent.click(screen.getByText("src/d.ts"));
+    fireEvent.click(screen.getByText("src/b.ts"));
+    await waitFor(() => expect(screen.getByText("src/b.ts")).toBeInTheDocument());
+    expect(vi.mocked(gitDiff).mock.calls).toHaveLength(1);
+  });
+
+  it("reads each side once, not one read shared between them", async () => {
+    renderWorkspace();
+    await screen.findByText("src/a.ts");
+    await waitFor(() => expect(gitDiff).toHaveBeenCalledWith("/repo", true));
+    fireEvent.click(screen.getByText("src/b.ts"));
+    await waitFor(() => expect(gitDiff).toHaveBeenCalledWith("/repo", false));
+    fireEvent.click(screen.getByText("src/a.ts"));
+    await waitFor(() => expect(screen.getByText("src/a.ts")).toBeInTheDocument());
+    expect(vi.mocked(gitDiff).mock.calls).toHaveLength(2);
+  });
+
+  it("re-reads the diff once the status has been refreshed", async () => {
+    // Held for the life of one status, not for the life of the panel: a commit
+    // or an edit elsewhere has to reach the file the reader is looking at.
+    const { rerender } = renderWorkspace(THREE_UNSTAGED);
+    await screen.findByText("src/b.ts");
+    await waitFor(() => expect(gitDiff).toHaveBeenCalledTimes(1));
+    rerender({ ...THREE_UNSTAGED });
+    fireEvent.click(screen.getByText("src/c.ts"));
+    await waitFor(() => expect(gitDiff).toHaveBeenCalledTimes(2));
+  });
+
+  it("renders the section of a file whose name git had to escape", async () => {
+    // `git diff` escapes a non-ASCII path under `core.quotePath`, while the
+    // path here came from `git_status` via libgit2 and is raw UTF-8.
+    vi.mocked(gitDiff).mockResolvedValue(
+      [
+        'diff --git "a/src/\\344\\270\\255\\346\\226\\207.ts" "b/src/\\344\\270\\255\\346\\226\\207.ts"',
+        "@@ -1 +1 @@",
+        "+新的一行",
+        "",
+      ].join("\n"),
+    );
+    renderWorkspace({
+      branch: "main",
+      staged: [] as typeof STATUS.staged,
+      unstaged: [{ path: "src/中文.ts", staged: false, status: "M" }],
+    });
+    expect(await screen.findByText("+新的一行")).toBeInTheDocument();
   });
 });
