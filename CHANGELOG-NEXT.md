@@ -8,6 +8,10 @@
 - Apple Intelligence 成為可選的預設模型（macOS 26 以上且系統已啟用時才會出現，Windows 不會看到這個選項）：選定後 commit message 產生、diff 解釋與行內補完都改由裝置上的模型回答，不需金鑰、資料不離開本機。AI 助手窗格刻意不提供它——預設是 Apple Intelligence 時，對話會改用窗格上另選的雲端模型，且切換不影響預設值 (#395)
 - Ports 窗格全面翻新：清單改依 port 排序、不再每次輪詢重新洗牌；port 依專案分組（cwd 目錄名為組標題、其他程序墊底），每列以白話的服務名稱開頭（Vite dev server、Next.js dev server、PostgreSQL 等），CPU 與記憶體移入展開詳情；macOS 26 以上且開啟 Apple Intelligence 時，動作列第一顆是「詢問 AI」，由裝置上的模型直接說明該行程與是否可安全停止，回答以 markdown 樣式呈現，資料不離開本機 (#388, #391)
 - 切換分頁後，左側檔案總管會保留原本的資料夾展開狀態，不再每次切回來都全部收合。展開狀態以工作區根目錄分組記住，A 專案的展開狀態不會影響 B 專案；「全部收合」與「重新整理」仍會照原本的行為把樹收起來 (#403)
+- 所有未提交變更可以集中在同一個 All Changes 分頁閱讀：staged 與 unstaged 分區、每個檔案的變更統計、跨檔案上一個／下一個變更、留言與送給 agent 都沿用單檔 diff 的操作；檔案靠近視窗時才載入編輯器，並提供 Source Control、View 選單與快捷鍵入口 (#406)
+- Git Graph 的 working tree 現在固定顯示在最新 commit 上方：以空心虛線節點與虛線連到 HEAD，展開後可查看 staged、unstaged 與 untracked 變更；支援資料夾／扁平檢視、鍵盤導覽、右鍵選單，以及是否在乾淨工作區顯示的設定 (#415)
+- Source Control 面板在 All Changes 分頁前景時會成為它的目錄：點擊檔案直接捲到對應區段，面板會標記目前閱讀位置，資料夾會在子檔案離開視野時承接標記，重新整理也會同步兩邊 (#414)
+- Ports 面板新增即時／暫停狀態、手動重新整理、最後更新時間、失敗重試與搜尋；可搜尋 port、PID、程序、服務名稱、協定、綁定位址、指令與工作目錄，並支援清除搜尋與 ⌘／Ctrl+F (#420)
 ### fix
 
 - diff 的 gutter 圖示改成與行號對齊：留言圖示和收合展開箭頭原本會撐滿 gutter 元素再垂直居中，而 gutter 元素帶的是整個行區塊的高度，不是一行文字的高度。單一行時兩者相同，所以當初看起來是對的，但只要區塊比一行高，圖示就會掉到區塊中央，而行號留在第一行。會讓區塊變高的情況有三種：自動換行遇到長行、那一行掛了評論卡片或輸入框、以及並排模式下合併比較為了讓兩側對齊而插入的墊高塊。現在兩處都以一行文字為居中的框 (#404)
@@ -17,9 +21,15 @@
 - diff 分頁的標題列控制項移到右側，與其他窗格一致：變更跳轉、自動換行、送給 agent 那幾顆原本停在標題列左半邊的末端，剛好落在兩份文件的分界上。在分割分頁裡窗格關閉鈕仍在最右邊，整條讀起來就是檔名、中間一堆按鈕、然後關閉鈕自己孤零零在旁邊；而且那幾顆是對整份 diff 生效而不是只對左邊那個檔，停在中線容易讓人誤會。第一次出現的留言提示也跟著移到右側 (#390)
 - 原始碼控制窗格的資料夾整個標籤都能點開闔：資料夾模式下原本只有 13px 的箭頭可以開闔，點資料夾圖示或名稱這兩個最直覺、也佔掉大半列寬的位置卻沒有反應，看起來像壞掉的列而不是收起來的列。現在箭頭、圖示、名稱是同一顆橫跨整列的按鈕，子樹的動作鈕仍是獨立的，所以暫存或取消暫存一個資料夾不會順手把它闔起來。hover 不改文字顏色，因為在這份清單裡亮起來的標籤代表「正在看的那個檔」，hover 不該模仿那個狀態 (#381)
 - 修正 Worktree 窗格無法移除「目錄已不存在」項目的問題。先前按移除會執行 git worktree remove，部分 git 版本（如 Apple Git 2.50）會因驗證目錄失敗而報錯；現改走 git worktree prune，任何版本都能把殘留紀錄清掉，一般 worktree 的移除行為不變 (#386)
+- Git Graph 的遠端分支、tag 與 stash 顯示開關現在會真正影響圖上的內容；stash 改從 reflog 讀取，所有 stash 都會顯示並正確標記，且不會把 Git 內部的 index／untracked 快照誤畫成 commit (#407)
+- Git Graph 工具列在窄窗格與長分支名稱下不再互相覆蓋：worktree 與 branch picker 會適度縮短並顯示完整提示，控制項保持單行，相關圖示也與其他工具列按鈕對齊 (#408)
+- Source Control 不會再把被 `.gitignore` 排除的檔案誤列成未追蹤檔案 (#413)
+- Git Graph 在大量 lane 被壓到同一欄時，edge 與 Shift+方向鍵會依真正的 lane 判斷，不會把不同分支誤當成直線延續 (#419)
+- Windows 首次安裝 Node.js 時，即使沒有 WinGet 或 GUI 啟動環境沒有完整 PATH，也會使用 Node.js LTS MSI fallback；安裝失敗會顯示實際原因與結束碼，重開機必要的 MSI 結束碼也會正確視為成功
 ### 貢獻者
 
-- @yw-chan (#380, #381, #390, #392, #393, #400, #401, #402)
+- @yw-chan (#380, #381, #390, #392, #393, #400, #401, #402, #403, #406, #407, #408, #409, #410, #411, #413, #414, #415, #419)
+- @mark22013333 (#420)
 
 ## English
 
@@ -31,6 +41,10 @@
 - Apple Intelligence becomes a selectable default model (shown only on macOS 26+ with the system model available; Windows never sees the option): commit message generation, diff explains and inline completion then run on-device, keyless, with nothing leaving the machine. The AI assistant pane deliberately excludes it — with an Apple default, conversations use a separately chosen cloud model and switching it never touches the default (#395)
 - The Ports pane is reworked: the list is sorted by port and no longer reshuffles on every poll; ports are grouped by project (cwd basename as sticky headers, other processes last), rows lead with plain-English service names (Vite dev server, Next.js dev server, PostgreSQL, …) and CPU/memory move into the expanded details; on macOS 26+ with Apple Intelligence enabled, the action row leads with an Ask-AI button answered by the on-device model — what the process is and whether stopping it is safe, rendered as markdown, with nothing leaving the machine (#388, #391)
 - Switching tabs no longer collapses the file explorer: the folders you had open come back the way you left them. The expanded set is remembered per workspace root, so one project's tree never leaks into another's; Collapse All and Refresh still fold the tree exactly as before (#403)
+- All uncommitted changes can be read in one All Changes tab: staged and unstaged sections, per-file counts, previous/next navigation across files, comments and send-to-agent reuse the single-file diff controls; editors mount near the viewport, with entry points from Source Control, the View menu and a keyboard shortcut (#406)
+- Git Graph now keeps a working-tree row above the newest commit: a hollow dashed node connects to HEAD with an accent dashed line, and its details show staged, unstaged and untracked changes. It supports folder/flat view, keyboard navigation, a context menu, and settings for clean trees (#415)
+- When the All Changes tab is in front, the Source Control pane becomes its index: clicking a file scrolls to its section, the pane marks the file currently being read, folders inherit the mark when their child is out of view, and refresh keeps both surfaces in sync (#414)
+- The Ports pane gains live/paused status, manual refresh, last-updated time, retry feedback and search across ports, PIDs, processes, service names, protocols, bind addresses, commands and working directories, with clear-search and Cmd/Ctrl+F support (#420)
 ### fix
 
 - The diff gutter icons line up with the line number. The comment icon and the fold/unfold arrows each filled their gutter element and centred inside it, but a gutter element carries the height of the whole line block rather than of one text row. Those are the same thing for a plain one-row line, which is why it looked right; they diverge as soon as a block is taller, and then the icon lands at the middle of the block while the number stays on the first row. Three things make a block taller: word wrap on a long line, a comment card or the draft box under the line, and the spacer the merge comparison inserts to keep the two document sides aligned. Both now take one text row as the box to centre in (#404)
@@ -40,6 +54,12 @@
 - The diff pane's header controls move to the right, like every other pane. Chunk navigation, word wrap and send-to-agent sat at the end of the header's left half, landing between the two documents. On a tab showing two documents side by side the pane close button still sat at the far right, so the strip read as filename, then buttons in the middle, then a close button off on its own; and those buttons act on the whole diff rather than on the left file, so sitting on the midline suggested an ownership they do not have. The first-run review-comment hint follows them to the right edge (#390)
 - A folder in the Source Control pane toggles from its whole label. In folder mode only the 13px chevron toggled a folder; clicking the folder icon or its name, the obvious targets and most of the row's width, did nothing, which reads as a dead row rather than a collapsed one. The chevron, icon and name are now one button spanning the row, with the subtree action button still a sibling, so staging or unstaging a folder never toggles it. Hover does not change the text colour, because a bright label in this list means "this is the file you are viewing" and hover must not imitate that state (#381)
 - Fix the Worktrees pane failing to remove an entry whose directory no longer exists. The remove button ran git worktree remove, which some git versions (e.g. Apple Git 2.50) reject with a validation error for a gone directory; stale rows now go through git worktree prune, which clears the record on every version, while normal removals keep their exact semantics (#386)
+- Fix the Git Graph's remote-branch, tag and stash display toggles so they filter both the walked commits and their decorations. Stashes now come from the reflog, show every entry with a stash@{n} label, and no longer pull Git's internal index/untracked snapshots into the graph (#407)
+- Keep the Git Graph toolbar usable in a narrow pane or with a long branch name: the worktree and branch pickers yield space and show their full values on hover, controls stay on one line, and the toolbar icons share a baseline (#408)
+- Ignored files no longer appear as untracked files in Source Control (#413)
+- When several Git Graph lanes collapse onto the same visual column, edges and keyboard continuation now compare lane identity rather than the shared x-coordinate (#419)
+- Improve Node.js installation on Windows by falling back to the current Node.js LTS MSI when WinGet is unavailable or a GUI-launched PATH cannot find it; installation failures now include the reported reason and exit code, and MSI's reboot-required success code is handled correctly
 ### Contributors
 
-- @yw-chan (#380, #381, #390, #392, #393, #400, #401, #402)
+- @yw-chan (#380, #381, #390, #392, #393, #400, #401, #402, #403, #406, #407, #408, #409, #410, #411, #413, #414, #415, #419)
+- @mark22013333 (#420)
