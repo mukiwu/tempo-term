@@ -191,6 +191,7 @@ describe("edgePath", () => {
       px: 20,
       py: 56,
       lane: 0,
+      parentLane: 0,
       childIndex: 0,
       parentIndex: 1,
       colorIndex: 0,
@@ -205,6 +206,7 @@ describe("edgePath", () => {
       px: 34,
       py: 92,
       lane: 0,
+      parentLane: 1,
       childIndex: 0,
       parentIndex: 2,
       colorIndex: 0,
@@ -212,6 +214,24 @@ describe("edgePath", () => {
     const path = edgePath(edge, 36);
     expect(path.startsWith("M 20 20 C")).toBe(true);
     expect(path).toContain("L 34 92");
+  });
+
+  it("bends between two lanes that laneX collapsed onto the same column", () => {
+    // Clamped, lanes 6 and 7 share an x — deciding on x would skip the bend.
+    const x = laneX(6, DEFAULT_GEOMETRY);
+    expect(x).toBe(laneX(7, DEFAULT_GEOMETRY));
+    const edge: GraphEdge = {
+      cx: x,
+      cy: 20,
+      px: x,
+      py: 92,
+      lane: 6,
+      parentLane: 7,
+      childIndex: 0,
+      parentIndex: 2,
+      colorIndex: 0,
+    };
+    expect(edgePath(edge, 36)).toContain("C");
   });
 
   it("keeps a branch tail in its own lane and bends into the trunk only at the parent", () => {
@@ -222,6 +242,7 @@ describe("edgePath", () => {
       px: 20,
       py: 92,
       lane: 1,
+      parentLane: 0,
       childIndex: 0,
       parentIndex: 2,
       colorIndex: 1,
@@ -282,5 +303,36 @@ describe("laneContinuationRowIndex", () => {
     const commits = [commit("m", ["a", "b"]), commit("b", ["a"]), commit("a", [])];
     const { edges } = computeGraphLayout(commits);
     expect(laneContinuationRowIndex(edges, 2)).toBe(0); // a -> m, straight
+  });
+
+  it("skips a bend between two lanes that laneX collapsed onto one column", () => {
+    // Row 0 bends in from lane 7, row 1 continues lane 6 straight. All three
+    // share an x, so picking by x returns row 0 — it comes first.
+    const x = laneX(6, DEFAULT_GEOMETRY);
+    const edges: GraphEdge[] = [
+      {
+        cx: x,
+        cy: 20,
+        px: x,
+        py: 92,
+        lane: 7,
+        parentLane: 6,
+        childIndex: 0,
+        parentIndex: 2,
+        colorIndex: 1,
+      },
+      {
+        cx: x,
+        cy: 56,
+        px: x,
+        py: 92,
+        lane: 6,
+        parentLane: 6,
+        childIndex: 1,
+        parentIndex: 2,
+        colorIndex: 0,
+      },
+    ];
+    expect(laneContinuationRowIndex(edges, 2)).toBe(1);
   });
 });

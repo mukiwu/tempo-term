@@ -45,7 +45,12 @@ export interface GraphEdge {
   cy: number;
   px: number;
   py: number;
+  /**
+   * Both ends' lanes. `cx === px` cannot stand in for `lane === parentLane`:
+   * `laneX` collapses every lane past `maxLane` onto one column.
+   */
   lane: number;
+  parentLane: number;
   childIndex: number;
   parentIndex: number;
   /** Branch colour id of the line (the branch side of a merge/branch bend). */
@@ -201,6 +206,7 @@ export function computeGraphLayout(
         px: parent.x,
         py: parent.y,
         lane: child.lane,
+        parentLane: parent.lane,
         childIndex: index,
         parentIndex: parent.index,
         colorIndex,
@@ -246,14 +252,16 @@ export function laneContinuationRowIndex(
   edges: readonly GraphEdge[],
   index: number,
 ): number | null {
-  const edge = edges.find((e) => e.parentIndex === index && e.cx === e.px);
+  const edge = edges.find(
+    (e) => e.parentIndex === index && e.lane === e.parentLane,
+  );
   return edge ? edge.childIndex : null;
 }
 
 /** SVG path data for one edge: a straight track, or a bend into the parent lane. */
 export function edgePath(edge: GraphEdge, rowHeight: number): string {
   const { cx, cy, px, py } = edge;
-  if (px === cx) {
+  if (edge.lane === edge.parentLane) {
     return `M ${cx} ${cy} L ${px} ${py}`;
   }
   const bend = Math.min(rowHeight, py - cy);
