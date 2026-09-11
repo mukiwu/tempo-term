@@ -28,6 +28,16 @@ export interface GraphGeometry {
    * to spend any width on lanes (the sidebar's inline history) wants.
    */
   laneWidthMin?: number;
+  /**
+   * Hard ceiling on columns; past it the lanes collapse as they always did.
+   * A repo really can have thirty branches live at once, and there is no
+   * width at which thirty tracks are readable — long before that the graph
+   * would have taken the row it is supposed to annotate. The ceiling also
+   * bounds the damage when the list is not a whole walk at all: the layout
+   * assumes it is, so a commit whose parent is missing holds a lane nothing
+   * will ever free, and the count runs away.
+   */
+  maxColumns?: number;
 }
 
 /** Room kept to the right of the last lane, for the node and its ring. */
@@ -40,6 +50,7 @@ export const DEFAULT_GEOMETRY: GraphGeometry = {
   paddingTop: 20,
   maxLane: 5,
   laneWidthMin: 9,
+  maxColumns: 12,
 };
 
 /** Where a single commit node sits in the graph. */
@@ -84,6 +95,8 @@ export interface GraphLayout {
 export interface LaneSizing {
   laneWidth: number;
   gutter: number;
+  /** Lanes with a column of their own; wider ones share the last. */
+  columns: number;
 }
 
 /**
@@ -100,16 +113,22 @@ export function laneSizing(lanes: number, geometry: GraphGeometry): LaneSizing {
   const budget =
     geometry.paddingLeft + (geometry.maxLane + 1) * geometry.laneWidth + GUTTER_TRAIL;
   if (geometry.laneWidthMin === undefined) {
-    return { laneWidth: geometry.laneWidth, gutter: budget };
+    return {
+      laneWidth: geometry.laneWidth,
+      gutter: budget,
+      columns: geometry.maxLane + 1,
+    };
   }
+  const columns = Math.min(lanes, geometry.maxColumns ?? lanes);
   const room = budget - geometry.paddingLeft - GUTTER_TRAIL;
   const laneWidth = Math.max(
     geometry.laneWidthMin,
-    Math.min(geometry.laneWidth, Math.floor(room / Math.max(1, lanes))),
+    Math.min(geometry.laneWidth, Math.floor(room / Math.max(1, columns))),
   );
   return {
     laneWidth,
-    gutter: Math.max(budget, geometry.paddingLeft + lanes * laneWidth + GUTTER_TRAIL),
+    columns,
+    gutter: Math.max(budget, geometry.paddingLeft + columns * laneWidth + GUTTER_TRAIL),
   };
 }
 
@@ -119,13 +138,10 @@ export function laneSizing(lanes: number, geometry: GraphGeometry): LaneSizing {
  * callers asking about a single lane in isolation, and lane 0 — the one they
  * ask about — sits at the same x under every width.
  */
-export function laneX(
-  lane: number,
-  geometry: GraphGeometry,
-  laneWidth: number = geometry.laneWidth,
-): number {
-  const column = geometry.laneWidthMin === undefined ? Math.min(lane, geometry.maxLane) : lane;
-  return geometry.paddingLeft + column * laneWidth + 12;
+export function laneX(lane: number, geometry: GraphGeometry, sizing?: LaneSizing): number {
+  const width = sizing?.laneWidth ?? geometry.laneWidth;
+  const lastColumn = sizing ? sizing.columns - 1 : geometry.maxLane;
+  return geometry.paddingLeft + Math.min(lane, lastColumn) * width + 12;
 }
 
 /**
@@ -250,7 +266,7 @@ export function computeGraphLayout(
   const lanes = widest + 1;
   const sizing = laneSizing(lanes, geometry);
   for (const layout of Object.values(layouts)) {
-    layout.x = laneX(layout.lane, geometry, sizing.laneWidth);
+    layout.x = laneX(layout.lane, geometry, sizing);
   }
 
   // Parents may be referenced by a hash of a different length than the keys in
@@ -297,7 +313,13 @@ export function computeGraphLayout(
     });
   });
 
-  return { layouts, edges, lanes, laneWidth: sizing.laneWidth, gutter: sizing.gutter };
+  return {
+    layouts,
+    edges,
+    lanes,
+    laneWidth: sizing.laneWidth,
+    gutter: sizing.gutter,
+  };
 }
 
 /**

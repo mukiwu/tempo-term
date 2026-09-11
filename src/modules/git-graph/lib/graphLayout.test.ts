@@ -182,9 +182,20 @@ describe("computeGraphLayout colouring", () => {
 
 describe("laneX", () => {
   it("gives every lane its own column once a minimum width is set", () => {
-    const beyond = laneX(DEFAULT_GEOMETRY.maxLane + 3, DEFAULT_GEOMETRY);
-    const atMax = laneX(DEFAULT_GEOMETRY.maxLane, DEFAULT_GEOMETRY);
+    const sizing = laneSizing(9, DEFAULT_GEOMETRY);
+    const beyond = laneX(DEFAULT_GEOMETRY.maxLane + 3, DEFAULT_GEOMETRY, sizing);
+    const atMax = laneX(DEFAULT_GEOMETRY.maxLane, DEFAULT_GEOMETRY, sizing);
     expect(beyond).toBeGreaterThan(atMax);
+  });
+
+  it("collapses again past the column ceiling", () => {
+    // A filtered list is not a walk: every commit whose parent was filtered
+    // out holds a lane forever, so the count runs away. The ceiling is what
+    // stops the gutter following it.
+    const sizing = laneSizing(40, DEFAULT_GEOMETRY);
+    expect(sizing.columns).toBe(DEFAULT_GEOMETRY.maxColumns);
+    expect(laneX(39, DEFAULT_GEOMETRY, sizing)).toBe(laneX(11, DEFAULT_GEOMETRY, sizing));
+    expect(sizing.gutter).toBe(laneSizing(12, DEFAULT_GEOMETRY).gutter);
   });
 
   it("still clamps when no minimum width is set", () => {
@@ -193,7 +204,9 @@ describe("laneX", () => {
   });
 
   it("puts lane 0 in the same place at any lane width", () => {
-    expect(laneX(0, DEFAULT_GEOMETRY, 9)).toBe(laneX(0, DEFAULT_GEOMETRY, 14));
+    expect(laneX(0, DEFAULT_GEOMETRY, laneSizing(9, DEFAULT_GEOMETRY))).toBe(
+      laneX(0, DEFAULT_GEOMETRY, laneSizing(1, DEFAULT_GEOMETRY)),
+    );
   });
 });
 
@@ -222,6 +235,12 @@ describe("laneSizing", () => {
     expect(width(10)).toBe(DEFAULT_GEOMETRY.laneWidthMin);
     expect(gutter(10)).toBeGreaterThan(124);
     expect(gutter(12)).toBeGreaterThan(gutter(10));
+  });
+
+  it("stops widening at the ceiling", () => {
+    const capped = gutter(DEFAULT_GEOMETRY.maxColumns!);
+    expect(gutter(40)).toBe(capped);
+    expect(gutter(400)).toBe(capped);
   });
 
   it("keeps the gutter fixed when no minimum width is set", () => {
