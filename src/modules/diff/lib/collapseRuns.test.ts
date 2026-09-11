@@ -9,7 +9,11 @@ import {
   STEP,
 } from "./collapseRuns";
 
-const LABELS = { unchanged: "$ unchanged lines", up: "up", down: "down" };
+const LABELS = {
+  unchanged: "$ unchanged lines",
+  up: (lines: number) => `up ${lines}`,
+  down: (lines: number) => `down ${lines}`,
+};
 
 /** A document whose only change sits at line 40, leaving a stretch each side. */
 function view() {

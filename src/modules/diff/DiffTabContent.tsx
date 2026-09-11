@@ -27,7 +27,6 @@ import {
 } from "./lib/diffViews";
 import { agentTargetMenuItems } from "./lib/sendComments";
 import { useDiffComments, useUnsentCommentCount } from "./lib/useDiffComments";
-import { STEP } from "./lib/collapseRuns";
 
 interface DiffTabContentProps {
   /** Absolute path of the file being compared. */
@@ -164,11 +163,11 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       unified,
       unchangedLines: t("diffUnchangedLines"),
       foldLabels,
-      // The step is a constant in collapseRuns; the sentence takes it as a
-      // number rather than spelling it out, so the two cannot drift apart.
       runLabels: {
-        up: t("diffRunExpandUp", { count: STEP }),
-        down: t("diffRunExpandDown", { count: STEP }),
+        // The bar says how many lines its own press will reveal, which is the
+        // step until the last few come with it.
+        up: (lines: number) => t("diffRunExpandUp", { count: lines }),
+        down: (lines: number) => t("diffRunExpandDown", { count: lines }),
       },
       commentHandlers,
       cancelled: () => cancelled,

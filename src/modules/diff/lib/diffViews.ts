@@ -80,7 +80,7 @@ export interface DiffViewOptions {
   /** Localized "$ unchanged lines" for the collapsed bars. */
   unchangedLines: string;
   foldLabels: { fold: string; unfold: string };
-  runLabels: { up: string; down: string };
+  runLabels: { up: (lines: number) => string; down: (lines: number) => string };
   commentHandlers: (side: "a" | "b") => CommentHandlers;
   /**
    * Checked after the grammar loads: the caller's effect may have been torn

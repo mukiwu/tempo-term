@@ -14,7 +14,6 @@ import {
   type DiffViews,
 } from "./lib/diffViews";
 import { useDiffComments } from "./lib/useDiffComments";
-import { STEP } from "./lib/collapseRuns";
 import { linkHorizontalScroll } from "./lib/linkScroll";
 
 /** One changed file in the working tree, as the scan describes it. */
@@ -256,11 +255,11 @@ export function DiffFileSection({
       unified,
       unchangedLines: t("diffUnchangedLines"),
       foldLabels: { fold: t("diffCollapseUnchanged"), unfold: t("diffExpandUnchanged") },
-      // The step is a constant in collapseRuns; the sentence takes it as a
-      // number rather than spelling it out, so the two cannot drift apart.
       runLabels: {
-        up: t("diffRunExpandUp", { count: STEP }),
-        down: t("diffRunExpandDown", { count: STEP }),
+        // The bar says how many lines its own press will reveal, which is the
+        // step until the last few come with it.
+        up: (lines: number) => t("diffRunExpandUp", { count: lines }),
+        down: (lines: number) => t("diffRunExpandDown", { count: lines }),
       },
       commentHandlers,
       cancelled: () => cancelled,

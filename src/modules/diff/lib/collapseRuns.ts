@@ -51,8 +51,13 @@ const NOTHING: Opened = { top: 0, bottom: 0 };
 export interface RunLabels {
   /** "$ unchanged lines", with `$` standing in for the count. */
   unchanged: string;
-  up: string;
-  down: string;
+  /**
+   * What the arrows promise, given the number of lines the press will
+   * actually reveal. Functions rather than finished sentences because that
+   * number is not always the step: the last few lines of a run come with it.
+   */
+  up: (lines: number) => string;
+  down: (lines: number) => string;
 }
 
 /** Open part of a run, or all of it. `start` is the run's first line. */
@@ -229,6 +234,16 @@ export class RunWidget extends WidgetType {
     );
   }
 
+  /**
+   * What one press opens, which is the step until the tail is too short to
+   * leave behind: a run of twenty-three opens whole rather than hiding three
+   * lines behind a bar that takes a row to say so. The label says this number
+   * because the reader can count the lines that appear.
+   */
+  get step(): number {
+    return this.lines - STEP < MIN_RUN ? this.lines : STEP;
+  }
+
   toDOM(view: EditorView): HTMLElement {
     const outer = document.createElement("div");
     outer.className = "cm-diff-run";
@@ -248,10 +263,10 @@ export class RunWidget extends WidgetType {
     // nothing above it -- the first thing in the file -- has no place to grow
     // from. The up arrow is the same story at the end of the file.
     actions.append(
-      button(this.labels.up, ARROW_UP_FROM_LINE, !this.atEnd, () =>
+      button(this.labels.up(this.step), ARROW_UP_FROM_LINE, !this.atEnd, () =>
         open(view, this.start, "bottom"),
       ),
-      button(this.labels.down, ARROW_DOWN_FROM_LINE, !this.atStart, () =>
+      button(this.labels.down(this.step), ARROW_DOWN_FROM_LINE, !this.atStart, () =>
         open(view, this.start, "top"),
       ),
     );

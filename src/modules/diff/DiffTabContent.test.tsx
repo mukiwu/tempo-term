@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DiffTabContent } from "./DiffTabContent";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    // The count is part of what a label promises, so it has to survive the
+    // mock -- a bare key cannot tell "open 20" from "open 23".
+    t: (key: string, vars?: Record<string, unknown>) =>
+      vars && "count" in vars ? `${key}:${String(vars.count)}` : key,
+  }),
   // tabsStore transitively pulls in the real i18n init, which registers this
   // plugin object during module load.
   initReactI18next: { type: "3rdParty", init: () => {} },
@@ -148,20 +153,20 @@ describe("DiffTabContent", () => {
     // would be answering a question nobody asked.
     expect(bars()[1].querySelector(".cm-diff-run-name")).toBeNull();
     expect(
-      bars()[1].querySelector<HTMLButtonElement>('[aria-label="diffRunExpandUp"]')!.disabled,
+      bars()[1].querySelector<HTMLButtonElement>('[aria-label^="diffRunExpandUp"]')!.disabled,
     ).toBe(true);
     expect(bars()[0].querySelector(".cm-diff-run-name")).toBeTruthy();
 
     // The first bar is the top of the file, so the arrow that grows the code
     // above it downwards has nothing to grow from and is dead.
     expect(
-      bars()[0].querySelector<HTMLButtonElement>('[aria-label="diffRunExpandDown"]')!.disabled,
+      bars()[0].querySelector<HTMLButtonElement>('[aria-label^="diffRunExpandDown"]')!.disabled,
     ).toBe(true);
 
     // Twenty lines at a time, from whichever end was asked for -- the reason
     // the bars are ours rather than the library's, whose bar only ever opens
     // the lot.
-    fireEvent.mouseDown(bars()[0].querySelector('[aria-label="diffRunExpandUp"]')!);
+    fireEvent.mouseDown(bars()[0].querySelector('[aria-label^="diffRunExpandUp"]')!);
     await waitFor(() => expect(hidden()[0]).toBe(6));
     // And the other side moved with it, or the two would no longer be reading
     // the same stretch.
@@ -169,7 +174,7 @@ describe("DiffTabContent", () => {
 
     // Pressing again would leave four lines hidden behind a bar that takes a
     // row to say so, so the last of them are simply shown.
-    fireEvent.mouseDown(bars()[0].querySelector('[aria-label="diffRunExpandUp"]')!);
+    fireEvent.mouseDown(bars()[0].querySelector('[aria-label^="diffRunExpandUp"]')!);
     await waitFor(() => expect(bars().length).toBe(2));
 
     // Opening the lot is the gutter's icon beside the bar rather than a third
@@ -205,6 +210,31 @@ describe("DiffTabContent", () => {
     fireEvent.mouseDown(backs()[0]);
     await waitFor(() => expect(bars()).toBe(4));
     expect(backs().length).toBe(0);
+  });
+
+  it("promises the number of lines the press will actually open", async () => {
+    // Twenty-three hidden: a step of twenty would leave three behind a bar
+    // that takes a row of its own to say so, so the press opens all of them.
+    // The label has to say twenty-three, or it undercounts what it does.
+    const lines = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
+    vi.mocked(gitFileAtRev).mockResolvedValue(lines.join("\n") + "\n");
+    vi.mocked(fsReadFile).mockResolvedValue(
+      lines.map((line, i) => (i === 26 ? "changed" : line)).join("\n") + "\n",
+    );
+
+    const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
+    const bar = () => container.querySelector<HTMLElement>(".cm-diff-run")!;
+    await waitFor(() => expect(bar()).toBeTruthy());
+
+    const hidden = Number(bar().dataset.lines);
+    expect(hidden).toBe(23);
+    expect(
+      bar().querySelector('[aria-label^="diffRunExpandUp"]')!.getAttribute("aria-label"),
+    ).toBe(`diffRunExpandUp:${hidden}`);
+
+    fireEvent.mouseDown(bar().querySelector('[aria-label^="diffRunExpandUp"]')!);
+    // And it opened the lot, which is what the label had just promised.
+    await waitFor(() => expect(container.querySelector(".cm-diff-run")).toBeNull());
   });
 
   it("names the declaration the hidden lines lead into", async () => {
