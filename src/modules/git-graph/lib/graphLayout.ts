@@ -17,9 +17,21 @@ export interface GraphGeometry {
   rowHeight: number;
   paddingLeft: number;
   paddingTop: number;
-  /** Lanes past this index collapse onto the last column to stay compact. */
+  /**
+   * Lanes the gutter is sized for. Without `laneWidthMin` the lanes past this
+   * collapse onto the last column; with it they narrow instead.
+   */
   maxLane: number;
+  /**
+   * Narrowest a lane may get before the gutter itself has to widen. Leave it
+   * unset to keep the collapsing behaviour — which is what a pane too narrow
+   * to spend any width on lanes (the sidebar's inline history) wants.
+   */
+  laneWidthMin?: number;
 }
+
+/** Room kept to the right of the last lane, for the node and its ring. */
+export const GUTTER_TRAIL = 24;
 
 export const DEFAULT_GEOMETRY: GraphGeometry = {
   laneWidth: 14,
@@ -27,6 +39,7 @@ export const DEFAULT_GEOMETRY: GraphGeometry = {
   paddingLeft: 16,
   paddingTop: 20,
   maxLane: 5,
+  laneWidthMin: 9,
 };
 
 /** Where a single commit node sits in the graph. */
@@ -60,13 +73,59 @@ export interface GraphEdge {
 export interface GraphLayout {
   layouts: Record<string, CommitLayout>;
   edges: GraphEdge[];
+  /** Lanes this layout actually uses. */
+  lanes: number;
+  /** Width each of them was given. */
+  laneWidth: number;
+  /** Total width the tracks need — what the caller should size its column to. */
+  gutter: number;
 }
 
-/** Horizontal centre of a lane, clamping wide lanes onto the last column. */
-export function laneX(lane: number, geometry: GraphGeometry): number {
-  return (
-    geometry.paddingLeft + Math.min(lane, geometry.maxLane) * geometry.laneWidth + 12
+export interface LaneSizing {
+  laneWidth: number;
+  gutter: number;
+}
+
+/**
+ * How wide each lane gets, and how much room they need altogether.
+ *
+ * The gutter is a fixed budget for as long as it can be: up to `maxLane + 1`
+ * lanes take the full width, and past that the lanes narrow within the same
+ * budget rather than the graph eating into the commit messages. Only once
+ * they hit `laneWidthMin` — nine lanes still fit — does the gutter itself
+ * grow. Without `laneWidthMin` there is no ladder: the caller has said it
+ * would rather collapse the wide lanes than spend a pixel on them.
+ */
+export function laneSizing(lanes: number, geometry: GraphGeometry): LaneSizing {
+  const budget =
+    geometry.paddingLeft + (geometry.maxLane + 1) * geometry.laneWidth + GUTTER_TRAIL;
+  if (geometry.laneWidthMin === undefined) {
+    return { laneWidth: geometry.laneWidth, gutter: budget };
+  }
+  const room = budget - geometry.paddingLeft - GUTTER_TRAIL;
+  const laneWidth = Math.max(
+    geometry.laneWidthMin,
+    Math.min(geometry.laneWidth, Math.floor(room / Math.max(1, lanes))),
   );
+  return {
+    laneWidth,
+    gutter: Math.max(budget, geometry.paddingLeft + lanes * laneWidth + GUTTER_TRAIL),
+  };
+}
+
+/**
+ * Horizontal centre of a lane. `laneWidth` comes from `laneSizing` once the
+ * whole page is laid out and its widest lane is known; the default is for
+ * callers asking about a single lane in isolation, and lane 0 — the one they
+ * ask about — sits at the same x under every width.
+ */
+export function laneX(
+  lane: number,
+  geometry: GraphGeometry,
+  laneWidth: number = geometry.laneWidth,
+): number {
+  const column = geometry.laneWidthMin === undefined ? Math.min(lane, geometry.maxLane) : lane;
+  return geometry.paddingLeft + column * laneWidth + 12;
 }
 
 /**
@@ -85,6 +144,7 @@ export function computeGraphLayout(
   headHash?: string,
 ): GraphLayout {
   const layouts: Record<string, CommitLayout> = {};
+  let widest = 0;
 
   // Each slot holds the hash a lane is currently waiting for. An empty string
   // marks a freed lane that a new branch can reuse.
@@ -174,13 +234,24 @@ export function computeGraphLayout(
     }
 
     layouts[commit.hash] = {
-      x: laneX(lane, geometry),
+      // Filled in below: how wide a lane is depends on how many the page ends
+      // up using, which is not known until every commit has claimed one.
+      x: 0,
       y,
       lane,
       index,
       colorIndex: laneColors[lane] ?? 0,
     };
+    if (lane > widest) {
+      widest = lane;
+    }
   });
+
+  const lanes = widest + 1;
+  const sizing = laneSizing(lanes, geometry);
+  for (const layout of Object.values(layouts)) {
+    layout.x = laneX(layout.lane, geometry, sizing.laneWidth);
+  }
 
   // Parents may be referenced by a hash of a different length than the keys in
   // `layouts` (short vs long), so resolve by prefix when there is no exact hit.
@@ -226,7 +297,7 @@ export function computeGraphLayout(
     });
   });
 
-  return { layouts, edges };
+  return { layouts, edges, lanes, laneWidth: sizing.laneWidth, gutter: sizing.gutter };
 }
 
 /**
