@@ -1770,17 +1770,34 @@ pub fn diff_from_base(
         return Err("base is required".to_string());
     }
     ensure_not_flag(base)?;
+    // Where the two parted is a question about this branch and the one it left;
+    // a far end names both sides outright. Asking for both would measure from
+    // the merge base to a point that had nothing to do with it, which is
+    // neither thing a caller can mean -- and the merge base is this command's
+    // default, so an added caller that forgot to say otherwise would be handed
+    // that third answer without being told.
+    if merge_base && to.is_some() {
+        return Err("a far end and a merge base are different questions".to_string());
+    }
     let rev = if merge_base {
-        run_git(repo_path, &["merge-base", base, "HEAD"])?.trim().to_string()
+        // `merge-base` answers "these two never met" by exiting non-zero with
+        // nothing on either stream, so an empty message is its answer rather
+        // than a missing one. Whatever it does say -- a base it cannot resolve
+        // -- is git's own account, and reads better than ours would.
+        match run_git(repo_path, &["merge-base", base, "HEAD"]) {
+            Ok(out) if out.trim().is_empty() => {
+                return Err(format!("no common history with {base}"))
+            }
+            Ok(out) => out.trim().to_string(),
+            Err(e) if e.is_empty() => return Err(format!("no common history with {base}")),
+            Err(e) => return Err(e),
+        }
     } else {
         run_git(repo_path, &["rev-parse", "--verify", "--quiet", &format!("{base}^{{commit}}")])
             .map_err(|_| format!("unknown rev: {base}"))?
             .trim()
             .to_string()
     };
-    if rev.is_empty() {
-        return Err(format!("no common history with {base}"));
-    }
     // No second end means the working tree, which is the whole point of this
     // command; naming HEAD instead stops at the last commit, for reading back
     // what a branch changed without the mess still on disk.
@@ -1790,12 +1807,23 @@ pub fn diff_from_base(
         Some(to) => {
             let to = to.trim();
             ensure_not_flag(to)?;
-            run_git(repo_path, &["rev-parse", "--verify", "--quiet", &format!("{to}^{{commit}}")])
-                .map_err(|_| format!("unknown rev: {to}"))?;
-            run_git(repo_path, &["diff", &rev, to])?
+            // The sha this resolves to is what gets compared, the same way the
+            // near end is. Handing the name back to `git diff` would resolve it
+            // a second time -- the very thing `rev` exists to stop -- and a
+            // name that is also a path on disk stops git dead: "ambiguous
+            // argument 'src': both revision and filename". A branch called
+            // `src` or `docs` is not exotic.
+            let far = run_git(
+                repo_path,
+                &["rev-parse", "--verify", "--quiet", &format!("{to}^{{commit}}")],
+            )
+            .map_err(|_| format!("unknown rev: {to}"))?
+            .trim()
+            .to_string();
+            run_git(repo_path, &["diff", &rev, &far, "--"])?
         }
-        None if include_uncommitted => run_git(repo_path, &["diff", &rev])?,
-        None => run_git(repo_path, &["diff", &rev, "HEAD"])?,
+        None if include_uncommitted => run_git(repo_path, &["diff", &rev, "--"])?,
+        None => run_git(repo_path, &["diff", &rev, "HEAD", "--"])?,
     };
     Ok(BaseDiff { rev, diff })
 }
@@ -3552,6 +3580,57 @@ mod tests {
         // than reaching git's argv.
         assert!(diff_from_base(&path, "main", false, true, Some("no-such-rev")).is_err());
         assert!(diff_from_base(&path, "main", false, true, Some("--upload-pack=x")).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_far_end_named_after_a_folder_is_still_read_as_a_commit() {
+        // Branches get called `src` and `docs`. Handing that name to `git
+        // diff` stops it dead -- "ambiguous argument 'src': both revision and
+        // filename" -- so the far end goes in as the sha it resolved to, the
+        // same way the near end does.
+        let (dir, path) = repo_with_a_commit("range-ambiguous-far-end");
+        std::fs::create_dir(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src").join("only-here.txt"), "inside").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "a folder called src"]).unwrap();
+        run_git(&path, &["branch", "src"]).unwrap();
+
+        let found = diff_from_base(&path, "main~1", false, true, Some("src")).unwrap();
+
+        assert!(found.diff.contains("src/only-here.txt"), "{}", found.diff);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_histories_that_never_met_say_so() {
+        // `merge-base` reports it by exiting non-zero with nothing on either
+        // stream. Passing that through as the error left the reader with a
+        // blank message, and the line that explains it unreachable.
+        let (dir, path) = repo_with_a_commit("range-no-common-history");
+        run_git(&path, &["checkout", "-q", "--orphan", "stranger"]).unwrap();
+        std::fs::write(dir.join("elsewhere.txt"), "unrelated").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "a history of its own"]).unwrap();
+
+        let err = diff_from_base(&path, "main", true, true, None).unwrap_err();
+
+        assert!(err.contains("no common history"), "{err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_far_end_and_a_merge_base_are_refused_together() {
+        // They are different questions, and the merge base is the default: an
+        // added caller that named a far end and left the rest alone would be
+        // measuring from where this branch parted from HEAD to a point with no
+        // bearing on it, and nothing would say so.
+        let (dir, path) = repo_with_a_commit("range-both-questions");
+
+        assert!(diff_from_base(&path, "main", true, true, Some("HEAD")).is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
