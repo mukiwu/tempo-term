@@ -658,3 +658,42 @@ describe("GitGraph working-tree row keyboard navigation", () => {
     });
   });
 });
+
+describe("GitGraph wide histories", () => {
+  /**
+   * A merge of `n` roots: the merge keeps lane 0 and every extra parent claims
+   * one of its own, so the graph is exactly `n` lanes wide.
+   */
+  function fan(n: number): CommitNode[] {
+    const roots = Array.from({ length: n }, (_, i) => `r${i}`);
+    return [commit("m", roots, "merge"), ...roots.map((r) => commit(r, [], r))];
+  }
+
+  const nodeRights = (): number[] =>
+    Array.from(document.querySelectorAll<HTMLElement>("button[class*='rounded-full']"))
+      .filter((n) => n.getAttribute("aria-label") !== "Uncommitted changes")
+      .map((n) => parseFloat(n.style.left) + NODE_OFFSET * 2);
+
+  const rowIndent = (text: string): number => {
+    const row = screen.getByText(text).closest("div[class*='absolute']") as HTMLElement;
+    return parseFloat(row.style.paddingLeft);
+  };
+
+  it("keeps the rows clear of the widest node", () => {
+    // The regression this guards: the tracks were sized in one place and the
+    // rows indented in another, so the moment the lanes could outgrow six
+    // columns the nodes were drawn on top of the commit hashes.
+    for (const lanes of [2, 6, 7, 9, 12]) {
+      const { unmount } = render(
+        <GitGraph commits={fan(lanes)} selection={null} onSelectCommit={vi.fn()} labels={LABELS} />,
+      );
+      expect(Math.max(...nodeRights())).toBeLessThanOrEqual(rowIndent("merge"));
+      unmount();
+    }
+  });
+
+  it("leaves six lanes indented exactly where they have always been", () => {
+    render(<GitGraph commits={fan(6)} selection={null} onSelectCommit={vi.fn()} labels={LABELS} />);
+    expect(rowIndent("merge")).toBe(112);
+  });
+});

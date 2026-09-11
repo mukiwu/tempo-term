@@ -14,6 +14,7 @@ import {
   DEFAULT_GEOMETRY,
   edgePath,
   firstParentRowIndex,
+  GUTTER_TRAIL,
   laneContinuationRowIndex,
   laneX,
 } from "./lib/graphLayout";
@@ -135,10 +136,18 @@ export function GitGraph({
   // otherwise turning a feature off still leaves every lane moved.
   const headHash = useMemo(() => commits.find(isCurrentCommit)?.hash, [commits]);
   const layoutHead = showUncommitted ? headHash : undefined;
-  const { layouts, edges } = useMemo(
+  const { layouts, edges, gutter } = useMemo(
     () => computeGraphLayout(commits, geometry, layoutHead),
     [commits, geometry, layoutHead],
   );
+
+  // The rows clear the tracks by the same number the tracks were sized with,
+  // so a wider gutter takes the text with it instead of being drawn over. The
+  // 12px back off is the leading inset `laneX` adds, which sits to the left of
+  // lane 0's centre and is not track. At six lanes this is the 112px the rows
+  // used to hardcode — the second copy of the gutter width, and the one that
+  // put nodes on top of the hashes the moment the first copy could grow.
+  const rowIndent = gutter - 12;
 
   const isWorkspaceSelected = selection?.mode === "workspace";
   const activeHash =
@@ -366,7 +375,9 @@ export function GitGraph({
           <div
             className="relative"
             style={{
-              width: `${DEFAULT_GEOMETRY.paddingLeft + 6 * DEFAULT_GEOMETRY.laneWidth + 24}px`,
+              // From the same pass that placed the lanes, so the column can
+              // never disagree with what was drawn into it.
+              width: `${gutter}px`,
               minHeight: `${svgHeight}px`,
             }}
           >
@@ -504,8 +515,9 @@ export function GitGraph({
                 style={{
                   height: `${ROW_HEIGHT}px`,
                   top: `${uncommittedY - ROW_HEIGHT / 2}px`,
+                  paddingLeft: `${rowIndent}px`,
                 }}
-                className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pl-[112px] pr-3 transition-all ${
+                className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pr-3 transition-all ${
                   isWorkspaceSelected
                     ? "border-border-strong bg-bg-elevated/60 text-fg shadow-sm"
                     : "border-transparent text-fg-muted hover:bg-bg-elevated/40 hover:text-fg"
@@ -568,8 +580,9 @@ export function GitGraph({
                   style={{
                     height: `${ROW_HEIGHT}px`,
                     top: `${layout.y - ROW_HEIGHT / 2}px`,
+                    paddingLeft: `${rowIndent}px`,
                   }}
-                  className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pl-[112px] pr-3 transition-all ${rowState}`}
+                  className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pr-3 transition-all ${rowState}`}
                 >
                   <div className="flex items-center space-x-3 overflow-hidden pr-2">
                     <span className="select-all font-mono text-xs font-semibold text-accent">
@@ -603,8 +616,15 @@ export function GitGraph({
             })}
             {hasMore && (
               <div
-                className="absolute left-[100px] right-4 flex items-center justify-center"
-                style={{ top: `${svgHeight - 34}px`, height: "32px" }}
+                className="absolute right-4 flex items-center justify-center"
+                // Its own inset rather than the rows': this centres a button in
+                // whatever is left, so it only has to clear the tracks. Keeps
+                // the 100px it had at six lanes.
+                style={{
+                  left: `${gutter - GUTTER_TRAIL}px`,
+                  top: `${svgHeight - 34}px`,
+                  height: "32px",
+                }}
               >
                 <button
                   type="button"
