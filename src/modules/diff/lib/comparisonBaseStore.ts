@@ -93,3 +93,17 @@ export function readComparison(repo: string, from: string, to?: string): void {
   });
   useTabsStore.getState().openAllChangesTab();
 }
+
+/**
+ * Read the working tree on the all-changes page: drop whatever base the repo
+ * was on, then bring the page up.
+ *
+ * The sibling of `readComparison` for the one selection that is not a
+ * comparison at all. Dropping the base is the whole point -- the page is a
+ * singleton, so a tab still holding the last range would answer the graph's
+ * working-tree row with someone else's commits.
+ */
+export function readWorkingTree(repo: string): void {
+  useComparisonBaseStore.getState().clear(repo);
+  useTabsStore.getState().openAllChangesTab();
+}

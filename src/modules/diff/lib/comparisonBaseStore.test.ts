@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   baseFor,
   readComparison,
+  readWorkingTree,
   useComparisonBaseStore,
   WORKTREE,
 } from "./comparisonBaseStore";
@@ -100,6 +101,33 @@ describe("comparisonBaseStore", () => {
       kind: "range",
       from: "bbbbbbb^",
       to: "bbbbbbb",
+    });
+  });
+
+  it("reads the working tree by dropping the base, not by setting one", () => {
+    // The graph's working-tree row is the one selection that is not a
+    // comparison. Opening the page while it still held the last range would
+    // answer that row with someone else's commits, so the base has to go --
+    // and the page's own heading then reads as the working tree again.
+    readComparison("/repo", "52ccbba");
+
+    readWorkingTree("/repo");
+
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual(WORKTREE);
+    expect(useTabsStore.getState().tabs.filter((tab) => tab.kind === "all-changes")).toHaveLength(
+      1,
+    );
+  });
+
+  it("leaves another repo's base alone while reading this one's working tree", () => {
+    // The base is per repository, and the row belongs to one of them.
+    useComparisonBaseStore.getState().setBase("/other", { kind: "ref", name: "origin/main" });
+
+    readWorkingTree("/repo");
+
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/other")).toEqual({
+      kind: "ref",
+      name: "origin/main",
     });
   });
 });
