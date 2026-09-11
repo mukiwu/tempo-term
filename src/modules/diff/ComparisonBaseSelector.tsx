@@ -205,7 +205,14 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
    * left alone rather than split.
    */
   const dots = query.includes("...") ? -1 : query.indexOf("..");
-  const rangeHead = dots >= 0 ? query.slice(0, dots).trim() : null;
+  // Only once there is something in front of the dots. `..HEAD` has no
+  // starting point to offer ranges from, and taking it at its word built a
+  // base whose near end was the empty string -- which the list showed as a
+  // row worth picking, skipped the check every typed ref gets, and left the
+  // page with nothing to compare against. Until the left side is typed this
+  // is still a name, and falls through to the check like any other.
+  const head = dots >= 0 ? query.slice(0, dots).trim() : "";
+  const rangeHead = head === "" ? null : head;
   const typing = rangeHead !== null ? query.slice(dots + 2) : query;
 
   const needle = typing.trim().toLowerCase();

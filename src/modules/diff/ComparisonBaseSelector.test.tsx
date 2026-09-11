@@ -293,6 +293,32 @@ describe("ComparisonBaseSelector", () => {
     );
   });
 
+  it("waits for a left side before offering ranges", async () => {
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
+    const input = openList();
+    await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
+
+    // Typing the dots first is a natural way in, and there is no range to
+    // build from nothing. Offering `..HEAD` made a base whose near end was
+    // the empty string -- a row that looked pickable, skipped the check every
+    // typed ref gets, and left the page comparing against nothing.
+    fireEvent.change(input, { target: { value: "..HEAD" } });
+
+    // One row, and it is the typed-text row -- not a list of ranges built on
+    // an empty starting point. It falls through to the same treatment as any
+    // other typed text: taken at its word, and refused by the command that
+    // resolves it.
+    expect(hints()).toEqual(["baseUseTyped"]);
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // Checked before the page moves, which is what the range rows skipped:
+    // they carried no typed flag, so `..HEAD` went straight through as a base
+    // with an empty near end.
+    await waitFor(() => expect(gitResolveRev).toHaveBeenCalledWith("/repo", "..HEAD"));
+    expect(base()).not.toEqual({ kind: "range", from: "", to: "HEAD" });
+  });
+
   it("matches the far end being typed, not the whole box", async () => {
     render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     const input = openList();
