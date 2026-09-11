@@ -298,3 +298,46 @@ export function buildRefMenu(
   // Stash and unknown refs have no applicable actions.
   return [];
 }
+
+export interface WorkingTreeMenuLabels {
+  openSourceControl: string;
+  refresh: string;
+}
+
+export interface WorkingTreeMenuActions {
+  onOpenSourceControl: () => void;
+  onRefresh: () => void;
+}
+
+/**
+ * The working-tree row's own menu, deliberately not the commit one: there is no
+ * hash to copy and nothing to check out, so most of that menu would be either
+ * broken or meaningless here.
+ *
+ * Two items in this first version. The obvious further ones each need a
+ * capability the app does not have yet — staging everything wants a batch
+ * stage with a failure policy, stashing wants a stash *push* (only reading
+ * `refs/stash` exists today), and discarding everything wants both a new
+ * command and a decision about untracked files.
+ */
+export function buildWorkingTreeMenu(
+  labels: WorkingTreeMenuLabels,
+  actions: WorkingTreeMenuActions,
+): ContextMenuItem[] {
+  return [
+    {
+      id: "openSourceControl",
+      label: labels.openSourceControl,
+      icon: FolderGit2,
+      group: 0,
+      onSelect: actions.onOpenSourceControl,
+    },
+    {
+      id: "refresh",
+      label: labels.refresh,
+      icon: RotateCcw,
+      group: 0,
+      onSelect: actions.onRefresh,
+    },
+  ];
+}

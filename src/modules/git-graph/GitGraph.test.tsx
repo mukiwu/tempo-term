@@ -1,8 +1,12 @@
 import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { GitGraph } from "./GitGraph";
+import { DEFAULT_GEOMETRY, laneX } from "./lib/graphLayout";
 import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore";
 import type { CommitNode } from "./types";
+
+/** Node buttons are positioned by their centre less the radius plus a 2px ring. */
+const NODE_OFFSET = 8;
 
 const LABELS = {
   emptyTitle: "No commits",
@@ -361,5 +365,296 @@ describe("GitGraph compare-mode highlighting", () => {
     const rowB = screen.getByText("msg b").closest("div[class*='absolute']");
     expect(rowC!.className).toContain("border-border-strong");
     expect(rowB!.className).toContain("border-border-strong");
+  });
+});
+
+describe("GitGraph working-tree row", () => {
+  const commits = [commit("c", ["b"], "msg c"), commit("b", [], "msg b")];
+
+  const ROW_LABELS = {
+    emptyTitle: "No commits",
+    emptyHint: "",
+    loadMore: "Load more",
+    refHint: "{{name}}",
+    uncommittedTitle: "Uncommitted changes",
+    uncommittedClean: "No uncommitted changes",
+    uncommittedSummary: (staged: number, unstaged: number) =>
+      `${staged} staged · ${unstaged} unstaged`,
+  } as never;
+
+  function renderRow(
+    props: Partial<Parameters<typeof GitGraph>[0]> = {},
+  ): Record<string, ReturnType<typeof vi.fn>> {
+    const onSelectCommit = vi.fn();
+    const onSelectWorkspace = vi.fn();
+    const onWorkspaceContextMenu = vi.fn();
+    render(
+      <GitGraph
+        commits={commits}
+        selection={null}
+        onSelectCommit={onSelectCommit}
+        onSelectWorkspace={onSelectWorkspace}
+        onWorkspaceContextMenu={onWorkspaceContextMenu}
+        uncommitted={{ staged: 3, unstaged: 4 }}
+        labels={ROW_LABELS}
+        {...props}
+      />,
+    );
+    return { onSelectCommit, onSelectWorkspace, onWorkspaceContextMenu };
+  }
+
+  it("is left out entirely when the setting is off", () => {
+    renderRow({ uncommitted: null });
+    expect(screen.queryByText("Uncommitted changes")).not.toBeInTheDocument();
+    expect(screen.queryByText("No uncommitted changes")).not.toBeInTheDocument();
+  });
+
+  it("puts the lanes back exactly when the setting is off", () => {
+    // HEAD taking the leftmost lane exists to serve the dashed segment, so it
+    // has to go when the row does — switching a feature off cannot leave every
+    // branch shifted sideways.
+    const head = commit("head", [], "msg head");
+    head.refs = [{ name: "master", kind: "head" }];
+    const withHead = [commit("newer", ["head"], "msg newer"), head];
+    // Node buttons carry their left offset inline; the working tree's is the
+    // only one with an accessible name, so the commits are the rest.
+    const commitNodeLefts = (): string[] =>
+      Array.from(document.querySelectorAll<HTMLElement>("button[class*='rounded-full']"))
+        .filter((n) => n.getAttribute("aria-label") !== "Uncommitted changes")
+        .map((n) => n.style.left);
+    const lane0 = `${laneX(0, DEFAULT_GEOMETRY) - NODE_OFFSET}px`;
+
+    const { unmount } = render(
+      <GitGraph
+        commits={withHead}
+        selection={null}
+        onSelectCommit={vi.fn()}
+        uncommitted={null}
+        labels={ROW_LABELS}
+      />,
+    );
+    expect(commitNodeLefts()[0]).toBe(lane0);
+    unmount();
+
+    render(
+      <GitGraph
+        commits={withHead}
+        selection={null}
+        onSelectCommit={vi.fn()}
+        onSelectWorkspace={vi.fn()}
+        uncommitted={{ staged: 0, unstaged: 1 }}
+        labels={ROW_LABELS}
+      />,
+    );
+    // Row on: the newest commit gives the leftmost track up to HEAD.
+    expect(commitNodeLefts()[0]).not.toBe(lane0);
+    expect(screen.getByLabelText("Uncommitted changes").style.left).toBe(lane0);
+  });
+
+  it("shows the counts beside the message, not in the author column", () => {
+    renderRow();
+    const row = screen.getByText("Uncommitted changes").closest("div[class*='absolute']")!;
+    expect(row).toHaveTextContent("3 staged · 4 unstaged");
+    // The author/time column is what tells a reader this is not a commit, so
+    // it has to stay empty.
+    expect(row.querySelectorAll("svg")).toHaveLength(0);
+  });
+
+  it("stays put but goes quiet when the tree is clean", () => {
+    // Not removed: dropping the row the moment the tree went clean would jump
+    // the whole graph up a row on every commit.
+    renderRow({ uncommitted: { staged: 0, unstaged: 0 } });
+    expect(screen.getByText("No uncommitted changes")).toBeInTheDocument();
+    expect(screen.queryByText(/staged ·/)).not.toBeInTheDocument();
+  });
+
+  it("selects the working tree from the row and from its node", () => {
+    const { onSelectWorkspace } = renderRow();
+    fireEvent.click(screen.getByText("Uncommitted changes").closest("div[class*='absolute']")!);
+    expect(onSelectWorkspace).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByLabelText("Uncommitted changes"));
+    expect(onSelectWorkspace).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens its own context menu rather than the commit one", () => {
+    const { onWorkspaceContextMenu, onSelectCommit } = renderRow();
+    const row = screen.getByText("Uncommitted changes").closest("div[class*='absolute']")!;
+    fireEvent.contextMenu(row, { clientX: 40, clientY: 60 });
+    expect(onWorkspaceContextMenu).toHaveBeenCalledWith(40, 60);
+    expect(onSelectCommit).not.toHaveBeenCalled();
+  });
+});
+
+describe("GitGraph working-tree row keyboard navigation", () => {
+  const commits = [commit("c", ["b"], "msg c"), commit("b", [], "msg b")];
+
+  const ROW_LABELS = {
+    emptyTitle: "No commits",
+    emptyHint: "",
+    loadMore: "Load more",
+    refHint: "{{name}}",
+    uncommittedTitle: "Uncommitted changes",
+    uncommittedClean: "No uncommitted changes",
+    uncommittedSummary: () => "",
+  } as never;
+
+  it("ArrowUp from the newest commit steps onto the working-tree row", () => {
+    const onSelectWorkspace = vi.fn();
+    const onSelectCommit = vi.fn();
+    render(
+      <GitGraph
+        commits={commits}
+        selection={{ mode: "single", commit: commits[0] }}
+        onSelectCommit={onSelectCommit}
+        onSelectWorkspace={onSelectWorkspace}
+        uncommitted={{ staged: 1, unstaged: 0 }}
+        labels={ROW_LABELS}
+      />,
+    );
+    fireEvent.keyDown(container("msg c"), { key: "ArrowUp" });
+    expect(onSelectWorkspace).toHaveBeenCalledTimes(1);
+    expect(onSelectCommit).not.toHaveBeenCalled();
+  });
+
+  it("ArrowUp still clamps at the top when the row is switched off", () => {
+    const onSelectWorkspace = vi.fn();
+    const onSelectCommit = vi.fn();
+    render(
+      <GitGraph
+        commits={commits}
+        selection={{ mode: "single", commit: commits[0] }}
+        onSelectCommit={onSelectCommit}
+        onSelectWorkspace={onSelectWorkspace}
+        uncommitted={null}
+        labels={ROW_LABELS}
+      />,
+    );
+    fireEvent.keyDown(container("msg c"), { key: "ArrowUp" });
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
+    expect(onSelectCommit).not.toHaveBeenCalled();
+  });
+
+  it("ArrowDown from the working-tree row lands on the newest commit", () => {
+    const onSelectCommit = vi.fn();
+    render(
+      <GitGraph
+        commits={commits}
+        selection={{ mode: "workspace" }}
+        onSelectCommit={onSelectCommit}
+        onSelectWorkspace={vi.fn()}
+        uncommitted={{ staged: 1, unstaged: 0 }}
+        labels={ROW_LABELS}
+      />,
+    );
+    fireEvent.keyDown(container("msg c"), { key: "ArrowDown" });
+    expect(onSelectCommit).toHaveBeenCalledWith(commits[0], { shiftKey: false });
+  });
+
+  it("ignores ArrowUp and Shift+ArrowUp on the working-tree row", () => {
+    // Nothing sits above it, and Shift+Up has no line to follow from there.
+    const onSelectCommit = vi.fn();
+    render(
+      <GitGraph
+        commits={commits}
+        selection={{ mode: "workspace" }}
+        onSelectCommit={onSelectCommit}
+        onSelectWorkspace={vi.fn()}
+        uncommitted={{ staged: 1, unstaged: 0 }}
+        labels={ROW_LABELS}
+      />,
+    );
+    const scroller = container("msg c");
+    fireEvent.keyDown(scroller, { key: "ArrowUp" });
+    fireEvent.keyDown(scroller, { key: "ArrowUp", shiftKey: true });
+    expect(onSelectCommit).not.toHaveBeenCalled();
+  });
+
+  describe("following the dashed segment", () => {
+    // HEAD is the second row: another branch has a newer commit, so the row
+    // below the working tree and the commit its line runs to are different.
+    const head = commit("head", [], "msg head");
+    head.refs = [{ name: "master", kind: "head" }];
+    const withHead = [commit("newer", ["head"], "msg newer"), head];
+
+    it("Shift+ArrowDown goes to HEAD, not to the row underneath", () => {
+      const onSelectCommit = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "workspace" }}
+          onSelectCommit={onSelectCommit}
+          onSelectWorkspace={vi.fn()}
+          uncommitted={{ staged: 1, unstaged: 0 }}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowDown", shiftKey: true });
+      expect(onSelectCommit).toHaveBeenCalledWith(head, { shiftKey: false });
+    });
+
+    it("plain ArrowDown still moves by row", () => {
+      const onSelectCommit = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "workspace" }}
+          onSelectCommit={onSelectCommit}
+          onSelectWorkspace={vi.fn()}
+          uncommitted={{ staged: 1, unstaged: 0 }}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowDown" });
+      expect(onSelectCommit).toHaveBeenCalledWith(withHead[0], { shiftKey: false });
+    });
+
+    it("Shift+ArrowUp from HEAD follows the segment back to the row", () => {
+      const onSelectWorkspace = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "single", commit: head }}
+          onSelectCommit={vi.fn()}
+          onSelectWorkspace={onSelectWorkspace}
+          uncommitted={{ staged: 1, unstaged: 0 }}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowUp", shiftKey: true });
+      expect(onSelectWorkspace).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not follow it from a commit that is not HEAD", () => {
+      const onSelectWorkspace = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "single", commit: withHead[0] }}
+          onSelectCommit={vi.fn()}
+          onSelectWorkspace={onSelectWorkspace}
+          uncommitted={{ staged: 1, unstaged: 0 }}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowUp", shiftKey: true });
+      expect(onSelectWorkspace).not.toHaveBeenCalled();
+    });
+
+    it("does not follow it when the row is switched off", () => {
+      const onSelectWorkspace = vi.fn();
+      render(
+        <GitGraph
+          commits={withHead}
+          selection={{ mode: "single", commit: head }}
+          onSelectCommit={vi.fn()}
+          onSelectWorkspace={onSelectWorkspace}
+          uncommitted={null}
+          labels={ROW_LABELS}
+        />,
+      );
+      fireEvent.keyDown(container("msg newer"), { key: "ArrowUp", shiftKey: true });
+      expect(onSelectWorkspace).not.toHaveBeenCalled();
+    });
   });
 });

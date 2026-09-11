@@ -11,6 +11,12 @@
     "about": "About"
   },
   "gitGraph": {
+    "uncommittedTitle": "Uncommitted changes",
+    "uncommittedDescription": "Keep a row for your working tree at the top of the graph.",
+    "uncommittedRowLabel": "Show uncommitted changes at the top of the graph",
+    "uncommittedRowHint": "The row stays put whether or not anything is uncommitted, so committing never shifts the graph under the pointer. Turn it off and the first row is the newest commit again.",
+    "uncommittedWhenCleanLabel": "Keep the row when nothing is uncommitted",
+    "uncommittedWhenCleanHint": "On, a clean tree still gets a quiet row and the graph never moves. Off, the row only appears when something is uncommitted — so the graph shifts by a row each time you commit or change a file.",
     "refsTitle": "Branch labels",
     "refsDescription": "How the Git Graph condenses the branch and tag chips on a commit row.",
     "mergeLocalRemoteLabel": "Merge a branch with its remotes",

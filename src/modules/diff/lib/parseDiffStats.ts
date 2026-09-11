@@ -8,6 +8,7 @@
  * comparison itself is built from two full documents, the same way the
  * single-file tab does it. This is only the scan.
  */
+import { diffHeaderPath, stripGitPathSide } from "@/lib/gitPath";
 
 /** Where one hunk sits, and how tall it reads. */
 export interface DiffHunk {
@@ -27,91 +28,6 @@ export interface FileDiffStats {
 
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
-/** C-style escapes git may use inside a quoted path. */
-const SIMPLE_ESCAPES: Record<string, string> = {
-  a: "\x07",
-  b: "\b",
-  t: "\t",
-  n: "\n",
-  v: "\v",
-  f: "\f",
-  r: "\r",
-  "\\": "\\",
-  '"': '"',
-};
-
-/**
- * Unquote a path git wrote with `core.quotePath` on. Git emits non-ASCII
- * UTF-8 bytes as three-digit octal escapes, so decode those bytes together
- * rather than leaving them in the repo-relative lookup key.
- */
-function unquote(path: string): string {
-  if (!path.startsWith('"') || !path.endsWith('"')) {
-    return path;
-  }
-  const body = path.slice(1, -1);
-  const output: string[] = [];
-  const octalBytes: number[] = [];
-  const flushOctalBytes = () => {
-    if (octalBytes.length > 0) {
-      output.push(new TextDecoder("utf-8").decode(new Uint8Array(octalBytes)));
-      octalBytes.length = 0;
-    }
-  };
-
-  for (let i = 0; i < body.length; i += 1) {
-    if (body[i] !== "\\") {
-      flushOctalBytes();
-      output.push(body[i]);
-      continue;
-    }
-
-    const escaped = body[i + 1];
-    if (escaped === undefined) {
-      flushOctalBytes();
-      output.push("\\");
-      continue;
-    }
-
-    if (/^[0-7]$/.test(escaped)) {
-      const octal = body.slice(i + 1, i + 4).match(/^[0-7]{1,3}/)?.[0];
-      if (octal) {
-        octalBytes.push(Number.parseInt(octal, 8));
-        i += octal.length;
-        continue;
-      }
-    }
-
-    flushOctalBytes();
-    output.push(SIMPLE_ESCAPES[escaped] ?? escaped);
-    i += 1;
-  }
-
-  flushOctalBytes();
-  return output.join("");
-}
-
-/** Drop the a/ or b/ git puts in front of a path, quotes stripped first. */
-function stripSide(target: string, side: "a/" | "b/"): string {
-  const bare = unquote(target);
-  return bare.startsWith(side) ? bare.slice(2) : bare;
-}
-
-/**
- * The new-side path out of a `diff --git a/x b/x` header. Both halves carry
- * the same name for everything but a rename, and a path holding " b/" would
- * fool the split — but this is only the provisional key, overwritten by the
- * file's own `+++ b/` line whenever the diff has one (everything except a
- * binary file).
- */
-function headerPath(line: string): string | null {
-  const rest = line.slice("diff --git ".length);
-  const split = Math.max(rest.lastIndexOf(' "b/'), rest.lastIndexOf(" b/"));
-  if (split < 0) {
-    return null;
-  }
-  return stripSide(rest.slice(split + 1).trim(), "b/");
-}
 
 /**
  * Split one `git diff` into per-file stats, keyed by repo-relative path with
@@ -162,7 +78,7 @@ export function parseDiffStats(diff: string): Map<string, FileDiffStats> {
     inHunk = false;
     if (line.startsWith("diff --git ")) {
       flush();
-      path = headerPath(line);
+      path = diffHeaderPath(line);
       stats = { added: 0, deleted: 0, binary: false, hunks: [] };
       continue;
     }
@@ -174,7 +90,7 @@ export function parseDiffStats(diff: string): Map<string, FileDiffStats> {
     if (line.startsWith("+++ ")) {
       const target = line.slice(4).trim();
       if (target !== "/dev/null") {
-        path = stripSide(target, "b/");
+        path = stripGitPathSide(target, "b/");
       }
       continue;
     }
@@ -185,7 +101,7 @@ export function parseDiffStats(diff: string): Map<string, FileDiffStats> {
       }
       // Only used when the new side turns out to be /dev/null; the +++ line
       // below overwrites it otherwise.
-      path = stripSide(target, "a/");
+      path = stripGitPathSide(target, "a/");
       continue;
     }
     if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) {
