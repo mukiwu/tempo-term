@@ -54,20 +54,10 @@ describe("comparisonBaseStore", () => {
     expect(useComparisonBaseStore.getState().byRepo).toBe(before);
   });
 
-  it("reads a commit as the range from its parent", () => {
-    // "The changes in this commit" is the two-dot range ending at it, which
-    // is what both entry points -- the graph's details panel and the panel's
-    // recent commits -- mean by handing over a single sha.
-    readComparison("/repo", "52ccbba");
-
-    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
-      kind: "range",
-      from: "52ccbba^",
-      to: "52ccbba",
-    });
-  });
-
   it("reads two named points as the range between them", () => {
+    // Both ends named outright, never one of them as `X^`: the caller always
+    // holds the parent, and two hashes say at a glance what is being compared
+    // where `52ccbba^..52ccbba` is two near-identical strings.
     readComparison("/repo", "936578d", "2db2298");
 
     expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
@@ -82,7 +72,7 @@ describe("comparisonBaseStore", () => {
     // the page is a singleton: the second call focuses the tab that is
     // already there rather than building one, so a caller that only set the
     // base would leave the old comparison on screen under the new heading.
-    readComparison("/repo", "aaaaaaa");
+    readComparison("/repo", "aaaaaa0", "aaaaaaa");
     const first = useTabsStore.getState().activeId;
     expect(useTabsStore.getState().tabs.filter((tab) => tab.kind === "all-changes")).toHaveLength(
       1,
@@ -91,7 +81,7 @@ describe("comparisonBaseStore", () => {
     useTabsStore.getState().openLauncherTab();
     expect(useTabsStore.getState().activeId).not.toBe(first);
 
-    readComparison("/repo", "bbbbbbb");
+    readComparison("/repo", "bbbbbb0", "bbbbbbb");
 
     expect(useTabsStore.getState().tabs.filter((tab) => tab.kind === "all-changes")).toHaveLength(
       1,
@@ -99,7 +89,7 @@ describe("comparisonBaseStore", () => {
     expect(useTabsStore.getState().activeId).toBe(first);
     expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
       kind: "range",
-      from: "bbbbbbb^",
+      from: "bbbbbb0",
       to: "bbbbbbb",
     });
   });
@@ -109,7 +99,7 @@ describe("comparisonBaseStore", () => {
     // comparison. Opening the page while it still held the last range would
     // answer that row with someone else's commits, so the base has to go --
     // and the page's own heading then reads as the working tree again.
-    readComparison("/repo", "52ccbba");
+    readComparison("/repo", "ffff000", "52ccbba");
 
     readWorkingTree("/repo");
 

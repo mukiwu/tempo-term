@@ -335,10 +335,11 @@ function HistoryRow({ commit, repoPath }: { commit: CommitInfo; repoPath: string
    * this commit" is the range from its parent; a root commit has none, so
    * there is nothing to offer.
    */
-  const readable = repoPath && commit.parents.length > 0;
+  const [parent] = commit.parents;
+  const readable = repoPath && parent !== undefined;
   function openInPage() {
-    if (repoPath) {
-      readComparison(repoPath, commit.id);
+    if (repoPath && parent) {
+      readComparison(repoPath, parent, commit.id);
     }
   }
 

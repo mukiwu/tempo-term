@@ -81,16 +81,15 @@ export function baseFor(
  * rather than built, and focusing one still holding the last base would show
  * the wrong comparison under the right heading.
  *
- * `to` left out reads a single commit, which is the range from its parent --
- * what "the changes in this commit" means. A root commit has no parent, so
- * callers do not offer it.
+ * Both ends are named outright rather than one of them being written `X^`,
+ * which is the same range but reads as an expression the reader has to
+ * evaluate -- and `47c9cee^..47c9cee` is two near-identical strings where two
+ * different hashes would say at a glance what is being compared. Every caller
+ * already holds the parent: each one checks for it to decide whether to offer
+ * the button at all, since a root commit has no other end.
  */
-export function readComparison(repo: string, from: string, to?: string): void {
-  useComparisonBaseStore.getState().setBase(repo, {
-    kind: "range",
-    from: to ? from : `${from}^`,
-    to: to ?? from,
-  });
+export function readComparison(repo: string, from: string, to: string): void {
+  useComparisonBaseStore.getState().setBase(repo, { kind: "range", from, to });
   useTabsStore.getState().openAllChangesTab();
 }
 

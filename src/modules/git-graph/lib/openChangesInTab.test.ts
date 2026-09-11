@@ -43,13 +43,29 @@ describe("openChangesInTab", () => {
     );
   });
 
-  it("opens a commit as the range from its parent", () => {
+  it("opens a commit as the range from its parent, naming the parent outright", () => {
+    // Not `52ccbba^..52ccbba`. The graph is holding the parent already, and
+    // the base is shown to the reader: two hashes say what is being compared,
+    // where a caret and a near-identical repeat has to be worked out.
     openChangesInTab("/repo", { mode: "single", commit: commit("52ccbba", ["ffff000"]) })?.();
 
     expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
       kind: "range",
-      from: "52ccbba^",
+      from: "ffff000",
       to: "52ccbba",
+    });
+  });
+
+  it("takes the first parent of a merge, which is what its diff is read against", () => {
+    openChangesInTab("/repo", {
+      mode: "single",
+      commit: commit("aaaaaaa", ["1111111", "2222222"]),
+    })?.();
+
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
+      kind: "range",
+      from: "1111111",
+      to: "aaaaaaa",
     });
   });
 
