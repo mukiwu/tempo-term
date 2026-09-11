@@ -99,6 +99,12 @@ interface TabsState {
   openPreviewTab: (url: string) => string;
   openGitGraphTab: () => string;
   openAllChangesTab: () => string;
+  /**
+   * The panel's entry button, which is the way out as well as the way in:
+   * closes the all-changes tab when it is the one in front, otherwise opens or
+   * focuses it. Returns the tab id, or null when it closed one.
+   */
+  toggleAllChangesTab: () => string | null;
   openDiffTab: (path: string, staged: boolean) => string;
   /** Open the AI sessions browser tab (singleton per space). */
   openSessionsTab: () => string;
@@ -268,6 +274,41 @@ export function activeDiffPane(
   }
   const content = findPaneContent(tab.paneTree, tab.activeLeafId);
   return content?.kind === "diff" ? { path: content.path, staged: content.staged } : null;
+}
+
+/**
+ * Whether the pane in front is the all-changes page: same rule as
+ * `activeDiffPane` (the active leaf of the active tab, so a split reports its
+ * focused pane). The Source Control panel reads this to decide whether a row
+ * click scrolls that page or opens a diff tab of its own, and whether its
+ * commit box is worth the room.
+ */
+export function allChangesPaneActive(
+  tabs: readonly Tab[],
+  activeId: string | null,
+): boolean {
+  return activeAllChangesPane(tabs, activeId) !== null;
+}
+
+/**
+ * Which pane the all-changes page in front is, by leaf id, or null when the
+ * pane in front is something else.
+ *
+ * A split can have two of those pages mounted at once, each scrolled its own
+ * way, so "is one in front" is not enough to pair the panel with a page: the
+ * panel's rows belong to exactly one of them, and this says which.
+ */
+export function activeAllChangesPane(
+  tabs: readonly Tab[],
+  activeId: string | null,
+): string | null {
+  const tab = tabs.find((t) => t.id === activeId);
+  if (!tab) {
+    return null;
+  }
+  return findPaneContent(tab.paneTree, tab.activeLeafId)?.kind === "all-changes"
+    ? tab.activeLeafId
+    : null;
 }
 
 export function tabHasDirtyEditor(
@@ -715,6 +756,19 @@ export const useTabsStore = create<TabsState>()(
     };
     set((state) => ({ tabs: [...state.tabs, tab], activeId: id }));
     return id;
+  },
+
+  toggleAllChangesTab: () => {
+    const { tabs, activeId } = get();
+    const active = tabs.find((t) => t.id === activeId);
+    // Only the shape openAllChangesTab would have reused is closed again, so
+    // the button never takes a split tab's other panes down with it. A split
+    // one falls through and is merely focused.
+    if (active && singleLeafContentEquals(active, { kind: "all-changes" })) {
+      get().closeTab(active.id);
+      return null;
+    }
+    return get().openAllChangesTab();
   },
 
   openSessionsTab: () => {

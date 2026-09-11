@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -23,14 +23,19 @@ vi.mock("./lib/aiCommit", () => ({
 import { SourceControlView } from "./SourceControlView";
 import * as gitBridge from "./lib/gitBridge";
 import type { GitStatus } from "./lib/gitBridge";
-import { useTabsStore } from "@/stores/tabsStore";
+import { activeAllChangesPane, useTabsStore } from "@/stores/tabsStore";
 import { usePendingGraphSelectionStore } from "@/modules/git-graph/lib/pendingGraphSelectionStore";
+import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
 
 const STATUS_ONE_MODIFIED: GitStatus = {
   branch: "main",
   staged: [],
   unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
 };
+
+/** The pane the all-changes page opened into, which is what the link is keyed on. */
+const pane = () =>
+  activeAllChangesPane(useTabsStore.getState().tabs, useTabsStore.getState().activeId) ?? "";
 
 describe("SourceControlView row interactions", () => {
   beforeEach(() => {
@@ -41,6 +46,7 @@ describe("SourceControlView row interactions", () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
     useWorkspaceStore.getState().setRoot("/repo");
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
+    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {} });
   });
 
   it("opens the all-changes tab from the panel toolbar", async () => {
@@ -50,6 +56,175 @@ describe("SourceControlView row interactions", () => {
     const tabs = useTabsStore.getState().tabs;
     expect(tabs).toHaveLength(1);
     expect(tabs[0].kind).toBe("all-changes");
+  });
+
+  it("shuts the all-changes tab from the same button that opened it", async () => {
+    render(<SourceControlView />);
+    const button = await screen.findByRole("button", { name: "All Changes" });
+
+    fireEvent.click(button);
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+
+    // In front already, so the button is the way out too.
+    fireEvent.click(button);
+    expect(useTabsStore.getState().tabs).toHaveLength(0);
+  });
+
+  it("shows on the entry button whether the page is the pane in front", async () => {
+    render(<SourceControlView />);
+    const button = await screen.findByRole("button", { name: "All Changes" });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(button);
+    // In front: the state that also takes the commit box away, so it is the
+    // one the button most needs to account for.
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveAccessibleName("Close All Changes");
+
+    // Open, but the reader has gone elsewhere. The button speaks about the
+    // pane in front, so it reads the same as shut -- and clicking it comes
+    // back to the page rather than closing it.
+    const pageId = useTabsStore.getState().tabs[0].id;
+    act(() => {
+      useTabsStore.getState().openEditorTab("/repo/src/a.ts");
+    });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveAccessibleName("All Changes");
+
+    fireEvent.click(button);
+    expect(useTabsStore.getState().activeId).toBe(pageId);
+  });
+
+  it("scrolls the all-changes page to a row instead of opening a tab", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+
+    fireEvent.click(await screen.findByText("src/a.ts"));
+
+    // No second tab: the page in front is asked to scroll to the file.
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(useAllChangesLinkStore.getState().file[pane()]).toEqual({
+      rel: "src/a.ts",
+      staged: false,
+    });
+  });
+
+  it("keeps the right-click route to a single-file diff tab", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+
+    fireEvent.contextMenu(await screen.findByText("src/a.ts"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Show Diff" }));
+
+    const tabs = useTabsStore.getState().tabs;
+    expect(tabs.map((t) => t.kind)).toEqual(["all-changes", "diff"]);
+    expect(useAllChangesLinkStore.getState().file[pane()]).toBeUndefined();
+  });
+
+  it("stands the commit box down while the all-changes page is in front", async () => {
+    render(<SourceControlView />);
+    // Wait for the status to land, so the branch row and the list are up.
+    await screen.findByText("src/a.ts");
+    expect(screen.getByPlaceholderText("Commit message")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+
+    // Nothing is committed from that page, and the box costs the file list
+    // room it is being read against.
+    expect(screen.queryByPlaceholderText("Commit message")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Commit" })).toBeNull();
+    // The branch row and the file list stay exactly where they were.
+    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+
+    // Away from that pane and it is back. The button says "Close" while the
+    // page is in front, which is when it is indeed the way out.
+    fireEvent.click(screen.getByRole("button", { name: "Close All Changes" }));
+    expect(await screen.findByPlaceholderText("Commit message")).toBeInTheDocument();
+  });
+
+  it("marks the row the all-changes page is showing", async () => {
+    render(<SourceControlView />);
+    const row = await screen.findByText("src/a.ts");
+    // Nothing marked: no diff pane in front, and no page reporting a file.
+    expect(row.closest("li")).not.toHaveAttribute("aria-current");
+
+    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+    act(() => {
+      useAllChangesLinkStore.getState().setShowing(pane(), { rel: "src/a.ts", staged: false });
+    });
+
+    expect(screen.getByText("src/a.ts").closest("li")).toHaveAttribute("aria-current", "true");
+
+    // The mark is the page's while that page is in front; it goes with it.
+    act(() => {
+      useAllChangesLinkStore.getState().setShowing(pane(), null);
+    });
+    expect(screen.getByText("src/a.ts").closest("li")).not.toHaveAttribute("aria-current");
+  });
+
+  it("reloads the all-changes page along with itself", async () => {
+    render(<SourceControlView />);
+    // The rescan goes to the page the panel is paired with, so there has to
+    // be one: a split can hold two, and only the one in front is being read
+    // alongside these rows.
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+    await screen.findByText("src/a.ts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    // Both are reading one list from one status call, so a refresh that moved
+    // only the panel would leave the two disagreeing side by side.
+    await waitFor(() => expect(useAllChangesLinkStore.getState().rescan[pane()]).toBe(1));
+  });
+
+  it("brings the marked row back into view, and only when it has left", async () => {
+    // jsdom has no layout, so the browser's own "already visible, do nothing"
+    // cannot be exercised here; what is asserted is that the row asks, with
+    // the nearest-edge options that leave a visible row alone.
+    // The suite's setup already stubs this on HTMLElement, which shadows any
+    // spy left on Element itself (src/test/setup.ts).
+    const scrollIntoView = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    try {
+      render(<SourceControlView />);
+      await screen.findByText("src/a.ts");
+      fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      act(() => {
+        useAllChangesLinkStore.getState().setShowing(pane(), { rel: "src/a.ts", staged: false });
+      });
+
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  it("lists the flat view in the tree's order, not the order status reports", async () => {
+    localStorage.setItem("tempoterm-sourcecontrol-view-mode", "flat");
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [
+        { path: "root-b.md", staged: false, status: "M" },
+        { path: "src/zeta.ts", staged: false, status: "M" },
+        { path: "root-a.md", staged: false, status: "M" },
+        { path: "src/alpha.ts", staged: false, status: "M" },
+      ],
+    });
+
+    const { container } = render(<SourceControlView />);
+    await screen.findByText("src/alpha.ts");
+
+    // A directory's changes together, then the root's — the same order the
+    // folder view and the all-changes page put them in.
+    expect(
+      Array.from(container.querySelectorAll("li")).map((li) => li.textContent?.trim()),
+    ).toEqual(["Msrc/alpha.ts", "Msrc/zeta.ts", "Mroot-a.md", "Mroot-b.md"]);
   });
 
   it("opens a diff tab when a changed file row is clicked", async () => {

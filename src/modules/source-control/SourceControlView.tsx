@@ -42,7 +42,12 @@ import {
   type GitStatus,
 } from "./lib/gitBridge";
 import { Tooltip } from "@/components/Tooltip";
-import { buildFileTree, collectDescendantFiles, type TreeNode } from "@/lib/fileTree";
+import {
+  buildFileTree,
+  collectDescendantFiles,
+  flattenFileTree,
+  type TreeNode,
+} from "@/lib/fileTree";
 import { useCollapsedPaths } from "@/lib/useCollapsedPaths";
 import { usePendingGraphSelectionStore } from "@/modules/git-graph/lib/pendingGraphSelectionStore";
 import { edgePath } from "@/modules/git-graph/lib/graphLayout";
@@ -51,7 +56,8 @@ import { generateCommitMessage } from "./lib/aiCommit";
 import { withMinDuration } from "@/lib/withMinDuration";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { STATUS_COLOR } from "./lib/fileStatus";
-import { activeDiffPane, useTabsStore } from "@/stores/tabsStore";
+import { activeAllChangesPane, activeDiffPane, useTabsStore } from "@/stores/tabsStore";
+import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { computeHistoryGraphLayout, HISTORY_GRAPH_GEOMETRY } from "./lib/commitGraph";
 
@@ -110,6 +116,7 @@ function StatusRow({
   onOpen,
   onRequestDiscard,
   active = false,
+  followsPage = false,
   indent = 0,
 }: {
   file: FileStatus;
@@ -125,6 +132,11 @@ function StatusRow({
   /** This file's diff is the one on screen: the row stays highlighted and
    * keeps its actions out without needing hover. */
   active?: boolean;
+  /**
+   * The all-changes page has the pane in front, so this row takes its mark
+   * from what that page is showing rather than from a diff pane.
+   */
+  followsPage?: boolean;
   /** Tree depth for indentation; 0 (default) matches flat mode's spacing. */
   indent?: number;
 }) {
@@ -132,6 +144,33 @@ function StatusRow({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const discardable = onRequestDiscard && file.status !== "?";
   const absPath = `${repoPath}/${file.path}`;
+  const rowRef = useRef<HTMLLIElement>(null);
+
+  /**
+   * Asked here, per row, rather than handed down from the panel: the file the
+   * all-changes page is showing changes as it is scrolled, and a mark read at
+   * the top would re-render every row (and the commit graph under them) each
+   * time the page crossed into another file. A selector returning a boolean
+   * re-renders the two rows that actually change hands and nothing else.
+   */
+  const pane = useTabsStore((s) => activeAllChangesPane(s.tabs, s.activeId));
+  const isShownByPage = useAllChangesLinkStore((s) => {
+    const showing = pane ? s.showing[pane] : undefined;
+    return showing?.rel === file.path && showing?.staged === file.staged;
+  });
+  const onPage = followsPage && isShownByPage;
+  const marked = active || onPage;
+
+  // A mark you cannot see says nothing, and with dozens of files it leaves the
+  // list within a screenful of scrolling. "nearest" is the whole point: a row
+  // already in view is left alone, so the list does not chase the page while
+  // the reader is looking at it, and one that has gone off the edge comes back
+  // by the shortest distance rather than jumping to the middle.
+  useEffect(() => {
+    if (onPage) {
+      rowRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [onPage]);
 
   const menuItems: ContextMenuItem[] = [
     {
@@ -153,7 +192,10 @@ function StatusRow({
       label: t("menuShowDiff"),
       icon: GitCompare,
       group: 0,
-      onSelect: () => onOpen(file.path),
+      // Deliberately not onOpen: a left click follows the all-changes page
+      // when that is in front, and this is the way to the single-file tab
+      // that stays put. Same direct store call as the two items above.
+      onSelect: () => useTabsStore.getState().openDiffTab(absPath, file.staged),
     },
     {
       id: "stageAction",
@@ -204,10 +246,11 @@ function StatusRow({
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY });
       }}
-      aria-current={active ? "true" : undefined}
+      ref={rowRef}
+      aria-current={marked ? "true" : undefined}
       style={{ paddingLeft: `${indent * 14 + 12}px` }}
       className={`group flex cursor-pointer items-center py-1 pr-3 text-sm ${
-        active ? "bg-bg-elevated" : "hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
+        marked ? "bg-bg-elevated" : "hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
       }`}
     >
       <span
@@ -218,11 +261,11 @@ function StatusRow({
         {file.status}
       </span>
       <Tooltip label={file.path} className="min-w-0 flex-1">
-        <span className={`min-w-0 flex-1 truncate ${active ? "text-fg" : "text-fg-muted"}`}>
+        <span className={`min-w-0 flex-1 truncate ${marked ? "text-fg" : "text-fg-muted"}`}>
           {displayPath ?? file.path}
         </span>
       </Tooltip>
-      <RowActions revealed={active}>
+      <RowActions revealed={marked}>
         {discardable && (
           <Tooltip label={t("discard")}>
             <button
@@ -376,6 +419,124 @@ function basename(path: string): string {
  * Recursively renders one level of a changed-files tree: folder headers with
  * a collapse toggle and a subtree-wide action button, file rows via StatusRow.
  */
+/**
+ * One folder in the tree: its header, and its children when it is open.
+ *
+ * Split out of FileTreeRows so it can hold a subscription of its own. A
+ * collapsed folder renders none of its files, so when the all-changes page
+ * scrolls into one of them there is no row to mark and the panel goes quiet
+ * about where the reader is. The folder takes the mark instead: the tree says
+ * where you are at whatever granularity is on screen -- the folder while it is
+ * shut, the file once it is open.
+ *
+ * Opening it by itself was the other option and is worse. Scrolling is
+ * continuous, so it would not be one folder opening but every folder the
+ * reader passes, and by the end of a long page the tree they had arranged is
+ * fully expanded. Collapse state belongs to the reader (#380), which is the
+ * same reason this feature leaves the panel's sections alone.
+ */
+function FolderRow({
+  node,
+  depth,
+  isCollapsed,
+  onToggleCollapse,
+  actionIcon: ActionIcon,
+  folderActionLabel,
+  onFolderAction,
+  followsPage,
+  children,
+}: {
+  node: TreeNode<FileStatus> & { kind: "folder" };
+  depth: number;
+  isCollapsed: boolean;
+  onToggleCollapse: (path: string) => void;
+  actionIcon: typeof Plus;
+  folderActionLabel: string;
+  onFolderAction: (paths: string[]) => void;
+  followsPage?: boolean;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation("sourceControl");
+  const rowRef = useRef<HTMLLIElement>(null);
+
+  // A boolean per folder row, for the same reason StatusRow asks per file: a
+  // reading taken at the top would re-render the whole tree every time the
+  // page crossed into another file.
+  const pane = useTabsStore((s) => activeAllChangesPane(s.tabs, s.activeId));
+  const holdsShownFile = useAllChangesLinkStore((s) => {
+    const showing = pane ? s.showing[pane] : undefined;
+    return showing ? showing.rel.startsWith(`${node.path}/`) : false;
+  });
+  // Only while shut. Open, the file's own row carries the mark and marking the
+  // folder too would say the same thing twice.
+  const onPage = Boolean(followsPage) && isCollapsed && holdsShownFile;
+
+  useEffect(() => {
+    if (onPage) {
+      rowRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [onPage]);
+
+  return (
+    <li ref={rowRef} aria-current={onPage ? "true" : undefined}>
+      <div
+        style={{ paddingLeft: `${depth * 14 + 12}px` }}
+        className={`group flex items-center gap-1 py-1 pr-3 text-sm ${
+          onPage ? "bg-bg-elevated" : "hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
+        }`}
+      >
+        {/* The whole label — chevron, icon and name — is the toggle, the
+            way the section headers and the Git Graph details tree work.
+            Aiming for the 13px chevron alone was the only way to open a
+            folder here. The subtree action stays a sibling button, so it
+            never toggles the folder it acts on. Hover is the row
+            background only, never a text colour: in this list a bright
+            label means "this is the file you are viewing" (StatusRow's
+            active row), and nothing else. */}
+        <button
+          type="button"
+          onClick={() => onToggleCollapse(node.path)}
+          aria-label={
+            isCollapsed
+              ? t("expandFolder", { name: node.path })
+              : t("collapseFolder", { name: node.path })
+          }
+          className="flex min-w-0 flex-1 items-center gap-1 text-left text-fg-subtle"
+        >
+          {isCollapsed ? (
+            <ChevronRight size={13} className="shrink-0" />
+          ) : (
+            <ChevronDown size={13} className="shrink-0" />
+          )}
+          <Folder size={13} className="shrink-0" />
+          <Tooltip label={node.path} className="min-w-0 flex-1">
+            <span className={`min-w-0 flex-1 truncate ${onPage ? "text-fg" : "text-fg-muted"}`}>
+              {node.name}
+            </span>
+          </Tooltip>
+        </button>
+        {/* Permanently revealed, like the section headers: folder rows
+            have no context menu to fall back on for pointers with no
+            hover, and one icon costs little of the width the file rows'
+            hover-reveal exists to reclaim. */}
+        <RowActions revealed>
+          <Tooltip label={`${folderActionLabel}: ${node.path}`}>
+            <button
+              type="button"
+              aria-label={`${folderActionLabel}: ${node.path}`}
+              onClick={() => onFolderAction(collectDescendantFiles(node).map((f) => f.path))}
+              className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
+            >
+              <ActionIcon size={14} />
+            </button>
+          </Tooltip>
+        </RowActions>
+      </div>
+      {!isCollapsed && <ul>{children}</ul>}
+    </li>
+  );
+}
+
 function FileTreeRows({
   nodes,
   depth,
@@ -390,6 +551,7 @@ function FileTreeRows({
   onFileOpen,
   onRequestDiscard,
   activePath,
+  followsPage,
 }: {
   nodes: TreeNode<FileStatus>[];
   depth: number;
@@ -404,8 +566,8 @@ function FileTreeRows({
   onFileOpen: (path: string) => void;
   onRequestDiscard?: (path: string) => void;
   activePath?: string | null;
+  followsPage?: boolean;
 }) {
-  const { t } = useTranslation("sourceControl");
   return (
     <>
       {nodes.map((node) => {
@@ -426,82 +588,41 @@ function FileTreeRows({
               onOpen={onFileOpen}
               onRequestDiscard={onRequestDiscard}
               active={node.file.path === activePath}
+              followsPage={followsPage}
               indent={depth}
             />
           );
         }
         const isCollapsed = collapsed.has(node.path);
-        return (
-          <li key={node.path}>
-            <div
-              style={{ paddingLeft: `${depth * 14 + 12}px` }}
-              className="group flex items-center gap-1 py-1 pr-3 text-sm hover:bg-bg-elevated/60 focus-within:bg-bg-elevated/60"
-            >
-              {/* The whole label — chevron, icon and name — is the toggle, the
-                  way the section headers and the Git Graph details tree work.
-                  Aiming for the 13px chevron alone was the only way to open a
-                  folder here. The subtree action stays a sibling button, so it
-                  never toggles the folder it acts on. Hover is the row
-                  background only, never a text colour: in this list a bright
-                  label means "this is the file you are viewing" (StatusRow's
-                  active row), and nothing else. */}
-              <button
-                type="button"
-                onClick={() => onToggleCollapse(node.path)}
-                aria-label={
-                  isCollapsed
-                    ? t("expandFolder", { name: node.path })
-                    : t("collapseFolder", { name: node.path })
-                }
-                className="flex min-w-0 flex-1 items-center gap-1 text-left text-fg-subtle"
-              >
-                {isCollapsed ? (
-                  <ChevronRight size={13} className="shrink-0" />
-                ) : (
-                  <ChevronDown size={13} className="shrink-0" />
-                )}
-                <Folder size={13} className="shrink-0" />
-                <Tooltip label={node.path} className="min-w-0 flex-1">
-                  <span className="min-w-0 flex-1 truncate text-fg-muted">{node.name}</span>
-                </Tooltip>
-              </button>
-              {/* Permanently revealed, like the section headers: folder rows
-                  have no context menu to fall back on for pointers with no
-                  hover, and one icon costs little of the width the file rows'
-                  hover-reveal exists to reclaim. */}
-              <RowActions revealed>
-                <Tooltip label={`${folderActionLabel}: ${node.path}`}>
-                  <button
-                    type="button"
-                    aria-label={`${folderActionLabel}: ${node.path}`}
-                    onClick={() => onFolderAction(collectDescendantFiles(node).map((f) => f.path))}
-                    className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
-                  >
-                    <ActionIcon size={14} />
-                  </button>
-                </Tooltip>
-              </RowActions>
-            </div>
-            {!isCollapsed && (
-              <ul>
-                <FileTreeRows
-                  nodes={node.children}
-                  depth={depth + 1}
-                  collapsed={collapsed}
-                  onToggleCollapse={onToggleCollapse}
-                  repoPath={repoPath}
-                  actionIcon={ActionIcon}
-                  actionLabel={actionLabel}
-                  folderActionLabel={folderActionLabel}
-                  onFileAction={onFileAction}
-                  onFolderAction={onFolderAction}
-                  onFileOpen={onFileOpen}
-                  onRequestDiscard={onRequestDiscard}
-                  activePath={activePath}
-                />
-              </ul>
-            )}
-          </li>
+return (
+          <FolderRow
+            key={node.path}
+            node={node}
+            depth={depth}
+            isCollapsed={isCollapsed}
+            onToggleCollapse={onToggleCollapse}
+            actionIcon={ActionIcon}
+            folderActionLabel={folderActionLabel}
+            onFolderAction={onFolderAction}
+            followsPage={followsPage}
+          >
+            <FileTreeRows
+              nodes={node.children}
+              depth={depth + 1}
+              collapsed={collapsed}
+              onToggleCollapse={onToggleCollapse}
+              repoPath={repoPath}
+              actionIcon={ActionIcon}
+              actionLabel={actionLabel}
+              folderActionLabel={folderActionLabel}
+              onFileAction={onFileAction}
+              onFolderAction={onFolderAction}
+              onFileOpen={onFileOpen}
+              onRequestDiscard={onRequestDiscard}
+              activePath={activePath}
+              followsPage={followsPage}
+            />
+          </FolderRow>
         );
       })}
     </>
@@ -526,6 +647,7 @@ function FileList({
   onFileOpen,
   onRequestDiscard,
   activePath,
+  followsPage,
 }: {
   files: FileStatus[];
   viewMode: ViewMode;
@@ -540,13 +662,19 @@ function FileList({
   /** Repo-relative path of the file whose diff is on screen, if it is in this
    * list — the staged and unstaged lists never claim it at the same time. */
   activePath?: string | null;
+  followsPage?: boolean;
 }) {
   const { collapsed, toggle: toggleFolder } = useCollapsedPaths();
 
   if (viewMode === "flat") {
     return (
       <ul>
-        {files.map((file) => (
+        {/* Ordered by the same tree the folder view draws, just without the
+            folder rows: one directory's changes stay together instead of
+            landing wherever status happened to report them, and the flat
+            list, the folder view and the all-changes page then read as one
+            index rather than three sorts of the same files. */}
+        {flattenFileTree(buildFileTree(files)).map((file) => (
           <StatusRow
             key={file.path}
             file={file}
@@ -557,6 +685,7 @@ function FileList({
             onOpen={onFileOpen}
             onRequestDiscard={onRequestDiscard}
             active={file.path === activePath}
+            followsPage={followsPage}
           />
         ))}
       </ul>
@@ -579,6 +708,7 @@ function FileList({
         onFileOpen={onFileOpen}
         onRequestDiscard={onRequestDiscard}
         activePath={activePath}
+        followsPage={followsPage}
       />
     </ul>
   );
@@ -695,7 +825,11 @@ export function SourceControlView() {
   const model = useChatStore((s) => s.model);
   const customBaseUrl = useChatStore((s) => s.customBaseUrl);
   const openDiffTab = useTabsStore((s) => s.openDiffTab);
-  const openAllChangesTab = useTabsStore((s) => s.openAllChangesTab);
+  const toggleAllChangesTab = useTabsStore((s) => s.toggleAllChangesTab);
+  // While the all-changes page is the pane in front, this panel is its table
+  // of contents rather than a way of opening more tabs.
+  const allChangesPane = useTabsStore((s) => activeAllChangesPane(s.tabs, s.activeId));
+  const allChangesInFront = allChangesPane !== null;
   // Which row is "the one on screen": the diff in the foreground pane. Read as
   // two primitives — a selector returning a fresh {path, staged} object would
   // never compare equal, re-rendering the panel on every store change.
@@ -710,11 +844,21 @@ export function SourceControlView() {
   // absolute path so it can resolve the repo on its own.
   const openDiff = useCallback(
     (path: string, staged: boolean) => {
+      // With the all-changes page in front, a row scrolls it to that file
+      // instead of opening a tab per file, which is the whole point of that
+      // page. The right-click menu's "Show Diff" still opens the single-file
+      // tab, so nothing is only reachable one way.
+      // The page in front, not "a page somewhere": a split can hold two, and
+      // the rows being clicked belong to the one being looked at.
+      if (allChangesPane) {
+        useAllChangesLinkStore.getState().request(allChangesPane, { rel: path, staged });
+        return;
+      }
       if (repoPath) {
         openDiffTab(`${repoPath}/${path}`, staged);
       }
     },
-    [repoPath, openDiffTab],
+    [allChangesPane, repoPath, openDiffTab],
   );
 
   const refresh = useCallback(async () => {
@@ -722,6 +866,17 @@ export function SourceControlView() {
       return;
     }
     setRefreshing(true);
+    // Whatever else is reading this repo reloads with it: the all-changes page
+    // shows the same list, from the same status call, and a refresh that moved
+    // only one of them would leave the two disagreeing side by side.
+    // Read at the moment of pressing, not closed over: this callback is
+    // memoised on the repo, and the pane in front changes far more often than
+    // that -- captured, it would still be the answer from the first render.
+    const { tabs, activeId } = useTabsStore.getState();
+    const pane = activeAllChangesPane(tabs, activeId);
+    if (pane) {
+      useAllChangesLinkStore.getState().requestRescan(pane);
+    }
     try {
       await withMinDuration(
         (async () => {
@@ -765,10 +920,15 @@ export function SourceControlView() {
   // Rows key off repo-relative paths; the diff pane carries an absolute one.
   // A diff opened from somewhere else (another repo, the git graph) simply
   // matches no row.
-  const activeRelPath =
+  const diffRelPath =
     repoPath && activeDiffPath?.startsWith(`${repoPath}/`)
       ? activeDiffPath.slice(repoPath.length + 1)
       : null;
+  // #364's mark for a diff pane. The all-changes page's own mark is asked for
+  // by each row instead (see StatusRow), so that scrolling that page does not
+  // re-render the whole panel every time it crosses into another file.
+  const activeRelPath = diffRelPath;
+  const activeStaged = activeDiffStaged;
 
   const canCommit = message.trim().length > 0 && (status?.staged.length ?? 0) > 0;
   const hasStaged = (status?.staged.length ?? 0) > 0;
@@ -820,12 +980,27 @@ export function SourceControlView() {
           {t("title")}
         </span>
         <div className="flex items-center gap-0.5">
-          <Tooltip label={t("allChanges")}>
+          {/* Filled while the page is the pane in front, which is the state
+              worth showing: that is when this panel stops opening tabs and
+              starts following the page, and when the commit box steps out.
+              Something has to account for that, and this button is the only
+              thing on screen that can. Open-but-behind is deliberately drawn
+              the same as shut -- the button speaks about the pane in front,
+              not about what exists somewhere in the space. Same on/off looks
+              as the wrap button in DiffTabContent, and the icon never changes:
+              it is the all-changes tab's own icon, and that match is what
+              makes the button legible in the first place. */}
+          <Tooltip label={allChangesInFront ? t("allChangesClose") : t("allChanges")}>
             <button
               type="button"
-              aria-label={t("allChanges")}
-              onClick={() => openAllChangesTab()}
-              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              aria-label={allChangesInFront ? t("allChangesClose") : t("allChanges")}
+              aria-pressed={allChangesInFront}
+              onClick={() => toggleAllChangesTab()}
+              className={`rounded p-1 ${
+                allChangesInFront
+                  ? "bg-bg-elevated text-fg"
+                  : "text-fg-muted hover:bg-bg-elevated hover:text-fg"
+              }`}
             >
               <FileDiff size={14} />
             </button>
@@ -861,60 +1036,68 @@ export function SourceControlView() {
         </div>
       )}
 
-      <div className="px-3 pb-3">
-        <div className="relative">
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder={t("commitPlaceholder")}
-            rows={2}
-            className="w-full resize-none rounded-md border border-border bg-bg px-2 py-1.5 pr-9 text-sm text-fg outline-none focus:border-accent"
-          />
-          <Tooltip label={t("aiGenerate")} className="absolute right-1.5 top-1.5">
+      {/* The commit box steps out while the all-changes page is in front:
+          nothing is committed from there, and the message box and buttons
+          together take a fixed ~76px off the file list that page is being
+          read against. It comes straight back when the page does not have
+          the pane. Nothing else about the panel moves -- no section is
+          collapsed for the reader (#380), no control is relocated. */}
+      {!allChangesInFront && (
+        <div className="px-3 pb-3">
+          <div className="relative">
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder={t("commitPlaceholder")}
+              rows={2}
+              className="w-full resize-none rounded-md border border-border bg-bg px-2 py-1.5 pr-9 text-sm text-fg outline-none focus:border-accent"
+            />
+            <Tooltip label={t("aiGenerate")} className="absolute right-1.5 top-1.5">
+              <button
+                type="button"
+                disabled={!hasStaged || generating}
+                onClick={() => void aiGenerate()}
+                aria-label={t("aiGenerate")}
+                className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {generating ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <Sparkles size={15} />
+                )}
+              </button>
+            </Tooltip>
+          </div>
+          <div className="mt-2 flex gap-2">
             <button
               type="button"
-              disabled={!hasStaged || generating}
-              onClick={() => void aiGenerate()}
-              aria-label={t("aiGenerate")}
-              className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!canCommit}
+              onClick={() =>
+                void withRepo(async (repo) => {
+                  await gitCommit(repo, message);
+                  setMessage("");
+                })
+              }
+              className="flex-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {generating ? (
-                <Loader2 size={15} className="animate-spin" />
-              ) : (
-                <Sparkles size={15} />
-              )}
+              {t("commit")}
             </button>
-          </Tooltip>
+            <button
+              type="button"
+              disabled={pushing}
+              onClick={() => void doPush()}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg disabled:opacity-40"
+            >
+              {pushing ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <UploadCloud size={14} />
+              )}
+              {t("push")}
+            </button>
+          </div>
         </div>
-        <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            disabled={!canCommit}
-            onClick={() =>
-              void withRepo(async (repo) => {
-                await gitCommit(repo, message);
-                setMessage("");
-              })
-            }
-            className="flex-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {t("commit")}
-          </button>
-          <button
-            type="button"
-            disabled={pushing}
-            onClick={() => void doPush()}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg disabled:opacity-40"
-          >
-            {pushing ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <UploadCloud size={14} />
-            )}
-            {t("push")}
-          </button>
-        </div>
-      </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -956,7 +1139,8 @@ export function SourceControlView() {
                     })
                   }
                   onFileOpen={(path) => openDiff(path, true)}
-                  activePath={activeDiffStaged ? activeRelPath : null}
+                  activePath={activeStaged ? activeRelPath : null}
+                  followsPage={allChangesInFront}
                   repoPath={repoPath ?? ""}
                 />
               )}
@@ -1006,7 +1190,8 @@ export function SourceControlView() {
                   }
                   onFileOpen={(path) => openDiff(path, false)}
                   onRequestDiscard={setDiscardTarget}
-                  activePath={activeDiffStaged ? null : activeRelPath}
+                  activePath={activeStaged ? null : activeRelPath}
+                  followsPage={allChangesInFront}
                   repoPath={repoPath ?? ""}
                 />
               ))}

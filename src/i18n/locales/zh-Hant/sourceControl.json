@@ -22,6 +22,7 @@
   "generating": "產生中⋯",
   "refresh": "重新整理",
   "allChanges": "所有變更",
+  "allChangesClose": "關閉所有變更",
   "allChangesUncommitted": "（未 commit）",
   "allChangesFileCount": "{{count}} 個檔案",
   "allChangesBinary": "二進位檔，不顯示內容",

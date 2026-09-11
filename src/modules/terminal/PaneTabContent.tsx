@@ -566,6 +566,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                   />
                 ) : pane.content.kind === "all-changes" ? (
                   <AllChangesTabContent
+                    paneId={pane.id}
                     showClose={multiple}
                     onClose={() => requestClosePane(pane.id)}
                   />

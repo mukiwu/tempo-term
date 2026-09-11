@@ -18,6 +18,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { changedLines, parseDiffStats, type FileDiffStats } from "./lib/parseDiffStats";
 import { agentTargetMenuItems } from "./lib/sendComments";
 import { changeAtViewportTop } from "./lib/changeAtTop";
+import { useAllChangesLinkStore } from "./lib/allChangesLinkStore";
 import { useUnsentCommentCount } from "./lib/useDiffComments";
 import {
   DiffFileSection,
@@ -27,6 +28,13 @@ import {
 } from "./DiffFileSection";
 
 interface AllChangesTabContentProps {
+  /**
+   * The pane this page is in. Everything it publishes to the panel is filed
+   * under it: a split mounts two of these pages, and one global entry each
+   * would have them overwriting one another's mark and clearing it on the way
+   * out.
+   */
+  paneId: string;
   /** Show the shared pane close button (the tab is split). */
   showClose?: boolean;
   onClose?: () => void;
@@ -61,6 +69,14 @@ interface ChangedFiles {
   unstaged: ChangedFile[];
 }
 
+/**
+ * A file staged and then edited again appears in both sections, as two
+ * independent comparisons, so the side is part of its identity.
+ */
+export function sectionKey(rel: string, staged: boolean): string {
+  return `${staged ? "s" : "w"}:${rel}`;
+}
+
 function toChangedFile(
   repo: string,
   file: { path: string; status: string },
@@ -68,7 +84,7 @@ function toChangedFile(
   stats: Map<string, FileDiffStats>,
 ): ChangedFile {
   return {
-    key: `${staged ? "s" : "w"}:${file.path}`,
+    key: sectionKey(file.path, staged),
     rel: file.path,
     path: `${repo}/${file.path}`,
     staged,
@@ -88,7 +104,11 @@ function toChangedFile(
  * have their editors built, the rest holding their place at the height the
  * scan predicts (or the height they last measured).
  */
-export function AllChangesTabContent({ showClose = false, onClose }: AllChangesTabContentProps) {
+export function AllChangesTabContent({
+  paneId,
+  showClose = false,
+  onClose,
+}: AllChangesTabContentProps) {
   const { t } = useTranslation("sourceControl");
   const { t: tEditor } = useTranslation("editor");
   const rootPath = useWorkspaceStore((s) => s.rootPath);
@@ -106,6 +126,12 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   const [files, setFiles] = useState<ChangedFiles | null>(null);
   const [error, setError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // The panel's refresh button asks for a rescan too: while this page has the
+  // pane, that button is the only refresh control on screen, and the panel's
+  // list and this one have to move together.
+  const rescan = useAllChangesLinkStore((s) => s.rescan[paneId] ?? 0);
+  // Either trigger moves this, and both only ever count up.
+  const reloadKey = refreshKey + rescan;
   const [sendMenu, setSendMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Which files have their editors up, which oversized ones the reader opened
@@ -225,7 +251,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
     return () => {
       cancelled = true;
     };
-  }, [repo, refreshKey]);
+  }, [repo, reloadKey]);
 
   const ordered = useMemo(
     () => (files ? [...files.staged, ...files.unstaged] : []),
@@ -453,6 +479,22 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
   // The counter follows the page rather than only the buttons: scrolling by
   // hand, or being scrolled by a click in the Source Control panel, moves it
   // too, so prev/next always carries on from what is actually on screen.
+  /** Where a file's section starts inside the page's scrollable content. */
+  const sectionTop = useCallback(
+    (root: HTMLElement, index: number): number | null => {
+      const element = ordered[index] && elementsRef.current.get(ordered[index].key);
+      if (!element) {
+        return null;
+      }
+      // The section, never its header: the header is sticky, so its rect
+      // reports where it is pinned rather than where it belongs.
+      return (
+        root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top
+      );
+    },
+    [ordered],
+  );
+
   const scrollFrame = useRef(0);
   const trackPosition = useCallback(() => {
     // Cancel and re-schedule, rather than skipping while one is pending. A
@@ -472,8 +514,30 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       }
       const top = root.scrollTop + LANDING_GAP + 4;
       setPosition(changeAtViewportTop(changes.length, top, (i) => changeTop(root, i)));
+      // The panel marks the row the reader is on, which is the file at the top
+      // of the page — the same question the counter asks, one level up, so it
+      // takes the same lazy binary search over an ordered list. The topmost
+      // *file* rather than the file owning the topmost change: a file with no
+      // change to navigate to, folded or binary, is still one you can be
+      // looking straight at.
+      // Clamped, unlike the counter above: "before the first change" is a
+      // real place for a navigation cursor to be, but a reader sitting at the
+      // top of the page is looking at the first file, not at no file — and the
+      // panel would mark nothing until they scrolled past the group heading.
+      const at = changeAtViewportTop(ordered.length, top, (i) => sectionTop(root, i));
+      const file = ordered[Math.max(0, at - 1)];
+      useAllChangesLinkStore
+        .getState()
+        .setShowing(paneId, file ? { rel: file.rel, staged: file.staged } : null);
     });
-  }, [changes.length, changeTop]);
+  }, [changes.length, changeTop, ordered, sectionTop]);
+
+  // Mark the first file as soon as there is a list, without waiting for a
+  // scroll, and let the mark go when this page does — the panel falls back to
+  // whichever diff pane is in front, as it did before.
+  useEffect(() => {
+    trackPosition();
+  }, [trackPosition]);
 
   // Coming back to a window that was hidden brings no scroll event with it,
   // and no frame ran while it was away to take a reading, so one is taken on
@@ -493,6 +557,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
       if (scrollFrame.current) {
         cancelAnimationFrame(scrollFrame.current);
       }
+      useAllChangesLinkStore.getState().forget(paneId);
     },
     [],
   );
@@ -524,6 +589,50 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
     }
     setPending(target);
   }, []);
+
+  /**
+   * Put a file's header at the top of the page. Used by the Source Control
+   * panel: while this page is in front, clicking a row scrolls here instead of
+   * opening a diff tab of its own.
+   */
+  const scrollToSection = useCallback((key: string) => {
+    const root = scrollRef.current;
+    const element = elementsRef.current.get(key);
+    if (!root || !element) {
+      return false;
+    }
+    setMounted((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    // A file the reader had shut opens again: they just asked for it, and
+    // landing on a bare header reads as nothing having happened. A file folded
+    // for its size keeps its own control — that one is about weight, not about
+    // having been read.
+    setCollapsed((prev) => {
+      if (!prev.has(key)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    root.scrollTop = Math.max(
+      0,
+      root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top,
+    );
+    return true;
+  }, []);
+
+  const requested = useAllChangesLinkStore((s) => s.file[paneId]);
+  useEffect(() => {
+    // Wait for the scan: there are no sections to scroll to before it lands.
+    if (!requested || ordered.length === 0) {
+      return;
+    }
+    scrollToSection(sectionKey(requested.rel, requested.staged));
+    // Consumed either way. A row for a file this page does not carry (a stale
+    // click, or one raced with a rescan) is dropped rather than left to fire
+    // at some unrelated moment later.
+    useAllChangesLinkStore.getState().consume(paneId);
+  }, [requested, ordered, scrollToSection]);
 
   useEffect(() => {
     if (!pending) {
@@ -596,7 +705,7 @@ export function AllChangesTabContent({ showClose = false, onClose }: AllChangesT
             onCounted={onCounted}
             onDraft={onDraft}
             narrow={narrow}
-            reloadKey={refreshKey}
+            reloadKey={reloadKey}
           />
         ))}
       </>
