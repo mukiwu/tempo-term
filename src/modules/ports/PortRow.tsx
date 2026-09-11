@@ -43,13 +43,13 @@ export function PortRow({ port, aiAvailable, expanded, onToggleExpand, onExpand,
     <div className="border-b border-border px-3 py-2 last:border-b-0">
       {/* Line 1: identifier on the left, resource stats on the right. */}
       <div className="flex items-center gap-2 text-sm">
-        <span className="shrink-0 font-mono text-xs text-accent">:{port.port}</span>
+        <span className="min-w-[4.5rem] shrink-0 font-mono text-xs tabular-nums text-accent">:{port.port}</span>
         <span className="min-w-0 truncate font-medium text-fg">{service.label}</span>
         {showRawName && (
           <span className="min-w-0 shrink truncate text-xs text-fg-subtle">{port.processName}</span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-3 text-xs text-fg-subtle">
-          <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={11} /> {formatUptime(port.uptimeSecs)}</span>
+          <span className="flex min-w-[4.25rem] items-center justify-end gap-1 whitespace-nowrap font-mono tabular-nums"><Clock size={11} /> {formatUptime(port.uptimeSecs)}</span>
         </div>
         <button
           type="button"

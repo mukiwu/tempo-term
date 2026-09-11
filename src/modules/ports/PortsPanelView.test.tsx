@@ -2,8 +2,8 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 
-const { usePorts } = vi.hoisted(() => ({ usePorts: vi.fn() }));
-vi.mock("./lib/usePorts", () => ({ usePorts }));
+const { usePortMonitor } = vi.hoisted(() => ({ usePortMonitor: vi.fn() }));
+vi.mock("./lib/usePorts", () => ({ usePortMonitor }));
 const { killPortProcess, portsAiAvailable, portsAiExplain } = vi.hoisted(() => ({
   killPortProcess: vi.fn(),
   portsAiAvailable: vi.fn(),
@@ -30,8 +30,14 @@ const sample = [
 ];
 
 beforeEach(() => {
-  usePorts.mockReset();
-  usePorts.mockReturnValue(sample);
+  usePortMonitor.mockReset();
+  usePortMonitor.mockReturnValue({
+    ports: sample,
+    error: null,
+    lastUpdatedAt: new Date("2026-09-10T12:00:00Z").getTime(),
+    refreshing: false,
+    refresh: vi.fn(),
+  });
   killPortProcess.mockReset();
   portsAiAvailable.mockReset();
   portsAiAvailable.mockResolvedValue(false);
@@ -40,17 +46,44 @@ beforeEach(() => {
 
 describe("PortsPanelView grouping", () => {
   it("groups ports under project headers, catch-all last, and never reshuffles", async () => {
-    usePorts.mockReturnValue([
-      { ...sample[0], port: 8080, pid: 20, cwd: "/w/beta", processName: "node", command: "node x/vite" },
-      { ...sample[0], port: 3000, pid: 10, cwd: "/w/alpha" },
-      { ...sample[0], port: 631, pid: 30, cwd: null, processName: "cupsd", command: null },
-    ]);
+    usePortMonitor.mockReturnValue({
+      ports: [
+        { ...sample[0], port: 8080, pid: 20, cwd: "/w/beta", processName: "node", command: "node x/vite" },
+        { ...sample[0], port: 3000, pid: 10, cwd: "/w/alpha" },
+        { ...sample[0], port: 631, pid: 30, cwd: null, processName: "cupsd", command: null },
+      ],
+      error: null,
+      lastUpdatedAt: Date.now(),
+      refreshing: false,
+      refresh: vi.fn(),
+    });
     render(<PortsPanelView />);
     const headers = await screen.findAllByRole("heading", { level: 3 });
     // textContent carries the port count the header shows beside the name.
     expect(headers.map((h) => h.textContent)).toEqual(["alpha1", "beta1", "Other processes1"]);
     // The plain-English service label replaces the raw runtime name up front.
     expect(screen.getByText("Vite dev server")).toBeInTheDocument();
+  });
+});
+
+describe("PortsPanelView monitoring controls", () => {
+  it("filters all visible fields and reports the result count", async () => {
+    render(<PortsPanelView />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "server.js" } });
+    expect(await screen.findByText("Showing 1 of 1")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "postgres" } });
+    expect(await screen.findByText("No matching ports")).toBeInTheDocument();
+  });
+
+  it("pauses only the open panel and disables snapshot-changing filters", () => {
+    const { rerender } = render(<PortsPanelView />);
+    fireEvent.click(screen.getByRole("button", { name: "Pause automatic updates" }));
+    rerender(<PortsPanelView />);
+
+    expect(usePortMonitor).toHaveBeenLastCalledWith(false, false, 5000);
+    expect(screen.getByRole("switch", { name: "Show all" })).toBeDisabled();
+    expect(screen.getByText("Paused")).toBeInTheDocument();
   });
 });
 

@@ -6,7 +6,7 @@ const windowState = vi.hoisted(() => ({ visible: true }));
 vi.mock("./portsBridge", () => ({ fetchPorts }));
 vi.mock("@/lib/windowActivity", () => ({ useWindowVisible: () => windowState.visible }));
 
-import { usePorts } from "./usePorts";
+import { usePortMonitor, usePorts } from "./usePorts";
 
 const sample = [
   {
@@ -62,5 +62,36 @@ describe("usePorts", () => {
 
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
     expect(fetchPorts).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("usePortMonitor", () => {
+  it("stops automatic polling while paused but allows a manual refresh", async () => {
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(
+      ({ live }) => usePortMonitor(false, live, 5_000),
+      { initialProps: { live: true } },
+    );
+    await act(async () => Promise.resolve());
+    expect(fetchPorts).toHaveBeenCalledTimes(1);
+
+    rerender({ live: false });
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(fetchPorts).toHaveBeenCalledTimes(1);
+
+    await act(async () => result.current.refresh());
+    expect(fetchPorts).toHaveBeenCalledTimes(2);
+    expect(result.current.ports).toEqual(sample);
+    expect(result.current.lastUpdatedAt).not.toBeNull();
+  });
+
+  it("keeps the last snapshot and exposes an error when refresh fails", async () => {
+    const { result } = renderHook(() => usePortMonitor(false, true));
+    await waitFor(() => expect(result.current.ports).toEqual(sample));
+
+    fetchPorts.mockRejectedValueOnce(new Error("unavailable"));
+    await act(async () => result.current.refresh());
+    expect(result.current.ports).toEqual(sample);
+    expect(result.current.error).toBe("unavailable");
   });
 });

@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Pause, Play, RefreshCw, Search, X } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InfoDialog } from "@/components/InfoDialog";
-import { usePorts } from "./lib/usePorts";
+import { Tooltip } from "@/components/Tooltip";
+import { usePortMonitor } from "./lib/usePorts";
 import { groupByProject } from "./lib/classifyService";
+import { filterPorts } from "./lib/filterPorts";
 import { killPortProcess, portsAiAvailable, type PortInfo } from "./lib/portsBridge";
 import { PortRow } from "./PortRow";
 
@@ -16,10 +19,14 @@ import { PortRow } from "./PortRow";
  * side, so `usePorts` polls only when the panel is actually showing.
  */
 export function PortsPanelView() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const showAll = useSettingsStore((s) => s.showAllPorts);
   const setShowAll = useSettingsStore((s) => s.setShowAllPorts);
-  const ports = usePorts(showAll, 5000);
+  const [paused, setPaused] = useState(false);
+  const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const { ports, error, lastUpdatedAt, refreshing, refresh } = usePortMonitor(showAll, !paused, 5000);
   const [killTarget, setKillTarget] = useState<PortInfo | null>(null);
   const [killError, setKillError] = useState<string | null>(null);
   const [expandedPid, setExpandedPid] = useState<number | null>(null);
@@ -40,6 +47,16 @@ export function PortsPanelView() {
   }, []);
 
   const list = ports ?? [];
+  const filtered = useMemo(() => filterPorts(list, deferredQuery), [deferredQuery, list]);
+  const groups = useMemo(() => groupByProject(filtered), [filtered]);
+  const hasQuery = query.trim().length > 0;
+  const updatedTime = lastUpdatedAt === null
+    ? null
+    : new Intl.DateTimeFormat(i18n.language, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(lastUpdatedAt);
 
   const openTerminal = (port: PortInfo) => {
     useTabsStore.getState().newTerminalTab(port.cwd ?? undefined);
@@ -60,16 +77,103 @@ export function PortsPanelView() {
   };
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
-        <span className="text-sm font-semibold text-fg">{t("ports.title")}</span>
-        <label className="flex items-center gap-2 text-xs text-fg-muted">
-          {t("ports.showAll")}
+    <div
+      className="flex h-full w-full flex-col overflow-hidden"
+      onKeyDown={(event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+          event.preventDefault();
+          searchRef.current?.focus();
+        }
+      }}
+    >
+      <div className="shrink-0 space-y-2 border-b border-border bg-bg-elevated/70 px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-fg">{t("ports.title")}</span>
+          <span
+            className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              paused ? "bg-warning/10 text-warning" : "bg-success/10 text-success"
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${paused ? "bg-warning" : "bg-success"}`} />
+            {paused ? t("ports.paused") : t("ports.live")}
+          </span>
+          <div className="ml-auto flex items-center gap-1">
+            <Tooltip label={paused ? t("ports.resume") : t("ports.pause")} side="bottom">
+              <button
+                type="button"
+                aria-label={paused ? t("ports.resume") : t("ports.pause")}
+                disabled={ports === null}
+                onClick={() => setPaused((value) => !value)}
+                className="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-inset hover:text-fg disabled:opacity-30"
+              >
+                {paused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
+              </button>
+            </Tooltip>
+            <Tooltip label={t("ports.refresh")} side="bottom">
+              <button
+                type="button"
+                aria-label={t("ports.refresh")}
+                disabled={refreshing}
+                onClick={() => void refresh()}
+                className="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-inset hover:text-fg disabled:opacity-40"
+              >
+                <RefreshCw size={14} className={refreshing ? "animate-spin" : undefined} />
+              </button>
+            </Tooltip>
+          </div>
+        </div>
+
+        <div className="relative">
+          <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle" />
+          <input
+            ref={searchRef}
+            type="search"
+            value={query}
+            aria-label={t("ports.search")}
+            placeholder={t("ports.searchPlaceholder")}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && query) {
+                event.stopPropagation();
+                setQuery("");
+              }
+            }}
+            className="h-8 w-full rounded-md border border-border bg-bg-inset pl-8 pr-8 text-xs text-fg outline-none transition-colors placeholder:text-fg-subtle focus:border-accent"
+          />
+          {query && (
+            <button
+              type="button"
+              aria-label={t("ports.clearSearch")}
+              onClick={() => {
+                setQuery("");
+                searchRef.current?.focus();
+              }}
+              className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-fg-subtle hover:text-fg"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex min-h-4 items-center gap-2 text-[10px] text-fg-subtle">
+          <span className="tabular-nums">
+            {hasQuery
+              ? t("ports.resultCount", { visible: filtered.length, total: list.length })
+              : t("ports.portCount", { count: list.length })}
+          </span>
+          {updatedTime && (
+            <span className="ml-auto tabular-nums">
+              {paused ? t("ports.snapshotAt", { time: updatedTime }) : t("ports.updatedAt", { time: updatedTime })}
+            </span>
+          )}
+          <label className={`flex items-center gap-1.5 ${paused ? "opacity-40" : ""}`}>
+            {t("ports.showAll")}
           <button
             type="button"
             role="switch"
             aria-checked={showAll}
             aria-label={t("ports.showAll")}
+            disabled={paused}
             onClick={() => setShowAll(!showAll)}
             className={`relative h-4 w-7 rounded-full transition-colors ${showAll ? "bg-accent" : "bg-border"}`}
           >
@@ -78,14 +182,30 @@ export function PortsPanelView() {
             />
           </button>
         </label>
+        </div>
       </div>
+      {error && (
+        <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+          <span className="min-w-0 flex-1 truncate">{t("ports.refreshFailed")}</span>
+          <button type="button" onClick={() => void refresh()} className="shrink-0 font-medium hover:underline">
+            {t("ports.retry")}
+          </button>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {ports === null ? (
           <div className="px-3 py-6 text-center text-sm text-fg-subtle">{t("ports.loading")}</div>
         ) : list.length === 0 ? (
           <div className="px-3 py-6 text-center text-sm text-fg-subtle">{t("ports.empty")}</div>
+        ) : filtered.length === 0 ? (
+          <div className="px-3 py-8 text-center">
+            <p className="text-sm text-fg-muted">{t("ports.noSearchResults")}</p>
+            <button type="button" onClick={() => setQuery("")} className="mt-2 text-xs text-accent hover:text-accent-hover">
+              {t("ports.clearSearch")}
+            </button>
+          </div>
         ) : (
-          groupByProject(list).map((group) => (
+          groups.map((group) => (
             <section key={group.cwd ?? "__other__"}>
               {/* Port Radar's hierarchy: the project is the anchor a reader
                   scans for; the rows underneath stay sorted by port, so

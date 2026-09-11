@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchPorts, type PortInfo } from "./portsBridge";
 import { useWindowVisible } from "@/lib/windowActivity";
 
@@ -42,4 +42,79 @@ export function usePorts(showAll: boolean, intervalMs: number = DEFAULT_POLL_INT
   }, [showAll, intervalMs, windowVisible]);
 
   return ports;
+}
+
+export interface PortMonitorState {
+  ports: PortInfo[] | null;
+  error: string | null;
+  lastUpdatedAt: number | null;
+  refreshing: boolean;
+  refresh: () => Promise<void>;
+}
+
+/**
+ * Interactive variant used by the open panel. Automatic requests stop while
+ * paused, while an explicit refresh can still replace the current snapshot.
+ * A response that was already in flight when Pause was clicked is discarded.
+ */
+export function usePortMonitor(
+  showAll: boolean,
+  autoRefresh: boolean,
+  intervalMs: number = DEFAULT_POLL_INTERVAL_MS,
+): PortMonitorState {
+  const [ports, setPorts] = useState<PortInfo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const windowVisible = useWindowVisible();
+  const mountedRef = useRef(true);
+  const autoRefreshRef = useRef(autoRefresh);
+  const requestIdRef = useRef(0);
+
+  autoRefreshRef.current = autoRefresh;
+
+  useEffect(() => {
+    // React Strict Mode replays effects in development; reset this during each
+    // setup so the second mount pass can still accept responses.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const runRefresh = useCallback(async (manual: boolean) => {
+    const requestId = ++requestIdRef.current;
+    setRefreshing(true);
+    try {
+      const next = await fetchPorts(showAll);
+      if (
+        mountedRef.current &&
+        requestId === requestIdRef.current &&
+        (manual || autoRefreshRef.current)
+      ) {
+        setPorts(next);
+        setError(null);
+        setLastUpdatedAt(Date.now());
+      }
+    } catch (err: unknown) {
+      if (mountedRef.current && requestId === requestIdRef.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      if (mountedRef.current && requestId === requestIdRef.current) {
+        setRefreshing(false);
+      }
+    }
+  }, [showAll]);
+
+  const refresh = useCallback(() => runRefresh(true), [runRefresh]);
+
+  useEffect(() => {
+    if (!windowVisible || !autoRefresh) return;
+    void runRefresh(false);
+    const interval = setInterval(() => void runRefresh(false), intervalMs);
+    return () => clearInterval(interval);
+  }, [autoRefresh, intervalMs, runRefresh, windowVisible]);
+
+  return { ports, error, lastUpdatedAt, refreshing, refresh };
 }
