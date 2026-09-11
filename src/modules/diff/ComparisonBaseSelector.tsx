@@ -103,7 +103,7 @@ export function parseRange(text: string): ComparisonBaseValue | null {
  * to repeat that, and in a repo with one remote — most of them — the "default
  * branch" group would have a single member.
  */
-export function BaseSelector({ repo, narrow }: { repo: string | null; narrow: boolean }) {
+export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; narrow: boolean }) {
   const { t } = useTranslation("sourceControl");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");

@@ -23,7 +23,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { buildFileTree, flattenFileTree } from "@/lib/fileTree";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { changedLines, parseDiffStats, type FileDiffStats } from "./lib/parseDiffStats";
-import { BaseSelector } from "./BaseSelector";
+import { ComparisonBaseSelector } from "./ComparisonBaseSelector";
 import { baseFor, useComparisonBaseStore } from "./lib/comparisonBaseStore";
 import { agentTargetMenuItems } from "./lib/sendComments";
 import { changeAtViewportTop } from "./lib/changeAtTop";
@@ -936,7 +936,7 @@ export function AllChangesTabContent({
                 "(uncommitted)" label used to: that label was naming the
                 comparison all along, and this says the same thing when it is
                 the working tree while being able to say something else. */}
-            <BaseSelector repo={repo} narrow={narrow} />
+            <ComparisonBaseSelector repo={repo} narrow={narrow} />
             {/* Only with a ref for a base. Against the working tree there is
                 nothing to include or leave out -- everything on the page is
                 uncommitted by definition -- and against a range neither end is

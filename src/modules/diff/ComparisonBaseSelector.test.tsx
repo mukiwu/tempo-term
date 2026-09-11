@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BaseSelector, baseLabel, parseRange } from "./BaseSelector";
+import { ComparisonBaseSelector, baseLabel, parseRange } from "./ComparisonBaseSelector";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -102,7 +102,7 @@ describe("parseRange", () => {
   });
 });
 
-describe("BaseSelector", () => {
+describe("ComparisonBaseSelector", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useComparisonBaseStore.setState({ byRepo: {}, includeUncommitted: true });
@@ -126,19 +126,19 @@ describe("BaseSelector", () => {
   });
 
   it("shows what the page is comparing against", () => {
-    const { rerender } = render(<BaseSelector repo="/repo" narrow={false} />);
+    const { rerender } = render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     expect(screen.getAllByRole("button", { name: "baseSelector" })[0]).toHaveTextContent(
       "baseWorktree",
     );
 
     useComparisonBaseStore.getState().setBase("/repo", { kind: "range", from: "a", to: "b" });
-    rerender(<BaseSelector repo="/repo" narrow={false} />);
+    rerender(<ComparisonBaseSelector repo="/repo" narrow={false} />);
 
     expect(screen.getAllByRole("button", { name: "baseSelector" })[0]).toHaveTextContent("a..b");
   });
 
   it("reads the lists when it is opened, not when it is mounted", async () => {
-    render(<BaseSelector repo="/repo" narrow={false} />);
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     // A control nobody has clicked is not worth three git calls, and the
     // list is fresher for having waited.
     expect(gitComparisonBases).not.toHaveBeenCalled();
@@ -151,7 +151,7 @@ describe("BaseSelector", () => {
   });
 
   it("leads with the refs always worth offering, then everything by recency", async () => {
-    render(<BaseSelector repo="/repo" narrow={false} />);
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     openList();
 
     await waitFor(() => expect(screen.getAllByRole("option").length).toBeGreaterThan(1));
@@ -183,7 +183,7 @@ describe("BaseSelector", () => {
   });
 
   it("lifts the cap when something is typed, and marks what matched", async () => {
-    const { container } = render(<BaseSelector repo="/repo" narrow={false} />);
+    const { container } = render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     const input = openList();
     await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
 
@@ -205,7 +205,7 @@ describe("BaseSelector", () => {
   });
 
   it("moves the row Enter takes, and stops at the ends", async () => {
-    render(<BaseSelector repo="/repo" narrow={false} />);
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     const input = openList();
     await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
 
@@ -227,7 +227,7 @@ describe("BaseSelector", () => {
   });
 
   it("takes a hash that was typed, once git has vouched for it", async () => {
-    render(<BaseSelector repo="/repo" narrow={false} />);
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     const input = openList();
     await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
 
@@ -246,7 +246,7 @@ describe("BaseSelector", () => {
 
   it("keeps the list open and says so when git does not know the rev", async () => {
     vi.mocked(gitResolveRev).mockResolvedValue(null);
-    render(<BaseSelector repo="/repo" narrow={false} />);
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     const input = openList();
     await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
 
@@ -262,7 +262,7 @@ describe("BaseSelector", () => {
   });
 
   it("builds a range from the far end once the dots are typed", async () => {
-    render(<BaseSelector repo="/repo" narrow={false} />);
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     const input = openList();
     await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
 
@@ -294,7 +294,7 @@ describe("BaseSelector", () => {
   });
 
   it("matches the far end being typed, not the whole box", async () => {
-    render(<BaseSelector repo="/repo" narrow={false} />);
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     const input = openList();
     await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
 
@@ -331,7 +331,7 @@ describe("BaseSelector", () => {
     useComparisonBaseStore
       .getState()
       .setBase("/repo", { kind: "range", from: "936578d", to: "2db2298" });
-    render(<BaseSelector repo="/repo" narrow={false} />);
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
     openList();
     await waitFor(() => expect(screen.getAllByRole("option").length).toBe(8));
 
@@ -345,7 +345,7 @@ describe("BaseSelector", () => {
   });
 
   it("says nothing to git when there is no repo", () => {
-    render(<BaseSelector repo={null} narrow={false} />);
+    render(<ComparisonBaseSelector repo={null} narrow={false} />);
     openList();
 
     expect(gitComparisonBases).not.toHaveBeenCalled();
