@@ -141,7 +141,7 @@ export function GitGraph({
   // otherwise turning a feature off still leaves every lane moved.
   const headHash = useMemo(() => commits.find(isCurrentCommit)?.hash, [commits]);
   const layoutHead = showUncommitted ? headHash : undefined;
-  const { layouts, edges, gutter, columns, laneWidth } = useMemo(
+  const { layouts, edges, openEnds, gutter, columns, laneWidth } = useMemo(
     () => computeGraphLayout(commits, geometry, layoutHead),
     [commits, geometry, layoutHead],
   );
@@ -398,6 +398,16 @@ export function GitGraph({
   }, [isWorkspaceSelected]);
 
   const svgHeight = commits.length * ROW_HEIGHT + rowOffset + PADDING_TOP * 2 - 20;
+  // Where a line that leaves the page stops: half a row below the last node,
+  // which is the edge of its row band. Not the foot of the canvas — there is a
+  // whole row of blank below that, the strip the load-more button sits in, and
+  // a line running through it reads as escaping the graph rather than carrying
+  // on past it. Not the last node's own height either: a lane with no node
+  // there would just stop in mid-air, level with someone else's dot. Every one
+  // of them ends on the same line, so they read as one edge rather than as
+  // lines that each gave up somewhere.
+  const pageEdge =
+    PADDING_TOP + rowOffset + (commits.length - 1) * ROW_HEIGHT + ROW_HEIGHT / 2;
   // Commit `i` is drawn at PADDING_TOP + rowOffset + i * ROW_HEIGHT, so the
   // offset comes back out before scroll position is turned into an index.
   const visibleStart = Math.max(
@@ -497,6 +507,25 @@ export function GitGraph({
                   />
                 );
               })}
+              {/* A parent that is further down than this page reached: the
+                  line runs to the foot of the page instead of stopping at the
+                  node, because the lane goes on waiting for it and nothing
+                  else can claim that track. Only while there is more to load
+                  — once the walk is exhausted, a parent that still will not
+                  resolve is a shallow clone's boundary, and a line promising
+                  more below it would be a lie. */}
+              {hasMore &&
+                openEnds.map((end, idx) =>
+                  end.childIndex > visibleEnd ? null : (
+                    <path
+                      key={`open-${idx}`}
+                      d={`M ${end.x} ${end.y} L ${end.x} ${pageEdge}`}
+                      fill="none"
+                      stroke={strokeFor(end.colorIndex)}
+                      strokeWidth={2}
+                    />
+                  ),
+                )}
               {/* Working tree → HEAD. Dashed and in the accent rather than a
                   lane colour, so it reads as "not history yet": straight down
                   its own track, then bending into HEAD in the last row. Drawn
