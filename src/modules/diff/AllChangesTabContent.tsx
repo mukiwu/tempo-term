@@ -154,7 +154,9 @@ export function AllChangesTabContent({
    * saying only that something went wrong, about a name it was still
    * displaying in the header.
    */
-  const [gone, setGone] = useState<string | null>(null);
+  const [gone, setGone] = useState<{ rev: string; why: "missing" | "unrelated" } | null>(
+    null,
+  );
   const [refreshKey, setRefreshKey] = useState(0);
   // The rev every section reads its "before" document at. Null while the
   // base is the working tree, where the two sides are HEAD/index/disk and
@@ -325,8 +327,17 @@ export function AllChangesTabContent({
           range: to !== undefined,
           files: ordered.map((file) => ({ rel: file.path, status: file.status })),
         });
-      } catch {
+      } catch (failure) {
         if (cancelled) {
+          return;
+        }
+        // Two branches that never shared a commit have no point to measure
+        // from, which the command says outright. Both refs resolve, so the
+        // question below would find nothing wrong and the page would report
+        // only that something failed -- about a base it was still naming in
+        // the header.
+        if (String(failure).includes("no common history")) {
+          setGone({ rev: from, why: "unrelated" });
           return;
         }
         // Ask which failure this was before reporting one. A rev git cannot
@@ -342,7 +353,7 @@ export function AllChangesTabContent({
             return;
           }
           if (!known) {
-            setGone(rev);
+            setGone({ rev, why: "missing" });
             return;
           }
         }
@@ -1060,7 +1071,9 @@ export function AllChangesTabContent({
         <p className="px-3 py-2 text-xs text-fg-subtle">{t("noRepo")}</p>
       ) : gone ? (
         <div className="flex flex-col items-start gap-1.5 px-3 py-2 text-xs">
-          <p className="text-danger">{t("baseGone", { name: gone })}</p>
+          <p className="text-danger">
+            {t(gone.why === "unrelated" ? "baseUnrelated" : "baseGone", { name: gone.rev })}
+          </p>
           {/* The selector in the header is the other way out, and it was
               there all along; this is the one for a reader who just wants
               the page back. */}

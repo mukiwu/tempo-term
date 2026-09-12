@@ -89,6 +89,7 @@
   "baseHeadHint": "current branch",
   "baseUnknownRev": "“{{name}}” not found",
   "baseGone": "“{{name}}” is no longer in this repository — deleted, or pruned by a fetch.",
+  "baseUnrelated": "“{{name}}” and this branch have no commit in common, so there is no point to compare from.",
   "baseBackToWorktree": "Compare uncommitted changes instead",
   "openChangesInTab": "Open these changes in a tab"
 }

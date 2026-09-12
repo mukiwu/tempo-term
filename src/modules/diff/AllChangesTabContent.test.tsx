@@ -499,7 +499,7 @@ describe("AllChangesTabContent", () => {
     useComparisonBaseStore.setState({
       byRepo: { "/repo": { kind: "ref", name: "origin/main" } },
     });
-    vi.mocked(gitDiffFromBase).mockRejectedValue(new Error("no common history"));
+    vi.mocked(gitDiffFromBase).mockRejectedValue(new Error("fatal: bad object"));
     vi.mocked(gitResolveRev).mockResolvedValue("1111111");
 
     render(<AllChangesTabContent paneId={PANE} />);
@@ -508,6 +508,33 @@ describe("AllChangesTabContent", () => {
     // the base would send the reader after the wrong thing.
     await waitFor(() => expect(screen.getByText("diffLoadError")).toBeInTheDocument());
     expect(screen.queryByText(/^baseGone/)).not.toBeInTheDocument();
+  });
+
+  it("says two histories never met, rather than that something went wrong", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "ref", name: "stranger" } },
+    });
+    // A branch is compared from where it and HEAD parted, and two histories
+    // that never met have no such point. The command says so; the page used
+    // to throw that away and ask whether the ref still existed instead --
+    // which it does, so the reader got the generic failure about a name still
+    // shown in the header.
+    vi.mocked(gitDiffFromBase).mockRejectedValue(
+      new Error("no common history with stranger"),
+    );
+    vi.mocked(gitResolveRev).mockResolvedValue("1111111");
+
+    render(<AllChangesTabContent paneId={PANE} />);
+
+    await waitFor(() => expect(screen.getByText("baseUnrelated:stranger")).toBeInTheDocument());
+    expect(screen.queryByText("diffLoadError")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^baseGone/)).not.toBeInTheDocument();
+
+    // Same way out as any other base that cannot be read.
+    fireEvent.click(screen.getByRole("button", { name: "baseBackToWorktree" }));
+
+    await waitFor(() => expect(gitStatus).toHaveBeenCalled());
+    expect(useComparisonBaseStore.getState().byRepo["/repo"]).toBeUndefined();
   });
 
   it("reads a file that moved at the name it moved from", async () => {
