@@ -63,7 +63,10 @@ interface GitGraphProps {
   labels: GitGraphLabels;
 }
 
-const NODE_RADIUS = 6;
+/** Node and ring sizes at the full lane width; below it they shrink with it. */
+const NODE_DOT = 12;
+const NODE_MARGIN = 2;
+const NODE_RING = 4;
 /** Lanes' worth of distance a track takes to fade out past the last column. */
 const LANE_FADE_LANES = 1;
 const ROW_HEIGHT = DEFAULT_GEOMETRY.rowHeight;
@@ -173,6 +176,32 @@ export function GitGraph({
   const strokeFor = (colorIndex: number) =>
     `url(#${laneFade}-${colorIndex % BRANCH_COLORS.length})`;
   // A node is a div, not a stroke, so it reads the same ramp by hand.
+  // The dot keeps its size at every lane width. What a lane has to clear is its
+  // neighbour's track, which runs down that neighbour's centre, and a 12px dot
+  // still stops 3px short of it at a 10px lane — being wider than the spacing
+  // is not the same as being in the way.
+  //
+  // The selection mark is the one that does not fit: at the full width it
+  // reaches 14px out, far enough to swallow the track beside it whole. The lift
+  // goes first, since it costs more than anything else there and the row behind
+  // the node is highlighted anyway.
+  const roomy = laneWidth >= DEFAULT_GEOMETRY.laneWidth;
+  // The ring keeps its weight at every lane width — a selection mark that is
+  // 4px here and 1px there reads as two different marks. What gives way is the
+  // gap between dot and ring, which costs the same pixels and shows nothing.
+  // Once that is gone the ring does overlap the neighbouring track, by a pixel
+  // at the narrowest lane: 4px of a 30% wash over a 2px line, against a
+  // selection that is the same mark everywhere.
+  const gap = roomy
+    ? NODE_MARGIN
+    : Math.max(0, Math.min(NODE_MARGIN, laneWidth - 1 - NODE_DOT / 2 - NODE_RING));
+  const ring = NODE_RING;
+  const nodeBox = NODE_DOT + gap * 2;
+  const selectedRing = {
+    transform: roomy ? "scale(1.25)" : undefined,
+    boxShadow: `0 0 0 ${ring}px color-mix(in srgb, var(--color-accent) 30%, transparent)`,
+  };
+
   const nodeOpacity = (x: number) =>
     x <= fadeFrom ? 1 : Math.max(0, 1 - (x - fadeFrom) / (fadeTo - fadeFrom));
 
@@ -480,13 +509,14 @@ export function GitGraph({
                     onWorkspaceContextMenu?.(e.clientX, e.clientY);
                   }}
                   style={{
-                    left: `${uncommittedX - NODE_RADIUS - 2}px`,
-                    top: `${uncommittedY - NODE_RADIUS - 2}px`,
-                    width: `${(NODE_RADIUS + 2) * 2}px`,
-                    height: `${(NODE_RADIUS + 2) * 2}px`,
+                    left: `${uncommittedX - nodeBox / 2}px`,
+                    top: `${uncommittedY - nodeBox / 2}px`,
+                    width: `${nodeBox}px`,
+                    height: `${nodeBox}px`,
+                    ...(isWorkspaceSelected ? selectedRing : null),
                   }}
                   className={`absolute z-10 flex items-center justify-center rounded-full transition-all focus:outline-none ${
-                    isWorkspaceSelected ? "scale-125 ring-4 ring-accent/30" : "hover:scale-110"
+                    isWorkspaceSelected ? "" : "hover:scale-110"
                   }`}
                 >
                   <span
@@ -518,24 +548,25 @@ export function GitGraph({
                       onCommitContextMenu?.(commit, e.clientX, e.clientY);
                     }}
                     style={{
-                      left: `${layout.x - NODE_RADIUS - 2}px`,
-                      top: `${layout.y - NODE_RADIUS - 2}px`,
-                      width: `${(NODE_RADIUS + 2) * 2}px`,
-                      height: `${(NODE_RADIUS + 2) * 2}px`,
+                      left: `${layout.x - nodeBox / 2}px`,
+                      top: `${layout.y - nodeBox / 2}px`,
+                      width: `${nodeBox}px`,
+                      height: `${nodeBox}px`,
                       opacity: nodeOpacity(layout.x),
+                      ...(isSelected ? selectedRing : null),
                     }}
                     className={`absolute flex items-center justify-center rounded-full transition-all focus:outline-none ${
                       layout.x > fadeFrom ? "z-0" : "z-10"
-                    } ${isSelected ? "scale-125 ring-4 ring-accent/30" : "hover:scale-110"}`}
+                    } ${isSelected ? "" : "hover:scale-110"}`}
                   >
                     {/* The current (HEAD) node is filled with the accent — a colour
                         the branch lanes never use — and glows, so it reads as "you
                         are here" without touching the calm commit rows. */}
                     <span
+                      style={isCurrent ? undefined : { backgroundColor: color }}
                       className={`h-3 w-3 rounded-full border-2 border-bg ${
                         isCurrent ? "git-head-node bg-accent" : "shadow-md"
                       }`}
-                      style={isCurrent ? undefined : { backgroundColor: color }}
                     />
                   </button>
                 </Tooltip>
