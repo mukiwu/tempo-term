@@ -28,14 +28,14 @@ export interface GraphGeometry {
    * to spend any width on lanes (the sidebar's inline history) wants.
    */
   laneWidthMin?: number;
-  /**
-   * Hard ceiling on columns; past it the lanes collapse as they always did.
-   * A repo really can have thirty branches live at once, and there is no
-   * width at which thirty tracks are readable — long before that the graph
-   * would have taken the row it is supposed to annotate. The ceiling also
-   * bounds the damage when the list is not a whole walk at all: the layout
-   * assumes it is, so a commit whose parent is missing holds a lane nothing
-   * will ever free, and the count runs away.
+   /**
+   * Where the gutter stops growing. A repo really can have fifty branches live
+   * at once, and no gutter wide enough to hold them leaves room for the rows
+   * it is supposed to annotate. Past this the lanes are *not* stacked out of
+   * sight — they keep their real position and simply run past the gutter,
+   * where the caller draws them faded. The graph gives up the space, not the
+   * truth: a couple of lanes over reads as a couple of faint tracks, fifty
+   * over reads as the thicket it is.
    */
   maxColumns?: number;
 }
@@ -49,8 +49,8 @@ export const DEFAULT_GEOMETRY: GraphGeometry = {
   paddingLeft: 16,
   paddingTop: 20,
   maxLane: 5,
-  laneWidthMin: 9,
-  maxColumns: 12,
+  laneWidthMin: 10,
+  maxColumns: 20,
 };
 
 /** Where a single commit node sits in the graph. */
@@ -90,12 +90,14 @@ export interface GraphLayout {
   laneWidth: number;
   /** Total width the tracks need — what the caller should size its column to. */
   gutter: number;
+  /** Lanes the gutter was sized for; a lane at or past this runs outside it. */
+  columns: number;
 }
 
 export interface LaneSizing {
   laneWidth: number;
   gutter: number;
-  /** Lanes with a column of their own; wider ones share the last. */
+  /** Lanes the gutter was sized for; wider ones run past it. */
   columns: number;
 }
 
@@ -140,8 +142,14 @@ export function laneSizing(lanes: number, geometry: GraphGeometry): LaneSizing {
  */
 export function laneX(lane: number, geometry: GraphGeometry, sizing?: LaneSizing): number {
   const width = sizing?.laneWidth ?? geometry.laneWidth;
-  const lastColumn = sizing ? sizing.columns - 1 : geometry.maxLane;
-  return geometry.paddingLeft + Math.min(lane, lastColumn) * width + 12;
+  // Without a ladder the wide lanes collapse onto the last column, the way
+  // they always have — that is what a pane too narrow to spend width on lanes
+  // is asking for. With one, every lane keeps its true position; the ones past
+  // the gutter are drawn outside it rather than stacked inside it.
+  if (geometry.laneWidthMin === undefined) {
+    return geometry.paddingLeft + Math.min(lane, geometry.maxLane) * width + 12;
+  }
+  return geometry.paddingLeft + lane * width + 12;
 }
 
 /**
@@ -263,12 +271,6 @@ export function computeGraphLayout(
     }
   });
 
-  const lanes = widest + 1;
-  const sizing = laneSizing(lanes, geometry);
-  for (const layout of Object.values(layouts)) {
-    layout.x = laneX(layout.lane, geometry, sizing);
-  }
-
   // Parents may be referenced by a hash of a different length than the keys in
   // `layouts` (short vs long), so resolve by prefix when there is no exact hit.
   const resolveParent = (parentHash: string): CommitLayout | undefined => {
@@ -281,6 +283,12 @@ export function computeGraphLayout(
     );
     return key ? layouts[key] : undefined;
   };
+
+  const lanes = widest + 1;
+  const sizing = laneSizing(lanes, geometry);
+  for (const layout of Object.values(layouts)) {
+    layout.x = laneX(layout.lane, geometry, sizing);
+  }
 
   const edges: GraphEdge[] = [];
   commits.forEach((commit, index) => {
@@ -319,6 +327,7 @@ export function computeGraphLayout(
     lanes,
     laneWidth: sizing.laneWidth,
     gutter: sizing.gutter,
+    columns: sizing.columns,
   };
 }
 

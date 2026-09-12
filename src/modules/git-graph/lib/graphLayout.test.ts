@@ -188,14 +188,17 @@ describe("laneX", () => {
     expect(beyond).toBeGreaterThan(atMax);
   });
 
-  it("collapses again past the column ceiling", () => {
-    // A filtered list is not a walk: every commit whose parent was filtered
-    // out holds a lane forever, so the count runs away. The ceiling is what
-    // stops the gutter following it.
+  it("runs past the column ceiling rather than stacking on it", () => {
+    // The ceiling stops the gutter growing, not the lanes. Past it they keep
+    // their real position and run outside, where the caller fades them out —
+    // giving up the width, not the truth.
     const sizing = laneSizing(40, DEFAULT_GEOMETRY);
     expect(sizing.columns).toBe(DEFAULT_GEOMETRY.maxColumns);
-    expect(laneX(39, DEFAULT_GEOMETRY, sizing)).toBe(laneX(11, DEFAULT_GEOMETRY, sizing));
-    expect(sizing.gutter).toBe(laneSizing(12, DEFAULT_GEOMETRY).gutter);
+    expect(sizing.gutter).toBe(laneSizing(20, DEFAULT_GEOMETRY).gutter);
+
+    const last = laneX(sizing.columns - 1, DEFAULT_GEOMETRY, sizing);
+    expect(laneX(sizing.columns, DEFAULT_GEOMETRY, sizing)).toBe(last + sizing.laneWidth);
+    expect(laneX(39, DEFAULT_GEOMETRY, sizing)).toBeGreaterThan(sizing.gutter);
   });
 
   it("still clamps when no minimum width is set", () => {
@@ -222,19 +225,18 @@ describe("laneSizing", () => {
   });
 
   it("narrows the lanes rather than the commit messages", () => {
-    // Seven to nine lanes all fit the budget the six already had.
+    // Seven and eight lanes still fit the budget the six already had.
     expect(width(7)).toBe(12);
     expect(width(8)).toBe(10);
-    expect(width(9)).toBe(9);
-    for (const lanes of [7, 8, 9]) {
+    for (const lanes of [7, 8]) {
       expect(gutter(lanes)).toBe(124);
     }
   });
 
   it("widens only once the lanes cannot narrow any further", () => {
-    expect(width(10)).toBe(DEFAULT_GEOMETRY.laneWidthMin);
-    expect(gutter(10)).toBeGreaterThan(124);
-    expect(gutter(12)).toBeGreaterThan(gutter(10));
+    expect(width(9)).toBe(DEFAULT_GEOMETRY.laneWidthMin);
+    expect(gutter(9)).toBeGreaterThan(124);
+    expect(gutter(12)).toBeGreaterThan(gutter(9));
   });
 
   it("stops widening at the ceiling", () => {
