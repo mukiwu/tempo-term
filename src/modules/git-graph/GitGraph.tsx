@@ -197,6 +197,28 @@ export function GitGraph({
     : Math.max(0, Math.min(NODE_MARGIN, laneWidth - 1 - NODE_DOT / 2 - NODE_RING));
   const ring = NODE_RING;
   const nodeBox = NODE_DOT + gap * 2;
+  // HEAD's glow is the one mark that is meant to spread, and at a full-width
+  // lane it reaches 17px at the peak of its pulse — past the track 9px away
+  // once the lanes narrow, which is the line the glow is there to help the
+  // reader find. It comes down with the lane rather than off: the point of it
+  // is to be unmistakable, and a glow shrunk until it clears every neighbour
+  // is no glow at all.
+  //
+  // A blur reads larger than its number — its edge is soft, so the eye counts
+  // the whole wash, not the radius. Bringing it down in step with the lane
+  // leaves it looking the size it was; it comes down with the square of that
+  // ratio instead, which is about where it stops competing with the 4px ring
+  // beside it. The spread is a hard edge and scales plainly.
+  const glowScale = roomy ? 1 : (laneWidth / DEFAULT_GEOMETRY.laneWidth) ** 2;
+  const spreadScale = roomy ? 1 : laneWidth / DEFAULT_GEOMETRY.laneWidth;
+  const headGlow = {
+    "--git-head-glow": `${Math.round(11 * glowScale)}px`,
+    "--git-head-spread": `${Math.round(2 * spreadScale)}px`,
+    "--git-head-glow-low": `${Math.round(8 * glowScale)}px`,
+    "--git-head-spread-low": `${Math.round(1 * spreadScale)}px`,
+    "--git-head-glow-high": `${Math.round(14 * glowScale)}px`,
+    "--git-head-spread-high": `${Math.round(3 * spreadScale)}px`,
+  } as React.CSSProperties;
   const selectedRing = {
     transform: roomy ? "scale(1.25)" : undefined,
     boxShadow: `0 0 0 ${ring}px color-mix(in srgb, var(--color-accent) 30%, transparent)`,
@@ -563,7 +585,7 @@ export function GitGraph({
                         the branch lanes never use — and glows, so it reads as "you
                         are here" without touching the calm commit rows. */}
                     <span
-                      style={isCurrent ? undefined : { backgroundColor: color }}
+                      style={isCurrent ? headGlow : { backgroundColor: color }}
                       className={`h-3 w-3 rounded-full border-2 border-bg ${
                         isCurrent ? "git-head-node bg-accent" : "shadow-md"
                       }`}
