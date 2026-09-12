@@ -868,6 +868,11 @@ export function AllChangesTabContent({
     if (changes.length === 0) {
       return;
     }
+    // The reader taking over. The landing is an effect, so it can still be
+    // waiting to run when the page is finished enough to press this -- and
+    // arriving afterwards it would put them back on the first change, one
+    // press after they asked to leave it.
+    landed.current = true;
     // Steps from the position as read, not from the raw one. The two differ
     // only at the top of the page, where the raw one is still zero — above the
     // first change, technically, though that change is on screen — and Next
