@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Clock, GitBranch, User } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import type {
@@ -64,6 +64,8 @@ interface GitGraphProps {
 }
 
 const NODE_RADIUS = 6;
+/** Lanes' worth of distance a track takes to fade out past the last column. */
+const LANE_FADE_LANES = 1;
 const ROW_HEIGHT = DEFAULT_GEOMETRY.rowHeight;
 const PADDING_TOP = DEFAULT_GEOMETRY.paddingTop;
 
@@ -136,7 +138,7 @@ export function GitGraph({
   // otherwise turning a feature off still leaves every lane moved.
   const headHash = useMemo(() => commits.find(isCurrentCommit)?.hash, [commits]);
   const layoutHead = showUncommitted ? headHash : undefined;
-  const { layouts, edges, gutter } = useMemo(
+  const { layouts, edges, gutter, columns, laneWidth } = useMemo(
     () => computeGraphLayout(commits, geometry, layoutHead),
     [commits, geometry, layoutHead],
   );
@@ -148,6 +150,31 @@ export function GitGraph({
   // used to hardcode — the second copy of the gutter width, and the one that
   // put nodes on top of the hashes the moment the first copy could grow.
   const rowIndent = gutter - 12;
+
+  // Lanes the gutter had no room for keep their real position and run past it,
+  // over the rows. Rather than dimming those lines flat — which leaves faint
+  // tracks lying across every message — they fade out with distance: solid
+  // while they are inside the gutter, gone a little way beyond it. A line that
+  // only just overruns stays legible; one far out is a hint that something is
+  // there, not a mark to read. The stroke is a gradient in the svg's own
+  // coordinates, so what fades is a position on the canvas rather than a
+  // property of the line: a track that sweeps outward fades along its run, and
+  // the part still inside the gutter is untouched.
+  // From the last column the gutter really has, not from the gutter's outer
+  // edge: that edge is a lane and a half further right, so starting there left
+  // the first lane to overrun at full strength — the one case the fade exists
+  // for. Three lanes later it is gone, so the overrun reads as a gradient
+  // across the few tracks that do it rather than as a wall.
+  const fadeFrom = laneX(columns - 1, geometry, { laneWidth, gutter, columns });
+  const fadeTo = fadeFrom + laneWidth * LANE_FADE_LANES;
+  // useId's own value carries colons, which have no business in a fragment
+  // reference.
+  const laneFade = `lane-fade-${useId().replace(/:/g, "")}`;
+  const strokeFor = (colorIndex: number) =>
+    `url(#${laneFade}-${colorIndex % BRANCH_COLORS.length})`;
+  // A node is a div, not a stroke, so it reads the same ramp by hand.
+  const nodeOpacity = (x: number) =>
+    x <= fadeFrom ? 1 : Math.max(0, 1 - (x - fadeFrom) / (fadeTo - fadeFrom));
 
   const isWorkspaceSelected = selection?.mode === "workspace";
   const activeHash =
@@ -385,22 +412,37 @@ export function GitGraph({
                 translucent background (which spans the gutter) but below the
                 commit nodes (z-10), so the lines stay visible instead of being
                 covered by the row tint. */}
-            <svg className="pointer-events-none absolute inset-0 z-[1] h-full w-full">
+            <svg
+              className="pointer-events-none absolute inset-0 z-[1] h-full w-full"
+              style={{ overflow: "visible" }}
+            >
+              <defs>
+                {BRANCH_COLORS.map((color, idx) => (
+                  <linearGradient
+                    key={color}
+                    id={`${laneFade}-${idx}`}
+                    gradientUnits="userSpaceOnUse"
+                    x1={fadeFrom}
+                    x2={fadeTo}
+                  >
+                    <stop offset="0" stopColor={color} stopOpacity={0.8} />
+                    <stop offset="1" stopColor={color} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
               {edges.map((edge, idx) => {
                 // Draw every edge overlapping the visible row range so lines
                 // stay continuous even when both endpoints are off-screen.
                 if (edge.parentIndex < visibleStart || edge.childIndex > visibleEnd) {
                   return null;
                 }
-                const color = BRANCH_COLORS[edge.colorIndex % BRANCH_COLORS.length];
                 return (
                   <path
                     key={`edge-${idx}`}
                     d={edgePath(edge, ROW_HEIGHT)}
                     fill="none"
-                    stroke={color}
+                    stroke={strokeFor(edge.colorIndex)}
                     strokeWidth={2}
-                    className="opacity-80"
                   />
                 );
               })}
@@ -480,10 +522,11 @@ export function GitGraph({
                       top: `${layout.y - NODE_RADIUS - 2}px`,
                       width: `${(NODE_RADIUS + 2) * 2}px`,
                       height: `${(NODE_RADIUS + 2) * 2}px`,
+                      opacity: nodeOpacity(layout.x),
                     }}
-                    className={`absolute z-10 flex items-center justify-center rounded-full transition-all focus:outline-none ${
-                      isSelected ? "scale-125 ring-4 ring-accent/30" : "hover:scale-110"
-                    }`}
+                    className={`absolute flex items-center justify-center rounded-full transition-all focus:outline-none ${
+                      layout.x > fadeFrom ? "z-0" : "z-10"
+                    } ${isSelected ? "scale-125 ring-4 ring-accent/30" : "hover:scale-110"}`}
                   >
                     {/* The current (HEAD) node is filled with the accent — a colour
                         the branch lanes never use — and glows, so it reads as "you
