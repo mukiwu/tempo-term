@@ -7,6 +7,8 @@
  */
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { create } from "zustand";
+import { IS_WINDOWS } from "@/lib/platform";
+import { normalizeWindowsDrivePath } from "@/lib/windowsPath";
 import { useTabsStore } from "@/stores/tabsStore";
 import { nearestTabInsertion, tabRectsInTabBar } from "@/components/lib/tabBarDrop";
 
@@ -259,7 +261,13 @@ export function markdownLink(name: string, path: string): string {
   return `[${name}](${path})`;
 }
 
-/** A file:// URL for showing a dropped file in the web preview. */
-export function fileUrl(path: string): string {
+/** A file:// URL for showing a local file in the web preview. */
+export function fileUrl(path: string, isWindows: boolean = IS_WINDOWS): string {
+  if (isWindows) {
+    const drivePath = normalizeWindowsDrivePath(path);
+    if (drivePath) {
+      return `file:///${drivePath}`;
+    }
+  }
   return `file://${path}`;
 }

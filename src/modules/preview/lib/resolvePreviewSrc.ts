@@ -1,7 +1,11 @@
+import { IS_WINDOWS } from "@/lib/platform";
+import { normalizeWindowsDrivePath } from "@/lib/windowsPath";
+
 // The webview loads local files through Tauri's asset protocol. On macOS/Linux
-// that scheme is `asset://localhost/<path>` (Windows/Android use
-// `http://asset.localhost/`, which this macOS app never hits).
+// that scheme is `asset://localhost/<path>`; on Windows it is
+// `http://asset.localhost/<path>`.
 const ASSET_ORIGIN = "asset://localhost";
+const WINDOWS_ASSET_ORIGIN = "http://asset.localhost";
 
 function fileUrlToPath(url: string): string {
   const withoutScheme = url.replace(/^file:\/\//i, "");
@@ -33,18 +37,32 @@ function toAssetUrl(path: string): string {
   return `${ASSET_ORIGIN}/%2F${segments.join("/")}`;
 }
 
+function toWindowsAssetUrl(path: string): string {
+  const segments = path.split("/").filter((seg) => seg !== "").map(encodeURIComponent);
+  return `${WINDOWS_ASSET_ORIGIN}/${segments.join("/")}`;
+}
+
 /**
  * Turn whatever lands in the preview's address bar (a typed path, a typed URL,
  * or a dropped file's `file://` url) into a src the WebView's iframe can load.
  *
- * WKWebView refuses to load raw `file://` from the app's own (custom-scheme)
- * origin, so local paths must go through the asset protocol. Real web URLs and
- * already-converted asset URLs pass through untouched.
+ * The app's webview loads local files through Tauri's asset protocol rather
+ * than navigating raw `file://` URLs. Real web URLs and already-converted
+ * asset URLs pass through untouched.
  */
-export function resolvePreviewSrc(input: string): string {
+export function resolvePreviewSrc(input: string, isWindows: boolean = IS_WINDOWS): string {
   const value = input.trim();
   if (value.startsWith("file://")) {
-    return toAssetUrl(fileUrlToPath(value));
+    const path = fileUrlToPath(value);
+    const windowsPath = isWindows ? normalizeWindowsDrivePath(path) : null;
+    if (windowsPath) {
+      return toWindowsAssetUrl(windowsPath);
+    }
+    return toAssetUrl(path);
+  }
+  const windowsPath = isWindows ? normalizeWindowsDrivePath(value) : null;
+  if (windowsPath) {
+    return toWindowsAssetUrl(windowsPath);
   }
   if (value.startsWith("/")) {
     return toAssetUrl(value);

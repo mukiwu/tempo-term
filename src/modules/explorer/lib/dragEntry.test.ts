@@ -45,6 +45,12 @@ describe("fileUrl", () => {
   it("prefixes file://", () => {
     expect(fileUrl("/x/index.html")).toBe("file:///x/index.html");
   });
+
+  it("normalizes a Windows drive path into a standard file URL", () => {
+    expect(fileUrl("C:\\Users\\me\\site\\index.html", true)).toBe(
+      "file:///C:/Users/me/site/index.html",
+    );
+  });
 });
 
 describe("getDraggedEntry / setDraggedEntry", () => {
