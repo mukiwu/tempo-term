@@ -1,0 +1,64 @@
+name: macOS Recovery Test Artifact
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/macos-recovery-artifact.yml"
+      - "src/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-recovery-artifact-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-app:
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build unsigned test app
+        run: >-
+          pnpm tauri build --debug --bundles app --no-sign --ci
+          --config '{"productName":"TempoTerm Recovery Test","identifier":"com.tempoterm.desktop.recovery-test","bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Package test app
+        run: >-
+          ditto -c -k --sequesterRsrc --keepParent
+          "src-tauri/target/debug/bundle/macos/TempoTerm Recovery Test.app"
+          "TempoTerm-recovery-test.zip"
+
+      - name: Upload test app
+        uses: actions/upload-artifact@v7
+        with:
+          name: tempoterm-macos-recovery-test
+          if-no-files-found: error
+          retention-days: 3
+          path: TempoTerm-recovery-test.zip
