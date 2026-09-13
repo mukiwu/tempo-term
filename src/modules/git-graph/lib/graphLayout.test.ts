@@ -5,8 +5,10 @@ import {
   edgePath,
   firstParentRowIndex,
   laneContinuationRowIndex,
+  laneSizing,
   laneX,
   type GraphEdge,
+  type GraphGeometry,
 } from "./graphLayout";
 import type { CommitNode } from "../types";
 
@@ -25,6 +27,9 @@ function commit(
     ...overrides,
   };
 }
+
+/** A geometry that still collapses wide lanes — the sidebar's inline history. */
+const COLLAPSING: GraphGeometry = { ...DEFAULT_GEOMETRY, laneWidthMin: undefined };
 
 describe("computeGraphLayout", () => {
   it("keeps a linear history in a single lane", () => {
@@ -176,10 +181,72 @@ describe("computeGraphLayout colouring", () => {
 });
 
 describe("laneX", () => {
-  it("clamps lanes past maxLane onto the last column", () => {
-    const beyond = laneX(DEFAULT_GEOMETRY.maxLane + 3, DEFAULT_GEOMETRY);
-    const atMax = laneX(DEFAULT_GEOMETRY.maxLane, DEFAULT_GEOMETRY);
-    expect(beyond).toBe(atMax);
+  it("gives every lane its own column once a minimum width is set", () => {
+    const sizing = laneSizing(9, DEFAULT_GEOMETRY);
+    const beyond = laneX(DEFAULT_GEOMETRY.maxLane + 3, DEFAULT_GEOMETRY, sizing);
+    const atMax = laneX(DEFAULT_GEOMETRY.maxLane, DEFAULT_GEOMETRY, sizing);
+    expect(beyond).toBeGreaterThan(atMax);
+  });
+
+  it("runs past the column ceiling rather than stacking on it", () => {
+    // The ceiling stops the gutter growing, not the lanes. Past it they keep
+    // their real position and run outside, where the caller fades them out —
+    // giving up the width, not the truth.
+    const sizing = laneSizing(40, DEFAULT_GEOMETRY);
+    expect(sizing.columns).toBe(DEFAULT_GEOMETRY.maxColumns);
+    expect(sizing.gutter).toBe(laneSizing(20, DEFAULT_GEOMETRY).gutter);
+
+    const last = laneX(sizing.columns - 1, DEFAULT_GEOMETRY, sizing);
+    expect(laneX(sizing.columns, DEFAULT_GEOMETRY, sizing)).toBe(last + sizing.laneWidth);
+    expect(laneX(39, DEFAULT_GEOMETRY, sizing)).toBeGreaterThan(sizing.gutter);
+  });
+
+  it("still clamps when no minimum width is set", () => {
+    const beyond = laneX(COLLAPSING.maxLane + 3, COLLAPSING);
+    expect(beyond).toBe(laneX(COLLAPSING.maxLane, COLLAPSING));
+  });
+
+  it("puts lane 0 in the same place at any lane width", () => {
+    expect(laneX(0, DEFAULT_GEOMETRY, laneSizing(9, DEFAULT_GEOMETRY))).toBe(
+      laneX(0, DEFAULT_GEOMETRY, laneSizing(1, DEFAULT_GEOMETRY)),
+    );
+  });
+});
+
+describe("laneSizing", () => {
+  const gutter = (lanes: number) => laneSizing(lanes, DEFAULT_GEOMETRY).gutter;
+  const width = (lanes: number) => laneSizing(lanes, DEFAULT_GEOMETRY).laneWidth;
+
+  it("leaves six lanes exactly as they are today", () => {
+    for (let lanes = 1; lanes <= 6; lanes++) {
+      expect(width(lanes)).toBe(DEFAULT_GEOMETRY.laneWidth);
+      expect(gutter(lanes)).toBe(124);
+    }
+  });
+
+  it("narrows the lanes rather than the commit messages", () => {
+    // Seven and eight lanes still fit the budget the six already had.
+    expect(width(7)).toBe(12);
+    expect(width(8)).toBe(10);
+    for (const lanes of [7, 8]) {
+      expect(gutter(lanes)).toBe(124);
+    }
+  });
+
+  it("widens only once the lanes cannot narrow any further", () => {
+    expect(width(9)).toBe(DEFAULT_GEOMETRY.laneWidthMin);
+    expect(gutter(9)).toBeGreaterThan(124);
+    expect(gutter(12)).toBeGreaterThan(gutter(9));
+  });
+
+  it("stops widening at the ceiling", () => {
+    const capped = gutter(DEFAULT_GEOMETRY.maxColumns!);
+    expect(gutter(40)).toBe(capped);
+    expect(gutter(400)).toBe(capped);
+  });
+
+  it("keeps the gutter fixed when no minimum width is set", () => {
+    expect(laneSizing(20, COLLAPSING)).toEqual(laneSizing(1, COLLAPSING));
   });
 });
 
@@ -217,9 +284,9 @@ describe("edgePath", () => {
   });
 
   it("bends between two lanes that laneX collapsed onto the same column", () => {
-    // Clamped, lanes 6 and 7 share an x — deciding on x would skip the bend.
-    const x = laneX(6, DEFAULT_GEOMETRY);
-    expect(x).toBe(laneX(7, DEFAULT_GEOMETRY));
+    // Collapsed, lanes 6 and 7 share an x — deciding on x would skip the bend.
+    const x = laneX(6, COLLAPSING);
+    expect(x).toBe(laneX(7, COLLAPSING));
     const edge: GraphEdge = {
       cx: x,
       cy: 20,
@@ -308,7 +375,7 @@ describe("laneContinuationRowIndex", () => {
   it("skips a bend between two lanes that laneX collapsed onto one column", () => {
     // Row 0 bends in from lane 7, row 1 continues lane 6 straight. All three
     // share an x, so picking by x returns row 0 — it comes first.
-    const x = laneX(6, DEFAULT_GEOMETRY);
+    const x = laneX(6, COLLAPSING);
     const edges: GraphEdge[] = [
       {
         cx: x,

@@ -17,9 +17,31 @@ export interface GraphGeometry {
   rowHeight: number;
   paddingLeft: number;
   paddingTop: number;
-  /** Lanes past this index collapse onto the last column to stay compact. */
+  /**
+   * Lanes the gutter is sized for. Without `laneWidthMin` the lanes past this
+   * collapse onto the last column; with it they narrow instead.
+   */
   maxLane: number;
+  /**
+   * Narrowest a lane may get before the gutter itself has to widen. Leave it
+   * unset to keep the collapsing behaviour — which is what a pane too narrow
+   * to spend any width on lanes (the sidebar's inline history) wants.
+   */
+  laneWidthMin?: number;
+   /**
+   * Where the gutter stops growing. A repo really can have fifty branches live
+   * at once, and no gutter wide enough to hold them leaves room for the rows
+   * it is supposed to annotate. Past this the lanes are *not* stacked out of
+   * sight — they keep their real position and simply run past the gutter,
+   * where the caller draws them faded. The graph gives up the space, not the
+   * truth: a couple of lanes over reads as a couple of faint tracks, fifty
+   * over reads as the thicket it is.
+   */
+  maxColumns?: number;
 }
+
+/** Room kept to the right of the last lane, for the node and its ring. */
+export const GUTTER_TRAIL = 24;
 
 export const DEFAULT_GEOMETRY: GraphGeometry = {
   laneWidth: 14,
@@ -27,6 +49,8 @@ export const DEFAULT_GEOMETRY: GraphGeometry = {
   paddingLeft: 16,
   paddingTop: 20,
   maxLane: 5,
+  laneWidthMin: 10,
+  maxColumns: 20,
 };
 
 /** Where a single commit node sits in the graph. */
@@ -60,13 +84,72 @@ export interface GraphEdge {
 export interface GraphLayout {
   layouts: Record<string, CommitLayout>;
   edges: GraphEdge[];
+  /** Lanes this layout actually uses. */
+  lanes: number;
+  /** Width each of them was given. */
+  laneWidth: number;
+  /** Total width the tracks need — what the caller should size its column to. */
+  gutter: number;
+  /** Lanes the gutter was sized for; a lane at or past this runs outside it. */
+  columns: number;
 }
 
-/** Horizontal centre of a lane, clamping wide lanes onto the last column. */
-export function laneX(lane: number, geometry: GraphGeometry): number {
-  return (
-    geometry.paddingLeft + Math.min(lane, geometry.maxLane) * geometry.laneWidth + 12
+export interface LaneSizing {
+  laneWidth: number;
+  gutter: number;
+  /** Lanes the gutter was sized for; wider ones run past it. */
+  columns: number;
+}
+
+/**
+ * How wide each lane gets, and how much room they need altogether.
+ *
+ * The gutter is a fixed budget for as long as it can be: up to `maxLane + 1`
+ * lanes take the full width, and past that the lanes narrow within the same
+ * budget rather than the graph eating into the commit messages. Only once
+ * they hit `laneWidthMin` — nine lanes still fit — does the gutter itself
+ * grow. Without `laneWidthMin` there is no ladder: the caller has said it
+ * would rather collapse the wide lanes than spend a pixel on them.
+ */
+export function laneSizing(lanes: number, geometry: GraphGeometry): LaneSizing {
+  const budget =
+    geometry.paddingLeft + (geometry.maxLane + 1) * geometry.laneWidth + GUTTER_TRAIL;
+  if (geometry.laneWidthMin === undefined) {
+    return {
+      laneWidth: geometry.laneWidth,
+      gutter: budget,
+      columns: geometry.maxLane + 1,
+    };
+  }
+  const columns = Math.min(lanes, geometry.maxColumns ?? lanes);
+  const room = budget - geometry.paddingLeft - GUTTER_TRAIL;
+  const laneWidth = Math.max(
+    geometry.laneWidthMin,
+    Math.min(geometry.laneWidth, Math.floor(room / Math.max(1, columns))),
   );
+  return {
+    laneWidth,
+    columns,
+    gutter: Math.max(budget, geometry.paddingLeft + columns * laneWidth + GUTTER_TRAIL),
+  };
+}
+
+/**
+ * Horizontal centre of a lane. `laneWidth` comes from `laneSizing` once the
+ * whole page is laid out and its widest lane is known; the default is for
+ * callers asking about a single lane in isolation, and lane 0 — the one they
+ * ask about — sits at the same x under every width.
+ */
+export function laneX(lane: number, geometry: GraphGeometry, sizing?: LaneSizing): number {
+  const width = sizing?.laneWidth ?? geometry.laneWidth;
+  // Without a ladder the wide lanes collapse onto the last column, the way
+  // they always have — that is what a pane too narrow to spend width on lanes
+  // is asking for. With one, every lane keeps its true position; the ones past
+  // the gutter are drawn outside it rather than stacked inside it.
+  if (geometry.laneWidthMin === undefined) {
+    return geometry.paddingLeft + Math.min(lane, geometry.maxLane) * width + 12;
+  }
+  return geometry.paddingLeft + lane * width + 12;
 }
 
 /**
@@ -85,6 +168,7 @@ export function computeGraphLayout(
   headHash?: string,
 ): GraphLayout {
   const layouts: Record<string, CommitLayout> = {};
+  let widest = 0;
 
   // Each slot holds the hash a lane is currently waiting for. An empty string
   // marks a freed lane that a new branch can reuse.
@@ -174,12 +258,17 @@ export function computeGraphLayout(
     }
 
     layouts[commit.hash] = {
-      x: laneX(lane, geometry),
+      // Filled in below: how wide a lane is depends on how many the page ends
+      // up using, which is not known until every commit has claimed one.
+      x: 0,
       y,
       lane,
       index,
       colorIndex: laneColors[lane] ?? 0,
     };
+    if (lane > widest) {
+      widest = lane;
+    }
   });
 
   // Parents may be referenced by a hash of a different length than the keys in
@@ -194,6 +283,12 @@ export function computeGraphLayout(
     );
     return key ? layouts[key] : undefined;
   };
+
+  const lanes = widest + 1;
+  const sizing = laneSizing(lanes, geometry);
+  for (const layout of Object.values(layouts)) {
+    layout.x = laneX(layout.lane, geometry, sizing);
+  }
 
   const edges: GraphEdge[] = [];
   commits.forEach((commit, index) => {
@@ -226,7 +321,14 @@ export function computeGraphLayout(
     });
   });
 
-  return { layouts, edges };
+  return {
+    layouts,
+    edges,
+    lanes,
+    laneWidth: sizing.laneWidth,
+    gutter: sizing.gutter,
+    columns: sizing.columns,
+  };
 }
 
 /**

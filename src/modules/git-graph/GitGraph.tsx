@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Clock, GitBranch, User } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import type {
@@ -14,6 +14,7 @@ import {
   DEFAULT_GEOMETRY,
   edgePath,
   firstParentRowIndex,
+  GUTTER_TRAIL,
   laneContinuationRowIndex,
   laneX,
 } from "./lib/graphLayout";
@@ -62,7 +63,12 @@ interface GitGraphProps {
   labels: GitGraphLabels;
 }
 
-const NODE_RADIUS = 6;
+/** Node and ring sizes at the full lane width; below it they shrink with it. */
+const NODE_DOT = 12;
+const NODE_MARGIN = 2;
+const NODE_RING = 4;
+/** Lanes' worth of distance a track takes to fade out past the last column. */
+const LANE_FADE_LANES = 1;
 const ROW_HEIGHT = DEFAULT_GEOMETRY.rowHeight;
 const PADDING_TOP = DEFAULT_GEOMETRY.paddingTop;
 
@@ -135,10 +141,91 @@ export function GitGraph({
   // otherwise turning a feature off still leaves every lane moved.
   const headHash = useMemo(() => commits.find(isCurrentCommit)?.hash, [commits]);
   const layoutHead = showUncommitted ? headHash : undefined;
-  const { layouts, edges } = useMemo(
+  const { layouts, edges, gutter, columns, laneWidth } = useMemo(
     () => computeGraphLayout(commits, geometry, layoutHead),
     [commits, geometry, layoutHead],
   );
+
+  // The rows clear the tracks by the same number the tracks were sized with,
+  // so a wider gutter takes the text with it instead of being drawn over. The
+  // 12px back off is the leading inset `laneX` adds, which sits to the left of
+  // lane 0's centre and is not track. At six lanes this is the 112px the rows
+  // used to hardcode — the second copy of the gutter width, and the one that
+  // put nodes on top of the hashes the moment the first copy could grow.
+  const rowIndent = gutter - 12;
+
+  // Lanes the gutter had no room for keep their real position and run past it,
+  // over the rows. Rather than dimming those lines flat — which leaves faint
+  // tracks lying across every message — they fade out with distance: solid
+  // while they are inside the gutter, gone a little way beyond it. A line that
+  // only just overruns stays legible; one far out is a hint that something is
+  // there, not a mark to read. The stroke is a gradient in the svg's own
+  // coordinates, so what fades is a position on the canvas rather than a
+  // property of the line: a track that sweeps outward fades along its run, and
+  // the part still inside the gutter is untouched.
+  // From the last column the gutter really has, not from the gutter's outer
+  // edge: that edge is a lane and a half further right, so starting there left
+  // the first lane to overrun at full strength — the one case the fade exists
+  // for. Three lanes later it is gone, so the overrun reads as a gradient
+  // across the few tracks that do it rather than as a wall.
+  const fadeFrom = laneX(columns - 1, geometry, { laneWidth, gutter, columns });
+  const fadeTo = fadeFrom + laneWidth * LANE_FADE_LANES;
+  // useId's own value carries colons, which have no business in a fragment
+  // reference.
+  const laneFade = `lane-fade-${useId().replace(/:/g, "")}`;
+  const strokeFor = (colorIndex: number) =>
+    `url(#${laneFade}-${colorIndex % BRANCH_COLORS.length})`;
+  // A node is a div, not a stroke, so it reads the same ramp by hand.
+  // The dot keeps its size at every lane width. What a lane has to clear is its
+  // neighbour's track, which runs down that neighbour's centre, and a 12px dot
+  // still stops 3px short of it at a 10px lane — being wider than the spacing
+  // is not the same as being in the way.
+  //
+  // The selection mark is the one that does not fit: at the full width it
+  // reaches 14px out, far enough to swallow the track beside it whole. The lift
+  // goes first, since it costs more than anything else there and the row behind
+  // the node is highlighted anyway.
+  const roomy = laneWidth >= DEFAULT_GEOMETRY.laneWidth;
+  // The ring keeps its weight at every lane width — a selection mark that is
+  // 4px here and 1px there reads as two different marks. What gives way is the
+  // gap between dot and ring, which costs the same pixels and shows nothing.
+  // Once that is gone the ring does overlap the neighbouring track, by a pixel
+  // at the narrowest lane: 4px of a 30% wash over a 2px line, against a
+  // selection that is the same mark everywhere.
+  const gap = roomy
+    ? NODE_MARGIN
+    : Math.max(0, Math.min(NODE_MARGIN, laneWidth - 1 - NODE_DOT / 2 - NODE_RING));
+  const ring = NODE_RING;
+  const nodeBox = NODE_DOT + gap * 2;
+  // HEAD's glow is the one mark that is meant to spread, and at a full-width
+  // lane it reaches 17px at the peak of its pulse — past the track 9px away
+  // once the lanes narrow, which is the line the glow is there to help the
+  // reader find. It comes down with the lane rather than off: the point of it
+  // is to be unmistakable, and a glow shrunk until it clears every neighbour
+  // is no glow at all.
+  //
+  // A blur reads larger than its number — its edge is soft, so the eye counts
+  // the whole wash, not the radius. Bringing it down in step with the lane
+  // leaves it looking the size it was; it comes down with the square of that
+  // ratio instead, which is about where it stops competing with the 4px ring
+  // beside it. The spread is a hard edge and scales plainly.
+  const glowScale = roomy ? 1 : (laneWidth / DEFAULT_GEOMETRY.laneWidth) ** 2;
+  const spreadScale = roomy ? 1 : laneWidth / DEFAULT_GEOMETRY.laneWidth;
+  const headGlow = {
+    "--git-head-glow": `${Math.round(11 * glowScale)}px`,
+    "--git-head-spread": `${Math.round(2 * spreadScale)}px`,
+    "--git-head-glow-low": `${Math.round(8 * glowScale)}px`,
+    "--git-head-spread-low": `${Math.round(1 * spreadScale)}px`,
+    "--git-head-glow-high": `${Math.round(14 * glowScale)}px`,
+    "--git-head-spread-high": `${Math.round(3 * spreadScale)}px`,
+  } as React.CSSProperties;
+  const selectedRing = {
+    transform: roomy ? "scale(1.25)" : undefined,
+    boxShadow: `0 0 0 ${ring}px color-mix(in srgb, var(--color-accent) 30%, transparent)`,
+  };
+
+  const nodeOpacity = (x: number) =>
+    x <= fadeFrom ? 1 : Math.max(0, 1 - (x - fadeFrom) / (fadeTo - fadeFrom));
 
   const isWorkspaceSelected = selection?.mode === "workspace";
   const activeHash =
@@ -366,7 +453,9 @@ export function GitGraph({
           <div
             className="relative"
             style={{
-              width: `${DEFAULT_GEOMETRY.paddingLeft + 6 * DEFAULT_GEOMETRY.laneWidth + 24}px`,
+              // From the same pass that placed the lanes, so the column can
+              // never disagree with what was drawn into it.
+              width: `${gutter}px`,
               minHeight: `${svgHeight}px`,
             }}
           >
@@ -374,22 +463,37 @@ export function GitGraph({
                 translucent background (which spans the gutter) but below the
                 commit nodes (z-10), so the lines stay visible instead of being
                 covered by the row tint. */}
-            <svg className="pointer-events-none absolute inset-0 z-[1] h-full w-full">
+            <svg
+              className="pointer-events-none absolute inset-0 z-[1] h-full w-full"
+              style={{ overflow: "visible" }}
+            >
+              <defs>
+                {BRANCH_COLORS.map((color, idx) => (
+                  <linearGradient
+                    key={color}
+                    id={`${laneFade}-${idx}`}
+                    gradientUnits="userSpaceOnUse"
+                    x1={fadeFrom}
+                    x2={fadeTo}
+                  >
+                    <stop offset="0" stopColor={color} stopOpacity={0.8} />
+                    <stop offset="1" stopColor={color} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
               {edges.map((edge, idx) => {
                 // Draw every edge overlapping the visible row range so lines
                 // stay continuous even when both endpoints are off-screen.
                 if (edge.parentIndex < visibleStart || edge.childIndex > visibleEnd) {
                   return null;
                 }
-                const color = BRANCH_COLORS[edge.colorIndex % BRANCH_COLORS.length];
                 return (
                   <path
                     key={`edge-${idx}`}
                     d={edgePath(edge, ROW_HEIGHT)}
                     fill="none"
-                    stroke={color}
+                    stroke={strokeFor(edge.colorIndex)}
                     strokeWidth={2}
-                    className="opacity-80"
                   />
                 );
               })}
@@ -427,13 +531,14 @@ export function GitGraph({
                     onWorkspaceContextMenu?.(e.clientX, e.clientY);
                   }}
                   style={{
-                    left: `${uncommittedX - NODE_RADIUS - 2}px`,
-                    top: `${uncommittedY - NODE_RADIUS - 2}px`,
-                    width: `${(NODE_RADIUS + 2) * 2}px`,
-                    height: `${(NODE_RADIUS + 2) * 2}px`,
+                    left: `${uncommittedX - nodeBox / 2}px`,
+                    top: `${uncommittedY - nodeBox / 2}px`,
+                    width: `${nodeBox}px`,
+                    height: `${nodeBox}px`,
+                    ...(isWorkspaceSelected ? selectedRing : null),
                   }}
                   className={`absolute z-10 flex items-center justify-center rounded-full transition-all focus:outline-none ${
-                    isWorkspaceSelected ? "scale-125 ring-4 ring-accent/30" : "hover:scale-110"
+                    isWorkspaceSelected ? "" : "hover:scale-110"
                   }`}
                 >
                   <span
@@ -465,23 +570,25 @@ export function GitGraph({
                       onCommitContextMenu?.(commit, e.clientX, e.clientY);
                     }}
                     style={{
-                      left: `${layout.x - NODE_RADIUS - 2}px`,
-                      top: `${layout.y - NODE_RADIUS - 2}px`,
-                      width: `${(NODE_RADIUS + 2) * 2}px`,
-                      height: `${(NODE_RADIUS + 2) * 2}px`,
+                      left: `${layout.x - nodeBox / 2}px`,
+                      top: `${layout.y - nodeBox / 2}px`,
+                      width: `${nodeBox}px`,
+                      height: `${nodeBox}px`,
+                      opacity: nodeOpacity(layout.x),
+                      ...(isSelected ? selectedRing : null),
                     }}
-                    className={`absolute z-10 flex items-center justify-center rounded-full transition-all focus:outline-none ${
-                      isSelected ? "scale-125 ring-4 ring-accent/30" : "hover:scale-110"
-                    }`}
+                    className={`absolute flex items-center justify-center rounded-full transition-all focus:outline-none ${
+                      layout.x > fadeFrom ? "z-0" : "z-10"
+                    } ${isSelected ? "" : "hover:scale-110"}`}
                   >
                     {/* The current (HEAD) node is filled with the accent — a colour
                         the branch lanes never use — and glows, so it reads as "you
                         are here" without touching the calm commit rows. */}
                     <span
+                      style={isCurrent ? headGlow : { backgroundColor: color }}
                       className={`h-3 w-3 rounded-full border-2 border-bg ${
                         isCurrent ? "git-head-node bg-accent" : "shadow-md"
                       }`}
-                      style={isCurrent ? undefined : { backgroundColor: color }}
                     />
                   </button>
                 </Tooltip>
@@ -504,8 +611,9 @@ export function GitGraph({
                 style={{
                   height: `${ROW_HEIGHT}px`,
                   top: `${uncommittedY - ROW_HEIGHT / 2}px`,
+                  paddingLeft: `${rowIndent}px`,
                 }}
-                className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pl-[112px] pr-3 transition-all ${
+                className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pr-3 transition-all ${
                   isWorkspaceSelected
                     ? "border-border-strong bg-bg-elevated/60 text-fg shadow-sm"
                     : "border-transparent text-fg-muted hover:bg-bg-elevated/40 hover:text-fg"
@@ -568,8 +676,9 @@ export function GitGraph({
                   style={{
                     height: `${ROW_HEIGHT}px`,
                     top: `${layout.y - ROW_HEIGHT / 2}px`,
+                    paddingLeft: `${rowIndent}px`,
                   }}
-                  className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pl-[112px] pr-3 transition-all ${rowState}`}
+                  className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pr-3 transition-all ${rowState}`}
                 >
                   <div className="flex items-center space-x-3 overflow-hidden pr-2">
                     <span className="select-all font-mono text-xs font-semibold text-accent">
@@ -603,8 +712,15 @@ export function GitGraph({
             })}
             {hasMore && (
               <div
-                className="absolute left-[100px] right-4 flex items-center justify-center"
-                style={{ top: `${svgHeight - 34}px`, height: "32px" }}
+                className="absolute right-4 flex items-center justify-center"
+                // Its own inset rather than the rows': this centres a button in
+                // whatever is left, so it only has to clear the tracks. Keeps
+                // the 100px it had at six lanes.
+                style={{
+                  left: `${gutter - GUTTER_TRAIL}px`,
+                  top: `${svgHeight - 34}px`,
+                  height: "32px",
+                }}
               >
                 <button
                   type="button"
