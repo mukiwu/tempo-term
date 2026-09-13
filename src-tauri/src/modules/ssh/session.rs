@@ -39,6 +39,7 @@ pub enum SshControl {
 
 /// The frontend-facing handle to one running session: just the sender side of
 /// its control channel. The worker thread holds the receiver.
+#[derive(Clone)]
 struct SshHandle {
     control: mpsc::UnboundedSender<SshControl>,
     owner_label: String,
@@ -57,15 +58,17 @@ struct SshSink {
 struct SshOutputInner {
     backlog: VecDeque<u8>,
     sink: Option<SshSink>,
+    exit_code: Option<i32>,
     start: u64,
     next: u64,
     truncated: bool,
-    active: bool,
+    window_active: bool,
+    pane_visible: bool,
 }
 struct SshOutputHub(Mutex<SshOutputInner>);
 
 impl SshOutputHub {
-    fn new(data: Channel<Response>, exit: Channel<i32>) -> Self {
+    fn new(data: Channel<Response>, exit: Channel<i32>, pane_visible: bool) -> Self {
         Self(Mutex::new(SshOutputInner {
             backlog: VecDeque::new(),
             sink: Some(SshSink {
@@ -74,10 +77,12 @@ impl SshOutputHub {
                 cursor: 0,
                 needs_truncation_notice: false,
             }),
+            exit_code: None,
             start: 0,
             next: 0,
             truncated: false,
-            active: true,
+            window_active: true,
+            pane_visible,
         }))
     }
     fn publish(&self, bytes: Vec<u8>) {
@@ -89,7 +94,7 @@ impl SshOutputHub {
             inner.start += 1;
             inner.truncated = true;
         }
-        if inner.active {
+        if inner.window_active && inner.pane_visible {
             let next = inner.next;
             if let Some(sink) = inner.sink.as_mut() {
                 if sink.data.send(Response::new(bytes)).is_err() {
@@ -100,14 +105,23 @@ impl SshOutputHub {
             }
         }
     }
-    fn finish(&self, code: i32) {
-        if let Some(sink) = self.0.lock().unwrap().sink.take() {
-            let _ = sink.exit.send(code);
-        }
-    }
-    fn attach(&self, data: Channel<Response>, exit: Channel<i32>) {
+    /// Save completion and report whether a renderer accepted the exit event.
+    fn finish(&self, code: i32) -> bool {
         let mut inner = self.0.lock().unwrap();
-        if !inner.active {
+        inner.exit_code = Some(code);
+        // Preserve ordering for a hidden pane: buffered tail output must be
+        // flushed before its exit event when the pane is shown or reattached.
+        if !(inner.window_active && inner.pane_visible) {
+            return false;
+        }
+        if let Some(sink) = inner.sink.take() {
+            return sink.exit.send(code).is_ok();
+        }
+        false
+    }
+    fn attach(&self, data: Channel<Response>, exit: Channel<i32>) -> bool {
+        let mut inner = self.0.lock().unwrap();
+        if !(inner.window_active && inner.pane_visible) {
             let cursor = inner.start;
             let needs_truncation_notice = inner.truncated;
             inner.sink = Some(SshSink {
@@ -116,59 +130,87 @@ impl SshOutputHub {
                 cursor,
                 needs_truncation_notice,
             });
-            return;
+            return false;
         }
         let mut replay = Vec::new();
+        replay.extend(inner.backlog.iter().copied());
         if inner.truncated {
             replay.extend_from_slice(
                 b"\r\n\x1b[33m[TempoTerm: earlier SSH output was truncated]\x1b[0m\r\n",
             );
         }
-        replay.extend(inner.backlog.iter().copied());
         for chunk in replay.chunks(SEND_CHUNK) {
             if data.send(Response::new(chunk.to_vec())).is_err() {
                 inner.sink = None;
-                return;
+                return false;
             }
         }
-        let cursor = inner.next;
-        inner.sink = Some(SshSink {
-            data,
-            exit,
-            cursor,
-            needs_truncation_notice: false,
-        });
+        if let Some(code) = inner.exit_code {
+            exit.send(code).is_ok()
+        } else {
+            let cursor = inner.next;
+            inner.sink = Some(SshSink {
+                data,
+                exit,
+                cursor,
+                needs_truncation_notice: false,
+            });
+            false
+        }
     }
-    fn set_active(&self, active: bool) {
+    fn set_window_active(&self, active: bool) -> bool {
         let mut inner = self.0.lock().unwrap();
-        if inner.active == active {
-            return;
+        if inner.window_active == active {
+            return false;
         }
-        inner.active = active;
-        if !active {
-            return;
+        let was_active = inner.window_active && inner.pane_visible;
+        inner.window_active = active;
+        if was_active || !(inner.window_active && inner.pane_visible) {
+            return false;
         }
+        Self::flush_pending(&mut inner)
+    }
+
+    fn set_pane_visible(&self, visible: bool) -> bool {
+        let mut inner = self.0.lock().unwrap();
+        if inner.pane_visible == visible {
+            return false;
+        }
+        let was_active = inner.window_active && inner.pane_visible;
+        inner.pane_visible = visible;
+        if was_active || !(inner.window_active && inner.pane_visible) {
+            return false;
+        }
+        Self::flush_pending(&mut inner)
+    }
+
+    fn flush_pending(inner: &mut SshOutputInner) -> bool {
         let start = inner.start;
         let next = inner.next;
         let backlog: Vec<u8> = inner.backlog.iter().copied().collect();
-        if let Some(sink) = inner.sink.as_mut() {
+        if let Some(mut sink) = inner.sink.take() {
             let offset = sink.cursor.max(start).saturating_sub(start) as usize;
             let mut pending = Vec::new();
+            pending.extend_from_slice(&backlog[offset.min(backlog.len())..]);
             if sink.needs_truncation_notice || sink.cursor < start {
                 pending.extend_from_slice(
                     b"\r\n\x1b[33m[TempoTerm: background SSH output was truncated]\x1b[0m\r\n",
                 );
             }
-            pending.extend_from_slice(&backlog[offset.min(backlog.len())..]);
             for chunk in pending.chunks(SEND_CHUNK) {
                 if sink.data.send(Response::new(chunk.to_vec())).is_err() {
-                    inner.sink = None;
-                    return;
+                    return false;
                 }
             }
             sink.cursor = next;
             sink.needs_truncation_notice = false;
+            if let Some(code) = inner.exit_code {
+                return sink.exit.send(code).is_ok();
+            } else {
+                inner.sink = Some(sink);
+            }
         }
+        false
     }
     fn is_truncated(&self) -> bool {
         self.0.lock().unwrap().truncated
@@ -226,7 +268,7 @@ pub fn open(
 ) -> Result<u32, String> {
     let id = state.alloc_id();
     let (control_tx, control_rx) = mpsc::unbounded_channel::<SshControl>();
-    let output = Arc::new(SshOutputHub::new(on_data, on_exit));
+    let output = Arc::new(SshOutputHub::new(on_data, on_exit, req.active));
 
     // Register the handle before spawning so a write/resize/close that races in
     // right after `open` returns can find the session. Don't hold the lock
@@ -261,8 +303,7 @@ pub fn open(
                 // Couldn't even build the runtime; report a non-zero exit so the
                 // frontend tears the pane down rather than waiting forever.
                 emit_line(&output, "ssh: could not start session runtime");
-                remove_session(&cleanup_app, id);
-                output.finish(-1);
+                finish_session(&cleanup_app, id, &output, -1);
                 return;
             }
         };
@@ -278,16 +319,11 @@ pub fn open(
             control_rx,
         ));
 
-        // Drop our own registry entry on exit. A connection that fails async
-        // (the frontend's openSsh resolved but the worker then errored) would
-        // otherwise leak the handle, since the frontend never calls ssh_close
-        // for a session it never saw succeed. close() from the frontend is a
-        // harmless no-op once the entry is gone.
-        remove_session(&cleanup_app, id);
-
         // `on_exit` fires exactly once, on every exit path of the worker
-        // (auth failure, channel close, control Close, or error).
-        output.finish(code);
+        // (auth failure, channel close, control Close, or error). Keep the
+        // registry handle as a completed tombstone when its renderer vanished,
+        // so a replacement can replay the tail and acknowledge the exit.
+        finish_session(&cleanup_app, id, &output, code);
     });
 
     Ok(id)
@@ -622,17 +658,24 @@ pub fn attach(
     state: &SshState,
     id: u32,
     owner: &str,
+    active: bool,
     data: Channel<Response>,
     exit: Channel<i32>,
 ) -> Result<(), String> {
-    let sessions = state.sessions.lock().unwrap();
-    let handle = sessions
+    let handle = state
+        .sessions
+        .lock()
+        .unwrap()
         .get(&id)
+        .cloned()
         .ok_or_else(|| format!("ssh session {id} not found"))?;
     if handle.owner_label != owner {
         return Err("ssh session belongs to another window".into());
     }
-    handle.output.attach(data, exit);
+    handle.output.set_pane_visible(active);
+    if handle.output.attach(data, exit) {
+        state.sessions.lock().unwrap().remove(&id);
+    }
     Ok(())
 }
 
@@ -641,13 +684,38 @@ pub fn set_window_active(state: &SshState, owner: &str, active: bool) {
         .sessions
         .lock()
         .unwrap()
-        .values()
-        .filter(|handle| handle.owner_label == owner)
-        .map(|handle| handle.output.clone())
+        .iter()
+        .filter_map(|(id, handle)| {
+            (handle.owner_label == owner).then_some((*id, handle.output.clone()))
+        })
         .collect();
-    for hub in hubs {
-        hub.set_active(active);
+    for (id, hub) in hubs {
+        if hub.set_window_active(active) {
+            state.sessions.lock().unwrap().remove(&id);
+        }
     }
+}
+
+pub fn set_session_active(
+    state: &SshState,
+    id: u32,
+    owner_label: &str,
+    active: bool,
+) -> Result<(), String> {
+    let handle = state
+        .sessions
+        .lock()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| format!("ssh session {id} not found"))?;
+    if handle.owner_label != owner_label {
+        return Err("ssh session belongs to another window".to_string());
+    }
+    if handle.output.set_pane_visible(active) {
+        state.sessions.lock().unwrap().remove(&id);
+    }
+    Ok(())
 }
 
 pub fn recovery_stats(state: &SshState, owner: &str) -> (usize, bool) {
@@ -723,12 +791,18 @@ pub fn close(state: &State<'_, SshState>, id: u32) {
     close_inner(state, id)
 }
 
-/// Drop a session's registry entry, looked up from the app's managed `SshState`.
-/// Called by the worker thread on exit so a connection that fails before the
-/// frontend ever calls `ssh_close` does not leak its handle.
-fn remove_session(app: &AppHandle, id: u32) {
+/// Complete a worker while retaining a replayable tombstone if the renderer's
+/// Channel is gone. A successful exit delivery is the acknowledgement that lets
+/// us prune the handle immediately on the ordinary (non-recovery) path.
+fn finish_session(app: &AppHandle, id: u32, output: &SshOutputHub, code: i32) {
     let state = app.state::<SshState>();
-    state.sessions.lock().unwrap().remove(&id);
+    finish_session_inner(&state, id, output, code);
+}
+
+fn finish_session_inner(state: &SshState, id: u32, output: &SshOutputHub, code: i32) {
+    if output.finish(code) {
+        state.sessions.lock().unwrap().remove(&id);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -776,23 +850,38 @@ mod tests {
         (data, exit, messages)
     }
 
+    fn capturing_exit_channel() -> (Channel<i32>, Arc<Mutex<Vec<i32>>>) {
+        let codes = Arc::new(Mutex::new(Vec::new()));
+        let captured = codes.clone();
+        let exit = Channel::new(move |body| {
+            if let InvokeResponseBody::Json(value) = body {
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(serde_json::from_str(&value).unwrap());
+            }
+            Ok(())
+        });
+        (exit, codes)
+    }
+
     #[test]
     fn ssh_output_hub_mutes_background_ipc_and_flushes_in_order() {
         let (data, exit, messages) = test_channels();
-        let hub = SshOutputHub::new(data, exit);
+        let hub = SshOutputHub::new(data, exit, true);
         hub.publish(b"before".to_vec());
-        hub.set_active(false);
+        hub.set_window_active(false);
         hub.publish(b"during-1".to_vec());
         hub.publish(b"during-2".to_vec());
         assert_eq!(messages.lock().unwrap().concat(), b"before");
-        hub.set_active(true);
+        hub.set_window_active(true);
         assert_eq!(messages.lock().unwrap().concat(), b"beforeduring-1during-2");
     }
 
     #[test]
     fn ssh_output_hub_attach_replaces_sink_and_replays_backlog() {
         let (first_data, first_exit, first) = test_channels();
-        let hub = SshOutputHub::new(first_data, first_exit);
+        let hub = SshOutputHub::new(first_data, first_exit, true);
         hub.publish(b"one".to_vec());
         let (second_data, second_exit, second) = test_channels();
         hub.attach(second_data, second_exit);
@@ -804,7 +893,7 @@ mod tests {
     #[test]
     fn ssh_output_hub_backlog_is_bounded_and_marks_truncation() {
         let (data, exit, _) = test_channels();
-        let hub = SshOutputHub::new(data, exit);
+        let hub = SshOutputHub::new(data, exit, true);
         hub.publish(vec![b'x'; BACKLOG_CAP + 17]);
         let inner = hub.0.lock().unwrap();
         assert_eq!(inner.backlog.len(), BACKLOG_CAP);
@@ -815,15 +904,115 @@ mod tests {
     #[test]
     fn hidden_ssh_attach_preserves_truncation_notice_until_activation() {
         let (data, exit, _) = test_channels();
-        let hub = SshOutputHub::new(data, exit);
-        hub.set_active(false);
+        let hub = SshOutputHub::new(data, exit, false);
         hub.publish(vec![b'x'; BACKLOG_CAP + 1]);
         let (attached_data, attached_exit, attached) = test_channels();
         hub.attach(attached_data, attached_exit);
         assert!(attached.lock().unwrap().is_empty());
-        hub.set_active(true);
+        hub.set_pane_visible(true);
         let output = attached.lock().unwrap().concat();
-        assert!(String::from_utf8_lossy(&output).contains("background SSH output was truncated"));
+        assert!(output
+            .ends_with(b"\r\n\x1b[33m[TempoTerm: background SSH output was truncated]\x1b[0m\r\n"));
+    }
+
+    #[test]
+    fn ssh_finish_after_sink_failure_replays_exit_on_attach() {
+        let failed_data = Channel::new(|_| Err(tauri::Error::AssetNotFound("stale sink".into())));
+        let exit = Channel::new(|_| Ok(()));
+        let hub = SshOutputHub::new(failed_data, exit, true);
+        hub.publish(b"before-exit".to_vec());
+        hub.finish(42);
+
+        let (attached_data, _, attached) = test_channels();
+        let (attached_exit, exits) = capturing_exit_channel();
+        hub.attach(attached_data, attached_exit);
+        assert_eq!(attached.lock().unwrap().concat(), b"before-exit");
+        assert_eq!(*exits.lock().unwrap(), vec![42]);
+    }
+
+    #[test]
+    fn hidden_ssh_attach_replays_exit_on_activation() {
+        let (data, exit, _) = test_channels();
+        let hub = SshOutputHub::new(data, exit, false);
+        hub.finish(17);
+
+        let (attached_data, _, _) = test_channels();
+        let (attached_exit, exits) = capturing_exit_channel();
+        hub.attach(attached_data, attached_exit);
+        assert!(exits.lock().unwrap().is_empty());
+
+        hub.set_pane_visible(true);
+        assert_eq!(*exits.lock().unwrap(), vec![17]);
+    }
+
+    #[test]
+    fn hidden_ssh_completion_flushes_tail_before_exit() {
+        let (data, _, messages) = test_channels();
+        let (exit, exits) = capturing_exit_channel();
+        let hub = SshOutputHub::new(data, exit, false);
+        hub.publish(b"tail".to_vec());
+
+        assert!(!hub.finish(29));
+        assert!(messages.lock().unwrap().is_empty());
+        assert!(exits.lock().unwrap().is_empty());
+
+        assert!(hub.set_pane_visible(true));
+        assert_eq!(messages.lock().unwrap().concat(), b"tail");
+        assert_eq!(*exits.lock().unwrap(), vec![29]);
+    }
+
+    #[test]
+    fn ssh_output_hub_requires_both_window_and_pane_visibility() {
+        let (data, exit, messages) = test_channels();
+        let hub = SshOutputHub::new(data, exit, false);
+        hub.publish(b"hidden-pane".to_vec());
+        hub.set_window_active(false);
+        hub.set_pane_visible(true);
+        hub.publish(b"hidden-window".to_vec());
+        assert!(messages.lock().unwrap().is_empty());
+        hub.set_window_active(true);
+        assert_eq!(
+            messages.lock().unwrap().concat(),
+            b"hidden-panehidden-window"
+        );
+    }
+
+    #[test]
+    fn completed_ssh_session_replays_tail_and_exit_through_attach_path() {
+        let state = SshState::new();
+        let id = state.alloc_id();
+        let (control, _receiver) = mpsc::unbounded_channel();
+        let failed_data = Channel::new(|_| Err(tauri::Error::AssetNotFound("stale sink".into())));
+        let failed_exit = Channel::new(|_| Err(tauri::Error::AssetNotFound("stale sink".into())));
+        let hub = Arc::new(SshOutputHub::new(failed_data, failed_exit, true));
+        state.sessions.lock().unwrap().insert(
+            id,
+            SshHandle {
+                control,
+                owner_label: "main".to_string(),
+                output: hub.clone(),
+            },
+        );
+
+        hub.publish(b"ssh-recovery-tail".to_vec());
+        finish_session_inner(&state, id, &hub, 37);
+        assert_eq!(
+            session_count(&state),
+            1,
+            "failed exit delivery must retain tombstone"
+        );
+
+        let (attached_data, _, attached) = test_channels();
+        let (attached_exit, exits) = capturing_exit_channel();
+        attach(&state, id, "main", true, attached_data, attached_exit).unwrap();
+
+        assert_eq!(attached.lock().unwrap().concat(), b"ssh-recovery-tail");
+        assert_eq!(*exits.lock().unwrap(), vec![37]);
+        assert_eq!(
+            session_count(&state),
+            0,
+            "successful exit replay should prune tombstone"
+        );
     }
 
     #[test]

@@ -47,10 +47,12 @@ use modules::preview::{
 };
 use modules::pty::{
     pty_attach, pty_close, pty_close_all, pty_cwd, pty_foreground_command, pty_open, pty_resize,
-    pty_sessions_busy, pty_set_window_active, pty_shell_name, pty_write, PtyState,
+    pty_sessions_busy, pty_set_session_active, pty_set_window_active, pty_shell_name, pty_write,
+    PtyState,
 };
 use modules::recovery::{
-    recovery_dismiss_notice, recovery_reload_window, recovery_reveal_log,
+    recovery_dismiss_notice, recovery_rebuild_webview, recovery_reload_window,
+    recovery_renderer_heartbeat, recovery_renderer_ready, recovery_reveal_log,
     recovery_sync_editor_snapshot, recovery_take_editor_snapshot, recovery_take_notice,
     runtime_instance_id, RecoveryState,
 };
@@ -69,7 +71,7 @@ use modules::sftp::{
 };
 use modules::ssh::{
     ssh_attach, ssh_close, ssh_forward_start, ssh_forward_stop, ssh_open, ssh_prompt_reply,
-    ssh_resize, ssh_set_window_active, ssh_write, SshState,
+    ssh_resize, ssh_set_session_active, ssh_set_window_active, ssh_write, SshState,
 };
 use modules::sysmon::{system_stats, SysinfoState};
 use modules::terminal_history::{
@@ -135,23 +137,21 @@ pub fn run() {
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
     let builder = builder.on_web_content_process_terminate(|webview| {
-        // Installing a custom handler replaces Tauri's default auto-reload, so
-        // reload explicitly. Preview children are isolated; a main renderer
-        // termination records a recoverable incident before loading the UI.
+        // Installing a custom handler replaces Tauri's default auto-reload.
+        // Preview children are isolated; a main renderer is replaced by the
+        // shared same-label workspace reconstruction path.
         if webview.label().starts_with("preview-") {
             let _ = webview.reload();
             return;
         }
         let window = webview.window();
-        let app = window.app_handle();
-        let automatic_reload_allowed = app
-            .try_state::<RecoveryState>()
-            .map(|state| state.record_web_content_termination(window.label()))
-            .unwrap_or(true);
-        if automatic_reload_allowed || modules::recovery::prompt_crash_reload(&window) {
-            modules::recovery::close_owned_previews(app, window.label());
-            let _ = webview.reload();
-        }
+        let app = window.app_handle().clone();
+        let _ = modules::recovery::schedule_rebuild(
+            app,
+            window.label().to_string(),
+            "web-content-terminated",
+            true,
+        );
     });
 
     let app = builder
@@ -224,6 +224,7 @@ pub fn run() {
             {
                 state.init_log_path(dir.join("recovery-incidents.jsonl"));
             }
+            modules::recovery::start_renderer_watchdog(app.handle().clone());
             // Claude/Codex session status arrives over a loopback socket (#155,
             // ported to all platforms in #181): bind the listener now, before
             // any pane spawns, and stash its address+token so each pane's env
@@ -253,6 +254,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             pty_open,
             pty_attach,
+            pty_set_session_active,
             pty_set_window_active,
             pty_write,
             pty_resize,
@@ -270,6 +272,9 @@ pub fn run() {
             recovery_take_notice,
             recovery_dismiss_notice,
             recovery_reload_window,
+            recovery_rebuild_webview,
+            recovery_renderer_heartbeat,
+            recovery_renderer_ready,
             recovery_reveal_log,
             open_new_window,
             appearance_save_background_image,
@@ -368,6 +373,7 @@ pub fn run() {
             notes_unwatch,
             ssh_open,
             ssh_attach,
+            ssh_set_session_active,
             ssh_set_window_active,
             ssh_write,
             ssh_resize,
@@ -409,6 +415,8 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
+        #[cfg(target_os = "macos")]
+        modules::recovery::handle_run_event(app_handle, &event);
         modules::exit_guard::handle_run_event(app_handle, &event);
     });
 }

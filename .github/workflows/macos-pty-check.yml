@@ -9,12 +9,16 @@ on:
     paths:
       - "src-tauri/vendor/**"
       - "src-tauri/src/modules/pty/**"
+      - "src-tauri/src/modules/recovery.rs"
+      - "src-tauri/src/lib.rs"
   push:
     branches:
       - master
     paths:
       - "src-tauri/vendor/**"
       - "src-tauri/src/modules/pty/**"
+      - "src-tauri/src/modules/recovery.rs"
+      - "src-tauri/src/lib.rs"
 
 permissions:
   contents: read
@@ -47,6 +51,10 @@ jobs:
       - name: Test TempoTerm PTY module
         working-directory: src-tauri
         run: "cargo test modules::pty:: --lib"
+
+      - name: Test renderer recovery state machine
+        working-directory: src-tauri
+        run: "cargo test modules::recovery:: --lib"
 
       - name: Cargo check
         working-directory: src-tauri

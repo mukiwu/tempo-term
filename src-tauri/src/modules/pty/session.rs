@@ -23,7 +23,10 @@ pub struct Session {
     /// backend could not report it — treated as busy, never as idle.
     shell_pid: Option<u32>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    master: Mutex<Box<dyn MasterPty + Send>>,
+    // Dropped as soon as the child exits so ConPTY readers can observe EOF on
+    // Windows. The rest of the session may remain as a completed tombstone
+    // until a replacement renderer has received its buffered output + exit.
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     pub shell_name: String,
     output: Mutex<Option<Arc<OutputHub>>>,
@@ -46,7 +49,8 @@ struct OutputHubInner {
     exit_code: Option<i32>,
     start_seq: u64,
     next_seq: u64,
-    active: bool,
+    window_active: bool,
+    pane_visible: bool,
 }
 
 /// Renderer-independent PTY output. A WKWebView can be suspended or replaced
@@ -56,7 +60,7 @@ struct OutputHubInner {
 struct OutputHub(Mutex<OutputHubInner>);
 
 impl OutputHub {
-    fn new(data: Channel<Response>, exit: Channel<i32>) -> Self {
+    fn new(data: Channel<Response>, exit: Channel<i32>, pane_visible: bool) -> Self {
         Self(Mutex::new(OutputHubInner {
             backlog: VecDeque::new(),
             truncated: false,
@@ -69,7 +73,8 @@ impl OutputHub {
             exit_code: None,
             start_seq: 0,
             next_seq: 0,
-            active: true,
+            window_active: true,
+            pane_visible,
         }))
     }
 
@@ -82,7 +87,7 @@ impl OutputHub {
             inner.start_seq = inner.start_seq.saturating_add(1);
             inner.truncated = true;
         }
-        if inner.active {
+        if inner.window_active && inner.pane_visible {
             let next = inner.next_seq;
             if let Some(sink) = inner.sink.as_mut() {
                 if sink.data.send(Response::new(bytes)).is_err() {
@@ -94,17 +99,27 @@ impl OutputHub {
         }
     }
 
-    fn finish(&self, code: i32) {
+    /// Save the terminal state and report whether a renderer accepted the exit.
+    /// A failed/missing sink leaves the hub replayable through `attach`.
+    fn finish(&self, code: i32) -> bool {
         let mut inner = self.0.lock().unwrap();
         inner.exit_code = Some(code);
-        if let Some(sink) = inner.sink.take() {
-            let _ = sink.exit.send(code);
+        // Output accumulated while the window/pane was inactive has not been
+        // delivered yet. Keep both channels attached so activation (or a new
+        // renderer attach) flushes data before it reports the exit.
+        if !(inner.window_active && inner.pane_visible) {
+            return false;
         }
+        if let Some(sink) = inner.sink.take() {
+            return sink.exit.send(code).is_ok();
+        }
+        false
     }
 
-    fn attach(&self, data: Channel<Response>, exit: Channel<i32>) {
+    /// Attach a renderer and return true only when a saved exit was delivered.
+    fn attach(&self, data: Channel<Response>, exit: Channel<i32>) -> bool {
         let mut inner = self.0.lock().unwrap();
-        if !inner.active {
+        if !(inner.window_active && inner.pane_visible) {
             let cursor = inner.start_seq;
             let needs_truncation_notice = inner.truncated;
             inner.sink = Some(OutputSink {
@@ -113,23 +128,23 @@ impl OutputHub {
                 cursor,
                 needs_truncation_notice,
             });
-            return;
+            return false;
         }
         let mut replay = Vec::with_capacity(inner.backlog.len() + 96);
+        replay.extend(inner.backlog.iter().copied());
         if inner.truncated {
             replay.extend_from_slice(
                 b"\r\n\x1b[33m[TempoTerm: earlier recovery output was truncated]\x1b[0m\r\n",
             );
         }
-        replay.extend(inner.backlog.iter().copied());
         for chunk in replay.chunks(OUTPUT_SEND_CHUNK) {
             if data.send(Response::new(chunk.to_vec())).is_err() {
                 inner.sink = None;
-                return;
+                return false;
             }
         }
         if let Some(code) = inner.exit_code {
-            let _ = exit.send(code);
+            exit.send(code).is_ok()
         } else {
             let cursor = inner.next_seq;
             inner.sink = Some(OutputSink {
@@ -138,40 +153,64 @@ impl OutputHub {
                 cursor,
                 needs_truncation_notice: false,
             });
+            false
         }
     }
 
-    fn set_active(&self, active: bool) {
+    fn set_window_active(&self, active: bool) -> bool {
         let mut inner = self.0.lock().unwrap();
-        if inner.active == active {
-            return;
+        if inner.window_active == active {
+            return false;
         }
-        inner.active = active;
-        if !active {
-            return;
+        let was_active = inner.window_active && inner.pane_visible;
+        inner.window_active = active;
+        if was_active || !(inner.window_active && inner.pane_visible) {
+            return false;
         }
+        Self::flush_pending(&mut inner)
+    }
+
+    fn set_pane_visible(&self, visible: bool) -> bool {
+        let mut inner = self.0.lock().unwrap();
+        if inner.pane_visible == visible {
+            return false;
+        }
+        let was_active = inner.window_active && inner.pane_visible;
+        inner.pane_visible = visible;
+        if was_active || !(inner.window_active && inner.pane_visible) {
+            return false;
+        }
+        Self::flush_pending(&mut inner)
+    }
+
+    fn flush_pending(inner: &mut OutputHubInner) -> bool {
         let start_seq = inner.start_seq;
         let next_seq = inner.next_seq;
         let backlog: Vec<u8> = inner.backlog.iter().copied().collect();
-        if let Some(sink) = inner.sink.as_mut() {
+        if let Some(mut sink) = inner.sink.take() {
             let was_truncated = sink.needs_truncation_notice || sink.cursor < start_seq;
             let offset = sink.cursor.max(start_seq).saturating_sub(start_seq) as usize;
             let mut pending = Vec::new();
+            pending.extend_from_slice(&backlog[offset.min(backlog.len())..]);
             if was_truncated {
                 pending.extend_from_slice(
                     b"\r\n\x1b[33m[TempoTerm: background output was truncated]\x1b[0m\r\n",
                 );
             }
-            pending.extend_from_slice(&backlog[offset.min(backlog.len())..]);
             for chunk in pending.chunks(OUTPUT_SEND_CHUNK) {
                 if sink.data.send(Response::new(chunk.to_vec())).is_err() {
-                    inner.sink = None;
-                    return;
+                    return false;
                 }
             }
             sink.cursor = next_seq;
             sink.needs_truncation_notice = false;
+            if let Some(code) = inner.exit_code {
+                return sink.exit.send(code).is_ok();
+            } else {
+                inner.sink = Some(sink);
+            }
         }
+        false
     }
 
     fn is_truncated(&self) -> bool {
@@ -180,8 +219,8 @@ impl OutputHub {
 }
 
 /// Tauri-managed registry of every open session. The map is behind an `Arc`
-/// so each session's waiter thread can prune its own entry on child exit
-/// (see `spawn_with_sinks`).
+/// so worker threads can retain or prune a completed entry based on renderer
+/// acknowledgement (see `spawn_with_sinks`).
 #[derive(Default)]
 pub struct PtyState {
     sessions: Arc<RwLock<HashMap<u32, Arc<Session>>>>,
@@ -319,7 +358,7 @@ fn spawn_with_sinks(
     owner_label: Option<String>,
     output: Option<Arc<OutputHub>>,
     on_bytes: impl Fn(Vec<u8>) -> bool + Send + 'static,
-    on_exit: impl FnOnce(i32) + Send + 'static,
+    on_exit: impl FnOnce(i32) -> bool + Send + 'static,
 ) -> Result<u32, String> {
     let pair: PtyPair = native_pty_system()
         .openpty(pty_size(cols, rows))
@@ -340,7 +379,7 @@ fn spawn_with_sinks(
         owner_label: Mutex::new(owner_label),
         shell_pid,
         writer: Arc::new(Mutex::new(writer)),
-        master: Mutex::new(pair.master),
+        master: Mutex::new(Some(pair.master)),
         killer: Mutex::new(killer),
         shell_name,
         output: Mutex::new(output),
@@ -352,16 +391,24 @@ fn spawn_with_sinks(
     // reader EOF. On Windows ConPTY the reader NEVER sees EOF while the pseudo
     // console is open (microsoft/terminal#1810), and the master lives in the
     // registry — so waiting for EOF before `child.wait()` deadlocks there and
-    // a pane whose shell ran `exit` hangs forever. Waiting first and pruning
-    // the session is what closes the pseudo console and unblocks the reader;
-    // on unix the reader gets EOF on its own and this just prunes early. The
+    // a pane whose shell ran `exit` hangs forever. On Windows, waiting first
+    // and dropping the stored master closes the pseudo console and unblocks
+    // the reader. Unix readers observe EOF themselves, so keep the master
+    // until they have drained the kernel buffer to avoid losing tail output.
+    // The
     // exit code crosses to the flusher thread, which still reports `on_exit`
-    // only after the remaining output has been flushed.
-    let sessions = Arc::clone(&state.sessions);
+    // only after the remaining output has been flushed. Keep the remaining
+    // registry entry as a tombstone until a renderer accepts that exit.
+    #[cfg(windows)]
+    let waiter_sessions = Arc::clone(&state.sessions);
+    let flusher_sessions = Arc::clone(&state.sessions);
     let (exit_code_tx, exit_code_rx) = std::sync::mpsc::channel::<i32>();
     std::thread::spawn(move || {
         let code = child.wait().map(|s| s.exit_code() as i32).unwrap_or(-1);
-        sessions.write().unwrap().remove(&id);
+        #[cfg(windows)]
+        if let Some(session) = waiter_sessions.read().unwrap().get(&id).cloned() {
+            session.master.lock().unwrap().take();
+        }
         let _ = exit_code_tx.send(code);
     });
 
@@ -435,9 +482,16 @@ fn spawn_with_sinks(
         // deadlock and leak both threads.
         drop(rx);
         let _ = reader_thread.join();
+        // Unix can release the master only after the reader drains EOF; Windows
+        // already released it in the waiter above to make that EOF possible.
+        if let Some(session) = flusher_sessions.read().unwrap().get(&id).cloned() {
+            session.master.lock().unwrap().take();
+        }
         // The waiter thread owns `child.wait()`; recv fails only if it died.
         let code = exit_code_rx.recv().unwrap_or(-1);
-        on_exit(code);
+        if on_exit(code) {
+            flusher_sessions.write().unwrap().remove(&id);
+        }
     });
 
     Ok(id)
@@ -455,6 +509,7 @@ pub fn spawn(
     shell_override: Option<String>,
     app: &tauri::AppHandle,
     owner_label: String,
+    pane_visible: bool,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
@@ -479,7 +534,7 @@ pub fn spawn(
         .ok()
         .map(|h| h.tx);
 
-    let hub = Arc::new(OutputHub::new(on_data, on_exit));
+    let hub = Arc::new(OutputHub::new(on_data, on_exit, pane_visible));
     let output_hub = Arc::clone(&hub);
     let exit_hub = Arc::clone(&hub);
     spawn_with_sinks(
@@ -499,9 +554,7 @@ pub fn spawn(
             output_hub.publish(bytes);
             true
         },
-        move |code| {
-            exit_hub.finish(code);
-        },
+        move |code| exit_hub.finish(code),
     )
 }
 
@@ -509,6 +562,7 @@ pub fn attach(
     state: &PtyState,
     id: u32,
     owner_label: &str,
+    pane_visible: bool,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(), String> {
@@ -522,19 +576,53 @@ pub fn attach(
         .unwrap()
         .clone()
         .ok_or_else(|| "pty session is not attachable".to_string())?;
-    hub.attach(on_data, on_exit);
+    hub.set_pane_visible(pane_visible);
+    let completed = hub.attach(on_data, on_exit);
+    if completed {
+        state.sessions.write().unwrap().remove(&id);
+    }
     Ok(())
 }
 
 pub fn set_window_active(state: &PtyState, owner_label: &str, active: bool) {
-    let sessions: Vec<Arc<Session>> = state.sessions.read().unwrap().values().cloned().collect();
-    for session in sessions {
+    let sessions: Vec<(u32, Arc<Session>)> = state
+        .sessions
+        .read()
+        .unwrap()
+        .iter()
+        .map(|(id, session)| (*id, session.clone()))
+        .collect();
+    for (id, session) in sessions {
         if session.owner_label.lock().unwrap().as_deref() == Some(owner_label) {
             if let Some(hub) = session.output.lock().unwrap().clone() {
-                hub.set_active(active);
+                if hub.set_window_active(active) {
+                    state.sessions.write().unwrap().remove(&id);
+                }
             }
         }
     }
+}
+
+pub fn set_session_active(
+    state: &PtyState,
+    id: u32,
+    owner_label: &str,
+    active: bool,
+) -> Result<(), String> {
+    let session = state.get(id)?;
+    if session.owner_label.lock().unwrap().as_deref() != Some(owner_label) {
+        return Err("pty session belongs to another window".to_string());
+    }
+    let hub = session
+        .output
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "pty session is not attachable".to_string())?;
+    if hub.set_pane_visible(active) {
+        state.sessions.write().unwrap().remove(&id);
+    }
+    Ok(())
 }
 
 pub fn recovery_stats(state: &PtyState, owner_label: &str) -> (usize, bool) {
@@ -568,6 +656,8 @@ pub fn resize(state: &PtyState, id: u32, cols: u16, rows: u16) -> Result<(), Str
         .master
         .lock()
         .unwrap()
+        .as_mut()
+        .ok_or_else(|| "pty session closed".to_string())?
         .resize(pty_size(cols, rows))
         .map_err(|e| e.to_string());
     result
@@ -598,7 +688,12 @@ pub fn cwd(state: &PtyState, id: u32) -> Result<Option<String>, String> {
 /// directory via OSC 7, parsed on the frontend.
 #[cfg(unix)]
 fn foreground_pid(session: &Session) -> Option<i32> {
-    session.master.lock().unwrap().process_group_leader()
+    session
+        .master
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|master| master.process_group_leader())
 }
 
 #[cfg(not(unix))]
@@ -818,23 +913,38 @@ mod tests {
         (data, exit, messages)
     }
 
+    fn capturing_exit_channel() -> (Channel<i32>, Arc<Mutex<Vec<i32>>>) {
+        let codes = Arc::new(Mutex::new(Vec::new()));
+        let captured = codes.clone();
+        let exit = Channel::new(move |body| {
+            if let InvokeResponseBody::Json(value) = body {
+                captured
+                    .lock()
+                    .unwrap()
+                    .push(serde_json::from_str(&value).unwrap());
+            }
+            Ok(())
+        });
+        (exit, codes)
+    }
+
     #[test]
     fn output_hub_mutes_background_ipc_and_flushes_in_order() {
         let (data, exit, messages) = test_channels();
-        let hub = OutputHub::new(data, exit);
+        let hub = OutputHub::new(data, exit, true);
         hub.publish(b"before".to_vec());
-        hub.set_active(false);
+        hub.set_window_active(false);
         hub.publish(b"during-1".to_vec());
         hub.publish(b"during-2".to_vec());
         assert_eq!(messages.lock().unwrap().concat(), b"before");
-        hub.set_active(true);
+        hub.set_window_active(true);
         assert_eq!(messages.lock().unwrap().concat(), b"beforeduring-1during-2");
     }
 
     #[test]
     fn output_hub_attach_replaces_sink_and_replays_backlog() {
         let (first_data, first_exit, first) = test_channels();
-        let hub = OutputHub::new(first_data, first_exit);
+        let hub = OutputHub::new(first_data, first_exit, true);
         hub.publish(b"one".to_vec());
         let (second_data, second_exit, second) = test_channels();
         hub.attach(second_data, second_exit);
@@ -846,7 +956,7 @@ mod tests {
     #[test]
     fn output_hub_backlog_is_bounded_and_marks_truncation() {
         let (data, exit, _) = test_channels();
-        let hub = OutputHub::new(data, exit);
+        let hub = OutputHub::new(data, exit, true);
         hub.publish(vec![b'x'; OUTPUT_BACKLOG_CAP + 17]);
         let inner = hub.0.lock().unwrap();
         assert_eq!(inner.backlog.len(), OUTPUT_BACKLOG_CAP);
@@ -857,15 +967,62 @@ mod tests {
     #[test]
     fn hidden_attach_preserves_truncation_notice_until_activation() {
         let (data, exit, _) = test_channels();
-        let hub = OutputHub::new(data, exit);
-        hub.set_active(false);
+        let hub = OutputHub::new(data, exit, false);
         hub.publish(vec![b'x'; OUTPUT_BACKLOG_CAP + 1]);
         let (attached_data, attached_exit, attached) = test_channels();
         hub.attach(attached_data, attached_exit);
         assert!(attached.lock().unwrap().is_empty());
-        hub.set_active(true);
+        hub.set_pane_visible(true);
         let output = attached.lock().unwrap().concat();
-        assert!(String::from_utf8_lossy(&output).contains("background output was truncated"));
+        assert!(output
+            .ends_with(b"\r\n\x1b[33m[TempoTerm: background output was truncated]\x1b[0m\r\n"));
+    }
+
+    #[test]
+    fn hidden_attach_replays_exit_on_activation() {
+        let (data, exit, _) = test_channels();
+        let hub = OutputHub::new(data, exit, false);
+        hub.finish(23);
+
+        let (attached_data, _, _) = test_channels();
+        let (attached_exit, exits) = capturing_exit_channel();
+        hub.attach(attached_data, attached_exit);
+        assert!(exits.lock().unwrap().is_empty());
+
+        hub.set_pane_visible(true);
+        assert_eq!(*exits.lock().unwrap(), vec![23]);
+    }
+
+    #[test]
+    fn hidden_completion_flushes_tail_before_exit() {
+        let (data, _, messages) = test_channels();
+        let (exit, exits) = capturing_exit_channel();
+        let hub = OutputHub::new(data, exit, false);
+        hub.publish(b"tail".to_vec());
+
+        assert!(!hub.finish(31));
+        assert!(messages.lock().unwrap().is_empty());
+        assert!(exits.lock().unwrap().is_empty());
+
+        assert!(hub.set_pane_visible(true));
+        assert_eq!(messages.lock().unwrap().concat(), b"tail");
+        assert_eq!(*exits.lock().unwrap(), vec![31]);
+    }
+
+    #[test]
+    fn output_hub_requires_both_window_and_pane_visibility() {
+        let (data, exit, messages) = test_channels();
+        let hub = OutputHub::new(data, exit, false);
+        hub.publish(b"hidden-pane".to_vec());
+        hub.set_window_active(false);
+        hub.set_pane_visible(true);
+        hub.publish(b"hidden-window".to_vec());
+        assert!(messages.lock().unwrap().is_empty());
+        hub.set_window_active(true);
+        assert_eq!(
+            messages.lock().unwrap().concat(),
+            b"hidden-panehidden-window"
+        );
     }
     use std::sync::mpsc;
     use std::time::Duration;
@@ -889,9 +1046,7 @@ mod tests {
                 sink.lock().unwrap().extend_from_slice(&bytes);
                 true
             },
-            move |code| {
-                let _ = exit_tx.send(code);
-            },
+            move |code| exit_tx.send(code).is_ok(),
         )
         .expect("spawn should succeed");
 
@@ -932,8 +1087,7 @@ mod tests {
     #[test]
     fn registers_session_in_state() {
         let state = PtyState::new();
-        // Keep the child alive until after the assertion. `/bin/echo` could
-        // exit and let the waiter prune the registry before this thread ran.
+        // Keep the child alive until after the assertion.
         let cmd = CommandBuilder::new("/bin/cat");
         let id = spawn_with_sinks(
             &state,
@@ -945,7 +1099,7 @@ mod tests {
             None,
             None,
             |_| true,
-            |_| {},
+            |_| true,
         )
         .expect("spawn should succeed");
         assert!(state.get(id).is_ok());
@@ -954,11 +1108,8 @@ mod tests {
 
     #[test]
     fn removes_the_session_once_the_child_exits() {
-        // The waiter thread must prune the registry before the exit event is
-        // delivered: dropping the session (and its master) is what closes the
-        // pseudo console on Windows so the blocked reader can see EOF at all
-        // (microsoft/terminal#1810) — a session left in the map after exit
-        // means Windows panes hang forever on `exit`.
+        // A live renderer acknowledges the exit, so the completed registry
+        // entry can be removed immediately on the ordinary path.
         let state = PtyState::new();
         let cmd = CommandBuilder::new("/bin/echo");
         let (exit_tx, exit_rx) = mpsc::channel::<i32>();
@@ -972,18 +1123,76 @@ mod tests {
             None,
             None,
             |_| true,
-            move |code| {
-                let _ = exit_tx.send(code);
-            },
+            move |code| exit_tx.send(code).is_ok(),
         )
         .expect("spawn should succeed");
 
         exit_rx
             .recv_timeout(Duration::from_secs(10))
             .expect("command should exit within timeout");
+        for _ in 0..50 {
+            if state.get(id).is_err() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
         assert!(
             state.get(id).is_err(),
-            "session should be pruned from the registry before the exit event fires"
+            "session should be pruned after the renderer accepts its exit event"
+        );
+    }
+
+    #[test]
+    fn completed_session_replays_tail_and_exit_through_attach_path() {
+        let state = PtyState::new();
+        let id = state.alloc_id();
+        let failed_data = Channel::new(|_| Err(tauri::Error::AssetNotFound("stale sink".into())));
+        let failed_exit = Channel::new(|_| Err(tauri::Error::AssetNotFound("stale sink".into())));
+        let hub = Arc::new(OutputHub::new(failed_data, failed_exit, true));
+        let output_hub = hub.clone();
+        let exit_hub = hub.clone();
+        let mut cmd = CommandBuilder::new("/bin/echo");
+        cmd.arg("pty-recovery-tail");
+
+        spawn_with_sinks(
+            &state,
+            id,
+            80,
+            24,
+            cmd,
+            "echo".to_string(),
+            Some("main".to_string()),
+            Some(hub.clone()),
+            move |bytes| {
+                output_hub.publish(bytes);
+                true
+            },
+            move |code| exit_hub.finish(code),
+        )
+        .expect("spawn should succeed");
+
+        for _ in 0..100 {
+            if hub.0.lock().unwrap().exit_code.is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(hub.0.lock().unwrap().exit_code, Some(0));
+        assert!(
+            state.get(id).is_ok(),
+            "failed exit delivery must retain tombstone"
+        );
+
+        let (attached_data, _, attached) = test_channels();
+        let (attached_exit, exits) = capturing_exit_channel();
+        attach(&state, id, "main", true, attached_data, attached_exit).unwrap();
+
+        assert!(String::from_utf8_lossy(&attached.lock().unwrap().concat())
+            .contains("pty-recovery-tail"));
+        assert_eq!(*exits.lock().unwrap(), vec![0]);
+        assert!(
+            state.get(id).is_err(),
+            "successful exit replay should prune tombstone"
         );
     }
 
@@ -1036,7 +1245,7 @@ mod tests {
             Some("main".to_string()),
             None,
             |_| true,
-            |_| {},
+            |_| true,
         )
         .expect("spawn interactive zsh");
 
@@ -1075,7 +1284,7 @@ mod tests {
             Some("secondary".to_string()),
             None,
             |_| true,
-            |_| {},
+            |_| true,
         )
         .expect("spawn should succeed");
 

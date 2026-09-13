@@ -7,6 +7,7 @@ export interface SshSession {
   write: (data: string) => Promise<void>;
   resize: (cols: number, rows: number) => Promise<void>;
   close: () => Promise<void>;
+  setActive: (active: boolean) => Promise<void>;
 }
 
 export interface ForwardInput {
@@ -29,6 +30,7 @@ export interface OpenSshOptions {
   forwards?: ForwardInput[];
   onData: (bytes: Uint8Array) => void;
   onExit: (code: number) => void;
+  active: boolean;
 }
 
 export async function openSsh(opts: OpenSshOptions): Promise<SshSession> {
@@ -48,6 +50,7 @@ export async function openSsh(opts: OpenSshOptions): Promise<SshSession> {
       cols: opts.cols,
       rows: opts.rows,
       forwards: opts.forwards ?? [],
+      active: opts.active,
     },
     onData,
     onExit,
@@ -58,6 +61,7 @@ export async function openSsh(opts: OpenSshOptions): Promise<SshSession> {
     write: (data) => invoke("ssh_write", { id, data }),
     resize: (cols, rows) => invoke("ssh_resize", { id, cols, rows }),
     close: () => invoke("ssh_close", { id }),
+    setActive: (active) => invoke("ssh_set_session_active", { id, active }),
   };
 }
 
@@ -67,6 +71,7 @@ function sshHandle(id: number): SshSession {
     write: (data) => invoke("ssh_write", { id, data }),
     resize: (cols, rows) => invoke("ssh_resize", { id, cols, rows }),
     close: () => invoke("ssh_close", { id }),
+    setActive: (active) => invoke("ssh_set_session_active", { id, active }),
   };
 }
 
@@ -74,12 +79,13 @@ export async function attachSsh(
   id: number,
   onDataMessage: (bytes: Uint8Array) => void,
   onExitMessage: (code: number) => void,
+  active: boolean,
 ): Promise<SshSession> {
   const onData = new Channel<unknown>();
   onData.onmessage = (message) => onDataMessage(toBytes(message));
   const onExit = new Channel<number>();
   onExit.onmessage = onExitMessage;
-  await invoke<void>("ssh_attach", { id, onData, onExit });
+  await invoke<void>("ssh_attach", { id, active, onData, onExit });
   return sshHandle(id);
 }
 

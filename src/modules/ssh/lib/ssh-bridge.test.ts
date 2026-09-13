@@ -12,7 +12,7 @@ describe("openSsh", () => {
   it("invokes ssh_open and exposes write/resize/close on the returned id", async () => {
     const s = await openSsh({
       connectionId: "c1", host: "h", port: 22, user: "muki",
-      authMethod: "password", cols: 80, rows: 24,
+      authMethod: "password", cols: 80, rows: 24, active: true,
       onData: () => {}, onExit: () => {},
     });
     expect(s.id).toBe(7);
@@ -26,7 +26,7 @@ describe("openSsh", () => {
     invoke.mockClear();
     await openSsh({
       connectionId: "conn-42", host: "example.com", port: 2222, user: "alice",
-      authMethod: "keyFile", keyPath: "~/.ssh/id_ed25519", cols: 120, rows: 40,
+      authMethod: "keyFile", keyPath: "~/.ssh/id_ed25519", cols: 120, rows: 40, active: true,
       onData: () => {}, onExit: () => {},
     });
     expect(invoke).toHaveBeenCalledWith(
@@ -41,6 +41,7 @@ describe("openSsh", () => {
           keyPath: "~/.ssh/id_ed25519",
           cols: 120,
           rows: 40,
+          active: true,
           forwards: [],
         },
       }),
@@ -54,7 +55,7 @@ describe("openSsh", () => {
     ];
     await openSsh({
       connectionId: "conn-42", host: "example.com", port: 2222, user: "alice",
-      authMethod: "keyFile", keyPath: "~/.ssh/id_ed25519", cols: 120, rows: 40,
+      authMethod: "keyFile", keyPath: "~/.ssh/id_ed25519", cols: 120, rows: 40, active: true,
       forwards,
       onData: () => {}, onExit: () => {},
     });
@@ -72,11 +73,22 @@ describe("openSsh", () => {
     invoke.mockClear();
     const s = await openSsh({
       connectionId: "c2", host: "h2", port: 22, user: "bob",
-      authMethod: "password", cols: 80, rows: 24,
+      authMethod: "password", cols: 80, rows: 24, active: true,
       onData: () => {}, onExit: () => {},
     });
     await s.close();
     expect(invoke).toHaveBeenCalledWith("ssh_close", { id: s.id });
+  });
+
+  it("changes only this session's renderer activity", async () => {
+    invoke.mockClear();
+    const s = await openSsh({
+      connectionId: "c3", host: "h3", port: 22, user: "bob",
+      authMethod: "password", cols: 80, rows: 24, active: true,
+      onData: () => {}, onExit: () => {},
+    });
+    await s.setActive(false);
+    expect(invoke).toHaveBeenCalledWith("ssh_set_session_active", { id: s.id, active: false });
   });
 });
 

@@ -81,15 +81,21 @@ const fakeSession = vi.hoisted(() => {
       write: vi.fn(() => Promise.resolve()),
       resize: vi.fn(() => Promise.resolve()),
       close: vi.fn(() => Promise.resolve()),
+      setActive: vi.fn(() => Promise.resolve()),
       cwd: vi.fn(() => Promise.resolve<string | null>(null)),
       foregroundCommand: vi.fn(() => Promise.resolve<string | null>(null)),
     };
   }
-  return { makeSession, current: null as ReturnType<typeof makeSession> | null };
+  return {
+    makeSession,
+    current: null as ReturnType<typeof makeSession> | null,
+    initialActive: null as boolean | null,
+  };
 });
 
 vi.mock("./lib/pty-bridge", () => ({
-  openPty: () => {
+  openPty: (options: { active: boolean }) => {
+    fakeSession.initialActive = options.active;
     fakeSession.current = fakeSession.makeSession();
     return Promise.resolve(fakeSession.current);
   },
@@ -154,6 +160,7 @@ function LayoutProbe({ run }: { run: () => void }) {
 beforeEach(() => {
   fakeTerminal.current = null;
   fakeSession.current = null;
+  fakeSession.initialActive = null;
   clipboardProbes.text = "";
   clipboardProbes.paths = [];
   clipboardProbes.images = [];
@@ -163,6 +170,23 @@ beforeEach(() => {
   Object.defineProperty(navigator, "clipboard", {
     value: { readText: readTextMock, writeText: vi.fn(() => Promise.resolve()) },
     configurable: true,
+  });
+});
+
+describe("TerminalView renderer activity", () => {
+  it("opens a background tab paused and resumes it when selected", async () => {
+    const view = render(<TerminalView active isActiveTab={false} />);
+    await waitFor(() => expect(fakeSession.current).not.toBeNull());
+    expect(fakeSession.initialActive).toBe(false);
+
+    view.rerender(<TerminalView active isActiveTab />);
+    await waitFor(() => expect(fakeSession.current!.setActive).toHaveBeenCalledWith(true));
+  });
+
+  it("keeps a visible split sibling live even when it does not own keyboard focus", async () => {
+    render(<TerminalView active={false} isActiveTab />);
+    await waitFor(() => expect(fakeSession.current).not.toBeNull());
+    expect(fakeSession.initialActive).toBe(true);
   });
 });
 

@@ -30,7 +30,7 @@ export async function reloadWorkspace(): Promise<void> {
   sessionStorage.setItem(RECOVERY_RELOAD_MARKER, "1");
   try {
     await syncRecoverySnapshot();
-    await invoke("recovery_reload_window");
+    await invoke("recovery_rebuild_webview", { reason: "manual-reload" });
   } catch (error) {
     sessionStorage.removeItem(RECOVERY_RELOAD_MARKER);
     const message = error instanceof Error ? error.message : String(error);

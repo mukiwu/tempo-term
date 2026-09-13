@@ -24,6 +24,7 @@ pub fn pty_open(
     cwd: Option<String>,
     suggestions: bool,
     shell_override: Option<String>,
+    active: bool,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
@@ -36,6 +37,7 @@ pub fn pty_open(
         shell_override,
         &app,
         window.label().to_string(),
+        active,
         on_data,
         on_exit,
     )
@@ -46,10 +48,21 @@ pub fn pty_attach(
     window: tauri::WebviewWindow,
     state: State<'_, PtyState>,
     id: u32,
+    active: bool,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(), String> {
-    session::attach(&state, id, window.label(), on_data, on_exit)
+    session::attach(&state, id, window.label(), active, on_data, on_exit)
+}
+
+#[tauri::command]
+pub fn pty_set_session_active(
+    window: tauri::WebviewWindow,
+    state: State<'_, PtyState>,
+    id: u32,
+    active: bool,
+) -> Result<(), String> {
+    session::set_session_active(&state, id, window.label(), active)
 }
 
 #[tauri::command]

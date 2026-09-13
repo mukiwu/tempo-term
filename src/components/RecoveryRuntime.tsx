@@ -1,4 +1,4 @@
-import { Fragment, type PropsWithChildren, useEffect, useState } from "react";
+import { Fragment, type PropsWithChildren, useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { AlertTriangle, RotateCcw, X } from "lucide-react";
@@ -47,6 +47,7 @@ export function RecoveryRuntime({ children }: PropsWithChildren) {
   const tauri = isTauri();
   const [ready, setReady] = useState(!tauri);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const generation = useRef(0);
 
   useEffect(() => {
     if (!tauri) return;
@@ -60,6 +61,20 @@ export function RecoveryRuntime({ children }: PropsWithChildren) {
     const onError = () => schedule();
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onError);
+    const heartbeat = () => {
+      void invoke<number>("recovery_renderer_heartbeat", {
+        visible: document.visibilityState === "visible",
+        generation: generation.current,
+      })
+        .then((current) => {
+          generation.current = current;
+        })
+        .catch(() => {});
+    };
+    const onVisibilityChange = () => heartbeat();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    heartbeat();
+    const heartbeatTimer = window.setInterval(heartbeat, 2_000);
     void bootstrapRecovery()
       .then((nextNotice) => {
         if (!disposed) {
@@ -70,6 +85,12 @@ export function RecoveryRuntime({ children }: PropsWithChildren) {
           if (nextNotice) sessionStorage.setItem(RECOVERY_RELOAD_MARKER, "1");
           setNotice(nextNotice);
           setReady(true);
+          void invoke<number>("recovery_renderer_ready", {
+            generation: generation.current,
+          }).then((current) => {
+            generation.current = current;
+            heartbeat();
+          }).catch(() => {});
         }
       })
       .catch(() => {
@@ -81,13 +102,17 @@ export function RecoveryRuntime({ children }: PropsWithChildren) {
       sessionStorage.setItem(RECOVERY_RELOAD_MARKER, "1");
       void syncRecoverySnapshot().catch(() => {});
     });
+    const unlistenProbe = getCurrentWebview().listen("recovery-renderer-probe", heartbeat);
     return () => {
       disposed = true;
       unsubscribe();
       clearTimeout(timer);
+      window.clearInterval(heartbeatTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onError);
       void unlisten.then((off) => off());
+      void unlistenProbe.then((off) => off());
     };
   }, [tauri]);
 

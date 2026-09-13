@@ -8,12 +8,14 @@ export interface PtySession {
   close: () => Promise<void>;
   cwd: () => Promise<string | null>;
   foregroundCommand: () => Promise<string | null>;
+  setActive: (active: boolean) => Promise<void>;
 }
 
 export interface PtyAttachOptions {
   id: number;
   onData: (bytes: Uint8Array) => void;
   onExit: (code: number) => void;
+  active: boolean;
 }
 
 export interface OpenPtyOptions {
@@ -34,6 +36,7 @@ export interface OpenPtyOptions {
   shellOverride?: string;
   onData: (bytes: Uint8Array) => void;
   onExit: (code: number) => void;
+  active: boolean;
 }
 
 // Session ids opened by THIS window's webview. Used to close only this window's
@@ -58,6 +61,7 @@ export async function openPty(opts: OpenPtyOptions): Promise<PtySession> {
     cwd: opts.cwd,
     suggestions: opts.suggestions,
     shellOverride: opts.shellOverride,
+    active: opts.active,
     onData,
     onExit,
   });
@@ -73,6 +77,7 @@ export async function openPty(opts: OpenPtyOptions): Promise<PtySession> {
     },
     cwd: () => invoke<string | null>("pty_cwd", { id }),
     foregroundCommand: () => invoke<string | null>("pty_foreground_command", { id }),
+    setActive: (active) => invoke("pty_set_session_active", { id, active }),
   };
 }
 
@@ -85,6 +90,7 @@ function sessionHandle(id: number): PtySession {
     close: () => { localSessions.delete(id); return invoke("pty_close", { id }); },
     cwd: () => invoke<string | null>("pty_cwd", { id }),
     foregroundCommand: () => invoke<string | null>("pty_foreground_command", { id }),
+    setActive: (active) => invoke("pty_set_session_active", { id, active }),
   };
 }
 
@@ -94,7 +100,7 @@ export async function attachPty(opts: PtyAttachOptions): Promise<PtySession> {
   onData.onmessage = (message) => opts.onData(toBytes(message));
   const onExit = new Channel<number>();
   onExit.onmessage = opts.onExit;
-  await invoke<void>("pty_attach", { id: opts.id, onData, onExit });
+  await invoke<void>("pty_attach", { id: opts.id, active: opts.active, onData, onExit });
   return sessionHandle(opts.id);
 }
 

@@ -186,6 +186,8 @@ export function TerminalView({
   activeRef.current = active;
   const isActiveTabRef = useRef(isActiveTab);
   isActiveTabRef.current = isActiveTab;
+  const windowVisibleRef = useRef(windowVisible);
+  windowVisibleRef.current = windowVisible;
   const wasWindowVisibleRef = useRef(windowVisible);
   const cwdRef = useRef(cwd);
   cwdRef.current = cwd;
@@ -968,7 +970,12 @@ export function TerminalView({
         const binding = backendRef.current;
         if (binding?.kind === "ssh" && binding.runtimeId === runtimeId) {
           try {
-            return await attachSsh(binding.sessionId, (bytes) => outputWriter.push(bytes), onSshExit);
+            return await attachSsh(
+              binding.sessionId,
+              (bytes) => outputWriter.push(bytes),
+              onSshExit,
+              isActiveTabRef.current && windowVisibleRef.current,
+            );
           } catch {
             onBackendChangeRef.current?.(null);
           }
@@ -996,6 +1003,7 @@ export function TerminalView({
           cols: term.cols,
           rows: term.rows,
           forwards,
+          active: isActiveTabRef.current && windowVisibleRef.current,
           onData: (bytes) => outputWriter.push(bytes),
           // Only treat an exit as user-facing when we did not tear the session
           // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
@@ -1019,6 +1027,7 @@ export function TerminalView({
             id: binding.sessionId,
             onData: (bytes) => outputWriter.push(bytes),
             onExit: onLocalExit,
+            active: isActiveTabRef.current && windowVisibleRef.current,
           });
         } catch {
           onBackendChangeRef.current?.(null);
@@ -1032,6 +1041,7 @@ export function TerminalView({
         // value, instead of racing a global flag set after mount.
         suggestions: useSettingsStore.getState().terminalSuggestions,
         shellOverride: useSettingsStore.getState().customShellPath,
+        active: isActiveTabRef.current && windowVisibleRef.current,
         onData: (bytes) => outputWriter.push(bytes),
         // Only treat an exit as user-facing when we did not tear the session
         // down ourselves (e.g. React StrictMode's mount/unmount/remount in dev).
@@ -1067,6 +1077,12 @@ export function TerminalView({
           return;
         }
         sessionRef.current = session;
+        // Opening or attaching is asynchronous. Re-apply the latest visibility
+        // after it resolves so a tab switched during connection setup cannot
+        // accidentally remain live in the background.
+        void session
+          .setActive(isActiveTabRef.current && windowVisibleRef.current)
+          .catch(() => {});
         // Record the pty id so session-status IPC events can be matched to this
         // pane (see the session-status listener); SSH panes have no pty id.
         ptyIdRef.current = isPtySession(session) ? session.id : null;
@@ -1249,6 +1265,17 @@ export function TerminalView({
       sessionRef.current = null;
     };
   }, []);
+
+  // A visited tab stays mounted so its shell remains alive, but a hidden tab
+  // must not keep feeding xterm. Rust retains a bounded raw-output tail while
+  // this pane is hidden and replays it when the tab becomes visible again.
+  // Every split pane in the active tab remains live; `active` only means
+  // keyboard focus and must not gate output for visible siblings.
+  useEffect(() => {
+    const session = sessionRef.current;
+    if (!session) return;
+    void session.setActive(isActiveTab && windowVisible).catch(() => {});
+  }, [isActiveTab, windowVisible]);
 
   // When a background tab becomes visible again its container regains size, so
   // refit, push the new dimensions to the shell and grab focus. Keyed on

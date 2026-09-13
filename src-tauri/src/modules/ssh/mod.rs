@@ -51,6 +51,8 @@ pub struct SshOpenRequest {
     pub key_path: Option<String>,
     pub cols: u16,
     pub rows: u16,
+    /// Whether this pane is currently visible and should receive live output.
+    pub active: bool,
     /// Port forwards to set up after the session authenticates.
     /// Defaults to an empty list when the field is absent.
     #[serde(default)]
@@ -78,10 +80,21 @@ pub fn ssh_attach(
     window: tauri::WebviewWindow,
     state: State<'_, SshState>,
     id: u32,
+    active: bool,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(), String> {
-    session::attach(&state, id, window.label(), on_data, on_exit)
+    session::attach(&state, id, window.label(), active, on_data, on_exit)
+}
+
+#[tauri::command]
+pub fn ssh_set_session_active(
+    window: tauri::WebviewWindow,
+    state: State<'_, SshState>,
+    id: u32,
+    active: bool,
+) -> Result<(), String> {
+    session::set_session_active(&state, id, window.label(), active)
 }
 
 #[tauri::command]

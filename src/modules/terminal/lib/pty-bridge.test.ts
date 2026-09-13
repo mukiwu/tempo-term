@@ -10,7 +10,14 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import { closeLocalSessions, openPty } from "./pty-bridge";
 
-const opts = { cols: 80, rows: 24, suggestions: false, onData: () => {}, onExit: () => {} };
+const opts = {
+  cols: 80,
+  rows: 24,
+  suggestions: false,
+  active: true,
+  onData: () => {},
+  onExit: () => {},
+};
 
 beforeEach(() => {
   invoke.mockReset();
@@ -61,5 +68,13 @@ describe("pty-bridge session registry", () => {
 
     await closeLocalSessions();
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("changes only this session's renderer activity", async () => {
+    invoke.mockResolvedValueOnce(9);
+    const session = await openPty(opts);
+    invoke.mockResolvedValue(undefined);
+    await session.setActive(false);
+    expect(invoke).toHaveBeenCalledWith("pty_set_session_active", { id: 9, active: false });
   });
 });

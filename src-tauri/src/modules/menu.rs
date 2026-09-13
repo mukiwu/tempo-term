@@ -187,7 +187,12 @@ pub fn init(app: &mut App) -> tauri::Result<()> {
                         let _ = webview_window.emit("recovery-prepare", ());
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(750));
-                            let _ = crate::modules::recovery::reload_workspace(&webview_window);
+                            let _ = crate::modules::recovery::schedule_rebuild(
+                                webview_window.app_handle().clone(),
+                                webview_window.label().to_string(),
+                                "manual-reload",
+                                false,
+                            );
                         });
                     }
                     return;
