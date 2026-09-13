@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, KeyRound } from "lucide-react";
-import { PROVIDERS, providerById, CUSTOM_PROVIDER_ID } from "@/modules/ai/lib/providers";
+import {
+  CHAT_PROVIDERS,
+  PROVIDERS,
+  providerById,
+  CUSTOM_PROVIDER_ID,
+  type ProviderPreset,
+} from "@/modules/ai/lib/providers";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { Combobox } from "@/components/Combobox";
@@ -17,7 +23,7 @@ import {
  * the on-device model actually answers (macOS 26+, Apple Intelligence on);
  * elsewhere — Windows included — the option simply does not exist.
  */
-function useVisibleProviders() {
+function useAppleAvailability() {
   const [appleOk, setAppleOk] = useState(false);
   useEffect(() => {
     let live = true;
@@ -30,59 +36,86 @@ function useVisibleProviders() {
       live = false;
     };
   }, []);
-  return PROVIDERS.filter((p) => p.id !== "apple" || appleOk);
+  return appleOk;
 }
 
-function DefaultModelRow() {
+interface ModelRowProps {
+  label: string;
+  description: string;
+  providers: ProviderPreset[];
+  providerId: string;
+  model: string;
+  onProviderChange: (id: string) => void;
+  onModelChange: (model: string) => void;
+  providerAriaLabel: string;
+  modelAriaLabel: string;
+}
+
+function ModelRow({
+  label,
+  description,
+  providers,
+  providerId,
+  model,
+  onProviderChange,
+  onModelChange,
+  providerAriaLabel,
+  modelAriaLabel,
+}: ModelRowProps) {
   const { t } = useTranslation("settings");
-  const visibleProviders = useVisibleProviders();
-  const providerId = useChatStore((s) => s.providerId);
-  const model = useChatStore((s) => s.model);
-  const customBaseUrl = useChatStore((s) => s.customBaseUrl);
-  const setProvider = useChatStore((s) => s.setProvider);
-  const setModel = useChatStore((s) => s.setModel);
-  const setCustomBaseUrl = useChatStore((s) => s.setCustomBaseUrl);
   const provider = providerById(providerId);
 
   return (
     <div className="mb-6">
-      <label className="mb-1 block text-sm font-medium text-fg">{t("aiModel.label")}</label>
-      <p className="mb-2 text-xs text-fg-muted">{t("aiModel.description")}</p>
+      <label className="mb-1 block text-sm font-medium text-fg">{label}</label>
+      <p className="mb-2 text-xs text-fg-muted">{description}</p>
       <div className="flex flex-wrap gap-2">
         <Combobox
           value={provider.label}
-          options={visibleProviders.map((p) => p.label)}
+          options={providers.map((p) => p.label)}
           onChange={(label) => {
-            const next = visibleProviders.find((p) => p.label === label);
-            if (next) setProvider(next.id);
+            const next = providers.find((p) => p.label === label);
+            if (next) onProviderChange(next.id);
           }}
-          ariaLabel={t("aiModel.provider")}
+          ariaLabel={providerAriaLabel}
           className="w-48"
         />
         <Combobox
           value={model}
           options={provider.models}
-          onChange={setModel}
-          ariaLabel={t("aiModel.model")}
+          onChange={onModelChange}
+          ariaLabel={modelAriaLabel}
           editable
           placeholder={t("aiModel.customPlaceholder")}
           className="w-56"
         />
       </div>
-      {provider.id === CUSTOM_PROVIDER_ID && (
-        <div className="mt-2">
-          <input
-            type="text"
-            value={customBaseUrl}
-            onChange={(e) => setCustomBaseUrl(e.target.value)}
-            aria-label={t("aiModel.baseUrl")}
-            placeholder="http://localhost:1234/v1"
-            spellCheck={false}
-            className="w-full max-w-md rounded-md border border-border bg-bg px-2 py-1 text-sm text-fg outline-none focus:border-accent"
-          />
-          <p className="mt-1 text-xs text-fg-muted">{t("aiModel.baseUrlHint")}</p>
-        </div>
-      )}
+    </div>
+  );
+}
+
+function CustomEndpointRow() {
+  const { t } = useTranslation("settings");
+  const customBaseUrl = useChatStore((s) => s.customBaseUrl);
+  const setCustomBaseUrl = useChatStore((s) => s.setCustomBaseUrl);
+  return (
+    <div className="-mt-4 mb-6">
+      <label
+        className="mb-1 block text-xs font-medium text-fg-muted"
+        htmlFor="ai-custom-base-url"
+      >
+        {t("aiModel.baseUrl")}
+      </label>
+      <input
+        id="ai-custom-base-url"
+        type="text"
+        value={customBaseUrl}
+        onChange={(e) => setCustomBaseUrl(e.target.value)}
+        placeholder="http://localhost:1234/v1"
+        spellCheck={false}
+        className="w-full max-w-md rounded-md border border-border bg-bg px-2 py-1 text-sm text-fg outline-none focus:border-accent"
+      />
+      <p className="mt-1 text-xs text-fg-muted">{t("aiModel.baseUrlHint")}</p>
     </div>
   );
 }
@@ -201,22 +234,67 @@ function ProviderKeyRow({ id, label, needsKey }: { id: string; label: string; ne
 }
 
 export function AiSettingsSection() {
-  const keyListProviders = useVisibleProviders();
+  const appleOk = useAppleAvailability();
+  const quickProviders = PROVIDERS.filter((p) => p.id !== "apple" || appleOk);
   const { t } = useTranslation("settings");
+  const providerId = useChatStore((s) => s.providerId);
+  const model = useChatStore((s) => s.model);
+  const chatProviderId = useChatStore((s) => s.chatProviderId);
+  const chatModel = useChatStore((s) => s.chatModel);
+  const setProvider = useChatStore((s) => s.setProvider);
+  const setModel = useChatStore((s) => s.setModel);
+  const setChatProvider = useChatStore((s) => s.setChatProvider);
+  const setChatModel = useChatStore((s) => s.setChatModel);
+  const effectiveChatProviderId =
+    chatProviderId ?? (providerId === "apple" ? "openai" : providerId);
+  const effectiveChatProvider = providerById(effectiveChatProviderId);
+  const effectiveChatModel =
+    chatModel ?? (providerId === "apple" ? effectiveChatProvider.models[0] ?? "" : model);
+  const customSelected =
+    providerId === CUSTOM_PROVIDER_ID || effectiveChatProviderId === CUSTOM_PROVIDER_ID;
+
   return (
     <section>
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-fg-subtle">
         {t("sections.ai")}
       </h2>
 
-      <DefaultModelRow />
+      <ModelRow
+        label={t("aiModel.quickLabel")}
+        description={t("aiModel.quickDescription")}
+        providers={quickProviders}
+        providerId={providerId}
+        model={model}
+        onProviderChange={setProvider}
+        onModelChange={setModel}
+        providerAriaLabel={t("aiModel.quickProvider")}
+        modelAriaLabel={t("aiModel.quickModel")}
+      />
+
+      <ModelRow
+        label={t("aiModel.chatLabel")}
+        description={t("aiModel.chatDescription")}
+        providers={CHAT_PROVIDERS}
+        providerId={effectiveChatProviderId}
+        model={effectiveChatModel}
+        onProviderChange={setChatProvider}
+        onModelChange={setChatModel}
+        providerAriaLabel={t("aiModel.chatProvider")}
+        modelAriaLabel={t("aiModel.chatModel")}
+      />
+
+      {appleOk && (
+        <p className="-mt-4 mb-6 text-xs text-fg-subtle">{t("aiModel.appleScope")}</p>
+      )}
+
+      {customSelected && <CustomEndpointRow />}
 
       <InlineCompletionRow />
 
       <label className="mb-1 block text-sm font-medium text-fg">{t("aiKeys.title")}</label>
       <p className="mb-2 text-xs text-fg-muted">{t("aiKeys.description")}</p>
       <div>
-        {keyListProviders.map((provider) => (
+        {quickProviders.map((provider) => (
           <ProviderKeyRow
             key={provider.id}
             id={provider.id}

@@ -197,8 +197,15 @@
     "historyCleared": "已清除"
   },
   "aiModel": {
-    "label": "預設模型",
-    "description": "選擇 AI 助理預設使用的服務商與模型，可在聊天面板隨時切換",
+    "quickLabel": "快速 AI 功能",
+    "quickDescription": "用於產生 commit 訊息、解釋 diff 和行內程式碼補完。",
+    "chatLabel": "AI 助理聊天",
+    "chatDescription": "用於 AI 面板中的多輪對話，也可以直接在面板中切換。",
+    "appleScope": "Apple Intelligence 可用於快速 AI 功能；AI 助理聊天會使用上方另外選擇的模型。",
+    "quickProvider": "快速 AI 服務商",
+    "quickModel": "快速 AI 模型",
+    "chatProvider": "AI 助理服務商",
+    "chatModel": "AI 助理模型",
     "provider": "服務商",
     "model": "模型",
     "customPlaceholder": "輸入自訂模型名稱",
@@ -207,7 +214,7 @@
   },
   "aiInline": {
     "label": "行內程式碼補完",
-    "description": "在編輯器打字時顯示 AI 灰字建議，Tab 接受、Esc 取消。使用你的預設模型，會計入該模型的用量。"
+    "description": "在編輯器打字時顯示 AI 灰字建議，Tab 接受、Esc 取消。使用快速 AI 模型，會計入該模型的用量。"
   },
   "aiKeys": {
     "title": "API 金鑰",

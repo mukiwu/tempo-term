@@ -18,7 +18,7 @@ function getErrorMessage(error: unknown): string {
 interface ChatState {
   providerId: string;
   model: string;
-  /** Chat-only provider used while the default is Apple Intelligence. */
+  /** Provider used by the conversational assistant, independent of quick AI actions. */
   chatProviderId: string | null;
   chatModel: string | null;
   /** User-supplied base URL for the custom OpenAI-compatible provider. */
@@ -41,10 +41,9 @@ interface ChatState {
 }
 
 /**
- * What the chat panel actually talks to. An Apple Intelligence default is for
- * background tasks; the assistant falls back to the persisted chat-only pair
- * (seeded with OpenAI) and switching in the panel edits that pair, never the
- * default.
+ * What the chat panel actually talks to. Older persisted state may not have a
+ * chat-only pair yet, so migrate it lazily from the old shared default. Apple
+ * Intelligence was never a chat provider and therefore migrates to OpenAI.
  */
 export function resolveChatTarget(state: {
   providerId: string;
@@ -52,11 +51,10 @@ export function resolveChatTarget(state: {
   chatProviderId: string | null;
   chatModel: string | null;
 }): { provider: ReturnType<typeof providerById>; model: string } {
-  if (state.providerId !== "apple") {
-    return { provider: providerById(state.providerId), model: state.model };
-  }
-  const provider = providerById(state.chatProviderId ?? "openai");
-  return { provider, model: state.chatModel ?? provider.models[0] ?? "" };
+  const migratedProviderId = state.providerId === "apple" ? "openai" : state.providerId;
+  const provider = providerById(state.chatProviderId ?? migratedProviderId);
+  const migratedModel = state.providerId === "apple" ? provider.models[0] ?? "" : state.model;
+  return { provider, model: state.chatModel ?? migratedModel };
 }
 
 export const CHAT_STORAGE_KEY = "tempoterm-chat";
@@ -75,19 +73,33 @@ export const useChatStore = create<ChatState>()(
       attachedPaths: [],
 
       setProvider: (id) => {
+        const current = get();
+        const currentChat = resolveChatTarget(current);
         const provider = providerById(id);
-        const switching = get().providerId !== provider.id;
+        const switching = current.providerId !== provider.id;
         set({
           providerId: provider.id,
           // A preset with a fixed list seeds its first model. A bare endpoint
           // (LM Studio, custom) has none: clear the field on an actual switch
           // so the user types their local model instead of inheriting a stale
           // one the server would reject; keep it when re-selecting the same one.
-          model: provider.models[0] ?? (switching ? "" : get().model),
+          model: provider.models[0] ?? (switching ? "" : current.model),
+          // Materialize the old shared setting before changing quick AI so an
+          // upgraded user's visible chat choice does not move along with it.
+          chatProviderId: current.chatProviderId ?? currentChat.provider.id,
+          chatModel: current.chatModel ?? currentChat.model,
         });
       },
 
-      setModel: (model) => set({ model }),
+      setModel: (model) => {
+        const current = get();
+        const currentChat = resolveChatTarget(current);
+        set({
+          model,
+          chatProviderId: current.chatProviderId ?? currentChat.provider.id,
+          chatModel: current.chatModel ?? currentChat.model,
+        });
+      },
 
       setChatProvider: (id) => {
         const provider = providerById(id);

@@ -112,8 +112,6 @@ export function AIView() {
   const messages = useChatStore((s) => s.messages);
   const sending = useChatStore((s) => s.sending);
   const error = useChatStore((s) => s.error);
-  const setProvider = useChatStore((s) => s.setProvider);
-  const setModel = useChatStore((s) => s.setModel);
   const send = useChatStore((s) => s.send);
   const clear = useChatStore((s) => s.clear);
   const attachedPaths = useChatStore((s) => s.attachedPaths);
@@ -133,9 +131,6 @@ export function AIView() {
   const chatModel = useChatStore((s) => s.chatModel);
   const setChatProvider = useChatStore((s) => s.setChatProvider);
   const setChatModel = useChatStore((s) => s.setChatModel);
-  // While the default is Apple Intelligence the panel shows and edits the
-  // chat-only fallback pair; otherwise it edits the shared default, as ever.
-  const appleDefault = providerId === "apple";
   const { provider, model: effectiveModel } = resolveChatTarget({
     providerId,
     model,
@@ -209,11 +204,7 @@ export function AIView() {
           onChange={(label) => {
             const next = CHAT_PROVIDERS.find((p) => p.label === label);
             if (!next) return;
-            if (appleDefault) {
-              setChatProvider(next.id);
-            } else {
-              setProvider(next.id);
-            }
+            setChatProvider(next.id);
           }}
           ariaLabel={t("provider")}
           className="min-w-0 flex-1"
@@ -222,7 +213,7 @@ export function AIView() {
         <Combobox
           value={effectiveModel}
           options={provider.models}
-          onChange={appleDefault ? setChatModel : setModel}
+          onChange={setChatModel}
           ariaLabel={t("model")}
           editable
           placeholder={t("modelPlaceholder")}

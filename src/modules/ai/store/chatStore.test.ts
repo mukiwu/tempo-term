@@ -30,13 +30,20 @@ beforeEach(() => {
 });
 
 describe("chatStore.send base URL resolution", () => {
-  it("routes chat away from an Apple Intelligence default", async () => {
-    // The on-device model is a background-tasks default, not the assistant's
-    // conversational model: chat silently uses the fallback pair instead.
-    useChatStore.setState({ providerId: "apple", model: "on-device" });
+  it("always uses the separately selected chat model", async () => {
+    useChatStore.setState({
+      providerId: "apple",
+      model: "on-device",
+      chatProviderId: "groq",
+      chatModel: "llama-3.3-70b-versatile",
+    });
     await useChatStore.getState().send("hi", "");
     expect(aiChat).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "openai", kind: "openai" }),
+      expect.objectContaining({
+        provider: "groq",
+        kind: "openai",
+        model: "llama-3.3-70b-versatile",
+      }),
     );
   });
 
@@ -84,6 +91,24 @@ describe("chatStore.send base URL resolution", () => {
 });
 
 describe("chatStore.setProvider model handling", () => {
+  it("keeps the migrated chat target when quick AI changes for the first time", () => {
+    useChatStore.setState({
+      providerId: "groq",
+      model: "llama-3.1-8b-instant",
+      chatProviderId: null,
+      chatModel: null,
+    });
+
+    useChatStore.getState().setProvider("apple");
+
+    expect(useChatStore.getState()).toMatchObject({
+      providerId: "apple",
+      model: "on-device",
+      chatProviderId: "groq",
+      chatModel: "llama-3.1-8b-instant",
+    });
+  });
+
   it("clears the model when switching to a provider with no preset models", () => {
     useChatStore.setState({ providerId: "openai", model: "gpt-5.4" });
     useChatStore.getState().setProvider("lmstudio");

@@ -197,8 +197,15 @@
     "historyCleared": "Cleared"
   },
   "aiModel": {
-    "label": "Default model",
-    "description": "Choose the provider and model the assistant uses by default; you can switch anytime in the chat panel",
+    "quickLabel": "Quick AI features",
+    "quickDescription": "Used for commit messages, diff explanations, and inline code completion.",
+    "chatLabel": "AI assistant chat",
+    "chatDescription": "Used for multi-turn conversations in the AI panel. You can also switch it from the panel.",
+    "appleScope": "Apple Intelligence is available for quick AI features. AI assistant chat uses the separate model selected above.",
+    "quickProvider": "Quick AI provider",
+    "quickModel": "Quick AI model",
+    "chatProvider": "AI assistant provider",
+    "chatModel": "AI assistant model",
     "provider": "Provider",
     "model": "Model",
     "customPlaceholder": "Type a custom model name",
@@ -207,7 +214,7 @@
   },
   "aiInline": {
     "label": "Inline code completion",
-    "description": "Show AI ghost-text suggestions while typing in the editor. Tab accepts, Escape dismisses. Uses your default model and counts against its usage."
+    "description": "Show AI ghost-text suggestions while typing in the editor. Tab accepts, Escape dismisses. Uses the quick AI model and counts against its usage."
   },
   "aiKeys": {
     "title": "API keys",
