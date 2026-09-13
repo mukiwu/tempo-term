@@ -15,6 +15,24 @@ describe("resolvePreviewSrc", () => {
     expect(resolvePreviewSrc("file:///x/index.html")).toBe(assetUrl("/x/index.html"));
   });
 
+  it("routes Windows drive URLs through the Windows asset host", () => {
+    expect(resolvePreviewSrc("file:///C:/Users/me/site/index.html", true)).toBe(
+      "http://asset.localhost/C%3A/Users/me/site/index.html",
+    );
+  });
+
+  it("normalizes legacy Windows file URLs with backslashes", () => {
+    expect(resolvePreviewSrc("file://C:\\Users\\me\\site\\index.html", true)).toBe(
+      "http://asset.localhost/C%3A/Users/me/site/index.html",
+    );
+  });
+
+  it("routes bare Windows drive paths through the Windows asset host", () => {
+    expect(resolvePreviewSrc("C:\\Users\\me\\site\\index.html", true)).toBe(
+      "http://asset.localhost/C%3A/Users/me/site/index.html",
+    );
+  });
+
   it("routes a bare absolute path through the asset protocol", () => {
     expect(resolvePreviewSrc("/Users/me/page.html")).toBe(assetUrl("/Users/me/page.html"));
   });
