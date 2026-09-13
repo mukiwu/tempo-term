@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterCommits } from "./filterCommits";
+import { findCommitMatchIndexes } from "./filterCommits";
 import type { CommitNode } from "../types";
 
 function commit(overrides: Partial<CommitNode> = {}): CommitNode {
@@ -14,37 +14,34 @@ function commit(overrides: Partial<CommitNode> = {}): CommitNode {
   };
 }
 
-describe("filterCommits", () => {
-  it("returns all commits when query is empty", () => {
+describe("findCommitMatchIndexes", () => {
+  it("returns every index when query is empty", () => {
     const commits = [commit(), commit({ hash: "def5678" })];
-    expect(filterCommits(commits, "")).toEqual(commits);
+    expect(findCommitMatchIndexes(commits, "")).toEqual([0, 1]);
   });
 
-  it("returns all commits when query is whitespace", () => {
+  it("returns every index when query is whitespace", () => {
     const commits = [commit()];
-    expect(filterCommits(commits, "   ")).toEqual(commits);
+    expect(findCommitMatchIndexes(commits, "   ")).toEqual([0]);
   });
 
-  it("matches on message case-insensitively", () => {
+  it("returns indexes matching the message case-insensitively", () => {
     const commits = [commit({ message: "Fix navbar" }), commit({ message: "Add login" })];
-    expect(filterCommits(commits, "LOGIN")).toHaveLength(1);
-    expect(filterCommits(commits, "LOGIN")[0].message).toBe("Add login");
+    expect(findCommitMatchIndexes(commits, "LOGIN")).toEqual([1]);
   });
 
-  it("matches on author", () => {
+  it("returns indexes matching the author", () => {
     const commits = [commit({ author: "Bob" }), commit({ author: "Alice" })];
-    expect(filterCommits(commits, "bob")).toHaveLength(1);
-    expect(filterCommits(commits, "bob")[0].author).toBe("Bob");
+    expect(findCommitMatchIndexes(commits, "bob")).toEqual([0]);
   });
 
-  it("matches on hash", () => {
+  it("returns indexes matching the hash", () => {
     const commits = [commit({ hash: "abc1234" }), commit({ hash: "def5678" })];
-    expect(filterCommits(commits, "def")).toHaveLength(1);
-    expect(filterCommits(commits, "def")[0].hash).toBe("def5678");
+    expect(findCommitMatchIndexes(commits, "def")).toEqual([1]);
   });
 
   it("returns empty array when nothing matches", () => {
     const commits = [commit()];
-    expect(filterCommits(commits, "zzz")).toEqual([]);
+    expect(findCommitMatchIndexes(commits, "zzz")).toEqual([]);
   });
 });

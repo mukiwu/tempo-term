@@ -33,7 +33,7 @@ import {
 } from "./lib/gitGraphBridge";
 import { GitGraphToolbar, type GitGraphToolbarLabels } from "./GitGraphToolbar";
 import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore";
-import { filterCommits } from "./lib/filterCommits";
+import { findCommitMatchIndexes } from "./lib/filterCommits";
 import { buildCommitMenu, buildRefMenu, buildWorkingTreeMenu } from "./lib/contextMenuItems";
 import { isCurrentCommit } from "./lib/currentCommit";
 import { uncommittedRowSummary } from "./lib/uncommittedRow";
@@ -135,10 +135,25 @@ export function GitGraphTabContent() {
   // Memoized so the pending-selection effect below only re-runs when the
   // inputs really change — a fresh array identity every render would re-fire
   // it on every unrelated re-render.
-  const visibleCommits = useMemo(
-    () => filterCommits(commits, searchQuery),
+  const matchIndexes = useMemo(
+    () => findCommitMatchIndexes(commits, searchQuery),
     [commits, searchQuery],
   );
+  const commitIndexByHash = useMemo(
+    () => new Map(commits.map((commit, index) => [commit.hash, index])),
+    [commits],
+  );
+  const selectedCommitHash =
+    selection?.mode === "single"
+      ? selection.commit.hash
+      : selection?.mode === "compare"
+        ? selection.to.hash
+        : null;
+  const selectedCommitIndex = selectedCommitHash
+    ? (commitIndexByHash.get(selectedCommitHash) ?? -1)
+    : -1;
+  const currentMatchIndex = matchIndexes.indexOf(selectedCommitIndex);
+  const matchPosition = currentMatchIndex < 0 ? 0 : currentMatchIndex + 1;
 
   const currentBranch = branches.find((b) => b.isCurrent)?.name ?? "—";
 
@@ -320,6 +335,51 @@ export function GitGraphTabContent() {
     [commits],
   );
 
+  const handleNavigateMatch = useCallback(
+    (direction: "next" | "previous") => {
+      if (searchQuery.trim() === "" || matchIndexes.length === 0) {
+        return;
+      }
+
+      let targetMatchIndex: number;
+
+      if (currentMatchIndex >= 0) {
+        const step = direction === "next" ? 1 : -1;
+        targetMatchIndex =
+          (currentMatchIndex + step + matchIndexes.length) % matchIndexes.length;
+      } else {
+        if (selectedCommitIndex < 0) {
+          targetMatchIndex = direction === "next" ? 0 : matchIndexes.length - 1;
+        } else if (direction === "next") {
+          targetMatchIndex = matchIndexes.findIndex((index) => index > selectedCommitIndex);
+          if (targetMatchIndex < 0) {
+            targetMatchIndex = 0;
+          }
+        } else {
+          targetMatchIndex = -1;
+          for (let index = matchIndexes.length - 1; index >= 0; index -= 1) {
+            if (matchIndexes[index] < selectedCommitIndex) {
+              targetMatchIndex = index;
+              break;
+            }
+          }
+          if (targetMatchIndex < 0) {
+            targetMatchIndex = matchIndexes.length - 1;
+          }
+        }
+      }
+
+      setSelection({ mode: "single", commit: commits[matchIndexes[targetMatchIndex]] });
+    },
+    [
+      commits,
+      currentMatchIndex,
+      matchIndexes,
+      searchQuery,
+      selectedCommitIndex,
+    ],
+  );
+
   // Consume a pending "select this commit" request from the sidebar's history
   // list. Subscribes to the store's hash (not a one-shot getState() read) so
   // this fires for every new request, including one that arrives while the
@@ -347,16 +407,9 @@ export function GitGraphTabContent() {
     }
     const hashMatches = (commitHash: string) =>
       commitHash.startsWith(pendingHash) || pendingHash.startsWith(commitHash);
-    const visibleMatch = visibleCommits.find((c) => hashMatches(c.hash));
-    if (visibleMatch) {
-      setSelection({ mode: "single", commit: visibleMatch });
-      usePendingGraphSelectionStore.getState().consume();
-      pendingSelectionAttempts.current = 0;
-      return;
-    }
-    // Present in the full list but hidden by the current search filter —
-    // paging in more history can't fix that, so don't waste retries on it.
-    if (commits.some((c) => hashMatches(c.hash))) {
+    const loadedMatch = commits.find((c) => hashMatches(c.hash));
+    if (loadedMatch) {
+      setSelection({ mode: "single", commit: loadedMatch });
       usePendingGraphSelectionStore.getState().consume();
       pendingSelectionAttempts.current = 0;
       return;
@@ -380,7 +433,7 @@ export function GitGraphTabContent() {
       usePendingGraphSelectionStore.getState().consume();
       pendingSelectionAttempts.current = 0;
     }
-  }, [pendingHash, commits, visibleCommits, loadMore]);
+  }, [pendingHash, commits, loadMore]);
 
   // Turning remotes off hides remote branches; drop any of them from the
   // filter so the dropdown's picks and the graphed refs stay in sync.
@@ -461,6 +514,8 @@ export function GitGraphTabContent() {
     fetch: t("toolbar.fetch"),
     fetching: t("toolbar.fetching"),
     matches: t("toolbar.matches"),
+    previousMatch: t("toolbar.previousMatch"),
+    nextMatch: t("toolbar.nextMatch"),
     head: t("toolbar.head"),
     more: t("toolbar.more"),
     commitOrder: t("toolbar.commitOrder"),
@@ -714,7 +769,9 @@ export function GitGraphTabContent() {
           onChangeOrder={handleChangeOrder}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          matchCount={visibleCommits.length}
+          matchPosition={matchPosition}
+          matchCount={matchIndexes.length}
+          onNavigateMatch={handleNavigateMatch}
           onRefresh={() => void runAction(async () => {})}
           onFetch={() => void handleFetch()}
           fetching={fetching}
@@ -732,7 +789,7 @@ export function GitGraphTabContent() {
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1">
           <GitGraph
-            commits={visibleCommits}
+            commits={commits}
             selection={selection}
             onSelectCommit={handleSelectCommit}
             onCommitContextMenu={(commit, x, y) =>

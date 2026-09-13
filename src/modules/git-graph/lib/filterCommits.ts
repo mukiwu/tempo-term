@@ -1,18 +1,16 @@
 import type { CommitNode } from "../types";
 
-/**
- * Filter loaded commits by a case-insensitive query over message, author and
- * hash. An empty or whitespace query returns the input unchanged.
- */
-export function filterCommits(commits: CommitNode[], query: string): CommitNode[] {
+/** Return the loaded commit indexes matching a case-insensitive query. */
+export function findCommitMatchIndexes(commits: CommitNode[], query: string): number[] {
   const q = query.trim().toLowerCase();
   if (q === "") {
-    return commits;
+    return commits.map((_, index) => index);
   }
-  return commits.filter(
-    (c) =>
-      c.message.toLowerCase().includes(q) ||
-      c.author.toLowerCase().includes(q) ||
-      c.hash.toLowerCase().includes(q),
+  return commits.flatMap((commit, index) =>
+    commit.message.toLowerCase().includes(q) ||
+    commit.author.toLowerCase().includes(q) ||
+    commit.hash.toLowerCase().includes(q)
+      ? [index]
+      : [],
   );
 }
