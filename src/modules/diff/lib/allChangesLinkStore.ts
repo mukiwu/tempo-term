@@ -33,8 +33,41 @@ interface AllChangesLinkState {
   rescan: Readonly<Record<string, number>>;
   requestRescan: (pane: string) => void;
 
+  /**
+   * Page to panel: what the page is showing, when that is no longer the
+   * working tree.
+   *
+   * The panel lists what `gitStatus` reports, which is the right answer for a
+   * page comparing against the working tree and the wrong one for every other
+   * base -- the two would sit side by side describing different comparisons,
+   * and a click on a row would ask the page to scroll to a file it does not
+   * have. So the page hands over its own list and the panel shows that
+   * instead, read-only: staging is meaningless against a base that is not the
+   * working tree, and the files are mostly committed already.
+   *
+   * Handed over rather than fetched again on purpose. One scan means the two
+   * cannot disagree, and it is the same reason the page takes its own list out
+   * of the diff it already has rather than asking status for it.
+   */
+  listing: Readonly<Record<string, AllChangesListing>>;
+  setListing: (pane: string, listing: AllChangesListing | null) => void;
+
   /** Drop everything a pane published, as it goes. */
   forget: (pane: string) => void;
+}
+
+/** The page's own file list, for a base that is not the working tree. */
+export interface AllChangesListing {
+  /** How the base reads, for the section header: `master`, `a..b`. */
+  label: string;
+  /**
+   * Two named points rather than one base. The panel's header needs to know
+   * because the two do not read the same: comparing *with* master wants the
+   * preposition, while `a..b` already says "between these" and reads as a
+   * stutter with one.
+   */
+  range: boolean;
+  files: { rel: string; status: string }[];
 }
 
 /**
@@ -71,6 +104,18 @@ export const useAllChangesLinkStore = create<AllChangesLinkState>((set, get) => 
   requestRescan: (pane) =>
     set((state) => ({ rescan: { ...state.rescan, [pane]: (state.rescan[pane] ?? 0) + 1 } })),
 
+  listing: {},
+  setListing: (pane, listing) =>
+    set((state) => {
+      const next = { ...state.listing };
+      if (listing) {
+        next[pane] = listing;
+      } else {
+        delete next[pane];
+      }
+      return { listing: next };
+    }),
+
   showing: {},
   setShowing: (pane, file) => {
     // Written as the page scrolls, so it must not churn: an unchanged value
@@ -95,9 +140,11 @@ export const useAllChangesLinkStore = create<AllChangesLinkState>((set, get) => 
       const file = { ...state.file };
       const showing = { ...state.showing };
       const rescan = { ...state.rescan };
+      const listing = { ...state.listing };
       delete file[pane];
       delete showing[pane];
       delete rescan[pane];
-      return { file, showing, rescan };
+      delete listing[pane];
+      return { file, showing, rescan, listing };
     }),
 }));

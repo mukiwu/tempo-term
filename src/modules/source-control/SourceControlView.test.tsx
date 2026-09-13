@@ -46,7 +46,7 @@ describe("SourceControlView row interactions", () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
     useWorkspaceStore.getState().setRoot("/repo");
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
-    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {} });
+    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {}, listing: {} });
   });
 
   it("opens the all-changes tab from the panel toolbar", async () => {
@@ -162,6 +162,31 @@ describe("SourceControlView row interactions", () => {
       useAllChangesLinkStore.getState().setShowing(pane(), null);
     });
     expect(screen.getByText("src/a.ts").closest("li")).not.toHaveAttribute("aria-current");
+  });
+
+  it("offers nothing to act on while the page is comparing against a ref", async () => {
+    localStorage.setItem("tempoterm-sourcecontrol-view-mode", "folder");
+    render(<SourceControlView />);
+    await screen.findByText("a.ts");
+    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+
+    act(() => {
+      useAllChangesLinkStore.getState().setListing(pane(), {
+        label: "upstream/master",
+        range: false,
+        files: [{ rel: "src/deep/b.ts", status: "M" }],
+      });
+    });
+
+    // The page's own list, headed by the base rather than by "Changes".
+    expect(screen.getByText("Difference from upstream/master")).toBeInTheDocument();
+    expect(screen.getByText("b.ts")).toBeInTheDocument();
+    // Staging means nothing against a base that is not the working tree, so
+    // neither the file rows nor the folder rows carry an action -- and the
+    // folder one is permanently revealed, so it would stand out alone.
+    expect(screen.queryByRole("button", { name: "Stage" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Stage Folder/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Stage:/ })).toBeNull();
   });
 
   it("reloads the all-changes page along with itself", async () => {

@@ -36,6 +36,7 @@ import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore"
 import { filterCommits } from "./lib/filterCommits";
 import { buildCommitMenu, buildRefMenu, buildWorkingTreeMenu } from "./lib/contextMenuItems";
 import { isCurrentCommit } from "./lib/currentCommit";
+import { openChangesInTab } from "./lib/openChangesInTab";
 import { uncommittedRowSummary } from "./lib/uncommittedRow";
 import { splitRemoteRef } from "./lib/remoteRef";
 import type { RefChipOptions } from "./lib/refChips";
@@ -517,6 +518,7 @@ export function GitGraphTabContent() {
     noFileSelected: t("details.noFileSelected"),
     close: t("details.close"),
     compareBadge: t("details.compareBadge"),
+    openInTab: t("details.openChangesInTab"),
     diffTab: t("details.diffTab"),
     aiTab: t("details.aiTab"),
     aiGenerate: t("details.aiGenerate"),
@@ -766,6 +768,7 @@ export function GitGraphTabContent() {
                 onClose={() => setSelection(null)}
                 uncommitted={status}
                 headHash={headHash}
+                onOpenInTab={openChangesInTab(repo, selection)}
                 labels={detailsLabels}
               />
             </div>

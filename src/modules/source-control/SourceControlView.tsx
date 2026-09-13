@@ -58,6 +58,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { STATUS_COLOR } from "./lib/fileStatus";
 import { activeAllChangesPane, activeDiffPane, useTabsStore } from "@/stores/tabsStore";
 import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
+import { readComparison } from "@/modules/diff/lib/comparisonBaseStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { computeHistoryGraphLayout, HISTORY_GRAPH_GEOMETRY } from "./lib/commitGraph";
 
@@ -116,6 +117,7 @@ function StatusRow({
   onOpen,
   onRequestDiscard,
   active = false,
+  readOnly = false,
   followsPage = false,
   indent = 0,
 }: {
@@ -133,6 +135,12 @@ function StatusRow({
    * keeps its actions out without needing hover. */
   active?: boolean;
   /**
+   * Nothing here can be acted on: the page is comparing against something
+   * other than the working tree, where staging and discarding have no
+   * meaning. The row still opens and still marks itself.
+   */
+  readOnly?: boolean;
+  /**
    * The all-changes page has the pane in front, so this row takes its mark
    * from what that page is showing rather than from a diff pane.
    */
@@ -142,7 +150,7 @@ function StatusRow({
 }) {
   const { t } = useTranslation("sourceControl");
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const discardable = onRequestDiscard && file.status !== "?";
+  const discardable = !readOnly && onRequestDiscard && file.status !== "?";
   const absPath = `${repoPath}/${file.path}`;
   const rowRef = useRef<HTMLLIElement>(null);
 
@@ -197,13 +205,17 @@ function StatusRow({
       // that stays put. Same direct store call as the two items above.
       onSelect: () => useTabsStore.getState().openDiffTab(absPath, file.staged),
     },
-    {
-      id: "stageAction",
-      label: actionLabel,
-      icon: ActionIcon,
-      group: 1,
-      onSelect: () => onAction(file.path),
-    },
+    ...(readOnly
+      ? []
+      : [
+          {
+            id: "stageAction",
+            label: actionLabel,
+            icon: ActionIcon,
+            group: 1,
+            onSelect: () => onAction(file.path),
+          } satisfies ContextMenuItem,
+        ]),
     {
       id: "copyPath",
       label: t("menuCopyPath"),
@@ -265,6 +277,11 @@ function StatusRow({
           {displayPath ?? file.path}
         </span>
       </Tooltip>
+      {/* Not rendered at all, rather than hidden: RowActions collapses the
+          strip to zero width and deliberately keeps its buttons focusable,
+          so leaving them in would put controls that do nothing into the tab
+          order and in front of a screen reader. */}
+      {!readOnly && (
       <RowActions revealed={marked}>
         {discardable && (
           <Tooltip label={t("discard")}>
@@ -295,6 +312,7 @@ function StatusRow({
           </button>
         </Tooltip>
       </RowActions>
+      )}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
       )}
@@ -302,13 +320,27 @@ function StatusRow({
   );
 }
 
-function HistoryRow({ commit }: { commit: CommitInfo }) {
+function HistoryRow({ commit, repoPath }: { commit: CommitInfo; repoPath: string | null }) {
   const { t } = useTranslation("sourceControl");
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   function viewInGraph() {
     usePendingGraphSelectionStore.getState().request(commit.id);
     useTabsStore.getState().openGitGraphTab();
+  }
+
+  /**
+   * Read this commit on the all-changes page, which is a whole tab rather than
+   * the few hundred pixels the graph's details panel gets. "The changes in
+   * this commit" is the range from its parent; a root commit has none, so
+   * there is nothing to offer.
+   */
+  const [parent] = commit.parents;
+  const readable = repoPath && parent !== undefined;
+  function openInPage() {
+    if (repoPath && parent) {
+      readComparison(repoPath, parent, commit.id);
+    }
   }
 
   return (
@@ -319,10 +351,30 @@ function HistoryRow({ commit }: { commit: CommitInfo }) {
         setMenu({ x: e.clientX, y: e.clientY });
       }}
       style={{ height: `${HISTORY_GRAPH_GEOMETRY.rowHeight}px` }}
-      className="flex cursor-pointer items-center gap-2 text-xs hover:bg-bg-elevated/60"
+      className="group flex cursor-pointer items-center gap-2 pr-2 text-xs hover:bg-bg-elevated/60"
     >
       <span className="shrink-0 font-mono text-fg-subtle">{commit.id}</span>
       <span className="min-w-0 flex-1 truncate text-fg-muted">{commit.summary}</span>
+      {/* Hover only: this list is long and one permanent icon per row would
+          eat width the subjects need. The row's own click still goes to the
+          graph, so this one has to stop there. */}
+      {readable && (
+        <RowActions>
+          <Tooltip label={t("openChangesInTab")}>
+            <button
+              type="button"
+              aria-label={t("openChangesInTab")}
+              onClick={(e) => {
+                e.stopPropagation();
+                openInPage();
+              }}
+              className="rounded p-0.5 text-fg-subtle hover:bg-border-strong hover:text-fg"
+            >
+              <FileDiff size={13} />
+            </button>
+          </Tooltip>
+        </RowActions>
+      )}
       {menu && (
         <ContextMenu
           x={menu.x}
@@ -443,6 +495,7 @@ function FolderRow({
   actionIcon: ActionIcon,
   folderActionLabel,
   onFolderAction,
+  readOnly,
   followsPage,
   children,
 }: {
@@ -453,6 +506,9 @@ function FolderRow({
   actionIcon: typeof Plus;
   folderActionLabel: string;
   onFolderAction: (paths: string[]) => void;
+  /** Nothing here can be staged, so the subtree action goes too -- it was the
+   * one button still showing after the file rows lost theirs. */
+  readOnly?: boolean;
   followsPage?: boolean;
   children: ReactNode;
 }) {
@@ -519,6 +575,7 @@ function FolderRow({
             have no context menu to fall back on for pointers with no
             hover, and one icon costs little of the width the file rows'
             hover-reveal exists to reclaim. */}
+        {!readOnly && (
         <RowActions revealed>
           <Tooltip label={`${folderActionLabel}: ${node.path}`}>
             <button
@@ -531,6 +588,7 @@ function FolderRow({
             </button>
           </Tooltip>
         </RowActions>
+        )}
       </div>
       {!isCollapsed && <ul>{children}</ul>}
     </li>
@@ -551,6 +609,7 @@ function FileTreeRows({
   onFileOpen,
   onRequestDiscard,
   activePath,
+  readOnly,
   followsPage,
 }: {
   nodes: TreeNode<FileStatus>[];
@@ -566,6 +625,7 @@ function FileTreeRows({
   onFileOpen: (path: string) => void;
   onRequestDiscard?: (path: string) => void;
   activePath?: string | null;
+  readOnly?: boolean;
   followsPage?: boolean;
 }) {
   return (
@@ -588,6 +648,7 @@ function FileTreeRows({
               onOpen={onFileOpen}
               onRequestDiscard={onRequestDiscard}
               active={node.file.path === activePath}
+              readOnly={readOnly}
               followsPage={followsPage}
               indent={depth}
             />
@@ -604,6 +665,7 @@ return (
             actionIcon={ActionIcon}
             folderActionLabel={folderActionLabel}
             onFolderAction={onFolderAction}
+            readOnly={readOnly}
             followsPage={followsPage}
           >
             <FileTreeRows
@@ -620,6 +682,7 @@ return (
               onFileOpen={onFileOpen}
               onRequestDiscard={onRequestDiscard}
               activePath={activePath}
+              readOnly={readOnly}
               followsPage={followsPage}
             />
           </FolderRow>
@@ -647,6 +710,7 @@ function FileList({
   onFileOpen,
   onRequestDiscard,
   activePath,
+  readOnly,
   followsPage,
 }: {
   files: FileStatus[];
@@ -662,6 +726,7 @@ function FileList({
   /** Repo-relative path of the file whose diff is on screen, if it is in this
    * list — the staged and unstaged lists never claim it at the same time. */
   activePath?: string | null;
+  readOnly?: boolean;
   followsPage?: boolean;
 }) {
   const { collapsed, toggle: toggleFolder } = useCollapsedPaths();
@@ -685,6 +750,7 @@ function FileList({
             onOpen={onFileOpen}
             onRequestDiscard={onRequestDiscard}
             active={file.path === activePath}
+            readOnly={readOnly}
             followsPage={followsPage}
           />
         ))}
@@ -708,6 +774,7 @@ function FileList({
         onFileOpen={onFileOpen}
         onRequestDiscard={onRequestDiscard}
         activePath={activePath}
+        readOnly={readOnly}
         followsPage={followsPage}
       />
     </ul>
@@ -746,11 +813,14 @@ function readCollapsedSections(): Set<SectionKey> {
  */
 function SectionHeader({
   label,
+  verbatim = false,
   collapsed,
   onToggle,
   action,
 }: {
   label: string;
+  /** Show the label as given rather than in caps: it is a name, not a word. */
+  verbatim?: boolean;
   collapsed: boolean;
   onToggle: () => void;
   action?: ReactNode;
@@ -761,7 +831,13 @@ function SectionHeader({
         type="button"
         aria-expanded={!collapsed}
         onClick={onToggle}
-        className="flex min-w-0 flex-1 items-center gap-1 text-left text-[11px] font-semibold uppercase tracking-wide"
+        className={`flex min-w-0 flex-1 items-center gap-1 text-left text-[11px] font-semibold tracking-wide ${
+          // "Staged"/"Changes" are the panel's own words and read as headings
+          // in caps. A ref name is not the panel's to rewrite: refs are
+          // case-sensitive, so MASTER is a different thing from master, and a
+          // branch called feat/AllChanges comes out misspelt.
+          verbatim ? "" : "uppercase"
+        }`}
       >
         {collapsed ? (
           <ChevronRight size={12} className="shrink-0" />
@@ -830,6 +906,13 @@ export function SourceControlView() {
   // of contents rather than a way of opening more tabs.
   const allChangesPane = useTabsStore((s) => activeAllChangesPane(s.tabs, s.activeId));
   const allChangesInFront = allChangesPane !== null;
+  // What the page in front is comparing, when that is no longer the working
+  // tree. While one of these is up, this panel is that page's index rather
+  // than a view of the working tree -- listing what status reports would be
+  // describing a different comparison in the same breath. Read from the pane
+  // in front for the same reason the mark is: a split can hold two pages, each
+  // comparing something else.
+  const listing = useAllChangesLinkStore((s) => (allChangesPane ? s.listing[allChangesPane] : undefined) ?? null);
   // Which row is "the one on screen": the diff in the foreground pane. Read as
   // two primitives — a selector returning a fresh {path, staged} object would
   // never compare equal, re-rendering the panel on every store change.
@@ -1101,7 +1184,52 @@ export function SourceControlView() {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {(status?.staged.length ?? 0) > 0 && (
+          {listing ? (
+            <section className="mb-2">
+              {/* Read-only, and said so: staging means nothing against a base
+                  that is not the working tree, and most of these files are
+                  committed already. The header names the base rather than
+                  saying "Changes", because what is listed is the difference
+                  from that, not from anything on disk. */}
+              <SectionHeader
+                label={t(listing.range ? "baseDiffSectionRange" : "baseDiffSection", {
+                  name: listing.label,
+                })}
+                verbatim
+                collapsed={collapsedSections.has("changes")}
+                onToggle={() => toggleSection("changes")}
+                action={
+                  <span className="shrink-0 text-[11px] text-fg-subtle">{t("readOnly")}</span>
+                }
+              />
+              {!collapsedSections.has("changes") &&
+                (listing.files.length === 0 ? (
+                  <p className="px-3 py-1 text-xs text-fg-subtle">{t("noChanges")}</p>
+                ) : (
+                  <FileList
+                    files={listing.files.map((file) => ({
+                      path: file.rel,
+                      staged: false,
+                      status: file.status,
+                    }))}
+                    viewMode={viewMode}
+                    actionIcon={Plus}
+                    actionLabel={t("stage")}
+                    folderActionLabel={t("stageFolder")}
+                    // Nothing to act on, so every action is a no-op rather
+                    // than a button that half works.
+                    onFileAction={() => {}}
+                    onFolderAction={() => {}}
+                    onFileOpen={(path) => openDiff(path, false)}
+                    repoPath={repoPath ?? ""}
+                    activePath={null}
+                    followsPage={allChangesInFront}
+                    readOnly
+                  />
+                ))}
+            </section>
+          ) : null}
+          {!listing && (status?.staged.length ?? 0) > 0 && (
             <section className="mb-2">
               <SectionHeader
                 label={t("stagedChanges")}
@@ -1147,6 +1275,7 @@ export function SourceControlView() {
             </section>
           )}
 
+          {!listing && (
           <section className="mb-2">
             <SectionHeader
               label={t("changes")}
@@ -1196,6 +1325,7 @@ export function SourceControlView() {
                 />
               ))}
           </section>
+          )}
         </div>
 
         {/* History is its own pane pinned to the bottom of the panel in both
@@ -1234,7 +1364,7 @@ export function SourceControlView() {
                   <HistoryGraphColumn commits={history} />
                   <ul className="min-w-0 flex-1">
                     {history.map((commit) => (
-                      <HistoryRow key={commit.id} commit={commit} />
+                      <HistoryRow key={commit.id} commit={commit} repoPath={repoPath} />
                     ))}
                   </ul>
                 </div>
