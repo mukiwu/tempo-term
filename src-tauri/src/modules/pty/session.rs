@@ -391,17 +391,21 @@ fn spawn_with_sinks(
     // reader EOF. On Windows ConPTY the reader NEVER sees EOF while the pseudo
     // console is open (microsoft/terminal#1810), and the master lives in the
     // registry — so waiting for EOF before `child.wait()` deadlocks there and
-    // a pane whose shell ran `exit` hangs forever. Waiting first and dropping
-    // the stored master closes the pseudo console and unblocks the reader;
-    // on unix the reader gets EOF on its own. The
+    // a pane whose shell ran `exit` hangs forever. On Windows, waiting first
+    // and dropping the stored master closes the pseudo console and unblocks
+    // the reader. Unix readers observe EOF themselves, so keep the master
+    // until they have drained the kernel buffer to avoid losing tail output.
+    // The
     // exit code crosses to the flusher thread, which still reports `on_exit`
     // only after the remaining output has been flushed. Keep the remaining
     // registry entry as a tombstone until a renderer accepts that exit.
+    #[cfg(windows)]
     let waiter_sessions = Arc::clone(&state.sessions);
     let flusher_sessions = Arc::clone(&state.sessions);
     let (exit_code_tx, exit_code_rx) = std::sync::mpsc::channel::<i32>();
     std::thread::spawn(move || {
         let code = child.wait().map(|s| s.exit_code() as i32).unwrap_or(-1);
+        #[cfg(windows)]
         if let Some(session) = waiter_sessions.read().unwrap().get(&id).cloned() {
             session.master.lock().unwrap().take();
         }
@@ -478,6 +482,11 @@ fn spawn_with_sinks(
         // deadlock and leak both threads.
         drop(rx);
         let _ = reader_thread.join();
+        // Unix can release the master only after the reader drains EOF; Windows
+        // already released it in the waiter above to make that EOF possible.
+        if let Some(session) = flusher_sessions.read().unwrap().get(&id).cloned() {
+            session.master.lock().unwrap().take();
+        }
         // The waiter thread owns `child.wait()`; recv fails only if it died.
         let code = exit_code_rx.recv().unwrap_or(-1);
         if on_exit(code) {
