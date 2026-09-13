@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   DownloadCloud,
   MoreHorizontal,
@@ -85,6 +87,8 @@ export interface GitGraphToolbarLabels {
   fetch: string;
   fetching: string;
   matches: string;
+  previousMatch: string;
+  nextMatch: string;
   head: string;
   more: string;
   commitOrder: string;
@@ -109,7 +113,10 @@ interface GitGraphToolbarProps {
   onChangeOrder: (order: CommitOrder) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  /** One-based position of the selected commit in the matches, or zero. */
+  matchPosition: number;
   matchCount: number;
+  onNavigateMatch: (direction: "next" | "previous") => void;
   onRefresh: () => void;
   onFetch: () => void;
   fetching: boolean;
@@ -137,7 +144,9 @@ export function GitGraphToolbar({
   onChangeOrder,
   searchQuery,
   onSearchChange,
+  matchPosition,
   matchCount,
+  onNavigateMatch,
   onRefresh,
   onFetch,
   fetching,
@@ -358,13 +367,50 @@ export function GitGraphToolbar({
               autoFocus
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key !== "Enter" ||
+                  event.nativeEvent.isComposing ||
+                  event.nativeEvent.keyCode === 229
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                onNavigateMatch(event.shiftKey ? "previous" : "next");
+              }}
               placeholder={labels.searchPlaceholder}
               className="w-52 rounded border border-border-strong bg-bg px-2 py-1 text-xs text-fg focus:outline-none focus:ring-1 focus:ring-accent"
             />
             {searchQuery.trim() !== "" && (
-              <span className="whitespace-nowrap font-mono text-[11px] text-fg-subtle">
-                {labels.matches.replace("{{count}}", String(matchCount))}
-              </span>
+              <>
+                <span className="whitespace-nowrap font-mono text-[11px] text-fg-subtle">
+                  {labels.matches
+                    .replace("{{current}}", String(matchPosition))
+                    .replace("{{count}}", String(matchCount))}
+                </span>
+                <Tooltip label={labels.previousMatch}>
+                  <button
+                    type="button"
+                    aria-label={labels.previousMatch}
+                    disabled={matchCount === 0}
+                    onClick={() => onNavigateMatch("previous")}
+                    className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:cursor-default disabled:opacity-40"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                </Tooltip>
+                <Tooltip label={labels.nextMatch}>
+                  <button
+                    type="button"
+                    aria-label={labels.nextMatch}
+                    disabled={matchCount === 0}
+                    onClick={() => onNavigateMatch("next")}
+                    className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:cursor-default disabled:opacity-40"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
+                </Tooltip>
+              </>
             )}
             <Tooltip label={labels.search}>
               <button

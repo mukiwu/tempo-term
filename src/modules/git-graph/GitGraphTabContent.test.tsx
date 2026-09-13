@@ -50,7 +50,7 @@ describe("GitGraphTabContent pending commit selection", () => {
 
   it("selects the pending commit once it is loaded", async () => {
     vi.mocked(gitGraphLog).mockImplementation(async () => commitList(["aaa1111", "bbb2222"], false));
-    usePendingGraphSelectionStore.getState().request("bbb2222");
+    act(() => usePendingGraphSelectionStore.getState().request("bbb2222"));
 
     render(<GitGraphTabContent />);
 
@@ -112,13 +112,13 @@ describe("GitGraphTabContent pending commit selection", () => {
 
     await waitFor(() => expect(usePendingGraphSelectionStore.getState().hash).toBeNull());
 
-    usePendingGraphSelectionStore.getState().request("bbb2222");
+    act(() => usePendingGraphSelectionStore.getState().request("bbb2222"));
 
     await waitFor(() => expect(usePendingGraphSelectionStore.getState().hash).toBeNull());
     await waitFor(() => expect(screen.getAllByText("bbb2222").length).toBeGreaterThan(0));
   });
 
-  it("does not select a commit that a search filter is currently hiding, and gives up without retrying", async () => {
+  it("keeps non-matching commits in the graph and can select them while searching", async () => {
     vi.mocked(gitGraphLog).mockImplementation(async () => commitList(["aaa1111", "bbb2222"], false));
     render(<GitGraphTabContent />);
     await screen.findByText("msg aaa1111");
@@ -127,14 +127,12 @@ describe("GitGraphTabContent pending commit selection", () => {
     fireEvent.change(screen.getByPlaceholderText("Search message, author, hash…"), {
       target: { value: "aaa1111" },
     });
-    await waitFor(() => expect(screen.queryByText("msg bbb2222")).not.toBeInTheDocument());
+    expect(screen.getByText("msg bbb2222")).toBeInTheDocument();
 
-    usePendingGraphSelectionStore.getState().request("bbb2222");
+    act(() => usePendingGraphSelectionStore.getState().request("bbb2222"));
 
     await waitFor(() => expect(usePendingGraphSelectionStore.getState().hash).toBeNull());
-    // loadMore would have paged in nothing new (there's nothing more to load
-    // here), so this also confirms no extra gitGraphLog calls were wasted
-    // retrying a commit the search filter — not pagination — was hiding.
+    await waitFor(() => expect(gitCommitDetails).toHaveBeenCalledWith("/repo", "bbb2222"));
     expect(vi.mocked(gitGraphLog)).toHaveBeenCalledTimes(1);
   });
 
@@ -193,6 +191,74 @@ describe("GitGraphTabContent pending commit selection", () => {
 
     await waitFor(() => expect(usePendingGraphSelectionStore.getState().hash).toBeNull());
     expect(screen.getAllByText("ccc3333").length).toBeGreaterThan(0);
+  });
+});
+
+describe("GitGraphTabContent search navigation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(gitWorktreeList).mockResolvedValue([]);
+    usePendingGraphSelectionStore.setState({ hash: null });
+    useWorkspaceStore.getState().setRoot("/repo");
+  });
+
+  it("keeps the graph intact and cycles through matches with Enter and the next button", async () => {
+    vi.mocked(gitGraphLog).mockResolvedValue({
+      commits: [
+        {
+          hash: "aaa1111",
+          parents: ["bbb2222"],
+          author: "Ada",
+          date: "2026-09-01",
+          message: "fix: first",
+          refs: [],
+        },
+        {
+          hash: "bbb2222",
+          parents: ["ccc3333"],
+          author: "Ada",
+          date: "2026-09-02",
+          message: "keep this row",
+          refs: [],
+        },
+        {
+          hash: "ccc3333",
+          parents: [],
+          author: "Ada",
+          date: "2026-09-03",
+          message: "fix: last",
+          refs: [],
+        },
+      ],
+      hasMore: false,
+    });
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("keep this row");
+    fireEvent.click(screen.getByText("keep this row").closest("div[class*='absolute']")!);
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    const search = screen.getByPlaceholderText("Search message, author, hash…");
+    fireEvent.change(search, { target: { value: "fix:" } });
+
+    expect(screen.getByText("keep this row")).toBeInTheDocument();
+    expect(screen.getByText("0 / 2 matches (loaded)")).toBeInTheDocument();
+
+    fireEvent.keyDown(search, { key: "Enter" });
+    await waitFor(() => expect(gitCommitDetails).toHaveBeenLastCalledWith("/repo", "ccc3333"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    await waitFor(() => expect(gitCommitDetails).toHaveBeenLastCalledWith("/repo", "aaa1111"));
+
+    fireEvent.keyDown(search, { key: "Enter", shiftKey: true });
+    await waitFor(() => expect(gitCommitDetails).toHaveBeenLastCalledWith("/repo", "ccc3333"));
+    expect(screen.getByText("2 / 2 matches (loaded)")).toBeInTheDocument();
+
+    const detailsCallCount = vi.mocked(gitCommitDetails).mock.calls.length;
+    fireEvent.change(search, { target: { value: "" } });
+    expect(screen.getByText("fix: last")).toBeInTheDocument();
+    expect(screen.queryByText(/matches \(loaded\)/)).not.toBeInTheDocument();
+    expect(gitCommitDetails).toHaveBeenCalledTimes(detailsCallCount);
   });
 });
 
