@@ -33,6 +33,14 @@ class IconMarker extends GutterMarker {
 }
 
 /**
+ * Whether this line is where a stretch's way back lives: opened, and with
+ * nothing left hidden behind a bar to hang the icon on instead.
+ */
+function foldsFromItsFirstLine(view: EditorView, pos: number): boolean {
+  return openedRuns(view.state).has(pos) && !barredRuns(view.state).has(pos);
+}
+
+/**
  * A fold icon on the first line of every unchanged stretch the reader has
  * opened. The column carries no marker when a file has none open, so it costs
  * no width there.
@@ -41,14 +49,6 @@ class IconMarker extends GutterMarker {
  * collapseRuns.ts), but a stretch opened all the way leaves no bar behind, so
  * the way back has to live in the gutter.
  */
-/**
- * Whether this line is where a stretch's way back lives: opened, and with
- * nothing left hidden behind a bar to hang the icon on instead.
- */
-function foldsFromItsFirstLine(view: EditorView, pos: number): boolean {
-  return openedRuns(view.state).has(pos) && !barredRuns(view.state).has(pos);
-}
-
 export function collapseBackExtension(labels: { fold: string; unfold: string }): Extension {
   return [
     gutter({

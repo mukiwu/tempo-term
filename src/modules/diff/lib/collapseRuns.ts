@@ -182,7 +182,13 @@ function runsOf(state: EditorState): Run[] {
     const from = info.side === "a" ? chunk.fromA : chunk.fromB;
     const to = info.side === "a" ? chunk.toA : chunk.toB;
     const changeFirst = doc.lineAt(Math.min(from, doc.length)).number;
-    add(seen, nextFirst, changeFirst - 1, nextFirst === 1, false);
+    // Whether this is the stretch the file opens with, asked by how many
+    // changes are behind us rather than by what line we are on -- the library
+    // asks it the same way (`i ? prevLine + margin : 1`). A file that opens
+    // with a pure insertion has a chunk covering no lines on the other side,
+    // so that side is still on line 1 after it and would keep the whole
+    // margin its neighbour had already spent.
+    add(seen, nextFirst, changeFirst - 1, seen === 0, false);
     // Where the stretch after this chunk starts, mapped exactly the way the
     // library maps it (`buildCollapsedRanges`, on `chunk.to` with no
     // adjustment either way). The two sides have to land on the same line or

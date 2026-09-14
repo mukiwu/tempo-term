@@ -124,8 +124,6 @@ export async function buildDiffViews(options: DiffViewOptions): Promise<DiffView
   const extensions = [
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
-    // Localizes the collapsed-region bar ("$ unchanged lines").
-    EditorState.phrases.of({ "$ unchanged lines": unchangedLines }),
     editorSyntaxTheme(themeId),
     EditorView.theme({
       "&": { fontSize: `${fontSize}px` },
@@ -136,9 +134,6 @@ export async function buildDiffViews(options: DiffViewOptions): Promise<DiffView
     ...(wordWrap ? [EditorView.lineWrapping] : []),
     ...language,
   ];
-
-  // Inline has no reconfigure() of its own, so its merge extension goes in a
-  // compartment a rebuild can re-init.
 
   if (unified) {
     const view = new EditorView({

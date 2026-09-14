@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MergeView } from "@codemirror/merge";
+import { getChunks, MergeView } from "@codemirror/merge";
+import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import {
   barredRuns,
@@ -103,8 +104,36 @@ describe("the two sides", () => {
 
     const merge = pair(lines.join('\n'), inserted.join('\n'));
 
+    // Written out rather than only compared side to side: a margin spent
+    // on both sides at once is still wrong and still equal.
+    expect(hidden(merge.a)).toEqual([37, 37]);
     expect(hidden(merge.a)).toEqual(hidden(merge.b));
-    expect(hidden(merge.a).length).toBeGreaterThan(0);
+  });
+
+  it("hide the same lines when the file opens with an insertion", () => {
+    // The chunk is first and covers no lines on the left, so that side is
+    // still on line 1 after it. Asking "are we at the top of the file?" by
+    // the line number rather than by how many changes are behind us kept the
+    // whole margin there and spent it on the right, which is a different
+    // number of lines hidden on each side.
+    const lines = Array.from({ length: 80 }, (_, i) => `line ${i + 1}`);
+    // A second change, so there is a stretch *between* two chunks: that is
+    // the one the question is asked about. With the insertion alone there is
+    // no stretch following a chunk that sits on line 1, and the line the
+    // answer is wrong about is never reached. And it has to be a difference
+    // between the two documents -- the same edited line in both is no chunk
+    // at all, which leaves the insertion as the only one again.
+    const withHeader = [
+      "added header",
+      ...lines.map((line, i) => (i === 39 ? "changed" : line)),
+    ];
+
+    const merge = pair(lines.join('\n'), withHeader.join('\n'));
+
+    // Written out rather than only compared side to side: a margin spent on
+    // both sides at once is still wrong and still equal.
+    expect(hidden(merge.a)).toEqual([33, 37]);
+    expect(hidden(merge.a)).toEqual(hidden(merge.b));
   });
 
   it("hide the same lines when the chunk is a pure deletion", () => {
@@ -114,8 +143,8 @@ describe("the two sides", () => {
 
     const merge = pair(lines.join('\n'), shorter.join('\n'));
 
+    expect(hidden(merge.a)).toEqual([37, 35]);
     expect(hidden(merge.a)).toEqual(hidden(merge.b));
-    expect(hidden(merge.a).length).toBeGreaterThan(0);
   });
 });
 
@@ -172,5 +201,82 @@ describe("what a press opens", () => {
     // edge the field records.
     const [how] = [...openedRuns(editor.state).values()];
     expect(how.bottom).toBe(hidden);
+  });
+});
+
+/**
+ * `buildCollapsedRanges`, copied out of the library, with the margin and
+ * minimum this extension uses.
+ *
+ * A copy rather than a call because the library's version is not exported,
+ * and the point is to be told when the two answers part. If a release of
+ * `@codemirror/merge` changes how it maps a chunk's end, this is what says so
+ * -- loudly, rather than as two columns quietly a line out of step.
+ */
+function reference(state: EditorState): number[] {
+  const info = getChunks(state)!;
+  const chunks = info.chunks;
+  const isA = info.side === "a";
+  const out: number[] = [];
+  let prevLine = 1;
+  for (let i = 0; ; i++) {
+    const chunk = i < chunks.length ? chunks[i] : null;
+    const from = i ? prevLine + 3 : 1;
+    const to = chunk
+      ? state.doc.lineAt(isA ? chunk.fromA : chunk.fromB).number - 1 - 3
+      : state.doc.lines;
+    if (to - from + 1 >= 5) out.push(state.doc.line(from).from);
+    if (!chunk) break;
+    prevLine = state.doc.lineAt(Math.min(state.doc.length, isA ? chunk.toA : chunk.toB)).number;
+  }
+  return out;
+}
+
+/** Our own answer, read off the state rather than the DOM (jsdom renders only
+ *  the viewport, so counting `[data-lines]` undercounts on a long file). */
+const ours = (v: EditorView) => [...barredRuns(v.state)].sort((x, y) => x - y);
+
+let seed = 12345;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+describe("every stretch, against the library's own answer", () => {
+  it("agrees on both sides of three hundred random diffs", () => {
+    const bad: string[] = [];
+    for (let c = 0; c < 300; c++) {
+      // 40-99 lines; per line 2% delete, 2% insert-before, 2% modify;
+      // then 30% chance of an insertion at the very top and 30% at the very
+      // bottom. The top one is what makes chunk 0 zero-width on side A.
+      const n = 40 + Math.floor(rnd() * 60);
+      const a = Array.from({ length: n }, (_, i) => `line ${i + 1}`);
+      const b: string[] = [];
+      for (let i = 0; i < n; i++) {
+        const r = rnd();
+        if (r < 0.02) continue;
+        if (r < 0.04) { b.push("ins A"); b.push(a[i]); continue; }
+        if (r < 0.06) { b.push("mod"); continue; }
+        b.push(a[i]);
+      }
+      if (rnd() < 0.3) b.unshift("top ins");
+      if (rnd() < 0.3) b.push("bottom ins");
+
+      const parent = document.createElement("div");
+      document.body.append(parent);
+      const m = new MergeView({
+        a: { doc: a.join("\n"), extensions: [collapseRunsExtension(LABELS)] },
+        b: { doc: b.join("\n"), extensions: [collapseRunsExtension(LABELS)] },
+        parent,
+      });
+      const j = JSON.stringify;
+      const ao = ours(m.a), ar = reference(m.a.state);
+      const bo = ours(m.b), br = reference(m.b.state);
+      if (j(ao) !== j(ar) || j(bo) !== j(br)) {
+        bad.push(j({ c, ao, ar, bo, br }));
+      } else if (ao.length !== bo.length) {
+        bad.push("COUNTDIFF " + j({ c, ao, bo }));
+      }
+      m.destroy();
+      parent.remove();
+    }
+    expect(bad.slice(0, 3)).toEqual([]);
   });
 });

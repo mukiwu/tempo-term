@@ -51,13 +51,13 @@ export const MESSAGE_SQUARE_PLUS = [
   "M9 11h6",
 ];
 
-/** One of the path sets above as an SVG element, drawn in the current color. */
 /**
  * One stroke of an icon: the path data, or the same with a note that it should
  * be drawn broken.
  */
 export type IconStroke = string | { d: string; dashed: true };
 
+/** One of the path sets above as an SVG element, drawn in the current color. */
 export function lucideIcon(paths: readonly IconStroke[], size = 13): SVGElement {
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
