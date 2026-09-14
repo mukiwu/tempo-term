@@ -696,4 +696,46 @@ describe("GitGraph wide histories", () => {
     render(<GitGraph commits={fan(6)} selection={null} onSelectCommit={vi.fn()} labels={LABELS} />);
     expect(rowIndent("merge")).toBe(112);
   });
+
+  const nodes = (): HTMLElement[] =>
+    Array.from(document.querySelectorAll<HTMLElement>("button[class*='rounded-full']")).filter(
+      (n) => n.getAttribute("aria-label") !== "Uncommitted changes",
+    );
+
+  /**
+   * The same fan, with the roots listed newest-first so the widest lanes land
+   * in the rows the virtualized list actually renders. `fan` puts lane 39 on
+   * row 40, which never reaches the DOM.
+   */
+  function wideFirst(n: number): CommitNode[] {
+    const roots = Array.from({ length: n }, (_, i) => `r${i}`);
+    return [
+      commit("m", roots, "merge"),
+      ...[...roots].reverse().map((r) => commit(r, [], r)),
+    ];
+  }
+
+  it("leaves no node behind once it has faded out", () => {
+    // A node drawn at zero opacity is still in the tab order, still clickable
+    // and still pops a tooltip — a control nobody can see. Past the fade it is
+    // left out instead; the row is a click target in its own right.
+    const drawn: number[] = [];
+    for (const lanes of [20, 21, 40]) {
+      const { unmount } = render(
+        <GitGraph
+          commits={wideFirst(lanes)}
+          selection={null}
+          onSelectCommit={vi.fn()}
+          labels={LABELS}
+        />,
+      );
+      expect(nodes().map((n) => n.style.opacity)).not.toContain("0");
+      drawn.push(nodes().length);
+      unmount();
+    }
+    // Proof the case above is exercised rather than vacuously true: at forty
+    // lanes the top rows are all past the ceiling, so far fewer nodes survive
+    // than at twenty, where every one of them still has a column.
+    expect(drawn[2]).toBeLessThan(drawn[0]);
+  });
 });

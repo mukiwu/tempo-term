@@ -556,6 +556,14 @@ export function GitGraph({
               if (!layout) {
                 return null;
               }
+              const shown = nodeOpacity(layout.x);
+              // Past the fade the node is not faint, it is gone — and one that
+              // is only invisible is still in the tab order, still clickable,
+              // still pops a tooltip. The row is a click target in its own
+              // right, so leaving the dot out costs nothing.
+              if (shown === 0) {
+                return null;
+              }
               const color = BRANCH_COLORS[layout.colorIndex % BRANCH_COLORS.length];
               const isSelected = isSelectedHash(commit.hash);
               const isCurrent = isCurrentCommit(commit);
@@ -574,7 +582,7 @@ export function GitGraph({
                       top: `${layout.y - nodeBox / 2}px`,
                       width: `${nodeBox}px`,
                       height: `${nodeBox}px`,
-                      opacity: nodeOpacity(layout.x),
+                      opacity: shown,
                       ...(isSelected ? selectedRing : null),
                     }}
                     className={`absolute flex items-center justify-center rounded-full transition-all focus:outline-none ${
