@@ -1606,8 +1606,8 @@ pub struct ComparisonBase {
     pub last_commit_at: i64,
 }
 
-/// 候選基準。fallback 的順序留在後端，前端只負責畫 —— 散在前端的話
-/// 兩邊各有一份順序，遲早會不一致。
+/// Comparison bases. Keep fallback ordering in the backend so it cannot drift
+/// from a second copy of the same ordering in the frontend.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ComparisonBases {
     pub bases: Vec<ComparisonBase>,
