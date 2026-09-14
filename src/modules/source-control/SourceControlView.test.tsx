@@ -23,7 +23,7 @@ vi.mock("./lib/aiCommit", () => ({
 import { SourceControlView } from "./SourceControlView";
 import * as gitBridge from "./lib/gitBridge";
 import type { GitStatus } from "./lib/gitBridge";
-import { activeAllChangesPane, useTabsStore } from "@/stores/tabsStore";
+import { activeAllChangesPane, activeDiffPane, useTabsStore } from "@/stores/tabsStore";
 import { usePendingGraphSelectionStore } from "@/modules/git-graph/lib/pendingGraphSelectionStore";
 import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
 
@@ -246,6 +246,35 @@ describe("SourceControlView row interactions", () => {
       staged: false,
     });
     expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+  });
+
+  it("opens the staged side as a staged diff while a comparison page is in front", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [{ path: "src/staged.ts", staged: true, status: "M" }],
+      unstaged: [],
+    });
+    render(<SourceControlView />);
+    await screen.findByText("src/staged.ts");
+    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+    act(() => {
+      useAllChangesLinkStore.getState().setListing(pane(), {
+        label: "upstream/master",
+        range: false,
+        files: [{ rel: "src/deep/b.ts", status: "M" }],
+      });
+    });
+    const comparisonPane = pane();
+
+    fireEvent.click(screen.getByText("src/staged.ts"));
+
+    const { tabs, activeId } = useTabsStore.getState();
+    expect(tabs.map((tab) => tab.kind)).toEqual(["all-changes", "diff"]);
+    expect(activeDiffPane(tabs, activeId)).toEqual({
+      path: "/repo/src/staged.ts",
+      staged: true,
+    });
+    expect(useAllChangesLinkStore.getState().file[comparisonPane]).toBeUndefined();
   });
 
   it("keeps the comparison and working-tree sections independently collapsible", async () => {
