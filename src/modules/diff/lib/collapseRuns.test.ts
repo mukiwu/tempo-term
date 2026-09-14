@@ -42,7 +42,7 @@ describe("runKeyAt", () => {
     // it was opened under. A gutter that took its key from the bar's new
     // position would look up a stretch that does not exist -- which is what
     // left the icon beside it doing nothing at all.
-    editor.dispatch({ effects: openRun.of({ start: 0, how: "top" }) });
+    editor.dispatch({ effects: openRun.of({ start: 0, how: "top", lines: STEP }) });
     const barStart = editor.state.doc.line(1 + STEP).from;
     expect(barStart).toBeGreaterThan(0);
     expect(runKeyAt(editor.state, barStart)).toBe(0);
@@ -62,12 +62,12 @@ describe("barredRuns", () => {
     expect(barredRuns(editor.state).has(0)).toBe(true);
 
     // Still hiding sixteen of its thirty-six lines, so still a bar.
-    editor.dispatch({ effects: openRun.of({ start: 0, how: "top" }) });
+    editor.dispatch({ effects: openRun.of({ start: 0, how: "top", lines: STEP }) });
     expect(barredRuns(editor.state).has(0)).toBe(true);
 
     // Opened all the way it has no bar left, which is why the way back has to
     // move to the line it starts at.
-    editor.dispatch({ effects: openRun.of({ start: 0, how: "all" }) });
+    editor.dispatch({ effects: openRun.of({ start: 0, how: "all", lines: Number.MAX_SAFE_INTEGER }) });
     expect(barredRuns(editor.state).has(0)).toBe(false);
     expect(openedRuns(editor.state).has(0)).toBe(true);
   });
@@ -135,5 +135,42 @@ describe("the bar's arrows", () => {
 
     expect(openedRuns(editor.state).size).toBe(1);
     expect(before.size).toBeGreaterThan(0);
+  });
+});
+
+describe("what a press opens", () => {
+  it("is the number the arrow promised, not a step that happens to match", () => {
+    // The label and the act were two numbers: the label said what was left
+    // when a step would strand a sliver, the effect always added a step. They
+    // agreed only because MIN_RUN and STEP happen to make them agree, and
+    // nothing said so -- the difference does not reach the screen, since a
+    // sliver under MIN_RUN is shown rather than barred either way.
+    const lines = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const editor = new MergeView({
+      a: { doc: lines.join('\n') },
+      b: {
+        doc: lines.map((line, i) => (i === 26 ? "changed" : line)).join('\n'),
+        extensions: [collapseRunsExtension(LABELS)],
+      },
+      parent,
+    }).b;
+
+    const bar = editor.dom.querySelector<HTMLElement>("[data-lines]")!;
+    const hidden = Number(bar.dataset.lines);
+    expect(hidden).toBe(23);
+    // The stretch is the first thing in the file, so the arrow that can grow
+    // is the one reaching up from the change below it.
+    const arrow = bar.querySelector<HTMLButtonElement>('[aria-label^="up"]')!;
+    expect(arrow.disabled).toBe(false);
+    expect(arrow.getAttribute("aria-label")).toBe(`up ${hidden}`);
+
+    arrow.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+
+    // The up arrow reveals the lines at the stretch's foot, so that is the
+    // edge the field records.
+    const [how] = [...openedRuns(editor.state).values()];
+    expect(how.bottom).toBe(hidden);
   });
 });

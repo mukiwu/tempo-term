@@ -60,8 +60,20 @@ export interface RunLabels {
   down: (lines: number) => string;
 }
 
-/** Open part of a run, or all of it. `start` is the run's first line. */
-export const openRun = StateEffect.define<{ start: number; how: "top" | "bottom" | "all" }>();
+/**
+ * Open part of a run, or all of it. `start` is the run's first line.
+ *
+ * `lines` is how many the press opens, carried rather than worked out again
+ * here: the arrow's label promises a number, and the promise and the act have
+ * to be the same one. They used to be two -- the label said what was left when
+ * a step would strand a sliver, the effect always added a step -- and agreed
+ * only because `MIN_RUN` and `STEP` happen to make them agree.
+ */
+export const openRun = StateEffect.define<{
+  start: number;
+  how: "top" | "bottom" | "all";
+  lines: number;
+}>();
 
 /** Fold one run back up. */
 export const closeRun = StateEffect.define<number>();
@@ -104,8 +116,8 @@ const opened = StateField.define<ReadonlyMap<number, Opened>>({
           effect.value.how === "all"
             ? { top: Number.MAX_SAFE_INTEGER, bottom: 0 }
             : effect.value.how === "top"
-              ? { ...was, top: was.top + STEP }
-              : { ...was, bottom: was.bottom + STEP },
+              ? { ...was, top: was.top + effect.value.lines }
+              : { ...was, bottom: was.bottom + effect.value.lines },
         );
         next = map;
       }
@@ -314,10 +326,10 @@ export class RunWidget extends WidgetType {
     // from. The up arrow is the same story at the end of the file.
     actions.append(
       button(this.labels.up(this.step), ARROW_UP_FROM_LINE, !this.atEnd, () =>
-        open(view, this.start, "bottom"),
+        open(view, this.start, "bottom", this.step),
       ),
       button(this.labels.down(this.step), ARROW_DOWN_FROM_LINE, !this.atStart, () =>
-        open(view, this.start, "top"),
+        open(view, this.start, "top", this.step),
       ),
     );
     outer.append(actions);
@@ -361,15 +373,15 @@ function across(view: EditorView, start: number): { other: EditorView; start: nu
 }
 
 /** Open a run on this side, and the same text on the other side of a split. */
-function open(view: EditorView, start: number, how: "top" | "bottom" | "all") {
-  view.dispatch({ effects: openRun.of({ start, how }) });
+function open(view: EditorView, start: number, how: "top" | "bottom" | "all", lines: number) {
+  view.dispatch({ effects: openRun.of({ start, how, lines }) });
   const pair = across(view, start);
-  pair?.other.dispatch({ effects: openRun.of({ start: pair.start, how }) });
+  pair?.other.dispatch({ effects: openRun.of({ start: pair.start, how, lines }) });
 }
 
 /** Open a run all the way on both sides — what the gutter's icon does. */
 export function unfoldRun(view: EditorView, start: number): void {
-  open(view, start, "all");
+  open(view, start, "all", Number.MAX_SAFE_INTEGER);
 }
 
 /** Fold a run back up on both sides. */

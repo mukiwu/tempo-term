@@ -1,4 +1,4 @@
-import { gutter, GutterMarker } from "@codemirror/view";
+import { type EditorView, gutter, GutterMarker } from "@codemirror/view";
 import { type Extension } from "@codemirror/state";
 import {
   barredRuns,
@@ -41,6 +41,14 @@ class IconMarker extends GutterMarker {
  * collapseRuns.ts), but a stretch opened all the way leaves no bar behind, so
  * the way back has to live in the gutter.
  */
+/**
+ * Whether this line is where a stretch's way back lives: opened, and with
+ * nothing left hidden behind a bar to hang the icon on instead.
+ */
+function foldsFromItsFirstLine(view: EditorView, pos: number): boolean {
+  return openedRuns(view.state).has(pos) && !barredRuns(view.state).has(pos);
+}
+
 export function collapseBackExtension(labels: { fold: string; unfold: string }): Extension {
   return [
     gutter({
@@ -48,7 +56,7 @@ export function collapseBackExtension(labels: { fold: string; unfold: string }):
       // A stretch with nothing left hidden has no bar to hang an icon beside,
       // so its way back sits on the line it starts at instead.
       lineMarker: (view, line) =>
-        openedRuns(view.state).has(line.from) && !barredRuns(view.state).has(line.from)
+        foldsFromItsFirstLine(view, line.from)
           ? new IconMarker(line.from, "fold", labels.fold)
           : null,
       // Beside a bar the icon says what pressing it will do, which depends on
@@ -78,7 +86,14 @@ export function collapseBackExtension(labels: { fold: string; unfold: string }):
           }
           const line = view.state.doc.lineAt(block.from);
           const onBar = block.to > line.to;
-          if (!onBar && !openedRuns(view.state).has(block.from)) {
+          // The same question the icon is drawn by. CodeMirror hangs this
+          // handler on the whole gutter column and works the block out from
+          // the pointer's height, with no regard for whether that line has a
+          // marker -- so asking anything looser than the icon does leaves
+          // stretches of gutter that are invisible and still act. A stretch
+          // opened at its top has both an icon beside its bar and none on its
+          // first line, and that first line was folding the lot.
+          if (!onBar && !foldsFromItsFirstLine(view, block.from)) {
             return false;
           }
           event.preventDefault();
