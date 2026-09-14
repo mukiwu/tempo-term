@@ -8,7 +8,12 @@
 /** How often an open hint checks that its icon is still in the document. */
 const ORPHAN_CHECK_MS = 250;
 
-export function withGutterHint<T extends HTMLElement>(el: T, label: string): T {
+export function withGutterHint<T extends HTMLElement>(
+  el: T,
+  /** Read when the pointer arrives, not when the hint is attached: a control
+   * whose label changes as it is pressed keeps the same element. */
+  label: string | (() => string),
+): T {
   let tip: HTMLElement | null = null;
   let orphanCheck: number | null = null;
   const hide = () => {
@@ -23,9 +28,15 @@ export function withGutterHint<T extends HTMLElement>(el: T, label: string): T {
     if (tip) {
       return;
     }
+    const text = typeof label === "string" ? label : label();
+    // Nothing to say, so nothing to show: a control that will not act should
+    // not describe an act.
+    if (!text) {
+      return;
+    }
     tip = document.createElement("div");
     tip.className = "cm-gutter-hint";
-    tip.textContent = label;
+    tip.textContent = text;
     document.body.appendChild(tip);
     const rect = el.getBoundingClientRect();
     tip.style.left = `${rect.right + 6}px`;

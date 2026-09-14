@@ -242,41 +242,50 @@ function declarationsAt(state: EditorState, lines: readonly number[]): string[] 
   return found;
 }
 
+/**
+ * One of the bar's arrows.
+ *
+ * The label and whether it acts are read when they are needed rather than
+ * baked in, because the element outlives its answers: pressing an arrow leaves
+ * the bar hiding fewer lines, and the DOM is updated in place so the button
+ * that was just pressed keeps the focus a keyboard reader put on it.
+ */
 function button(
-  label: string,
   paths: readonly IconStroke[],
-  enabled: boolean,
-  onClick: () => void,
-): HTMLElement {
+  label: () => string,
+  act: () => void,
+): HTMLButtonElement {
   const el = document.createElement("button");
   el.type = "button";
   el.className = "cm-diff-run-btn";
-  el.disabled = !enabled;
   el.append(lucideIcon(paths, 12));
-  el.setAttribute("aria-label", label);
-  const act = (event: Event) => {
+  const fire = (event: Event) => {
     // The editor would otherwise take the click as a click on the text.
     event.preventDefault();
     event.stopPropagation();
-    if (enabled) {
-      onClick();
+    if (!el.disabled) {
+      act();
     }
   };
-  el.addEventListener("mousedown", act);
+  el.addEventListener("mousedown", fire);
   // A real button, so Enter and Space are what a reader expects to press --
   // but the editor's own key handling swallows them before a click event is
   // ever synthesised, so the bar has to listen for the keys itself.
   el.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
-      act(event);
+      fire(event);
     }
   });
   // The app's own hover hint rather than `title`, which the macOS WebView is
   // unreliable about and which a split diff's overflow would clip -- the same
   // reason the fold gutter next door uses it. A dead arrow gets none: a
   // control that will not act should not describe an act.
-  return enabled ? withGutterHint(el, label) : el;
+  return withGutterHint(el, () => (el.disabled ? "" : label()));
 }
+
+/** The bar each element is currently showing, for handlers that outlive one
+ * version of it. */
+const live = new WeakMap<HTMLElement, RunWidget>();
 
 export class RunWidget extends WidgetType {
   constructor(
@@ -315,9 +324,6 @@ export class RunWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const outer = document.createElement("div");
     outer.className = "cm-diff-run";
-    // The number as data as well as words: the words are localized, and both
-    // styling and tests want the number without parsing a sentence.
-    outer.dataset.lines = String(this.lines);
     // Everything left-aligned and in one run of content. A block widget is as
     // wide as the document, not as the pane, so anything pushed to its right
     // edge sits off the side of any file wider than the window.
@@ -330,26 +336,69 @@ export class RunWidget extends WidgetType {
     // arrow grows the visible code above the bar downwards, so a bar with
     // nothing above it -- the first thing in the file -- has no place to grow
     // from. The up arrow is the same story at the end of the file.
+    //
+    // Each reads the bar as it is now rather than as it was when the element
+    // was made: pressing one leaves fewer lines hidden, and the same element
+    // stays on screen so that the press can be repeated without tabbing back
+    // to it.
+    const now = () => live.get(outer) ?? this;
     actions.append(
-      button(this.labels.up(this.step), ARROW_UP_FROM_LINE, !this.atEnd, () =>
-        open(view, this.start, "bottom", this.step),
+      button(
+        ARROW_UP_FROM_LINE,
+        () => now().labels.up(now().step),
+        () => open(view, now().start, "bottom", now().step),
       ),
-      button(this.labels.down(this.step), ARROW_DOWN_FROM_LINE, !this.atStart, () =>
-        open(view, this.start, "top", this.step),
+      button(
+        ARROW_DOWN_FROM_LINE,
+        () => now().labels.down(now().step),
+        () => open(view, now().start, "top", now().step),
       ),
     );
     outer.append(actions);
     const count = document.createElement("span");
     count.className = "cm-diff-run-count";
-    count.textContent = this.labels.unchanged.replace("$", String(this.lines));
     outer.append(count);
-    if (this.name) {
-      const name = document.createElement("span");
+    this.paint(outer);
+    return outer;
+  }
+
+  /**
+   * Rewrite the bar in place instead of letting it be rebuilt.
+   *
+   * A press changes how many lines the bar hides, which makes it a different
+   * widget -- and a rebuilt element is a new element, so the button a keyboard
+   * reader had just pressed no longer exists and the focus falls back to the
+   * editor. One press per visit to the bar is not a control.
+   */
+  updateDOM(dom: HTMLElement): boolean {
+    this.paint(dom);
+    return true;
+  }
+
+  /** The parts of the bar that say what it is hiding and what it will do. */
+  private paint(outer: HTMLElement): void {
+    live.set(outer, this);
+    // The number as data as well as words: the words are localized, and both
+    // styling and tests want the number without parsing a sentence.
+    outer.dataset.lines = String(this.lines);
+    const [up, down] = outer.querySelectorAll("button");
+    up.disabled = this.atEnd;
+    up.setAttribute("aria-label", this.labels.up(this.step));
+    down.disabled = this.atStart;
+    down.setAttribute("aria-label", this.labels.down(this.step));
+    const count = outer.querySelector(".cm-diff-run-count")!;
+    count.textContent = this.labels.unchanged.replace("$", String(this.lines));
+    let name = outer.querySelector(".cm-diff-run-name");
+    if (!this.name) {
+      name?.remove();
+      return;
+    }
+    if (!name) {
+      name = document.createElement("span");
       name.className = "cm-diff-run-name";
-      name.textContent = this.name;
       outer.append(name);
     }
-    return outer;
+    name.textContent = this.name;
   }
 
   ignoreEvent(): boolean {
