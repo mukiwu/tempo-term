@@ -77,6 +77,19 @@ export function baseLabel(base: ComparisonBaseValue, worktree: string): string {
   }
 }
 
+/** A row's identity is the ref, not its short label: a branch and a tag may
+ * have the same name while still being different comparison bases. */
+function optionKey(base: ComparisonBaseValue): string {
+  switch (base.kind) {
+    case "worktree":
+      return "worktree";
+    case "ref":
+      return `ref:${base.ref ?? base.name}`;
+    case "range":
+      return `range:${base.from}..${base.to}`;
+  }
+}
+
 /**
  * `a..b` typed or pasted into the box. Three dots are rejected rather than
  * quietly treated as two: they mean something different, and a range picked
@@ -533,7 +546,7 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
           <ul id={listId} className="max-h-56 space-y-0.5 overflow-y-auto p-1" role="listbox">
             {options.map((option, i) => (
               <BaseRow
-                key={baseLabel(option.value, "@worktree")}
+                key={optionKey(option.value)}
                 id={optionId(i)}
                 label={option.label}
                 tag={option.tag ? t("baseTag") : undefined}
