@@ -532,6 +532,10 @@ pub fn close_owned_previews(app: &AppHandle, window_label: &str) {
     }
 }
 
+// Only the non-macOS rebuild path reloads the renderer in place; macOS
+// rebuilds the native window instead. `test` keeps the ordering test below
+// compiling on every platform.
+#[cfg(any(not(target_os = "macos"), test))]
 fn reload_after_preview_cleanup<E>(
     close_previews: impl FnOnce(),
     reload: impl FnOnce() -> Result<(), E>,
@@ -540,6 +544,7 @@ fn reload_after_preview_cleanup<E>(
     reload()
 }
 
+#[cfg(not(target_os = "macos"))]
 pub fn reload_workspace(window: &WebviewWindow) -> Result<(), String> {
     let app = window.app_handle();
     reload_after_preview_cleanup(
