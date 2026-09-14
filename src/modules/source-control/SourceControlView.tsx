@@ -200,9 +200,8 @@ function StatusRow({
       label: t("menuShowDiff"),
       icon: GitCompare,
       group: 0,
-      // Deliberately not onOpen: a left click follows the all-changes page
-      // when that is in front, and this is the way to the single-file tab
-      // that stays put. Same direct store call as the two items above.
+      // Deliberately not onOpen: comparison rows use a left click to navigate
+      // the page, so this is the direct route to a single-file diff tab.
       onSelect: () => useTabsStore.getState().openDiffTab(absPath, file.staged),
     },
     ...(readOnly
@@ -782,9 +781,9 @@ function FileList({
 }
 
 /** Keys of the collapsible sections, a closed set so typos fail typecheck. */
-type SectionKey = "staged" | "changes" | "history";
+type SectionKey = "comparison" | "staged" | "changes" | "history";
 
-const SECTION_KEYS: SectionKey[] = ["staged", "changes", "history"];
+const SECTION_KEYS: SectionKey[] = ["comparison", "staged", "changes", "history"];
 
 /** Collapsed sections as last left by the user; an unreadable value just means
  *  "nothing collapsed", never a crash. */
@@ -902,16 +901,14 @@ export function SourceControlView() {
   const customBaseUrl = useChatStore((s) => s.customBaseUrl);
   const openDiffTab = useTabsStore((s) => s.openDiffTab);
   const toggleAllChangesTab = useTabsStore((s) => s.toggleAllChangesTab);
-  // While the all-changes page is the pane in front, this panel is its table
-  // of contents rather than a way of opening more tabs.
+  // A comparison listing belongs to the all-changes page in front; its rows
+  // navigate that page while the working-tree rows keep their own actions.
   const allChangesPane = useTabsStore((s) => activeAllChangesPane(s.tabs, s.activeId));
   const allChangesInFront = allChangesPane !== null;
   // What the page in front is comparing, when that is no longer the working
-  // tree. While one of these is up, this panel is that page's index rather
-  // than a view of the working tree -- listing what status reports would be
-  // describing a different comparison in the same breath. Read from the pane
-  // in front for the same reason the mark is: a split can hold two pages, each
-  // comparing something else.
+  // tree. Read from the pane in front because a split can hold two pages, each
+  // comparing something else. The comparison listing is shown alongside the
+  // ordinary working-tree status sections below.
   const listing = useAllChangesLinkStore((s) => (allChangesPane ? s.listing[allChangesPane] : undefined) ?? null);
   // Which row is "the one on screen": the diff in the foreground pane. Read as
   // two primitives — a selector returning a fresh {path, staged} object would
@@ -923,22 +920,23 @@ export function SourceControlView() {
   // Basename of a file whose discard failed, shown in an error dialog.
   const [discardError, setDiscardError] = useState<string | null>(null);
 
-  // Rows report repo-relative paths; the diff tab (like the editor) wants an
-  // absolute path so it can resolve the repo on its own.
+  // Status rows report repo-relative paths; the diff tab (like the editor)
+  // wants an absolute path so it can resolve the repo on its own.
   const openDiff = useCallback(
     (path: string, staged: boolean) => {
-      // With the all-changes page in front, a row scrolls it to that file
-      // instead of opening a tab per file, which is the whole point of that
-      // page. The right-click menu's "Show Diff" still opens the single-file
-      // tab, so nothing is only reachable one way.
-      // The page in front, not "a page somewhere": a split can hold two, and
-      // the rows being clicked belong to the one being looked at.
-      if (allChangesPane) {
-        useAllChangesLinkStore.getState().request(allChangesPane, { rel: path, staged });
-        return;
-      }
       if (repoPath) {
         openDiffTab(`${repoPath}/${path}`, staged);
+      }
+    },
+    [repoPath, openDiffTab],
+  );
+
+  const navigateComparisonToFile = useCallback(
+    (path: string) => {
+      if (allChangesPane) {
+        useAllChangesLinkStore.getState().request(allChangesPane, { rel: path, staged: false });
+      } else if (repoPath) {
+        openDiffTab(`${repoPath}/${path}`, false);
       }
     },
     [allChangesPane, repoPath, openDiffTab],
@@ -1064,15 +1062,12 @@ export function SourceControlView() {
         </span>
         <div className="flex items-center gap-0.5">
           {/* Filled while the page is the pane in front, which is the state
-              worth showing: that is when this panel stops opening tabs and
-              starts following the page, and when the commit box steps out.
-              Something has to account for that, and this button is the only
-              thing on screen that can. Open-but-behind is deliberately drawn
-              the same as shut -- the button speaks about the pane in front,
-              not about what exists somewhere in the space. Same on/off looks
-              as the wrap button in DiffTabContent, and the icon never changes:
-              it is the all-changes tab's own icon, and that match is what
-              makes the button legible in the first place. */}
+              that hides the commit box and makes comparison rows follow the
+              page. Open-but-behind is deliberately drawn the same as shut --
+              the button speaks about the pane in front, not about what exists
+              somewhere in the space. Same on/off looks as the wrap button in
+              DiffTabContent, and the icon never changes: it is the all-changes
+              tab's own icon, and that match is what makes the button legible. */}
           <Tooltip label={allChangesInFront ? t("allChangesClose") : t("allChanges")}>
             <button
               type="button"
@@ -1196,13 +1191,13 @@ export function SourceControlView() {
                   name: listing.label,
                 })}
                 verbatim
-                collapsed={collapsedSections.has("changes")}
-                onToggle={() => toggleSection("changes")}
+                collapsed={collapsedSections.has("comparison")}
+                onToggle={() => toggleSection("comparison")}
                 action={
                   <span className="shrink-0 text-[11px] text-fg-subtle">{t("readOnly")}</span>
                 }
               />
-              {!collapsedSections.has("changes") &&
+              {!collapsedSections.has("comparison") &&
                 (listing.files.length === 0 ? (
                   <p className="px-3 py-1 text-xs text-fg-subtle">{t("noChanges")}</p>
                 ) : (
@@ -1220,7 +1215,7 @@ export function SourceControlView() {
                     // than a button that half works.
                     onFileAction={() => {}}
                     onFolderAction={() => {}}
-                    onFileOpen={(path) => openDiff(path, false)}
+                    onFileOpen={navigateComparisonToFile}
                     repoPath={repoPath ?? ""}
                     activePath={null}
                     followsPage={allChangesInFront}
@@ -1229,7 +1224,7 @@ export function SourceControlView() {
                 ))}
             </section>
           ) : null}
-          {!listing && (status?.staged.length ?? 0) > 0 && (
+          {(status?.staged.length ?? 0) > 0 && (
             <section className="mb-2">
               <SectionHeader
                 label={t("stagedChanges")}
@@ -1268,14 +1263,13 @@ export function SourceControlView() {
                   }
                   onFileOpen={(path) => openDiff(path, true)}
                   activePath={activeStaged ? activeRelPath : null}
-                  followsPage={allChangesInFront}
+                  followsPage={!listing && allChangesInFront}
                   repoPath={repoPath ?? ""}
                 />
               )}
             </section>
           )}
 
-          {!listing && (
           <section className="mb-2">
             <SectionHeader
               label={t("changes")}
@@ -1320,12 +1314,11 @@ export function SourceControlView() {
                   onFileOpen={(path) => openDiff(path, false)}
                   onRequestDiscard={setDiscardTarget}
                   activePath={activeStaged ? null : activeRelPath}
-                  followsPage={allChangesInFront}
+                  followsPage={!listing && allChangesInFront}
                   repoPath={repoPath ?? ""}
                 />
               ))}
           </section>
-          )}
         </div>
 
         {/* History is its own pane pinned to the bottom of the panel in both
