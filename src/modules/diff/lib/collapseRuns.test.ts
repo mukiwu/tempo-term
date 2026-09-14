@@ -4,6 +4,7 @@ import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import {
   barredRuns,
+  RunWidget,
   collapseRunsExtension,
   openedRuns,
   openRun,
@@ -281,5 +282,57 @@ describe("every stretch, against the library's own answer", () => {
       parent.remove();
     }
     expect(bad.slice(0, 3)).toEqual([]);
+  });
+});
+
+describe("the bar across a press", () => {
+  const upArrow = (editor: EditorView) =>
+    editor.dom.querySelector<HTMLButtonElement>('[aria-label^="up"]:not([disabled])')!;
+
+  it("keeps the element, and the focus a reader put on it", () => {
+    // A press leaves the bar hiding fewer lines, which makes it a different
+    // widget. Rebuilt, the button that was just pressed is a new element and
+    // the focus falls back to the editor: one press per visit to the bar.
+    const editor = view();
+    const before = upArrow(editor);
+    before.focus();
+    expect(document.activeElement).toBe(before);
+
+    before.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(upArrow(editor)).toBe(before);
+    expect(document.activeElement).toBe(before);
+    // And it is describing the bar as it is now, not as it was.
+    expect(before.getAttribute("aria-label")).not.toBe("up 36");
+  });
+
+  it("refuses an element that belongs to another stretch", () => {
+    // CodeMirror looks for an element to reuse by widget type alone, with no
+    // regard for where either one sits. Taking one moves it here, which is
+    // the focus loss this is all about.
+    const editor = view();
+    const bar = editor.dom.querySelector<HTMLElement>("[data-lines]")!;
+    const mine = new RunWidget(0, 30, "", false, false, LABELS);
+    const theirs = new RunWidget(999, 30, "", false, false, LABELS);
+
+    expect(mine.updateDOM(bar, editor, theirs)).toBe(false);
+    expect(mine.updateDOM(bar, editor, mine)).toBe(true);
+  });
+
+  it("keeps a showing hint current when the press came from the keyboard", () => {
+    // A click dismisses the hint on the way down. A key never moves the
+    // pointer, so the hint stays -- and went on promising what the press had
+    // already done.
+    const editor = view();
+    const arrow = upArrow(editor);
+    arrow.dispatchEvent(new MouseEvent("mouseenter"));
+    const tip = () => document.querySelector(".cm-gutter-hint")?.textContent;
+    const promised = tip();
+    expect(promised).toBe(arrow.getAttribute("aria-label"));
+
+    arrow.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(tip()).not.toBe(promised);
+    expect(tip()).toBe(arrow.getAttribute("aria-label"));
   });
 });

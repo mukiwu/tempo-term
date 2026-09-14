@@ -7,7 +7,7 @@ import {
   lucideIcon,
   type IconStroke,
 } from "./lucideDom";
-import { withGutterHint } from "./gutterHint";
+import { refreshGutterHint, withGutterHint } from "./gutterHint";
 
 /**
  * The unchanged stretches of a diff, folded into a bar of our own.
@@ -274,6 +274,10 @@ function button(
   el.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       fire(event);
+      // A press from the keyboard leaves the pointer where it was, so nothing
+      // dismisses the hint the way a click does, and the button now promises
+      // something else.
+      refreshGutterHint(el);
     }
   });
   // The app's own hover hint rather than `title`, which the macOS WebView is
@@ -341,7 +345,9 @@ export class RunWidget extends WidgetType {
     // was made: pressing one leaves fewer lines hidden, and the same element
     // stays on screen so that the press can be repeated without tabbing back
     // to it.
-    const now = () => live.get(outer) ?? this;
+    // Never absent: `paint` writes it before this element reaches the
+    // document, and again on every update that keeps the element.
+    const now = () => live.get(outer)!;
     actions.append(
       button(
         ARROW_UP_FROM_LINE,
@@ -370,7 +376,16 @@ export class RunWidget extends WidgetType {
    * reader had just pressed no longer exists and the focus falls back to the
    * editor. One press per visit to the bar is not a control.
    */
-  updateDOM(dom: HTMLElement): boolean {
+  updateDOM(dom: HTMLElement, _view: EditorView, from: RunWidget): boolean {
+    // Only for the same stretch. CodeMirror looks for an element to reuse by
+    // widget type alone, with no regard for where either one sits, so it will
+    // offer another stretch's bar -- and accepting moves that element here,
+    // which is exactly the focus loss this method exists to stop. Asked
+    // before anything is written, since a refusal has to leave the element as
+    // it was.
+    if (from.start !== this.start) {
+      return false;
+    }
     this.paint(dom);
     return true;
   }
