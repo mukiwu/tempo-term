@@ -42,10 +42,15 @@ const hoursAgo = (hours: number) => Math.round(Date.now() / 1000) - hours * 3600
 
 /** Every row of the open list, in order, by its label column. */
 const labels = () =>
-  screen.getAllByRole("option").map((row) => row.children[1]?.textContent ?? "");
+  screen
+    .getAllByRole("option")
+    .map((row) => row.querySelector("[data-row-label]")?.textContent ?? "");
 
 /** The right-hand column of each row: why it is on the list. */
-const hints = () => screen.getAllByRole("option").map((row) => row.children[2]?.textContent ?? "");
+const hints = () =>
+  screen
+    .getAllByRole("option")
+    .map((row) => row.querySelector("[data-row-hint]")?.textContent ?? "");
 
 /** The runs each row picked out as matching the search. */
 const marks = () =>
@@ -107,10 +112,19 @@ describe("ComparisonBaseSelector", () => {
     vi.clearAllMocks();
     useComparisonBaseStore.setState({ byRepo: {}, includeUncommitted: true });
     vi.mocked(gitComparisonBases).mockResolvedValue({
-      suggested: "upstream/main",
       bases: [
-        { name: "upstream/main", kind: "upstream", lastCommitAt: hoursAgo(700) },
-        { name: "origin/main", kind: "remoteDefault", lastCommitAt: hoursAgo(700) },
+        {
+          name: "upstream/main",
+          ref: "refs/remotes/upstream/main",
+          kind: "upstream",
+          lastCommitAt: hoursAgo(700),
+        },
+        {
+          name: "origin/main",
+          ref: "refs/remotes/origin/main",
+          kind: "remoteDefault",
+          lastCommitAt: hoursAgo(700),
+        },
       ],
     });
     vi.mocked(gitBranches).mockResolvedValue([
@@ -121,7 +135,9 @@ describe("ComparisonBaseSelector", () => {
       { name: "chore/lint", isCurrent: false, isRemote: false, lastCommitAt: hoursAgo(5) },
       { name: "old/thing", isCurrent: false, isRemote: false, lastCommitAt: hoursAgo(900) },
     ]);
-    vi.mocked(gitTags).mockResolvedValue([{ name: "v1.2.0", lastCommitAt: hoursAgo(6) }]);
+    vi.mocked(gitTags).mockResolvedValue([
+      { name: "v1.2.0", ref: "refs/tags/v1.2.0", lastCommitAt: hoursAgo(6) },
+    ]);
     vi.mocked(gitResolveRev).mockResolvedValue("1111111111111111111111111111111111111111");
   });
 
@@ -220,7 +236,13 @@ describe("ComparisonBaseSelector", () => {
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    await waitFor(() => expect(base()).toEqual({ kind: "ref", name: "origin/main" }));
+    await waitFor(() =>
+      expect(base()).toEqual({
+        kind: "ref",
+        name: "origin/main",
+        ref: "refs/remotes/origin/main",
+      }),
+    );
     // Picked, so nothing needed vouching for.
     expect(gitResolveRev).not.toHaveBeenCalled();
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
@@ -259,6 +281,59 @@ describe("ComparisonBaseSelector", () => {
     await waitFor(() => expect(screen.getByText("baseUnknownRev:deadbee")).toBeInTheDocument());
     expect(base()).toEqual({ kind: "worktree" });
     expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("points assistive tech at the row the arrow keys are on", async () => {
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
+    const input = openList();
+    await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
+
+    // The box being typed in has to say which list it drives and which row of
+    // it is current. Moving the cursor used to change how a row was drawn and
+    // nothing else, which tells a reader who cannot see it nothing at all.
+    const list = screen.getByRole("listbox");
+    expect(input).toHaveAttribute("aria-controls", list.id);
+    expect(input).toHaveAttribute("aria-expanded", "true");
+
+    const option = (i: number) => screen.getAllByRole("option")[i];
+    expect(input).toHaveAttribute("aria-activedescendant", option(0).id);
+    expect(option(0).id).toBeTruthy();
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+
+    expect(input).toHaveAttribute("aria-activedescendant", option(1).id);
+    expect(option(1).id).not.toBe(option(0).id);
+  });
+
+  it("tells a branch from a tag of the same name", async () => {
+    // `git rev-parse v1` answers with the tag, whichever one the reader
+    // clicked -- git even warns that the name is ambiguous. A short name is
+    // what a reader recognises; it is not what git can act on.
+    vi.mocked(gitBranches).mockResolvedValue([
+      { name: "v1", isCurrent: false, isRemote: false, lastCommitAt: hoursAgo(2) },
+    ]);
+    vi.mocked(gitTags).mockResolvedValue([
+      { name: "v1", ref: "refs/tags/v1", lastCommitAt: hoursAgo(3) },
+    ]);
+
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
+    const input = openList();
+    await waitFor(() => expect(labels()).toContain("v1"));
+
+    // Two rows, not one: dropping either would hide a base the reader can see
+    // in their own repo. The tag says which it is, so the pair reads as two
+    // things rather than as a list that repeated itself.
+    const rows = labels().filter((label) => label === "v1");
+    expect(rows).toHaveLength(2);
+    expect(screen.getAllByLabelText("baseTag")).toHaveLength(1);
+
+    fireEvent.change(input, { target: { value: "v1" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // The branch is the first of the two, and what it sets is the branch.
+    await waitFor(() =>
+      expect(base()).toEqual({ kind: "ref", name: "v1", ref: "refs/heads/v1" }),
+    );
   });
 
   it("builds a range from the far end once the dots are typed", async () => {

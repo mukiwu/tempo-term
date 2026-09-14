@@ -25,6 +25,9 @@ export interface CommitInfo {
 export interface ComparisonBase {
   /** Short ref name, e.g. `upstream/main`, `origin/feat/x`, `master`. */
   name: string;
+  /** The whole refname, e.g. `refs/remotes/upstream/main`. A short name is
+   * what a reader recognises; it is not what git can act on unambiguously. */
+  ref: string;
   /** Why it is on offer: a remote's default branch, this branch's tracking
    * branch, or a local mainline. */
   kind: "remoteDefault" | "upstream" | "localDefault";
@@ -33,9 +36,8 @@ export interface ComparisonBase {
 }
 
 export interface ComparisonBases {
+  /** Best first; empty when the repo offers nothing worth guessing at. */
   bases: ComparisonBase[];
-  /** The first of them, or null when the repo offers nothing worth guessing. */
-  suggested: string | null;
 }
 
 export function gitResolveRepo(path: string): Promise<string | null> {
@@ -57,6 +59,9 @@ export function gitComparisonBases(repoPath: string): Promise<ComparisonBases> {
 
 export interface TagInfo {
   name: string;
+  /** `refs/tags/<name>`: what reaches git, so a tag sharing a name with a
+   * branch still names itself. */
+  ref: string;
   /** Annotated tags carry their own date; lightweight ones borrow the commit's. */
   lastCommitAt: number;
 }

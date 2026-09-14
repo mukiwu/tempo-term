@@ -272,6 +272,11 @@ export function AllChangesTabContent({
       repoPath: string,
       from: string,
       to: string | undefined,
+      /** What git is asked for, when that is not what the reader is shown: a
+       * base picked off the list carries its whole refname, since `v1` alone
+       * resolves to the tag whichever row was clicked. Headings, labels and
+       * the "that ref is gone" message stay on the short name. */
+      spec = from,
     ) {
       // One comparison, not two halves: `git diff <merge-base>` already covers
       // what was committed on this branch and what is still on disk. The file
@@ -291,7 +296,7 @@ export function AllChangesTabContent({
         // the switch off the comparison stops at the last commit.
         const alsoOnDisk = to === undefined && includeUncommitted;
         const [{ rev, diff }, status] = await Promise.all([
-          gitDiffFromBase(repoPath, from, to === undefined, includeUncommitted, to),
+          gitDiffFromBase(repoPath, spec, to === undefined, includeUncommitted, to),
           alsoOnDisk ? gitStatus(repoPath) : Promise.resolve(null),
         ]);
         if (cancelled) {
@@ -331,6 +336,11 @@ export function AllChangesTabContent({
         if (cancelled) {
           return;
         }
+        // Nothing was read, so the panel has nothing to be an index of. Left
+        // standing, the list from the base before this one sits beside the
+        // failure saying otherwise -- and its rows are still clickable, asking
+        // a page that is showing an error to scroll to a file it never read.
+        useAllChangesLinkStore.getState().setListing(paneId, null);
         // Two branches that never shared a commit have no point to measure
         // from, which the command says outright. Both refs resolve, so the
         // question below would find nothing wrong and the page would report
@@ -411,7 +421,7 @@ export function AllChangesTabContent({
       }
     };
     if (base.kind === "ref") {
-      void scanFromBase(repo, base.name, undefined).finally(done);
+      void scanFromBase(repo, base.name, undefined, base.ref ?? base.name).finally(done);
     } else if (base.kind === "range") {
       void scanFromBase(repo, base.from, base.to).finally(done);
     } else {

@@ -1593,19 +1593,24 @@ pub struct ComparisonBase {
     /// 它為什麼在清單上：`remoteDefault`（某個遠端的預設分支）、
     /// `upstream`（目前分支的追蹤分支）、`localDefault`（本地的 main/master/develop）。
     pub kind: String,
+    /// The whole refname, e.g. `refs/remotes/upstream/main`, `refs/heads/master`.
+    ///
+    /// A short name is what a reader recognises, but it is not an answer git
+    /// can act on: a branch and a tag can both be called `v1`, and a bare `v1`
+    /// resolves to the tag. The caller picked one of these rows, so what it
+    /// picked travels with it.
+    #[serde(rename = "ref")]
+    pub ref_name: String,
     /// tip commit 的 committer 時間（Unix 秒），拿不到時為 0。
     #[serde(rename = "lastCommitAt")]
     pub last_commit_at: i64,
 }
 
-/// 候選基準加上建議值。fallback 的順序留在後端，前端只負責畫 —— 散在前端的話
+/// 候選基準。fallback 的順序留在後端，前端只負責畫 —— 散在前端的話
 /// 兩邊各有一份順序，遲早會不一致。
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ComparisonBases {
     pub bases: Vec<ComparisonBase>,
-    /// 照順序找到的第一個；一個都沒有時是 None，這時前端該讓使用者自己挑，
-    /// 不要猜。
-    pub suggested: Option<String>,
 }
 
 /// 每個遠端的預設分支、目前分支的追蹤分支，以及本地的 main/master/develop。
@@ -1624,17 +1629,17 @@ pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
     let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
     let mut bases: Vec<ComparisonBase> = Vec::new();
 
-    let mut push = |name: String, kind: &str| {
+    let mut push = |name: String, ref_name: String, kind: &str| {
         if bases.iter().any(|b| b.name == name) {
             return;
         }
         let last_commit_at = repo
-            .revparse_single(&name)
+            .revparse_single(&ref_name)
             .ok()
             .and_then(|obj| obj.peel_to_commit().ok())
             .map(|c| c.time().seconds())
             .unwrap_or(0);
-        bases.push(ComparisonBase { name, kind: kind.to_string(), last_commit_at });
+        bases.push(ComparisonBase { name, ref_name, kind: kind.to_string(), last_commit_at });
     };
 
     // 1. 各遠端的預設分支。remotes() 的順序是 git 自己的（字典序），照它走，
@@ -1654,7 +1659,8 @@ pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
             let Some(short) = target.strip_prefix("refs/remotes/") else {
                 continue;
             };
-            push(short.to_string(), "remoteDefault");
+            // `target` is already the whole refname this HEAD points at.
+            push(short.to_string(), target.to_string(), "remoteDefault");
         }
     }
 
@@ -1666,7 +1672,15 @@ pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
                 if let Ok(branch) = repo.find_branch(short, git2::BranchType::Local) {
                     if let Ok(upstream) = branch.upstream() {
                         if let Ok(Some(name)) = upstream.name() {
-                            push(name.to_string(), "upstream");
+                            // Usually a remote-tracking branch, but
+                            // `--set-upstream-to` accepts a local one, so the
+                            // reference is asked rather than assumed.
+                            let ref_name = upstream
+                                .get()
+                                .name()
+                                .map(|r| r.to_string())
+                                .unwrap_or_else(|| format!("refs/remotes/{name}"));
+                            push(name.to_string(), ref_name, "upstream");
                         }
                     }
                 }
@@ -1677,51 +1691,65 @@ pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
     // 3. 本地主線，給沒有遠端的 repo。
     for name in ["main", "master", "develop"] {
         if repo.find_branch(name, git2::BranchType::Local).is_ok() {
-            push(name.to_string(), "localDefault");
+            push(name.to_string(), format!("refs/heads/{name}"), "localDefault");
         }
     }
 
-    // 建議值就是照這個順序找到的第一個。三種都沒有時回 None：與其猜一個可能
-    // 不相干的分支，不如讓前端問。
-    let suggested = bases.first().map(|b| b.name.clone());
-    Ok(ComparisonBases { bases, suggested })
+    Ok(ComparisonBases { bases })
 }
 
-/// 一個標籤,加上它的時間 —— 前端用它跟分支一起排「最近動過的」。
+/// A tag and when it was made, so it can be ordered among the branches by
+/// how recently each was touched.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct TagInfo {
     pub name: String,
-    /// 附註標籤是打標籤的時間,輕量標籤是那個 commit 的時間;拿不到為 0。
+    /// `refs/tags/<name>`, so a tag sharing a name with a branch still names
+    /// itself when it reaches git.
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+    /// An annotated tag's own date; for a lightweight tag, the date of the
+    /// commit it points at. 0 when neither can be read.
     #[serde(rename = "lastCommitAt")]
     pub last_commit_at: i64,
 }
 
-/// 列出所有標籤。
+/// Every tag in the repository.
 ///
-/// 比較基準的選單要的是「有名字的東西」,而標籤和分支一樣是名字 —— 「和上一版
-/// 差在哪」是會重複問的問題。這之前沒有指令可用:標籤只在 git log 的裝飾裡被
-/// 解析出來,那是給 ref chip 用的,拿不到不在最近幾百個 commit 上的標籤。
+/// A base is picked by name, and a tag is a name the same way a branch is --
+/// "what changed since the last release" is a question worth asking twice.
+/// Nothing here could answer it before: tags were only read out of `git log`'s
+/// decorations, which is what the ref chips use, and that never reaches a tag
+/// older than the last few hundred commits.
 pub fn tags(repo_path: &str) -> Result<Vec<TagInfo>, String> {
     let out = run_git(
         repo_path,
-        &["for-each-ref", "--format=%(refname:short)%09%(creatordate:unix)", "refs/tags"],
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)%09%(refname)%09%(creatordate:unix)",
+            "refs/tags",
+        ],
     )?;
     Ok(out
         .lines()
         .filter_map(|line| {
-            let (name, when) = line.split_once('\t')?;
-            if name.is_empty() {
+            let mut parts = line.split('\t');
+            let name = parts.next()?;
+            let ref_name = parts.next()?;
+            let when = parts.next()?;
+            if name.is_empty() || ref_name.is_empty() {
                 return None;
             }
             Some(TagInfo {
                 name: name.to_string(),
+                ref_name: ref_name.to_string(),
                 last_commit_at: when.trim().parse().unwrap_or(0),
             })
         })
         .collect())
 }
 
-/// 解不出來是 `Ok(None)` 而不是 `Err`:那是這支要回答的問題,不是它失敗了。
+/// A rev that does not resolve is `Ok(None)` rather than `Err`: that is the
+/// question this answers, not a failure to answer it.
 pub fn resolve_rev(repo_path: &str, rev: &str) -> Result<Option<String>, String> {
     let rev = rev.trim();
     if rev.is_empty() {
@@ -1736,24 +1764,29 @@ pub fn resolve_rev(repo_path: &str, rev: &str) -> Result<Option<String>, String>
     )
 }
 
-/// 一次比較的結果:解出來的起點,加上它對工作區的完整 diff。
+/// One comparison: the point it resolved to, and the whole diff from there to
+/// the working tree.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct BaseDiff {
-    /// 解出來的起點 sha。前端拿它去讀每個檔在那一版的內容,所以要跟下面那份
-    /// diff 是同一個點 —— 各自再解一次會在別人正好 push 的時候對不起來。
+    /// The sha the base resolved to. Each file's older side is read at it, so
+    /// it has to be the point the diff below was taken from -- resolving the
+    /// two separately comes apart the moment someone pushes between them.
     pub rev: String,
-    /// `git diff <rev>` 的輸出:那個起點和工作區之間的全部差異。
+    /// `git diff <rev>`: everything that differs between that point and the
+    /// working tree.
     pub diff: String,
 }
 
-/// `base` 和工作區之間的差異,合成一份。
+/// The difference between `base` and the working tree, as one diff.
 ///
-/// #398 談定的是「拿 merge base 對工作區跑一次」而不是拼兩段:已 commit 的和
-/// 還沒 commit 的接在一起看,reviewer 一次看到總量比較好判斷。所以這裡不是
-/// `from..to` —— 右邊不是某個 commit,是磁碟上的檔案。
+/// #398 settled on running the merge base against the working tree once
+/// rather than stitching two diffs together: committed work and work still on
+/// disk read as one total, which is what a reviewer judges. So this is not
+/// `from..to` -- the far side is not a commit, it is the files on disk.
 ///
-/// `merge_base` 為真時起點是分家那一點,而不是 `base` 現在的樣子:否則主線在
-/// 你離開之後多出來的 commit 會被算成你的變更。
+/// With `merge_base` the starting point is where the two parted rather than
+/// where `base` stands now: otherwise commits the mainline gained after you
+/// left would count as yours.
 /// `to` names the far end. Absent it is the working tree (or HEAD, per
 /// `include_uncommitted`); naming a commit makes this a comparison between
 /// two points, where neither end is anything on disk and the uncommitted
@@ -3260,9 +3293,9 @@ mod tests {
         let names: Vec<&str> = found.bases.iter().map(|b| b.name.as_str()).collect();
         assert!(names.contains(&"origin/main"), "{names:?}");
         assert!(names.contains(&"upstream/main"), "{names:?}");
-        // The remote defaults come first, so the suggestion is one of them.
-        assert!(found.suggested.as_deref() == Some("origin/main")
-            || found.suggested.as_deref() == Some("upstream/main"));
+        // The remote defaults come first, so one of them leads the list.
+        let first = found.bases.first().map(|b| b.name.as_str());
+        assert!(first == Some("origin/main") || first == Some("upstream/main"), "{names:?}");
         for base in &found.bases {
             if base.name.starts_with("origin/") || base.name.starts_with("upstream/") {
                 assert_eq!(base.kind, "remoteDefault");
@@ -3293,7 +3326,7 @@ mod tests {
         let found = comparison_bases(&path).unwrap();
         let names: Vec<&str> = found.bases.iter().map(|b| b.name.as_str()).collect();
         assert!(!names.iter().any(|n| n.starts_with("origin/")), "{names:?}");
-        assert_eq!(found.suggested.as_deref(), Some("main"));
+        assert_eq!(found.bases.first().map(|b| b.name.as_str()), Some("main"));
         assert_eq!(found.bases[0].kind, "localDefault");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -3345,7 +3378,7 @@ mod tests {
 
         let found = comparison_bases(&path).unwrap();
         assert!(found.bases.is_empty(), "{:?}", found.bases);
-        assert_eq!(found.suggested, None);
+        assert!(found.bases.is_empty(), "{:?}", found.bases);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3580,6 +3613,41 @@ mod tests {
         // than reaching git's argv.
         assert!(diff_from_base(&path, "main", false, true, Some("no-such-rev")).is_err());
         assert!(diff_from_base(&path, "main", false, true, Some("--upload-pack=x")).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_whole_refname_tells_a_branch_from_a_tag_of_the_same_name() {
+        // `git rev-parse v1` answers with the tag -- it even warns that the
+        // name is ambiguous -- so a reader who picked the branch would be
+        // shown the tag's commits with the branch's name over them. The whole
+        // refname is what each row carries out of `tags` and
+        // `comparison_bases`, and it is what settles this.
+        let (dir, path) = repo_with_a_commit("ref-name-collision");
+        let first = run_git(&path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        run_git(&path, &["tag", "v1"]).unwrap();
+        std::fs::write(dir.join("later.txt"), "after the tag").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "after the tag"]).unwrap();
+        let second = run_git(&path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        run_git(&path, &["branch", "v1"]).unwrap();
+
+        let tagged = tags(&path).unwrap();
+        assert_eq!(tagged.len(), 1);
+        assert_eq!(tagged[0].ref_name, "refs/tags/v1");
+
+        // The bare name is the tag, which is why nothing may rely on it.
+        assert_eq!(diff_from_base(&path, "v1", false, true, None).unwrap().rev, first);
+        assert_eq!(
+            diff_from_base(&path, "refs/tags/v1", false, true, None).unwrap().rev,
+            first
+        );
+        // And the branch is reachable only by saying so.
+        assert_eq!(
+            diff_from_base(&path, "refs/heads/v1", false, true, None).unwrap().rev,
+            second
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

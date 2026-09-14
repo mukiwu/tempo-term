@@ -83,6 +83,7 @@
   "baseUseTyped": "use this ref",
   "baseIncludeUncommitted": "Include uncommitted",
   "baseRange": "commit range",
+  "baseTag": "tag",
   "baseDiffSection": "Difference from {{name}}",
   "readOnly": "read-only",
   "baseDiffSectionRange": "{{name}} diff",

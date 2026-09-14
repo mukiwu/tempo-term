@@ -83,6 +83,7 @@
   "baseUseTyped": "直接用這個",
   "baseIncludeUncommitted": "含未 commit 的變更",
   "baseRange": "commit 範圍",
+  "baseTag": "標籤",
   "baseDiffSection": "和 {{name}} 的差異",
   "readOnly": "唯讀",
   "baseDiffSectionRange": "{{name}} 的差異",

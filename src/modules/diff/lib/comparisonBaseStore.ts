@@ -22,8 +22,16 @@ import { useTabsStore } from "@/stores/tabsStore";
 export type ComparisonBaseValue =
   /** The working tree: what #397 shows, and where every repo starts. */
   | { kind: "worktree" }
-  /** A branch or tag, compared from where it and HEAD diverged. */
-  | { kind: "ref"; name: string }
+  /**
+   * A branch or tag, compared from where it and HEAD diverged.
+   *
+   * `ref` is the whole refname when the base was picked off the list, which is
+   * the only thing that tells a branch from a tag of the same name -- a bare
+   * `v1` resolves to the tag, whichever row was clicked. Typed or pasted text
+   * has no `ref`: nothing said which namespace was meant, so git's own rules
+   * apply, the same as they would on the command line.
+   */
+  | { kind: "ref"; name: string; ref?: string }
   /**
    * Two named points, compared literally. Neither end is on disk, so this is
    * two-dot -- what actually differs between the two trees, not what one of

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown, Search, Tag } from "lucide-react";
 import {
   gitComparisonBases,
   gitResolveRev,
@@ -29,6 +29,12 @@ const SHOWN = 6;
 
 interface Row {
   name: string;
+  /** The whole refname. Carried because the short name cannot tell a branch
+   * from a tag of the same name, and git resolves a bare one to the tag. */
+  ref: string;
+  /** Drawn on the row, so a colliding pair reads as two different things
+   * rather than as a list that repeated itself. */
+  isTag?: boolean;
   /** Why the row is here: a role for the ones always offered, a date for the
    * rest. One column, one question — what is this doing on the list. */
   role?: string;
@@ -140,8 +146,21 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
         // against itself has nothing to show.
         setBranches(
           [
-            ...all.filter((b) => !b.isCurrent).map((b) => ({ name: b.name, when: b.lastCommitAt })),
-            ...tagged.map((tag) => ({ name: tag.name, when: tag.lastCommitAt })),
+            ...all
+              .filter((b) => !b.isCurrent)
+              .map((b) => ({
+                name: b.name,
+                // git2 enumerated these, so which namespace each came from is
+                // known rather than guessed.
+                ref: b.isRemote ? `refs/remotes/${b.name}` : `refs/heads/${b.name}`,
+                when: b.lastCommitAt,
+              })),
+            ...tagged.map((tag) => ({
+              name: tag.name,
+              ref: tag.ref,
+              isTag: true,
+              when: tag.lastCommitAt,
+            })),
           ].sort((a, b) => (b.when ?? 0) - (a.when ?? 0)),
         );
       })
@@ -181,9 +200,16 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
   // list for having been quiet a month, which is the whole reason the two
   // groups are ordered rather than merged.
   const rows = useMemo<Row[]>(() => {
-    const offered: Row[] = bases.map((b) => ({ name: b.name, role: roles[b.kind] }));
-    const seen = new Set(offered.map((r) => r.name));
-    return [...offered, ...branches.filter((b) => !seen.has(b.name))];
+    const offered: Row[] = bases.map((b) => ({
+      name: b.name,
+      ref: b.ref,
+      role: roles[b.kind],
+    }));
+    // By refname, not by name: `v1` the branch and `v1` the tag are two rows,
+    // and dropping one of them would hide a base the reader can see in their
+    // own repo.
+    const seen = new Set(offered.map((r) => r.ref));
+    return [...offered, ...branches.filter((b) => !seen.has(b.ref))];
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `roles` is rebuilt
     // every render off `t`; rebuilding the list on it would defeat the memo.
   }, [bases, branches]);
@@ -237,6 +263,9 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
     /** Typed or pasted rather than picked off the list, so nothing has said
      * whether git knows it. */
     typed?: boolean;
+    /** A tag rather than a branch, which the row has to show: the two can
+     * share a name. */
+    tag?: boolean;
   };
   let options: Option[];
 
@@ -310,8 +339,9 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
           ]
         : []),
       ...shown.map((row) => ({
-        value: { kind: "ref", name: row.name } as ComparisonBaseValue,
+        value: { kind: "ref", name: row.name, ref: row.ref } as ComparisonBaseValue,
         label: row.name,
+        tag: row.isTag,
         hint: row.role ?? ago(row.when ?? 0, t),
         mono: true,
       })),
@@ -380,6 +410,13 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
     setOpen(false);
   }
 
+  // Ids rather than a visual highlight alone. Arrow keys move `active`, which
+  // draws the row differently -- and that is all a screen reader was getting,
+  // since nothing tied the box being typed in to the list below it or to the
+  // row the cursor was on.
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-option-${i}`;
+
   const label = baseLabel(base, t("baseWorktree"));
 
   return (
@@ -401,6 +438,7 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
           type="button"
           aria-label={t("baseSelector")}
           aria-expanded={open}
+          aria-controls={open ? listId : undefined}
           onClick={() => {
             setOpen((o) => {
               if (!o) {
@@ -433,6 +471,11 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
             <Search size={13} className="shrink-0 text-fg-subtle" />
             <input
               ref={inputRef}
+              role="combobox"
+              aria-expanded
+              aria-controls={listId}
+              aria-autocomplete="list"
+              aria-activedescendant={options[active] ? optionId(active) : undefined}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -487,11 +530,13 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
               appears on open. It is still a cap: typing drops the six-row
               limit, because a search that found forty things should show
               forty, and that is when scrolling is the right answer. */}
-          <ul className="max-h-56 space-y-0.5 overflow-y-auto p-1" role="listbox">
+          <ul id={listId} className="max-h-56 space-y-0.5 overflow-y-auto p-1" role="listbox">
             {options.map((option, i) => (
               <BaseRow
                 key={baseLabel(option.value, "@worktree")}
+                id={optionId(i)}
                 label={option.label}
+                tag={option.tag ? t("baseTag") : undefined}
                 hint={option.hint}
                 mono={option.mono}
                 needle={needle}
@@ -561,7 +606,9 @@ function Marked({ text, needle }: { text: string; needle: string }) {
 }
 
 function BaseRow({
+  id,
   label,
+  tag,
   hint,
   mono,
   needle,
@@ -571,7 +618,14 @@ function BaseRow({
   onSelect,
   onHover,
 }: {
+  /** Ties the row to `aria-activedescendant` on the box being typed in. */
+  id: string;
   label: string;
+  /** Marks the row as a tag, and names the mark for anyone who cannot see it.
+   * The same icon Git Graph puts on a tag ref chip -- a tag beside a branch of
+   * the same name has to read as a different thing, and the two places that
+   * say "tag" should not say it two ways. */
+  tag?: string;
   hint?: string;
   mono: boolean;
   /** The search, lowercased, so the row can mark what matched. */
@@ -602,6 +656,7 @@ function BaseRow({
       <li>
         <button
           ref={ref}
+          id={id}
           type="button"
           role="option"
           aria-selected={checked}
@@ -614,10 +669,20 @@ function BaseRow({
           <span className="flex w-3 shrink-0 justify-center text-accent">
             {checked && <Check size={11} />}
           </span>
-          <span className={`min-w-0 flex-1 truncate ${mono ? "font-mono" : ""}`}>
+          {tag && (
+            <Tag className="h-2.5 w-2.5 shrink-0 text-fg-subtle" aria-label={tag} />
+          )}
+          <span
+            data-row-label
+            className={`min-w-0 flex-1 truncate ${mono ? "font-mono" : ""}`}
+          >
             <Marked text={label} needle={needle} />
           </span>
-          {hint && <span className="shrink-0 pl-2 text-[10.5px] text-fg-subtle">{hint}</span>}
+          {hint && (
+            <span data-row-hint className="shrink-0 pl-2 text-[10.5px] text-fg-subtle">
+              {hint}
+            </span>
+          )}
         </button>
       </li>
     </>

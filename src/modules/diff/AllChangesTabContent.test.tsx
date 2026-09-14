@@ -510,6 +510,44 @@ describe("AllChangesTabContent", () => {
     expect(screen.queryByText(/^baseGone/)).not.toBeInTheDocument();
   });
 
+  it("takes the panel's list down when the next base cannot be read", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "ref", name: "origin/main" } },
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "1111111",
+      diff: [
+        "diff --git a/kept.ts b/kept.ts",
+        "--- a/kept.ts",
+        "+++ b/kept.ts",
+        "@@ -1 +1 @@",
+        "-x",
+        "+y",
+        "",
+      ].join("\n"),
+    });
+
+    render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() =>
+      expect(useAllChangesLinkStore.getState().listing[PANE]?.files).toEqual([
+        { rel: "kept.ts", status: "M" },
+      ]),
+    );
+
+    // The panel is this page's index. With the next base unreadable there is
+    // nothing to be an index of -- and left standing, the old list sits beside
+    // the failure still offering rows that ask the page to scroll to files it
+    // never read.
+    vi.mocked(gitDiffFromBase).mockRejectedValue(new Error("unknown rev"));
+    vi.mocked(gitResolveRev).mockResolvedValue(null);
+    act(() => {
+      useComparisonBaseStore.getState().setBase("/repo", { kind: "ref", name: "gone" });
+    });
+
+    await waitFor(() => expect(screen.getByText("baseGone:gone")).toBeInTheDocument());
+    expect(useAllChangesLinkStore.getState().listing[PANE]).toBeUndefined();
+  });
+
   it("says two histories never met, rather than that something went wrong", async () => {
     useComparisonBaseStore.setState({
       byRepo: { "/repo": { kind: "ref", name: "stranger" } },
