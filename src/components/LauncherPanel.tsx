@@ -64,6 +64,7 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
   const [sshFormOpen, setSshFormOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const newTerminalTab = useTabsStore((s) => s.newTerminalTab);
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
@@ -263,6 +264,14 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
     }
   }, [isActivePane]);
 
+  // Move the highlight and keep it visible: in a short pane the list scrolls,
+  // so an arrow key that lands on an off-screen row has to bring it into view.
+  function moveSelection(delta: number) {
+    const next = (selectedIndex + delta + flatActions.length) % flatActions.length;
+    setSelectedIndex(next);
+    itemRefs.current[next]?.scrollIntoView?.({ block: "nearest" });
+  }
+
   function onKeyDown(e: React.KeyboardEvent) {
     // While the SSH form is open it owns the keyboard; let it through.
     if (sshFormOpen || flatActions.length === 0) {
@@ -270,10 +279,10 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
     }
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((i) => (i + 1) % flatActions.length);
+      moveSelection(1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSelectedIndex((i) => (i - 1 + flatActions.length) % flatActions.length);
+      moveSelection(-1);
     } else if (e.key === "Enter") {
       e.preventDefault();
       void flatActions[selectedIndex]?.run();
@@ -286,44 +295,52 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
         ref={rootRef}
         tabIndex={-1}
         onKeyDown={onKeyDown}
-        className="flex h-full flex-col items-center justify-center gap-6 px-4 bg-bg text-fg-subtle outline-none"
+        className="h-full overflow-y-auto bg-bg text-fg-subtle outline-none"
       >
-        <p className="text-center text-sm">{t("workspace.launcherHint")}</p>
-        <div className="flex w-full max-w-72 flex-col gap-5">
-          {groups.map((group) => (
-            <div key={group.key}>
-              <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-subtle">
-                {group.label}
-              </h3>
-              <ul className="divide-y divide-border">
-                {group.actions.map(({ key, label, icon: Icon, shortcut, run }) => {
-                  const index = flatActions.findIndex((a) => a.key === key);
-                  const selected = index === selectedIndex;
-                  return (
-                    <li key={key}>
-                      <button
-                        type="button"
-                        onClick={() => void run()}
-                        onMouseEnter={() => setSelectedIndex(index)}
-                        aria-selected={selected}
-                        className={`flex w-full items-center gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors ${
-                          selected ? "bg-bg-elevated text-fg" : "text-fg-muted"
-                        }`}
-                      >
-                        <Icon size={16} className="shrink-0" />
-                        <span className="flex-1 text-left">{label}</span>
-                        {shortcut && (
-                          <kbd className="shrink-0 rounded border border-border-strong bg-bg-inset px-2 py-0.5 font-mono text-xs text-fg">
-                            {shortcut}
-                          </kbd>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+        {/* The list centres itself while it fits, and grows past `min-h-full`
+            once it does not, so the scroll container above takes over instead
+            of letting the overflow paint over the neighbouring panes. */}
+        <div className="flex min-h-full flex-col items-center justify-center gap-6 px-4 py-6">
+          <p className="text-center text-sm">{t("workspace.launcherHint")}</p>
+          <div className="flex w-full max-w-72 shrink-0 flex-col gap-5">
+            {groups.map((group) => (
+              <div key={group.key}>
+                <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-subtle">
+                  {group.label}
+                </h3>
+                <ul className="divide-y divide-border">
+                  {group.actions.map(({ key, label, icon: Icon, shortcut, run }) => {
+                    const index = flatActions.findIndex((a) => a.key === key);
+                    const selected = index === selectedIndex;
+                    return (
+                      <li key={key}>
+                        <button
+                          type="button"
+                          ref={(el) => {
+                            itemRefs.current[index] = el;
+                          }}
+                          onClick={() => void run()}
+                          onMouseEnter={() => setSelectedIndex(index)}
+                          aria-selected={selected}
+                          className={`flex w-full items-center gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors ${
+                            selected ? "bg-bg-elevated text-fg" : "text-fg-muted"
+                          }`}
+                        >
+                          <Icon size={16} className="shrink-0" />
+                          <span className="flex-1 text-left">{label}</span>
+                          {shortcut && (
+                            <kbd className="shrink-0 rounded border border-border-strong bg-bg-inset px-2 py-0.5 font-mono text-xs text-fg">
+                              {shortcut}
+                            </kbd>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
       {sshFormOpen && (
