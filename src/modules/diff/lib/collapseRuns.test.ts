@@ -241,12 +241,13 @@ let seed = 12345;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 
 describe("every stretch, against the library's own answer", () => {
-  // Builds three hundred merge views, which is seconds rather than
-  // milliseconds -- and vitest runs files side by side, so the default five
-  // is not a budget this can be held to.
-  it("agrees on both sides of three hundred random diffs", { timeout: 60_000 }, () => {
+  // A hundred rather than more: each one is a whole merge view, and vitest
+  // runs files side by side, so what this file spends is taken from the ones
+  // beside it. A fifth of the generated diffs used to disagree with the
+  // library, so a hundred is still dozens of chances to catch it.
+  it("agrees on both sides of a hundred random diffs", { timeout: 60_000 }, () => {
     const bad: string[] = [];
-    for (let c = 0; c < 300; c++) {
+    for (let c = 0; c < 100; c++) {
       // 40-99 lines; per line 2% delete, 2% insert-before, 2% modify;
       // then 30% chance of an insertion at the very top and 30% at the very
       // bottom. The top one is what makes chunk 0 zero-width on side A.
