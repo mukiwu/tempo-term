@@ -465,9 +465,13 @@ textarea:focus-visible,
    every line of code shifts right, scroll it away and they all shift back.
    Holding the width costs 18px on a file that never folds anything and keeps
    the text still on every file that does. */
-.diff-merge-view .cm-diff-fold-gutter { cursor: pointer; width: 18px; }
+.diff-merge-view .cm-diff-fold-gutter { width: 18px; }
+/* The hand goes on the icons, not on the column. The column runs the height of
+   the file and only some of its lines have anything to press; a pointer over
+   the rest offers something that is not there. */
 .diff-merge-view .cm-diff-fold,
 .diff-merge-view .cm-diff-unfold {
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
