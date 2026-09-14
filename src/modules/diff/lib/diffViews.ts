@@ -10,7 +10,7 @@
  */
 
 import { getChunks, MergeView, unifiedMergeView, type Chunk } from "@codemirror/merge";
-import { Compartment, EditorState } from "@codemirror/state";
+import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { loadLanguageExtension } from "@/modules/editor/lib/language";
 import { editorSyntaxTheme } from "@/themes/editorTheme";
@@ -61,7 +61,7 @@ export function unifiedExtension(original: string) {
  */
 export type DiffViews =
   | { kind: "split"; merge: MergeView }
-  | { kind: "unified"; view: EditorView; collapse: Compartment };
+  | { kind: "unified"; view: EditorView };
 
 export interface DiffViewOptions {
   parent: HTMLElement;
@@ -139,7 +139,7 @@ export async function buildDiffViews(options: DiffViewOptions): Promise<DiffView
 
   // Inline has no reconfigure() of its own, so its merge extension goes in a
   // compartment a rebuild can re-init.
-  const collapse = new Compartment();
+
   if (unified) {
     const view = new EditorView({
       doc: right,
@@ -149,10 +149,10 @@ export async function buildDiffViews(options: DiffViewOptions): Promise<DiffView
         collapseBackExtension(foldLabels),
         ...extensions,
         diffCommentsExtension(commentHandlers("b")),
-        collapse.of(unifiedExtension(left)),
+        unifiedExtension(left),
       ],
     });
-    return { kind: "unified", view, collapse };
+    return { kind: "unified", view };
   }
   const merge = new MergeView({
     a: {

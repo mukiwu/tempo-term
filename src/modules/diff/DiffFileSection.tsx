@@ -231,10 +231,6 @@ export function DiffFileSection({
     };
   }, [shouldLoad, repo, file.rel, file.from, file.path, file.staged, reloadKey, baseRev, baseTo]);
 
-  // The old side is read through a ref so that folding a stretch back up
-  // never lands in the dependencies of the effect that builds the editors.
-  const docsRef = useRef<DiffDocs | null>(null);
-  docsRef.current = docs;
   useEffect(() => {
     const parent = hostRef.current;
     if (!docs || !parent || hidden || !mount) {

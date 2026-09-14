@@ -66,8 +66,6 @@ export const openRun = StateEffect.define<{ start: number; how: "top" | "bottom"
 /** Fold one run back up. */
 export const closeRun = StateEffect.define<number>();
 
-/** Forget every expansion — the documents underneath have been replaced. */
-export const closeAllRuns = StateEffect.define<null>();
 
 /**
  * What the reader has opened, keyed by the position each run starts at.
@@ -79,10 +77,20 @@ const opened = StateField.define<ReadonlyMap<number, Opened>>({
   create: () => new Map(),
   update(value, tr) {
     let next = value;
+    // Mapped before the effects rather than after them, and without asking
+    // whether an effect arrived. The documents are read-only, so this only
+    // happens when a surface reconfigures -- but a transaction that both
+    // moved the text and opened a stretch used to skip the mapping entirely
+    // and leave every key pointing at where the text was.
+    if (tr.docChanged && next.size > 0) {
+      const moved = new Map<number, Opened>();
+      for (const [pos, how] of next) {
+        moved.set(tr.changes.mapPos(pos), how);
+      }
+      next = moved;
+    }
     for (const effect of tr.effects) {
-      if (effect.is(closeAllRuns)) {
-        next = new Map();
-      } else if (effect.is(closeRun)) {
+      if (effect.is(closeRun)) {
         if (next.has(effect.value)) {
           const map = new Map(next);
           map.delete(effect.value);
@@ -102,20 +110,19 @@ const opened = StateField.define<ReadonlyMap<number, Opened>>({
         next = map;
       }
     }
-    if (next !== value || !tr.docChanged) {
-      return next;
-    }
-    // Read-only documents, so this only happens when a surface reconfigures;
-    // the keys still have to follow the text they were taken from.
-    const moved = new Map<number, Opened>();
-    for (const [pos, how] of next) {
-      moved.set(tr.changes.mapPos(pos), how);
-    }
-    return moved;
+    return next;
   },
 });
 
 interface Run {
+  /**
+   * How many changes are above this stretch, which is what pairs it with the
+   * same text on the other side of a split. The two documents are different
+   * lengths, so an offset will not do it; the position in the list will not
+   * either, since a stretch too short to be worth a bar is dropped, and a
+   * stretch can fall under that on one side alone.
+   */
+  after: number;
   /** First line of the unchanged stretch. */
   from: number;
   /** End of its last line. */
@@ -138,49 +145,83 @@ function runsOf(state: EditorState): Run[] {
   // In line numbers throughout: a chunk's end offset can sit inside its last
   // line or at the start of the next one, and trimming a margin off a byte
   // offset makes the two ends of a run come out a line apart.
-  const add = (firstLine: number, lastLine: number, atStart: boolean, atEnd: boolean) => {
+  const add = (
+    after: number,
+    firstLine: number,
+    lastLine: number,
+    atStart: boolean,
+    atEnd: boolean,
+  ) => {
     const first = Math.max(1, firstLine + (atStart ? 0 : MARGIN));
     const last = Math.min(doc.lines, lastLine - (atEnd ? 0 : MARGIN));
     if (last - first + 1 < MIN_RUN) {
       return;
     }
-    out.push({ from: doc.line(first).from, to: doc.line(last).to, lines: last - first + 1 });
+    out.push({
+      after,
+      from: doc.line(first).from,
+      to: doc.line(last).to,
+      lines: last - first + 1,
+    });
   };
   let nextFirst = 1;
+  let seen = 0;
   for (const chunk of info.chunks) {
     const from = info.side === "a" ? chunk.fromA : chunk.fromB;
     const to = info.side === "a" ? chunk.toA : chunk.toB;
     const changeFirst = doc.lineAt(Math.min(from, doc.length)).number;
-    // The last character the chunk owns, not the position after it: a chunk
-    // ends at the start of the following line as often as at the end of its
-    // own, and only one of those two answers is the line that changed.
-    const last = Math.min(to > from ? to - 1 : to, doc.length);
-    const changeLast = doc.lineAt(last).number;
-    add(nextFirst, changeFirst - 1, nextFirst === 1, false);
-    nextFirst = changeLast + 1;
+    add(seen, nextFirst, changeFirst - 1, nextFirst === 1, false);
+    // Where the stretch after this chunk starts, mapped exactly the way the
+    // library maps it (`buildCollapsedRanges`, on `chunk.to` with no
+    // adjustment either way). The two sides have to land on the same line or
+    // they stop lining up, and a chunk that covers no lines on this side --
+    // every pure insertion, every pure deletion, where `to` equals `from` by
+    // the library's own definition -- is where any adjustment of ours would
+    // differ from any adjustment on the other side.
+    nextFirst = doc.lineAt(Math.min(to, doc.length)).number;
+    seen += 1;
   }
-  add(nextFirst, doc.lines, info.chunks.length === 0, true);
+  add(seen, nextFirst, doc.lines, info.chunks.length === 0, true);
   return out;
 }
 
 /**
- * The declaration the code after a run sits inside — git's own heuristic: the
- * nearest line above that starts in the first column with a letter, `_` or `$`.
+ * The declaration each of `lines` sits inside — git's own heuristic: the
+ * nearest line at or above it that starts in the first column with a letter,
+ * `_` or `$`.
  *
- * Read from below the run rather than above it. What a reader wants off a bar
+ * Read from below each bar rather than above it. What a reader wants off a bar
  * is where it is about to land, which is the same thing git puts after the
  * `@@` of the hunk that follows: "the changes below are inside this".
+ *
+ * Answered for every bar in one pass down the document rather than by walking
+ * up from each one. Walking up costs bars × lines, and in a file where no line
+ * starts in the first column — everything indented, which whole languages are
+ * — every bar walks to line 1: 500 bars in a 20k-line file measured at 776ms
+ * for a single transaction that changed nothing.
+ *
+ * `lines` must be in ascending order, which the bars are, being built down the
+ * document.
  */
-function leadsInto(state: EditorState, run: Run): string {
-  const doc = state.doc;
-  const after = Math.min(doc.lineAt(run.to).number + 1, doc.lines);
-  for (let n = after; n >= 1; n -= 1) {
-    const text = doc.line(n).text;
+function declarationsAt(state: EditorState, lines: readonly number[]): string[] {
+  const found: string[] = lines.map(() => "");
+  if (lines.length === 0) {
+    return found;
+  }
+  let seen = "";
+  let next = 0;
+  let n = 0;
+  for (const text of state.doc.iterLines(1, lines[lines.length - 1] + 1)) {
+    n += 1;
     if (/^[A-Za-z_$]/.test(text)) {
-      return text.trim().replace(/[{(:]\s*$/, "");
+      seen = text.trim().replace(/[{(:]\s*$/, "");
+    }
+    while (next < lines.length && lines[next] === n) {
+      found[next] = seen;
+      next += 1;
     }
   }
-  return "";
+  return found;
 }
 
 function button(
@@ -195,12 +236,21 @@ function button(
   el.disabled = !enabled;
   el.append(lucideIcon(paths, 12));
   el.setAttribute("aria-label", label);
-  el.addEventListener("mousedown", (event) => {
+  const act = (event: Event) => {
     // The editor would otherwise take the click as a click on the text.
     event.preventDefault();
     event.stopPropagation();
     if (enabled) {
       onClick();
+    }
+  };
+  el.addEventListener("mousedown", act);
+  // A real button, so Enter and Space are what a reader expects to press --
+  // but the editor's own key handling swallows them before a click event is
+  // ever synthesised, so the bar has to listen for the keys itself.
+  el.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      act(event);
     }
   });
   // The app's own hover hint rather than `title`, which the macOS WebView is
@@ -292,10 +342,11 @@ export class RunWidget extends WidgetType {
 /**
  * The same stretch on the other side of a split, if there is one.
  *
- * Paired by index rather than by position: the two documents are different
- * lengths, so the same unchanged text starts at a different offset on each
- * side, but both sides see the same changes and therefore the same runs in the
- * same order. An index cannot drift the way a mapped offset can.
+ * Paired by how many changes sit above it rather than by position: the two
+ * documents are different lengths, so the same unchanged text starts at a
+ * different offset on each side. Not by place in the list either -- a stretch
+ * too short to be worth a bar is left out, and a stretch can fall under that
+ * on one side alone, which would shift every pairing after it without a word.
  */
 function across(view: EditorView, start: number): { other: EditorView; start: number } | null {
   const siblings = mergeViewSiblings(view);
@@ -303,8 +354,9 @@ function across(view: EditorView, start: number): { other: EditorView; start: nu
     return null;
   }
   const other = siblings.a === view ? siblings.b : siblings.a;
-  const index = runsOf(view.state).findIndex((run) => run.from === start);
-  const theirs = index < 0 ? undefined : runsOf(other.state)[index];
+  const mine = runsOf(view.state).find((run) => run.from === start);
+  const theirs =
+    mine && runsOf(other.state).find((run) => run.after === mine.after);
   return theirs ? { other, start: theirs.from } : null;
 }
 
@@ -330,7 +382,7 @@ export function foldRun(view: EditorView, start: number): void {
 function decorations(state: EditorState, labels: RunLabels): DecorationSet {
   const doc = state.doc;
   const open = state.field(opened);
-  const ranges = [];
+  const bars: { start: number; from: number; to: number; lines: number; atEnd: boolean }[] = [];
   for (const run of runsOf(state)) {
     const how = open.get(run.from) ?? NOTHING;
     const first = doc.lineAt(run.from).number + how.top;
@@ -347,25 +399,34 @@ function decorations(state: EditorState, labels: RunLabels): DecorationSet {
     if (to <= from) {
       continue;
     }
-    const atEnd = to >= doc.length;
-    ranges.push(
+    bars.push({ start: run.from, from, to, lines: last - first + 1, atEnd: to >= doc.length });
+  }
+  // Named off each bar's own last line rather than the stretch's, since
+  // opening the bottom of one moves where it lands: a bar that used to lead
+  // into a function now leads into whatever the newly shown lines sit inside.
+  const names = declarationsAt(
+    state,
+    bars.map((bar) => Math.min(doc.lineAt(bar.to).number + 1, doc.lines)),
+  );
+  return Decoration.set(
+    bars.map((bar, i) =>
       Decoration.replace({
         widget: new RunWidget(
-          run.from,
-          last - first + 1,
+          bar.start,
+          bar.lines,
           // The last stretch in the file leads into nothing: there is no
           // change below it to be inside anything, so naming a declaration
           // there would be answering a question nobody asked.
-          atEnd ? "" : leadsInto(state, run),
-          from === 0,
-          atEnd,
+          bar.atEnd ? "" : names[i],
+          bar.from === 0,
+          bar.atEnd,
           labels,
         ),
         block: true,
-      }).range(from, to),
-    );
-  }
-  return Decoration.set(ranges, true);
+      }).range(bar.from, bar.to),
+    ),
+    true,
+  );
 }
 
 const theme = EditorView.baseTheme({
@@ -411,9 +472,11 @@ const theme = EditorView.baseTheme({
     lineHeight: "1.4",
     borderRadius: "3px",
   },
+  // The same hover the fold gutter next door wears (`.cm-diff-fold:hover` in
+  // index.css): the accent colour, not a filled background. Two controls a
+  // few pixels apart doing the same job should light up the same way.
   ".cm-diff-run-btn:hover:not(:disabled)": {
-    background: "var(--color-bg, rgba(127,127,127,0.2))",
-    color: "var(--color-fg, inherit)",
+    color: "var(--color-accent, inherit)",
   },
   ".cm-diff-run-btn:disabled": { opacity: "0.3", cursor: "default" },
 });
@@ -425,7 +488,19 @@ export function collapseRunsExtension(labels: RunLabels): Extension {
     theme,
     StateField.define<DecorationSet>({
       create: (state) => decorations(state, labels),
-      update: (_value, tr) => decorations(tr.state, labels),
+      update: (value, tr) => {
+        // Only when something the bars are built from has moved. A transaction
+        // is dispatched for a click, a focus, a selection -- none of which
+        // changes a single bar, and all of which were rebuilding every one of
+        // them along with a scan of the document behind each name.
+        const before = tr.startState;
+        const after = tr.state;
+        const same =
+          !tr.docChanged &&
+          before.field(opened, false) === after.field(opened, false) &&
+          getChunks(before)?.chunks === getChunks(after)?.chunks;
+        return same ? value : decorations(after, labels);
+      },
       provide: (field) => EditorView.decorations.from(field),
     }),
   ];

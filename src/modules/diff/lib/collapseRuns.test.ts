@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MergeView } from "@codemirror/merge";
+import type { EditorView } from "@codemirror/view";
 import {
   barredRuns,
   collapseRunsExtension,
@@ -69,5 +70,70 @@ describe("barredRuns", () => {
     editor.dispatch({ effects: openRun.of({ start: 0, how: "all" }) });
     expect(barredRuns(editor.state).has(0)).toBe(false);
     expect(openedRuns(editor.state).has(0)).toBe(true);
+  });
+});
+
+/** Both sides collapsing, which is how the pane actually runs. */
+function pair(a: string, b: string) {
+  const parent = document.createElement("div");
+  document.body.append(parent);
+  return new MergeView({
+    a: { doc: a, extensions: [collapseRunsExtension(LABELS)] },
+    b: { doc: b, extensions: [collapseRunsExtension(LABELS)] },
+    parent,
+  });
+}
+
+/** How many lines each bar is hiding, in order down the document. */
+const hidden = (editor: EditorView) =>
+  Array.from(editor.dom.querySelectorAll("[data-lines]")).map((el) =>
+    Number((el as HTMLElement).dataset.lines),
+  );
+
+describe("the two sides", () => {
+  it("hide the same lines when a chunk covers none of one of them", () => {
+    // A pure insertion: the chunk covers lines in B and, by the library's own
+    // definition, none in A -- `toA` equals `fromA`. Mapping that end with any
+    // adjustment of our own put the stretch after it one line further down on
+    // the side without the lines, so the two sides stopped lining up, and the
+    // extra line could push a stretch under the minimum on one side only --
+    // leaving the sides with different numbers of bars.
+    const lines = Array.from({ length: 80 }, (_, i) => `line ${i + 1}`);
+    const inserted = [...lines.slice(0, 40), "added one", "added two", ...lines.slice(40)];
+
+    const merge = pair(lines.join('\n'), inserted.join('\n'));
+
+    expect(hidden(merge.a)).toEqual(hidden(merge.b));
+    expect(hidden(merge.a).length).toBeGreaterThan(0);
+  });
+
+  it("hide the same lines when the chunk is a pure deletion", () => {
+    // The same case from the other end: no lines in B this time.
+    const lines = Array.from({ length: 80 }, (_, i) => `line ${i + 1}`);
+    const shorter = [...lines.slice(0, 40), ...lines.slice(42)];
+
+    const merge = pair(lines.join('\n'), shorter.join('\n'));
+
+    expect(hidden(merge.a)).toEqual(hidden(merge.b));
+    expect(hidden(merge.a).length).toBeGreaterThan(0);
+  });
+});
+
+describe("the bar's arrows", () => {
+  it("answer the keyboard, not just the mouse", () => {
+    // They are buttons, so Enter and Space are what a reader expects -- and
+    // the editor's own key handling swallows both before a click is ever
+    // synthesised, so nothing arrived at a control that looks pressable.
+    const editor = view();
+    const down = editor.dom.querySelector<HTMLButtonElement>(
+      '[aria-label^="down"]:not([disabled])',
+    );
+    expect(down).not.toBeNull();
+    const before = barredRuns(editor.state);
+
+    down!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(openedRuns(editor.state).size).toBe(1);
+    expect(before.size).toBeGreaterThan(0);
   });
 });

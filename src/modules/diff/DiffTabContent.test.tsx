@@ -212,6 +212,33 @@ describe("DiffTabContent", () => {
     expect(backs().length).toBe(0);
   });
 
+  it("folds an opened stretch back up inline too", async () => {
+    // One editor rather than two, so every count here is half the split
+    // case's -- and the gutter the way back lives in is a different gutter.
+    // The pane had a test for this before the bars were ours; it went with
+    // the library's class name and was not replaced.
+    useSettingsStore.setState({ diffUnified: true });
+    const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`);
+    vi.mocked(gitFileAtRev).mockResolvedValue(lines.join("\n") + "\n");
+    vi.mocked(fsReadFile).mockResolvedValue(
+      lines.map((line, i) => (i === 9 ? "changed" : line)).join("\n") + "\n",
+    );
+
+    const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
+
+    const bars = () => container.querySelectorAll(".cm-diff-run").length;
+    const backs = () => container.querySelectorAll(".cm-diff-fold");
+    await waitFor(() => expect(bars()).toBe(2));
+
+    fireEvent.mouseDown(container.querySelector(".cm-diff-unfold")!);
+    await waitFor(() => expect(bars()).toBe(1));
+    await waitFor(() => expect(backs().length).toBe(1));
+
+    fireEvent.mouseDown(backs()[0]);
+    await waitFor(() => expect(bars()).toBe(2));
+    expect(backs().length).toBe(0);
+  });
+
   it("promises the number of lines the press will actually open", async () => {
     // Twenty-three hidden: a step of twenty would leave three behind a bar
     // that takes a row of its own to say so, so the press opens all of them.
@@ -257,10 +284,15 @@ describe("DiffTabContent", () => {
     // What GitHub puts after the `@@`, and what the library's bar has no room
     // to say: the changes under this bar are inside this declaration.
     await waitFor(() => expect(container.querySelectorAll(".cm-diff-run").length).toBe(2));
-    console.log(
-      "[names]",
+    // One bar each side of the split, and both have to say it: the two are
+    // the same stretch of the same file, and a name on one of them only would
+    // read as a difference between the sides.
+    expect(
       [...container.querySelectorAll(".cm-diff-run")].map((el) => el.textContent),
-    );
+    ).toEqual([
+      "diffUnchangedLinesfn build_log_refs() -> Vec<String> ",
+      "diffUnchangedLinesfn build_log_refs() -> Vec<String> ",
+    ]);
   });
 
   it("renders a saved review comment as a card inside the diff", async () => {
