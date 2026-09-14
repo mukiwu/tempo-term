@@ -240,7 +240,10 @@ let seed = 12345;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 
 describe("every stretch, against the library's own answer", () => {
-  it("agrees on both sides of three hundred random diffs", () => {
+  // Builds three hundred merge views, which is seconds rather than
+  // milliseconds -- and vitest runs files side by side, so the default five
+  // is not a budget this can be held to.
+  it("agrees on both sides of three hundred random diffs", { timeout: 60_000 }, () => {
     const bad: string[] = [];
     for (let c = 0; c < 300; c++) {
       // 40-99 lines; per line 2% delete, 2% insert-before, 2% modify;
