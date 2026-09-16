@@ -52,6 +52,18 @@ const MOUNT_MARGIN = "800px";
 const LANDING_GAP = 8;
 
 /**
+ * How long a header is held where it was put -- by shutting the file under it,
+ * or by a click in the Source Control panel. The page is still settling over
+ * those first frames: neighbours come into the mount window and swap their
+ * estimated heights for real ones, a git read and a CodeMirror build each, and
+ * every one of them moves the header being held. Long enough to cover those
+ * reads, and bounded rather than lasting until the page is quiet, so a repo
+ * that never stops moving cannot hold the reader's scroll position forever.
+ * The reader scrolling ends it early either way.
+ */
+const PIN_SETTLE_MS = 2000;
+
+/**
  * Below this the header's numbers start costing the pane its own name, so the
  * two that repeat elsewhere give way: the file count is already on the panel's
  * Changes section, and "uncommitted" only matters next to a comparison that
@@ -144,8 +156,11 @@ export function AllChangesTabContent({
   const elementsRef = useRef(new Map<string, HTMLElement>());
   const handlesRef = useRef(new Map<string, DiffSectionHandle>());
   // Where the header of the file being shut sat, so the page can put it back
-  // there once the body it was holding is gone (see onToggleCollapse).
-  const anchorRef = useRef<{ key: string; top: number } | null>(null);
+  // there once the body it was holding is gone (see onToggleCollapse). `at` is
+  // the scroll position this last wrote, so a scroll event carrying any other
+  // number can be told apart as the reader taking over; `until` bounds how
+  // long the page keeps correcting itself.
+  const pinRef = useRef<{ key: string; top: number; at: number; until: number } | null>(null);
   const draftsRef = useRef(new Set<string>());
   // Bumped when a section's editors come or go, so a jump waiting on one can
   // finish.
@@ -307,11 +322,56 @@ export function AllChangesTabContent({
     return () => observer.disconnect();
   }, [ordered]);
 
-  const onMeasure = useCallback((key: string, height: number) => {
-    if (height > 0) {
-      heightsRef.current.set(key, height);
+  /**
+   * Put the pinned header back where it was shut (see onToggleCollapse). Held
+   * for a while rather than set once: the page a file is shut on is not the
+   * page it settles into. Shutting a long file makes the page short enough to
+   * bring its neighbours into the mount window, and each of them replaces the
+   * height it was holding with the one its editors actually take -- every one
+   * of those above the pinned header pushes it back down, a moment after the
+   * single correction has already run. So the pin is re-applied on every later
+   * move of the page until it holds or its window runs out.
+   *
+   * What it cannot do is reach past the end of the page: scrollTop stops at
+   * scrollHeight - clientHeight, so a file with less than a pane's worth of
+   * content under it settles as high as the list goes and no higher. Holding
+   * empty space below the last file would buy those few headers the top of the
+   * pane at the price of a blank screen at the end of every list, which is a
+   * bad trade -- the end of the list is a perfectly good place to stop.
+   */
+  const applyPin = useCallback(() => {
+    const pin = pinRef.current;
+    const root = scrollRef.current;
+    const element = pin ? elementsRef.current.get(pin.key) : null;
+    if (!pin || !root || !element) {
+      return;
     }
+    if (Date.now() > pin.until) {
+      pinRef.current = null;
+      return;
+    }
+    const now = element.getBoundingClientRect().top - root.getBoundingClientRect().top;
+    const target = Math.max(pin.top, 0);
+    if (Math.abs(now - target) >= 1) {
+      root.scrollTop = Math.max(0, root.scrollTop + now - target);
+    }
+    // Read back rather than trusting the write: what the browser kept is what
+    // a later scroll event has to match to count as this page's own doing.
+    pin.at = root.scrollTop;
   }, []);
+
+  const onMeasure = useCallback(
+    (key: string, height: number) => {
+      if (height > 0) {
+        heightsRef.current.set(key, height);
+      }
+      // A section reporting a new height is the page moving under the pinned
+      // header -- this is the editors of a neighbour finishing, which is the
+      // move the single correction used to miss.
+      applyPin();
+    },
+    [applyPin],
+  );
 
   const onHandle = useCallback((key: string, handle: DiffSectionHandle | null) => {
     if (handle) {
@@ -387,9 +447,11 @@ export function AllChangesTabContent({
     const root = scrollRef.current;
     const element = elementsRef.current.get(key);
     if (root && element) {
-      anchorRef.current = {
+      pinRef.current = {
         key,
         top: element.getBoundingClientRect().top - root.getBoundingClientRect().top,
+        at: root.scrollTop,
+        until: Date.now() + PIN_SETTLE_MS,
       };
     }
     setCollapsed((prev) => {
@@ -402,17 +464,11 @@ export function AllChangesTabContent({
   }, []);
 
   // Before the browser paints the shorter page, so the jump is never seen.
-  useLayoutEffect(() => {
-    const pinned = anchorRef.current;
-    anchorRef.current = null;
-    const root = scrollRef.current;
-    const element = pinned ? elementsRef.current.get(pinned.key) : null;
-    if (!pinned || !root || !element) {
-      return;
-    }
-    const now = element.getBoundingClientRect().top - root.getBoundingClientRect().top;
-    root.scrollTop = Math.max(0, root.scrollTop + now - Math.max(pinned.top, 0));
-  }, [collapsed]);
+  useLayoutEffect(applyPin, [collapsed, applyPin]);
+  // And again on every later move of the page under the pinned header, which
+  // is mostly neighbours mounting and unmounting as the shorter page brings
+  // them into the window.
+  useLayoutEffect(applyPin, [mounted, applyPin]);
 
   /**
    * Every change in the page, in reading order. Built from the scan rather
@@ -512,6 +568,12 @@ export function AllChangesTabContent({
       if (!root) {
         return;
       }
+      // A scroll this page did not write is the reader taking over, and they
+      // outrank a header still being held in place.
+      const pin = pinRef.current;
+      if (pin && Math.abs(root.scrollTop - pin.at) > 1) {
+        pinRef.current = null;
+      }
       const top = root.scrollTop + LANDING_GAP + 4;
       setPosition(changeAtViewportTop(changes.length, top, (i) => changeTop(root, i)));
       // The panel marks the row the reader is on, which is the file at the top
@@ -572,6 +634,9 @@ export function AllChangesTabContent({
     if (!root) {
       return;
     }
+    // Going somewhere is a newer instruction than holding a header where it
+    // was, so the pin gives way rather than dragging the page back.
+    pinRef.current = null;
     setMounted((prev) => (prev.has(target.key) ? prev : new Set(prev).add(target.key)));
     const offset = handlesRef.current.get(target.key)?.lineOffset(root, target.line) ?? null;
     if (offset !== null) {
@@ -594,6 +659,13 @@ export function AllChangesTabContent({
    * Put a file's header at the top of the page. Used by the Source Control
    * panel: while this page is in front, clicking a row scrolls here instead of
    * opening a diff tab of its own.
+   *
+   * Held there rather than scrolled to once, for the same reason a shut file's
+   * header is (see applyPin). A file being asked for is usually one that is
+   * not up yet: it and the files above it are holding estimates, and every one
+   * of those estimates is replaced a moment later by the height the editors
+   * actually take. A single scroll, taken before any of that lands, leaves the
+   * file wherever the corrections push it.
    */
   const scrollToSection = useCallback((key: string) => {
     const root = scrollRef.current;
@@ -601,6 +673,10 @@ export function AllChangesTabContent({
     if (!root || !element) {
       return false;
     }
+    // A jump still waiting on editors that were not up yet is older than this
+    // request -- the landing on the first change, usually -- so it is dropped
+    // rather than allowed to fire afterwards and take the page somewhere else.
+    setPending(null);
     setMounted((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     // A file the reader had shut opens again: they just asked for it, and
     // landing on a bare header reads as nothing having happened. A file folded
@@ -614,12 +690,10 @@ export function AllChangesTabContent({
       next.delete(key);
       return next;
     });
-    root.scrollTop = Math.max(
-      0,
-      root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top,
-    );
+    pinRef.current = { key, top: 0, at: root.scrollTop, until: Date.now() + PIN_SETTLE_MS };
+    applyPin();
     return true;
-  }, []);
+  }, [applyPin]);
 
   const requested = useAllChangesLinkStore((s) => s.file[paneId]);
   useEffect(() => {
@@ -636,6 +710,15 @@ export function AllChangesTabContent({
 
   useEffect(() => {
     if (!pending) {
+      return;
+    }
+    // Something newer is holding the page -- a file shut, or a row clicked in
+    // the panel. Read off the ref rather than waiting for the state those set:
+    // they are set from an effect, and this one still runs in that same commit
+    // with the jump it was asked for before them. Landing it now would take
+    // the page straight back off the header being held.
+    if (pinRef.current) {
+      setPending(null);
       return;
     }
     const root = scrollRef.current;
