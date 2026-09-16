@@ -924,11 +924,28 @@ export function SourceControlView() {
   // wants an absolute path so it can resolve the repo on its own.
   const openDiff = useCallback(
     (path: string, staged: boolean) => {
+      // With the all-changes page in front, a row scrolls it to that file
+      // instead of opening a tab per file, which is the whole point of that
+      // page. The right-click menu's "Show Diff" still opens the single-file
+      // tab, so nothing is only reachable one way.
+      // The page in front, not "a page somewhere": a split can hold two, and
+      // the rows being clicked belong to the one being looked at.
+      //
+      // Unless that page is comparing against a base, in which case it is not
+      // showing the working tree at all and these rows are not its table of
+      // contents -- the comparison listing above them is, and it has its own
+      // route. Same condition the rows take their mark from, so a row that
+      // marks itself as the one on screen is a row that scrolls, and a row
+      // that does not, opens.
+      if (allChangesPane && !listing) {
+        useAllChangesLinkStore.getState().request(allChangesPane, { rel: path, staged });
+        return;
+      }
       if (repoPath) {
         openDiffTab(`${repoPath}/${path}`, staged);
       }
     },
-    [repoPath, openDiffTab],
+    [allChangesPane, listing, repoPath, openDiffTab],
   );
 
   const navigateComparisonToFile = useCallback(

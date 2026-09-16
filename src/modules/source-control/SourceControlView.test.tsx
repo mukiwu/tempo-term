@@ -95,6 +95,23 @@ describe("SourceControlView row interactions", () => {
     expect(useTabsStore.getState().activeId).toBe(pageId);
   });
 
+  it("scrolls the all-changes page to a row instead of opening a tab", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+
+    fireEvent.click(await screen.findByText("src/a.ts"));
+
+    // No second tab: the page in front is asked to scroll to the file. Only
+    // while it is comparing the working tree, which is what these rows are --
+    // the test below is the same click with a base picked.
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    expect(useAllChangesLinkStore.getState().file[pane()]).toEqual({
+      rel: "src/a.ts",
+      staged: false,
+    });
+  });
+
   it("opens a regular diff from Changes even while All Changes is in front", async () => {
     render(<SourceControlView />);
     fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
