@@ -349,6 +349,11 @@ export function AllChangesTabContent({
         // failure saying otherwise -- and its rows are still clickable, asking
         // a page that is showing an error to scroll to a file it never read.
         useAllChangesLinkStore.getState().setListing(paneId, null);
+        // The header counts the same list, so it has to go down with it. The
+        // body says the base cannot be read while the header still totals the
+        // one before it, and the change stepper keeps its buttons over a list
+        // that is no longer on the page.
+        setFiles(null);
         // Two branches that never shared a commit have no point to measure
         // from, which the command says outright. Both refs resolve, so the
         // question below would find nothing wrong and the page would report
