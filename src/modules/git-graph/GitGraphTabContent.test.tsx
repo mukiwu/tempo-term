@@ -351,7 +351,8 @@ describe("GitGraphTabContent search navigation", () => {
     fireEvent.change(search, { target: { value: "fix:" } });
 
     expect(screen.getByText("keep this row")).toBeInTheDocument();
-    expect(screen.getByText("0 / 2")).toBeInTheDocument();
+    // A query lands on its first match: "1 / 2", not "0 / 2".
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
 
     fireEvent.keyDown(search, { key: "Enter" });
     await waitFor(() => expect(gitCommitDetails).toHaveBeenLastCalledWith("/repo", "ccc3333"));
@@ -369,7 +370,52 @@ describe("GitGraphTabContent search navigation", () => {
     expect(screen.queryByText(/matches \(loaded\)/)).not.toBeInTheDocument();
     expect(gitCommitDetails).toHaveBeenCalledTimes(detailsCallCount);
   });
+  it("keeps the counter where it was when a row the search did not find is clicked", async () => {
+    vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111", "bbb2222"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    fireEvent.change(screen.getByPlaceholderText("Search message, author, hash…"), {
+      target: { value: "aaa" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
+
+    // Stepping off the matches leaves the counter where it was rather than
+    // reading "0 / 1", which said nothing useful; the row it is on stays
+    // marked, which is how the reader gets back to it.
+    fireEvent.click(screen.getByText("msg bbb2222").closest("div[class*='absolute']")!);
+
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
+  });
+  it("moves the counter onto a row the search did find when it is clicked", async () => {
+    vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111", "bbb2222"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    fireEvent.change(screen.getByPlaceholderText("Search message, author, hash…"), {
+      target: { value: "msg" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+
+    // Standing on a match, the counter comes along — so the next arrow press
+    // carries on from where the reader is rather than from where they were.
+    //
+    // Found by hash, and [0] of those: "msg" is marked in the message, so that
+    // text is several elements now, and the details panel shows the hash too.
+    fireEvent.click(screen.getAllByText("aaa1111")[0].closest("div[class*='absolute']")!);
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+  });
 });
+
+
+
 
 describe("GitGraphTabContent worktree selector wiring", () => {
   beforeEach(() => {

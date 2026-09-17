@@ -21,6 +21,7 @@ import {
 import { isCurrentCommit } from "./lib/currentCommit";
 import { BRANCH_COLORS } from "./lib/branchColors";
 import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore";
+import { splitOnQuery } from "./lib/highlightQuery";
 
 export interface GitGraphLabels {
   emptyTitle: string;
@@ -53,6 +54,20 @@ interface GitGraphProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
   /**
+   * What the toolbar's search box has in it, so the rows can mark the run of
+   * text that matched. The graph keeps every commit drawn while a search is
+   * running (#426), so without this the reader is told there are twelve
+   * matches and left to find them by pressing the arrows.
+   */
+  searchQuery?: string;
+  /**
+   * Hash of the match the toolbar's counter is pointing at — the "3" of
+   * "3 of 347". Its own row, because the arrows move it and a click does not,
+   * so it drifts away from the selection as soon as the reader looks at
+   * something else.
+   */
+  currentMatchHash?: string | null;
+  /**
    * Counts for the working-tree row above the newest commit. `null` leaves the
    * row out altogether — that is the setting being off, not a clean tree; a
    * clean tree is `{ staged: 0, unstaged: 0 }` and still draws a (quiet) row.
@@ -71,6 +86,54 @@ const NODE_RING = 4;
 const LANE_FADE_LANES = 1;
 const ROW_HEIGHT = DEFAULT_GEOMETRY.rowHeight;
 const PADDING_TOP = DEFAULT_GEOMETRY.paddingTop;
+
+/**
+ * The run of text a search matched, marked in place. `<mark>` rather than a
+ * styled span: it is what the element means, and a screen reader announces it
+ * as marked text, so the row still says which part matched to someone who
+ * cannot see the colour.
+ */
+function Marked({
+  text,
+  query,
+  current,
+}: {
+  text: string;
+  query: string;
+  /** This row is the one the match arrows are standing on. */
+  current?: boolean;
+}) {
+  const runs = splitOnQuery(text, query);
+  // One run can also mean the whole string matched, which very much needs the
+  // mark — the author column is usually exactly the query the reader typed.
+  if (runs.length === 1 && !runs[0].hit) {
+    return <>{text}</>;
+  }
+  // The row being stepped on is marked more strongly than the rest, the way a
+  // find bar does it: every match has to be visible while scrolling, but only
+  // one of them is where the next arrow press leaves from. Both stay
+  // translucent — a marked run is meant to be read, not covered.
+  //
+  // The padding is cancelled by an equal negative margin. `<mark>` is inline,
+  // so 1px either side pushes everything after it along, and with several
+  // marks in a message the row's text visibly shifts as the reader types.
+  const hit = current
+    ? "-mx-px rounded-[2px] bg-accent/50 px-px text-fg"
+    : "-mx-px rounded-[2px] bg-accent/20 px-px text-fg";
+  return (
+    <>
+      {runs.map((run, i) =>
+        run.hit ? (
+          <mark key={i} className={hit}>
+            {run.text}
+          </mark>
+        ) : (
+          <span key={i}>{run.text}</span>
+        ),
+      )}
+    </>
+  );
+}
 
 /**
  * Path from the working-tree node down to HEAD: straight along its own track,
@@ -96,6 +159,8 @@ export function GitGraph({
   refChipOptions = DEFAULT_REF_CHIP_OPTIONS,
   hasMore = false,
   onLoadMore,
+  searchQuery = "",
+  currentMatchHash = null,
   uncommitted = null,
   onSelectWorkspace,
   onWorkspaceContextMenu,
@@ -234,6 +299,8 @@ export function GitGraph({
       : selection?.mode === "compare"
         ? selection.to.hash
         : null;
+
+  const searching = searchQuery.trim() !== "";
 
   const isSelectedHash = (hash: string) =>
     selection?.mode === "compare"
@@ -667,11 +734,27 @@ export function GitGraph({
               // The row (hit area, border and background) spans the full
               // width including the lane gutter; backgrounds stay translucent
               // so the SVG branch lines remain visible underneath.
-              const rowState = isSelected
-                ? "border-border-strong bg-bg-elevated/60 text-fg shadow-sm"
-                : isCurrent
-                  ? "border-transparent text-fg hover:bg-bg-elevated/40"
-                  : "border-transparent text-fg-muted hover:bg-bg-elevated/40 hover:text-fg";
+              // The match the counter is on takes the accent, and keeps the
+              // border and lift as well when it is also the selection — the
+              // colour adds to what the row already means rather than
+              // replacing it. The two start out on the same row and part
+              // company as soon as the reader clicks somewhere else.
+              //
+              // The other matches get no background at all. Tinting every one
+              // of them leaves that row with nothing to tell it apart: a band
+              // of coloured rows, and the reader hunting for which of them the
+              // arrows will leave from. Which rows matched is said by the marks
+              // in their text.
+              const isCurrentMatch = searching && commit.hash === currentMatchHash;
+              const rowState = isCurrentMatch
+                ? isSelected
+                  ? "border-border-strong bg-accent/10 text-fg shadow-sm"
+                  : "border-transparent bg-accent/10 text-fg"
+                : isSelected
+                  ? "border-border-strong bg-bg-elevated/60 text-fg shadow-sm"
+                  : isCurrent
+                    ? "border-transparent text-fg hover:bg-bg-elevated/40"
+                    : "border-transparent text-fg-muted hover:bg-bg-elevated/40 hover:text-fg";
               return (
                 <div
                   key={commit.hash}
@@ -690,7 +773,7 @@ export function GitGraph({
                 >
                   <div className="flex items-center space-x-3 overflow-hidden pr-2">
                     <span className="select-all font-mono text-xs font-semibold text-accent">
-                      {commit.hash}
+                      <Marked text={commit.hash} query={searchQuery} current={isCurrentMatch} />
                     </span>
 
                     <RefChipStrip
@@ -701,14 +784,16 @@ export function GitGraph({
                     />
 
                     <span className="truncate font-sans text-[13px] font-medium text-fg">
-                      {commit.message}
+                      <Marked text={commit.message} query={searchQuery} current={isCurrentMatch} />
                     </span>
                   </div>
 
                   <div className="flex shrink-0 items-center space-x-4 font-mono text-[13px] text-fg-subtle">
                     <div className="flex items-center space-x-1">
                       <User className="h-3 w-3" />
-                      <span className="max-w-[70px] truncate">{commit.author}</span>
+                      <span className="max-w-[70px] truncate">
+                        <Marked text={commit.author} query={searchQuery} current={isCurrentMatch} />
+                      </span>
                     </div>
                     <div className="flex items-center space-x-1">
                       <Clock className="h-3 w-3" />
