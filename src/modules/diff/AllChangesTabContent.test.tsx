@@ -361,6 +361,7 @@ describe("AllChangesTabContent", () => {
     );
     vi.mocked(gitDiffFromBase).mockResolvedValue({
       rev: "1111111",
+      toRev: null,
       diff: diffFor("src/z.ts"),
     });
 
@@ -420,6 +421,7 @@ describe("AllChangesTabContent", () => {
     });
     vi.mocked(gitDiffFromBase).mockResolvedValue({
       rev: "1111111",
+      toRev: null,
       diff: diffFor("tracked.ts"),
     });
     vi.mocked(gitStatus).mockResolvedValue({
@@ -453,6 +455,7 @@ describe("AllChangesTabContent", () => {
     });
     vi.mocked(gitDiffFromBase).mockResolvedValue({
       rev: "aaa",
+      toRev: null,
       diff: diffFor("tracked.ts"),
     });
 
@@ -465,6 +468,42 @@ describe("AllChangesTabContent", () => {
     // about -- and asking anyway would put a file in the list that belongs to
     // neither of the two points being compared.
     expect(gitStatus).not.toHaveBeenCalled();
+  });
+
+  it("reads a range's right-hand file at the far-end sha from the same diff", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": {
+          kind: "range",
+          from: "refs/heads/release",
+          to: "v2",
+          toRef: "refs/tags/v2",
+        },
+      },
+      includeUncommitted: true,
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "resolved-left-sha",
+      toRev: "resolved-right-sha",
+      diff: diffFor("file.ts"),
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-diff-file="w:file.ts"]')).toBeTruthy(),
+    );
+    await waitFor(() =>
+      expect(gitFileAtRev).toHaveBeenCalledWith("/repo", "resolved-right-sha", "file.ts"),
+    );
+    expect(gitDiffFromBase).toHaveBeenCalledWith(
+      "/repo",
+      "refs/heads/release",
+      false,
+      true,
+      "refs/tags/v2",
+    );
+    expect(gitFileAtRev).toHaveBeenCalledWith("/repo", "resolved-left-sha", "file.ts");
   });
 
   it("names the ref that went away, and offers the way back", async () => {
@@ -495,6 +534,24 @@ describe("AllChangesTabContent", () => {
     expect(useComparisonBaseStore.getState().byRepo["/repo"]).toBeUndefined();
   });
 
+  it("checks that a selected branch ref still exists without falling through to a same-name tag", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": { kind: "ref", name: "release", ref: "refs/heads/release" },
+      },
+    });
+    vi.mocked(gitDiffFromBase).mockRejectedValue(new Error("unknown rev"));
+    vi.mocked(gitResolveRev).mockImplementation(async (_repoPath, rev) =>
+      rev === "refs/heads/release" ? null : "2222222",
+    );
+
+    render(<AllChangesTabContent paneId={PANE} />);
+
+    await waitFor(() => expect(screen.getByText("baseGone:release")).toBeInTheDocument());
+    expect(gitResolveRev).toHaveBeenCalledWith("/repo", "refs/heads/release");
+    expect(screen.queryByText("diffLoadError")).not.toBeInTheDocument();
+  });
+
   it("still says only that it failed when the base is fine", async () => {
     useComparisonBaseStore.setState({
       byRepo: { "/repo": { kind: "ref", name: "origin/main" } },
@@ -516,6 +573,7 @@ describe("AllChangesTabContent", () => {
     });
     vi.mocked(gitDiffFromBase).mockResolvedValue({
       rev: "1111111",
+      toRev: null,
       diff: [
         "diff --git a/kept.ts b/kept.ts",
         "--- a/kept.ts",
@@ -581,6 +639,7 @@ describe("AllChangesTabContent", () => {
     });
     vi.mocked(gitDiffFromBase).mockResolvedValue({
       rev: "1111111",
+      toRev: null,
       diff: [
         "diff --git a/old/name.ts b/new/name.ts",
         "similarity index 90%",
@@ -613,12 +672,111 @@ describe("AllChangesTabContent", () => {
     expect(screen.getByText("← old/name.ts")).toBeInTheDocument();
   });
 
+  it("uses merge-base for a branch and compares tags or commits literally", async () => {
+    const cases = [
+      {
+        base: { kind: "ref" as const, name: "feature", ref: "refs/heads/feature" },
+        spec: "refs/heads/feature",
+        mergeBase: true,
+      },
+      {
+        base: { kind: "ref" as const, name: "v1", ref: "refs/tags/v1" },
+        spec: "refs/tags/v1",
+        mergeBase: false,
+      },
+      {
+        base: { kind: "ref" as const, name: "abcdef1234567890" },
+        spec: "abcdef1234567890",
+        mergeBase: false,
+      },
+    ];
+
+    for (const { base, spec, mergeBase } of cases) {
+      vi.clearAllMocks();
+      vi.mocked(gitDiffFromBase).mockResolvedValue({ rev: "base-sha", toRev: null, diff: "" });
+      useComparisonBaseStore.setState({ byRepo: { "/repo": base }, includeUncommitted: true });
+
+      const { unmount } = render(<AllChangesTabContent paneId={PANE} />);
+      await waitFor(() => expect(gitDiffFromBase).toHaveBeenCalledTimes(1));
+      expect(gitDiffFromBase).toHaveBeenCalledWith("/repo", spec, mergeBase, true, undefined);
+      unmount();
+    }
+  });
+
+  it("reads a committed-only comparison at the HEAD sha from its diff", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": { kind: "ref", name: "feature", ref: "refs/heads/feature" },
+      },
+      includeUncommitted: false,
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "merge-base-sha",
+      toRev: "resolved-head-sha",
+      diff: diffFor("file.ts"),
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-diff-file="w:file.ts"]')).toBeTruthy(),
+    );
+    expect(gitDiffFromBase).toHaveBeenCalledWith(
+      "/repo",
+      "refs/heads/feature",
+      true,
+      false,
+      undefined,
+    );
+    await waitFor(() =>
+      expect(gitFileAtRev).toHaveBeenCalledWith("/repo", "resolved-head-sha", "file.ts"),
+    );
+    expect(gitFileAtRev).not.toHaveBeenCalledWith("/repo", "HEAD", "file.ts");
+    expect(gitStatus).not.toHaveBeenCalled();
+  });
+
+  it("keeps the uncommitted toggle available after switching it off", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": { kind: "ref", name: "feature", ref: "refs/heads/feature" },
+      },
+      includeUncommitted: true,
+    });
+    vi.mocked(gitDiffFromBase).mockImplementation(async (_repo, _base, _merge, include) => ({
+      rev: "merge-base-sha",
+      toRev: include ? null : "resolved-head-sha",
+      diff: diffFor("file.ts"),
+    }));
+
+    render(<AllChangesTabContent paneId={PANE} />);
+
+    const toggle = await screen.findByRole("checkbox", { name: "baseIncludeUncommitted" });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(gitDiffFromBase).toHaveBeenCalledTimes(2));
+    const committedOnlyToggle = screen.getByRole("checkbox", {
+      name: "baseIncludeUncommitted",
+    });
+    expect(committedOnlyToggle).not.toBeChecked();
+    fireEvent.click(committedOnlyToggle);
+    await waitFor(() => expect(gitDiffFromBase).toHaveBeenCalledTimes(3));
+    expect(gitDiffFromBase).toHaveBeenLastCalledWith(
+      "/repo",
+      "refs/heads/feature",
+      true,
+      true,
+      undefined,
+    );
+  });
+
   it("labels a file by what happened to it, not by whether it lost lines", async () => {
     useComparisonBaseStore.setState({
       byRepo: { "/repo": { kind: "ref", name: "origin/main" } },
     });
     vi.mocked(gitDiffFromBase).mockResolvedValue({
       rev: "1111111",
+      toRev: null,
       diff: [
         "diff --git a/grew.ts b/grew.ts",
         "--- a/grew.ts",
@@ -734,6 +892,37 @@ describe("AllChangesTabContent", () => {
 
     await waitFor(() => expect(screen.getByText("noRepo")).toBeInTheDocument());
     expect(gitStatus).not.toHaveBeenCalled();
+  });
+
+  it("clears the old linked file list when the resolved repo disappears", async () => {
+    vi.mocked(gitResolveRepo).mockResolvedValueOnce("/repo").mockResolvedValue(null);
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": {
+          kind: "ref",
+          name: "origin/main",
+          ref: "refs/remotes/origin/main",
+        },
+      },
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "base-sha",
+      toRev: null,
+      diff: diffFor("kept.ts"),
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() =>
+      expect(useAllChangesLinkStore.getState().listing[PANE]?.files).toEqual([
+        { rel: "kept.ts", status: "M" },
+      ]),
+    );
+
+    act(() => useWorkspaceStore.setState({ rootPath: "/outside" }));
+
+    await waitFor(() => expect(screen.getByText("noRepo")).toBeInTheDocument());
+    expect(useAllChangesLinkStore.getState().listing[PANE]).toBeUndefined();
+    expect(container.querySelectorAll("[data-diff-file]")).toHaveLength(0);
   });
 
   it("says so when nothing has changed", async () => {

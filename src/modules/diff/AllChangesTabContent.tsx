@@ -64,6 +64,17 @@ const LANDING_GAP = 8;
  * this an indicator would flash rather than inform. */
 const SLOW_SCAN_MS = 200;
 
+interface ComparisonEnd {
+  label: string;
+  revision: string;
+}
+
+interface BaseComparison {
+  from: ComparisonEnd;
+  to?: ComparisonEnd;
+  mergeBase: boolean;
+}
+
 /**
  * Below this the header's numbers start costing the pane its own name, so the
  * two that repeat elsewhere give way: the file count is already on the panel's
@@ -162,8 +173,8 @@ export function AllChangesTabContent({
   // base is the working tree, where the two sides are HEAD/index/disk and
   // each section already knows which.
   const [baseRev, setBaseRev] = useState<string | null>(null);
-  // The far end, when there is one. Each file's "after" document is read here
-  // instead of from disk -- a range does not involve the working tree.
+  // The immutable revision each file's "after" document is read from. Null
+  // means the comparison reaches the live working tree instead.
   const [baseTo, setBaseTo] = useState<string | null>(null);
   /**
    * A scan is in flight and has been long enough to be worth saying so.
@@ -265,29 +276,26 @@ export function AllChangesTabContent({
   useEffect(() => {
     if (!repo) {
       setFiles(null);
+      setBaseRev(null);
+      setBaseTo(null);
+      setError(false);
+      setGone(null);
+      setStale(false);
+      useAllChangesLinkStore.getState().setListing(paneId, null);
       return;
     }
     let cancelled = false;
-    async function scanFromBase(
-      repoPath: string,
-      from: string,
-      to: string | undefined,
-      /** What git is asked for, when that is not what the reader is shown: a
-       * base picked off the list carries its whole refname, since `v1` alone
-       * resolves to the tag whichever row was clicked. Headings, labels and
-       * the "that ref is gone" message stay on the short name. */
-      spec = from,
-    ) {
+    async function scanFromBase(repoPath: string, comparison: BaseComparison) {
+      const { from, to, mergeBase } = comparison;
       // One comparison, not two halves: `git diff <merge-base>` already covers
       // what was committed on this branch and what is still on disk. The file
       // list comes out of that same diff rather than from status, so the list
       // and the counts cannot disagree -- and so the page is one git call
       // instead of three.
       try {
-        // Two named points are compared literally (two-dot): neither of them is
-        // the line the other left, so a merge base would answer a question
-        // nobody asked. A ref goes three-dot, and only then does the
-        // uncommitted switch mean anything.
+        // A selected branch goes from where it parted from HEAD. Tags and
+        // commit expressions are points, so they are compared literally; a
+        // range is also two explicit points.
         // `git diff` only reports tracked files, so a file created and not
         // added is invisible to it -- while the checkbox next door says
         // uncommitted work is included. `git status` is the only thing that
@@ -295,8 +303,8 @@ export function AllChangesTabContent({
         // differ: a range has no working tree in it at either end, and with
         // the switch off the comparison stops at the last commit.
         const alsoOnDisk = to === undefined && includeUncommitted;
-        const [{ rev, diff }, status] = await Promise.all([
-          gitDiffFromBase(repoPath, spec, to === undefined, includeUncommitted, to),
+        const [{ rev, toRev, diff }, status] = await Promise.all([
+          gitDiffFromBase(repoPath, from.revision, mergeBase, includeUncommitted, to?.revision),
           alsoOnDisk ? gitStatus(repoPath) : Promise.resolve(null),
         ]);
         if (cancelled) {
@@ -306,7 +314,7 @@ export function AllChangesTabContent({
         setError(false);
         setGone(null);
         setBaseRev(rev);
-        setBaseTo(to ?? null);
+        setBaseTo(toRev ?? null);
         const listed = [...stats.keys()].map((path) => ({
           path,
           // What the diff itself says happened to the file. There is no status
@@ -328,7 +336,7 @@ export function AllChangesTabContent({
         // index of one comparison rather than two lists that happen to be
         // side by side.
         useAllChangesLinkStore.getState().setListing(paneId, {
-          label: to ? `${from}..${to}` : from,
+          label: to ? `${from.label}..${to.label}` : from.label,
           range: to !== undefined,
           files: ordered.map((file) => ({ rel: file.path, status: file.status })),
         });
@@ -347,14 +355,15 @@ export function AllChangesTabContent({
         // only that something failed -- about a base it was still naming in
         // the header.
         if (String(failure).includes("no common history")) {
-          setGone({ rev: from, why: "unrelated" });
+          setGone({ rev: from.label, why: "unrelated" });
           return;
         }
         // Ask which failure this was before reporting one. A rev git cannot
         // resolve is the likely cause and the only one with an answer, so it
         // is worth one extra call on a path that has already failed.
-        for (const rev of to === undefined ? [from] : [from, to]) {
-          const known = await gitResolveRev(repoPath, rev)
+        const ends = to === undefined ? [from] : [from, to];
+        for (const { label, revision } of ends) {
+          const known = await gitResolveRev(repoPath, revision)
             .then((sha) => sha !== null)
             // A failed question is not a missing ref; fall through to the
             // generic message rather than blaming the base.
@@ -363,7 +372,7 @@ export function AllChangesTabContent({
             return;
           }
           if (!known) {
-            setGone({ rev, why: "missing" });
+            setGone({ rev: label, why: "missing" });
             return;
           }
         }
@@ -421,9 +430,19 @@ export function AllChangesTabContent({
       }
     };
     if (base.kind === "ref") {
-      void scanFromBase(repo, base.name, undefined, base.ref ?? base.name).finally(done);
+      const revision = base.ref ?? base.name;
+      const mergeBase =
+        revision.startsWith("refs/heads/") || revision.startsWith("refs/remotes/");
+      void scanFromBase(repo, {
+        from: { label: base.name, revision },
+        mergeBase,
+      }).finally(done);
     } else if (base.kind === "range") {
-      void scanFromBase(repo, base.from, base.to).finally(done);
+      void scanFromBase(repo, {
+        from: { label: base.from, revision: base.from },
+        to: { label: base.to, revision: base.toRef ?? base.to },
+        mergeBase: false,
+      }).finally(done);
     } else {
       setBaseRev(null);
       setBaseTo(null);
@@ -944,6 +963,7 @@ export function AllChangesTabContent({
   }
 
   const empty = files !== null && ordered.length === 0;
+  const canToggleUncommitted = baseFor(byRepo, repo).kind === "ref";
 
   return (
     <div ref={rootRef} className="relative flex h-full flex-col bg-bg">
@@ -969,7 +989,7 @@ export function AllChangesTabContent({
                 on disk, so there is nothing for it to say either. A control
                 that can never do anything is absent rather than greyed out for
                 people to wonder about. */}
-            {baseRev !== null && baseTo === null && !narrow && (
+            {baseRev !== null && canToggleUncommitted && !narrow && (
               <label className="flex shrink-0 select-none items-center gap-1.5 text-xs text-fg-muted">
                 <input
                   type="checkbox"

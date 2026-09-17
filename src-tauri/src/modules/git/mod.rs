@@ -1764,20 +1764,24 @@ pub fn resolve_rev(repo_path: &str, rev: &str) -> Result<Option<String>, String>
     )
 }
 
-/// One comparison: the point it resolved to, and the whole diff from there to
-/// the working tree.
+/// One comparison: the resolved near end and the whole diff from there to the
+/// far end or working tree.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct BaseDiff {
     /// The sha the base resolved to. Each file's older side is read at it, so
     /// it has to be the point the diff below was taken from -- resolving the
     /// two separately comes apart the moment someone pushes between them.
     pub rev: String,
-    /// `git diff <rev>`: everything that differs between that point and the
-    /// working tree.
+    /// The far end's sha in a two-point comparison. Each file's newer side is
+    /// read at it, so it must be the point the diff below was taken to.
+    #[serde(rename = "toRev")]
+    pub to_rev: Option<String>,
+    /// The diff between `rev` and `to_rev`, or between `rev` and the working
+    /// tree when `to_rev` is absent.
     pub diff: String,
 }
 
-/// The difference between `base` and the working tree, as one diff.
+/// The difference from `base` to the working tree or named `to` point, as one diff.
 ///
 /// #398 settled on running the merge base against the working tree once
 /// rather than stitching two diffs together: committed work and work still on
@@ -1832,9 +1836,9 @@ pub fn diff_from_base(
             .to_string()
     };
     // No second end means the working tree, which is the whole point of this
-    // command; naming HEAD instead stops at the last commit, for reading back
-    // what a branch changed without the mess still on disk.
-    let diff = match to {
+    // command. When disk changes are excluded, snapshot HEAD once too, so both
+    // file sides are read from the exact points that produced this diff.
+    let (to_rev, diff) = match to {
         // Two named points: the working tree is not involved either side, so
         // the uncommitted flag has nothing to say about it.
         Some(to) => {
@@ -1853,12 +1857,23 @@ pub fn diff_from_base(
             .map_err(|_| format!("unknown rev: {to}"))?
             .trim()
             .to_string();
-            run_git(repo_path, &["diff", &rev, &far, "--"])?
+            let diff = run_git(repo_path, &["diff", &rev, &far, "--"])?;
+            (Some(far), diff)
         }
-        None if include_uncommitted => run_git(repo_path, &["diff", &rev, "--"])?,
-        None => run_git(repo_path, &["diff", &rev, "HEAD", "--"])?,
+        None if include_uncommitted => (None, run_git(repo_path, &["diff", &rev, "--"])?),
+        None => {
+            let head = run_git(
+                repo_path,
+                &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+            )
+            .map_err(|_| "unknown rev: HEAD".to_string())?
+            .trim()
+            .to_string();
+            let diff = run_git(repo_path, &["diff", &rev, &head, "--"])?;
+            (Some(head), diff)
+        }
     };
-    Ok(BaseDiff { rev, diff })
+    Ok(BaseDiff { rev, to_rev, diff })
 }
 
 /// Check out an existing branch.
@@ -3584,10 +3599,16 @@ mod tests {
         let without = diff_from_base(&path, "main", true, false, None).unwrap();
         assert!(without.diff.contains("committed.txt"), "{}", without.diff);
         assert!(!without.diff.contains("a.txt"), "{}", without.diff);
+        let head = run_git(&path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_string();
+        assert_eq!(without.to_rev.as_deref(), Some(head.as_str()));
 
         // Both read from the same point, so a file's "before" is the same
         // either way.
         assert_eq!(with.rev, without.rev);
+        assert_eq!(with.to_rev, None);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3665,9 +3686,17 @@ mod tests {
         run_git(&path, &["commit", "-m", "a folder called src"]).unwrap();
         run_git(&path, &["branch", "src"]).unwrap();
 
+        let far_rev = run_git(&path, &["rev-parse", "refs/heads/src"])
+            .unwrap()
+            .trim()
+            .to_string();
         let found = diff_from_base(&path, "main~1", false, true, Some("src")).unwrap();
 
         assert!(found.diff.contains("src/only-here.txt"), "{}", found.diff);
+        assert_eq!(found.to_rev.as_deref(), Some(far_rev.as_str()));
+        let serialized = serde_json::to_value(&found).unwrap();
+        assert_eq!(serialized["toRev"].as_str(), Some(far_rev.as_str()));
+        assert!(serialized.get("to_rev").is_none());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

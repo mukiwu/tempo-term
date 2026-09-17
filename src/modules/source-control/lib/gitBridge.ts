@@ -87,7 +87,9 @@ export interface BaseDiff {
   /** The resolved starting point. Every file's left-hand document is read at
    * this sha, so it must be the one the diff below was taken from. */
   rev: string;
-  /** `git diff <rev>`: everything between that point and the working tree. */
+  /** The resolved far end of a two-point comparison, read by its sha too. */
+  toRev: string | null;
+  /** The diff between the resolved endpoints, or from `rev` to the working tree. */
   diff: string;
 }
 

@@ -23,13 +23,12 @@ export type ComparisonBaseValue =
   /** The working tree: what #397 shows, and where every repo starts. */
   | { kind: "worktree" }
   /**
-   * A branch or tag, compared from where it and HEAD diverged.
+   * A selected branch, tag, or typed revision.
    *
-   * `ref` is the whole refname when the base was picked off the list, which is
-   * the only thing that tells a branch from a tag of the same name -- a bare
-   * `v1` resolves to the tag, whichever row was clicked. Typed or pasted text
-   * has no `ref`: nothing said which namespace was meant, so git's own rules
-   * apply, the same as they would on the command line.
+   * `ref` is the whole refname when picked from the list, which identifies a
+   * branch even when a tag has the same short name. Only branch refs use the
+   * merge base with HEAD; tags and typed/pasted revisions compare from their
+   * exact selected commit.
    */
   | { kind: "ref"; name: string; ref?: string }
   /**
@@ -37,7 +36,13 @@ export type ComparisonBaseValue =
    * two-dot -- what actually differs between the two trees, not what one of
    * them added since they parted.
    */
-  | { kind: "range"; from: string; to: string };
+  | {
+      kind: "range";
+      from: string;
+      to: string;
+      /** Whole refname when the far endpoint was chosen from the branch/tag list. */
+      toRef?: string;
+    };
 
 export const WORKTREE: ComparisonBaseValue = { kind: "worktree" };
 
