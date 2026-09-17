@@ -39,6 +39,16 @@ const WORKTREE_WIDTH = 1000;
 // here would only be a second, wordless door to something already reachable.
 const HEAD_BUTTON_WIDTH = 900;
 
+// What an open search takes out of the row, so the thresholds above see what is
+// left rather than each growing a search-aware twin. Both are net of the "HEAD:
+// <branch>" label COMPACT_WIDTH allows for, which needs 900 and is long gone by
+// the time search is asking for room — charging full width on top of that
+// allowance folds controls away and leaves the gap they sat in.
+const SEARCH_WIDTH = 230;
+// Typing adds the counts and the two step buttons; at some widths that is the
+// difference between fitting and not.
+const SEARCH_MATCHES_WIDTH = 60;
+
 interface WorktreeOption {
   label: string;
   path: string;
@@ -79,6 +89,9 @@ export interface GitGraphToolbarLabels {
   currentBadge: string;
   showRemoteBranches: string;
   search: string;
+  /** The X beside the open input. Not `search` reused: one opens the box and
+   * the other closes it, and a screen reader would hear the same name twice. */
+  closeSearch: string;
   searchPlaceholder: string;
   displayOptions: string;
   showTags: string;
@@ -87,6 +100,8 @@ export interface GitGraphToolbarLabels {
   fetch: string;
   fetching: string;
   matches: string;
+  /** The counts alone; `matches` is the sentence, shown on hover. */
+  matchesShort: string;
   previousMatch: string;
   nextMatch: string;
   head: string;
@@ -182,11 +197,21 @@ export function GitGraphToolbar({
     return () => observer.disconnect();
   }, []);
 
-  const isCompact = width !== null && width < COMPACT_WIDTH;
+  // Reads the query, not `isCompact`, so the charge cannot depend on the answer
+  // it is used to compute.
+  const searchCost = !searchOpen
+    ? 0
+    : SEARCH_WIDTH + (searchQuery.trim() === "" ? 0 : SEARCH_MATCHES_WIDTH);
+  const usableWidth = width === null ? null : width - searchCost;
+  // Search opens in the right-hand group, so only that group pays for it —
+  // folding something on the left gives a box on the right no pixel it can use,
+  // it only moves the gap. Left-hand controls test the row's own width.
+  const isCompact = usableWidth !== null && usableWidth < COMPACT_WIDTH;
+  const isNarrow = width !== null && width < COMPACT_WIDTH;
   // Unmeasured (width === null) counts as roomy, same as isCompact above, so
   // the first paint never flashes a collapsed row.
   const hasRoomForWorktree = width === null || width >= WORKTREE_WIDTH;
-  const hasRoomForHeadButton = width === null || width >= HEAD_BUTTON_WIDTH;
+  const hasRoomForHeadButton = usableWidth === null || usableWidth >= HEAD_BUTTON_WIDTH;
 
   const locals = branches.filter((b) => !b.isRemote);
   const remotes = branches.filter((b) => b.isRemote);
@@ -234,9 +259,10 @@ export function GitGraphToolbar({
     </>
   );
 
-  // In compact mode an open search input needs the whole row, so the branch
-  // combobox steps aside until search closes.
-  const showBranchControls = !(isCompact && searchOpen);
+  // The branch combobox used to step aside for an open search on a narrow row.
+  // It no longer does: it ellipsizes instead, as it already does for a long
+  // branch name — and narrowing a search to one branch is the likeliest next
+  // thing the reader wants.
 
   const worktreeOptions = buildWorktreeOptions(worktrees);
   const currentWorktree =
@@ -245,10 +271,16 @@ export function GitGraphToolbar({
       : worktreeOptions.find((o) => samePath(o.path, currentWorktreePath));
   // A single-worktree repo (the common case) hides the control entirely, and so
   // does a row too narrow to carry it.
-  const showWorktreeControls =
-    showBranchControls && hasRoomForWorktree && worktreeOptions.length > 1;
+  const showWorktreeControls = hasRoomForWorktree && worktreeOptions.length > 1;
   const worktreeValue =
     currentWorktree?.label ?? (currentWorktreePath ? basename(currentWorktreePath) : "");
+
+  // Drops the query with the box: a search left running behind a closed input
+  // is a filter nobody can see.
+  const closeSearch = () => {
+    onSearchChange("");
+    setSearchOpen(false);
+  };
 
   // git refuses `git checkout <branch>` for a branch some other worktree has
   // checked out — disable those menu entries and show where each one lives.
@@ -279,24 +311,22 @@ export function GitGraphToolbar({
     >
       {/* 左側：分支下拉 + 遠端開關（compact 時遠端開關移進 ⋯ 選單） */}
       <div className="flex min-w-0 items-center gap-3">
-        {showBranchControls && (
-          <div className="flex min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
-            <span className="shrink-0">{labels.branches}:</span>
-            <BranchFilter
-              locals={filterLocals}
-              remotes={filterRemotes}
-              selected={selectedBranches}
-              currentBranch={currentBranch}
-              onChange={onSelectBranches}
-              labels={{
-                ariaLabel: labels.branches,
-                showAll: labels.showAll,
-                searchPlaceholder: labels.filterPlaceholder,
-                currentBadge: labels.currentBadge,
-              }}
-            />
-          </div>
-        )}
+        <div className="flex min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
+          <span className="shrink-0">{labels.branches}:</span>
+          <BranchFilter
+            locals={filterLocals}
+            remotes={filterRemotes}
+            selected={selectedBranches}
+            currentBranch={currentBranch}
+            onChange={onSelectBranches}
+            labels={{
+              ariaLabel: labels.branches,
+              showAll: labels.showAll,
+              searchPlaceholder: labels.filterPlaceholder,
+              currentBadge: labels.currentBadge,
+            }}
+          />
+        </div>
 
         {showWorktreeControls && (
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
@@ -342,7 +372,7 @@ export function GitGraphToolbar({
           </div>
         )}
 
-        {!isCompact && (
+        {!isNarrow && (
           // shrink-0 + nowrap: squeezed, this label used to wrap mid-word, and
           // the second line grew the whole row — which read as the icons on the
           // right sitting too high rather than as a wrapped label. It keeps its
@@ -368,33 +398,50 @@ export function GitGraphToolbar({
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               onKeyDown={(event) => {
-                if (
-                  event.key !== "Enter" ||
-                  event.nativeEvent.isComposing ||
-                  event.nativeEvent.keyCode === 229
-                ) {
+                // A composition owns both keys: Enter commits the candidate and
+                // Escape cancels it. Neither is meant for the search box.
+                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeSearch();
+                  return;
+                }
+                if (event.key !== "Enter") {
                   return;
                 }
                 event.preventDefault();
                 onNavigateMatch(event.shiftKey ? "previous" : "next");
               }}
               placeholder={labels.searchPlaceholder}
-              className="w-52 rounded border border-border-strong bg-bg px-2 py-1 text-xs text-fg focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-52 min-w-0 rounded border border-border-strong bg-bg px-2 py-1 text-xs text-fg focus:outline-none focus:ring-1 focus:ring-accent"
             />
             {searchQuery.trim() !== "" && (
               <>
-                <span className="whitespace-nowrap font-mono text-[11px] text-fg-subtle">
-                  {labels.matches
+                {/* Numbers inline, the sentence on hover: spelling out
+                    "(loaded)" costs about what the remote toggle beside it
+                    costs, and it is read once where the counts are read every
+                    keystroke. */}
+                <Tooltip
+                  label={labels.matches
                     .replace("{{current}}", String(matchPosition))
                     .replace("{{count}}", String(matchCount))}
-                </span>
+                  className="shrink-0"
+                >
+                  <span className="whitespace-nowrap font-mono text-[11px] text-fg-subtle">
+                    {labels.matchesShort
+                      .replace("{{current}}", String(matchPosition))
+                      .replace("{{count}}", String(matchCount))}
+                  </span>
+                </Tooltip>
                 <Tooltip label={labels.previousMatch}>
                   <button
                     type="button"
                     aria-label={labels.previousMatch}
                     disabled={matchCount === 0}
                     onClick={() => onNavigateMatch("previous")}
-                    className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:cursor-default disabled:opacity-40"
+                    className="shrink-0 rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:cursor-default disabled:opacity-40"
                   >
                     <ArrowUp className="h-3.5 w-3.5" />
                   </button>
@@ -405,22 +452,19 @@ export function GitGraphToolbar({
                     aria-label={labels.nextMatch}
                     disabled={matchCount === 0}
                     onClick={() => onNavigateMatch("next")}
-                    className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:cursor-default disabled:opacity-40"
+                    className="shrink-0 rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg disabled:cursor-default disabled:opacity-40"
                   >
                     <ArrowDown className="h-3.5 w-3.5" />
                   </button>
                 </Tooltip>
               </>
             )}
-            <Tooltip label={labels.search}>
+            <Tooltip label={labels.closeSearch}>
               <button
                 type="button"
-                aria-label={labels.search}
-                onClick={() => {
-                  onSearchChange("");
-                  setSearchOpen(false);
-                }}
-                className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+                aria-label={labels.closeSearch}
+                onClick={closeSearch}
+                className="shrink-0 rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -432,7 +476,7 @@ export function GitGraphToolbar({
               type="button"
               aria-label={labels.search}
               onClick={() => setSearchOpen(true)}
-              className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+              className="shrink-0 rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
             >
               <Search className="h-4 w-4" />
             </button>
@@ -452,7 +496,7 @@ export function GitGraphToolbar({
                 aria-label={labels.more}
                 aria-expanded={overflowOpen}
                 onClick={() => setOverflowOpen((v) => !v)}
-                className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+                className="shrink-0 rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
@@ -531,7 +575,7 @@ export function GitGraphToolbar({
                   type="button"
                   aria-label={labels.displayOptions}
                   onClick={() => setOptionsOpen((v) => !v)}
-                  className="rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+                  className="shrink-0 rounded p-1.5 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
                 >
                   <Settings2 className="h-4 w-4" />
                 </button>

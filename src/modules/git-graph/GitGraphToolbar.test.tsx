@@ -45,6 +45,7 @@ const labels: GitGraphToolbarLabels = {
   currentBadge: "current",
   showRemoteBranches: "Show Remote Branches",
   search: "Search commits",
+  closeSearch: "Close search",
   searchPlaceholder: "Search message, author, hash",
   displayOptions: "Display options",
   showTags: "Show Tags",
@@ -53,6 +54,7 @@ const labels: GitGraphToolbarLabels = {
   fetch: "Fetch",
   fetching: "Fetching",
   matches: "{{current}} / {{count}} matches (loaded)",
+  matchesShort: "{{current}} / {{count}}",
   previousMatch: "Previous match",
   nextMatch: "Next match",
   head: "HEAD",
@@ -70,8 +72,29 @@ const branches: Branch[] = [
   { name: "origin/master", isRemote: true } as Branch,
 ];
 
+/** Renders, then hands back a way to change what is in the search box. The
+ *  toolbar owns whether the box is open, the parent owns what is typed in it,
+ *  so a test about typing has to come in through props. */
+function renderToolbarForRerender(
+  overrides: Partial<Parameters<typeof GitGraphToolbar>[0]> = {},
+) {
+  const props = toolbarProps(overrides);
+  const { rerender } = render(<GitGraphToolbar {...props} />);
+  return {
+    props,
+    rerender: (searchQuery: string) =>
+      rerender(<GitGraphToolbar {...props} searchQuery={searchQuery} />),
+  };
+}
+
 function renderToolbar(overrides: Partial<Parameters<typeof GitGraphToolbar>[0]> = {}) {
-  const props = {
+  const props = toolbarProps(overrides);
+  render(<GitGraphToolbar {...props} />);
+  return props;
+}
+
+function toolbarProps(overrides: Partial<Parameters<typeof GitGraphToolbar>[0]> = {}) {
+  return {
     branches,
     selectedBranches: [] as string[],
     onSelectBranches: vi.fn(),
@@ -101,8 +124,6 @@ function renderToolbar(overrides: Partial<Parameters<typeof GitGraphToolbar>[0]>
     labels,
     ...overrides,
   };
-  render(<GitGraphToolbar {...props} />);
-  return props;
 }
 
 describe("GitGraphToolbar responsive layout", () => {
@@ -118,6 +139,91 @@ describe("GitGraphToolbar responsive layout", () => {
     // Compact: the icon cluster is replaced by a single overflow button.
     expect(screen.getByLabelText(labels.more)).toBeInTheDocument();
     expect(screen.queryByLabelText(labels.refresh)).not.toBeInTheDocument();
+  });
+
+  it("keeps the branch controls while searching at a width that fits both", () => {
+    renderToolbar();
+    // The branch combobox has its own searchOpen term, so it must not also be
+    // charged the search's width: doing both took it away here, where the row
+    // has room for it and the search box together.
+    setToolbarWidth(700);
+
+    fireEvent.click(screen.getByLabelText(labels.search));
+
+    expect(screen.getAllByLabelText(labels.branches).length).toBeGreaterThan(0);
+  });
+
+  it("names the button that closes the search for what it does", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByLabelText(labels.search));
+
+    // Not "Search commits" again: that button opens the box, this one closes it.
+    expect(screen.getByLabelText(labels.closeSearch)).toBeInTheDocument();
+    expect(screen.queryByLabelText(labels.search)).not.toBeInTheDocument();
+  });
+
+  it("leaves the row alone for an empty search box that already fits", () => {
+    renderToolbar();
+    // Wide enough for the roomy row and an empty search box beside it. Charging
+    // the box what a box with a query in it costs folded the remote toggle away
+    // and left the gap it used to sit in.
+    setToolbarWidth(900);
+    fireEvent.click(screen.getByLabelText(labels.search));
+
+    expect(screen.getByLabelText(labels.refresh)).toBeInTheDocument();
+    expect(screen.getByText(labels.showRemoteBranches)).toBeInTheDocument();
+  });
+
+  it("keeps the row alone once a query is typed into that box too", () => {
+    const { rerender } = renderToolbarForRerender();
+    setToolbarWidth(1000);
+    fireEvent.click(screen.getByLabelText(labels.search));
+
+    rerender("abc");
+
+    // Typing adds the counts and the two step buttons, but the counts stay
+    // short, so what appears fits in the room the box was already charged for.
+    expect(screen.getByLabelText(labels.refresh)).toBeInTheDocument();
+    expect(screen.getByText(labels.showRemoteBranches)).toBeInTheDocument();
+  });
+
+  it("charges an open search against the width the rest of the row gets", () => {
+    renderToolbar();
+    // Wide enough for the roomy row, but not for the roomy row plus a search
+    // box. Before the search was charged for, the row stayed roomy here and the
+    // icon buttons were squeezed narrower than the icons inside them.
+    setToolbarWidth(700);
+    expect(screen.getByLabelText(labels.refresh)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText(labels.search));
+
+    expect(screen.getByLabelText(labels.more)).toBeInTheDocument();
+    expect(screen.queryByLabelText(labels.refresh)).not.toBeInTheDocument();
+  });
+
+  it("gives the row back when the search closes", () => {
+    renderToolbar();
+    setToolbarWidth(700);
+    fireEvent.click(screen.getByLabelText(labels.search));
+    expect(screen.queryByLabelText(labels.refresh)).not.toBeInTheDocument();
+
+    // The X and Escape are the two ways out; both go through closeSearch.
+    fireEvent.keyDown(screen.getByPlaceholderText(labels.searchPlaceholder), {
+      key: "Escape",
+    });
+
+    expect(screen.getByLabelText(labels.refresh)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(labels.searchPlaceholder)).not.toBeInTheDocument();
+  });
+
+  it("shows the match counts alone and keeps the sentence for the tooltip", () => {
+    renderToolbar({ searchQuery: "abc", matchPosition: 3, matchCount: 12 });
+    fireEvent.click(screen.getByLabelText(labels.search));
+
+    // Spelling it out on the row costs about what the remote toggle beside it
+    // costs, and it is read once where the numbers are read every keystroke.
+    expect(screen.getByText("3 / 12")).toBeInTheDocument();
+    expect(screen.queryByText("3 / 12 matches (loaded)")).not.toBeInTheDocument();
   });
 
   it("drops the HEAD button before compact, and the overflow menu carries it again", () => {
@@ -176,14 +282,18 @@ describe("GitGraphToolbar responsive layout", () => {
     expect(props.onToggleRemotes).toHaveBeenCalledWith(true);
   });
 
-  it("hides the branch dropdown while searching in compact mode and restores it on close", () => {
+  it("keeps the branch dropdown while searching, however narrow the row is", () => {
     renderToolbar();
     setToolbarWidth(360);
 
     fireEvent.click(screen.getByLabelText(labels.search));
-    expect(screen.queryByLabelText(labels.branches)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText(labels.search));
+    // It used to step aside here. What it gave up was on the opposite end of
+    // the row from the box that wanted it, so all that bought was a hole —
+    // and it took away the control most likely to be reached for next.
+    expect(screen.getAllByLabelText(labels.branches).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByLabelText(labels.closeSearch));
     expect(screen.getAllByLabelText(labels.branches).length).toBeGreaterThan(0);
   });
 
