@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ComparisonBaseSelector, baseLabel, parseRange } from "./ComparisonBaseSelector";
 
@@ -147,7 +147,9 @@ describe("ComparisonBaseSelector", () => {
       "baseWorktree",
     );
 
-    useComparisonBaseStore.getState().setBase("/repo", { kind: "range", from: "a", to: "b" });
+    act(() => {
+      useComparisonBaseStore.getState().setBase("/repo", { kind: "range", from: "a", to: "b" });
+    });
     rerender(<ComparisonBaseSelector repo="/repo" narrow={false} />);
 
     expect(screen.getAllByRole("button", { name: "baseSelector" })[0]).toHaveTextContent("a..b");
@@ -196,6 +198,62 @@ describe("ComparisonBaseSelector", () => {
     // And the list says out loud that it is cut, rather than reading as
     // everything the repo has.
     expect(screen.getByText("baseMoreHidden:2")).toBeInTheDocument();
+  });
+
+  it("keeps the selected range end's identity when a branch and tag share a name", async () => {
+    vi.mocked(gitBranches).mockResolvedValue([
+      { name: "master", isCurrent: true, isRemote: false, lastCommitAt: hoursAgo(1) },
+      { name: "release", isCurrent: false, isRemote: false, lastCommitAt: hoursAgo(2) },
+    ]);
+    vi.mocked(gitTags).mockResolvedValue([
+      { name: "release", ref: "refs/tags/release", lastCommitAt: hoursAgo(3) },
+    ]);
+
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
+    let input = openList();
+    await waitFor(() => expect(gitBranches).toHaveBeenCalled());
+    fireEvent.change(input, { target: { value: "origin/main..rele" } });
+
+    const rangeOptions = () =>
+      screen
+        .getAllByRole("option")
+        .filter((option) => option.textContent?.includes("origin/main..release"));
+    await waitFor(() => expect(rangeOptions()).toHaveLength(2));
+
+    const branchOption = rangeOptions().find(
+      (option) => !option.querySelector('[aria-label="baseTag"]'),
+    );
+    expect(branchOption).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(branchOption!);
+      await waitFor(() =>
+        expect(base()).toEqual({
+          kind: "range",
+          from: "origin/main",
+          to: "release",
+          toRef: "refs/heads/release",
+        }),
+      );
+    });
+
+    input = openList();
+    fireEvent.change(input, { target: { value: "origin/main..rele" } });
+    await waitFor(() => expect(rangeOptions()).toHaveLength(2));
+    const tagOption = rangeOptions().find((option) =>
+      option.querySelector('[aria-label="baseTag"]'),
+    );
+    expect(tagOption).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(tagOption!);
+      await waitFor(() =>
+        expect(base()).toEqual({
+          kind: "range",
+          from: "origin/main",
+          to: "release",
+          toRef: "refs/tags/release",
+        }),
+      );
+    });
   });
 
   it("lifts the cap when something is typed, and marks what matched", async () => {
@@ -392,6 +450,24 @@ describe("ComparisonBaseSelector", () => {
     // with an empty near end.
     await waitFor(() => expect(gitResolveRev).toHaveBeenCalledWith("/repo", "..HEAD"));
     expect(base()).not.toEqual({ kind: "range", from: "", to: "HEAD" });
+  });
+
+  it("checks a typed range's left endpoint before taking a listed far end", async () => {
+    vi.mocked(gitResolveRev).mockResolvedValue(null);
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
+    const input = openList();
+    await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
+
+    fireEvent.change(input, { target: { value: "deadbee.." } });
+    expect(labels()[0]).toBe("deadbee..HEAD");
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(screen.getByText("baseUnknownRev:deadbee")).toBeInTheDocument(),
+    );
+    expect(gitResolveRev).toHaveBeenCalledWith("/repo", "deadbee");
+    expect(base()).toEqual({ kind: "worktree" });
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
   });
 
   it("matches the far end being typed, not the whole box", async () => {

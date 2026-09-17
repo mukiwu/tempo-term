@@ -86,7 +86,7 @@ function optionKey(base: ComparisonBaseValue): string {
     case "ref":
       return `ref:${base.ref ?? base.name}`;
     case "range":
-      return `range:${base.from}..${base.to}`;
+      return `range:${base.from}..${base.toRef ?? base.to}`;
   }
 }
 
@@ -95,7 +95,9 @@ function optionKey(base: ComparisonBaseValue): string {
  * quietly treated as two: they mean something different, and a range picked
  * out of the graph is two points compared literally.
  */
-export function parseRange(text: string): ComparisonBaseValue | null {
+export function parseRange(
+  text: string,
+): Extract<ComparisonBaseValue, { kind: "range" }> | null {
   const at = text.indexOf("..");
   if (at < 0 || text.includes("...")) {
     return null;
@@ -273,9 +275,8 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
     label: string;
     hint: string;
     mono: boolean;
-    /** Typed or pasted rather than picked off the list, so nothing has said
-     * whether git knows it. */
-    typed?: boolean;
+    /** Revisions entered by the user, resolved before changing the base. */
+    revisionsToValidate?: string[];
     /** A tag rather than a branch, which the row has to show: the two can
      * share a name. */
     tag?: boolean;
@@ -294,15 +295,22 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
      * whether or not it was typed towards, since nothing in the branch list
      * is called that.
      */
-    const far = [
-      ...(!needle || "head".includes(needle) ? ["HEAD"] : []),
-      ...shown.map((row) => row.name),
+    const far: { name: string; ref?: string; isTag?: boolean }[] = [
+      ...(!needle || "head".includes(needle) ? [{ name: "HEAD" }] : []),
+      ...shown.map(({ name, ref, isTag }) => ({ name, ref, isTag })),
     ];
-    options = far.map((name) => ({
-      value: { kind: "range", from: rangeHead, to: name } as ComparisonBaseValue,
-      label: `${rangeHead}..${name}`,
-      hint: name === "HEAD" ? t("baseHeadHint") : t("baseRange"),
+    options = far.map((row) => ({
+      value: {
+        kind: "range",
+        from: rangeHead,
+        to: row.name,
+        toRef: row.ref,
+      } as ComparisonBaseValue,
+      label: `${rangeHead}..${row.name}`,
+      tag: row.isTag,
+      hint: row.name === "HEAD" ? t("baseHeadHint") : t("baseRange"),
       mono: true,
+      revisionsToValidate: [rangeHead],
     }));
     // What is typed outright, when it is already a whole range: `a..b` with
     // the far end spelled out matches no list and is still what was asked for.
@@ -320,7 +328,7 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
         label: baseLabel(whole, ""),
         hint: t("baseRange"),
         mono: true,
-        typed: true,
+        revisionsToValidate: [whole.from, whole.to],
       });
     }
   } else {
@@ -369,7 +377,7 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
         label: query.trim(),
         hint: t("baseUseTyped"),
         mono: true,
-        typed: true,
+        revisionsToValidate: [query.trim()],
       });
     }
   }
@@ -388,7 +396,7 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
   }
 
   /**
-   * Takes a row, resolving it first when it was typed rather than picked.
+   * Takes a row, resolving each user-entered revision before changing base.
    *
    * A pasted hash is the one thing the list cannot vouch for -- truncated, from
    * another repo, rebased away since -- and acting on a bad one costs more than
@@ -397,17 +405,12 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
    * not know leaves the list open saying so.
    */
   async function take(option: Option) {
-    if (!option.typed || !repo) {
+    const revisions = option.revisionsToValidate ?? [];
+    if (revisions.length === 0 || !repo) {
       pick(option.value);
       return;
     }
-    const revs =
-      option.value.kind === "range"
-        ? [option.value.from, option.value.to]
-        : option.value.kind === "ref"
-          ? [option.value.name]
-          : [];
-    for (const rev of revs) {
+    for (const rev of revisions) {
       if (!(await gitResolveRev(repo, rev).catch(() => null))) {
         setUnresolved(rev);
         return;
@@ -553,7 +556,7 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
                 hint={option.hint}
                 mono={option.mono}
                 needle={needle}
-                checked={baseLabel(option.value, "@") === baseLabel(base, "@")}
+                checked={optionKey(option.value) === optionKey(base)}
                 active={i === active}
                 onSelect={() => void take(option)}
                 onHover={() => setActive(i)}
