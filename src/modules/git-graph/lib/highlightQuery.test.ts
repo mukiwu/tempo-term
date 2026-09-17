@@ -59,6 +59,18 @@ describe("splitOnQuery", () => {
     }
   });
 
+  it("marks nothing rather than the wrong characters when folding changes length", () => {
+    // "İ" lowercases to two code units, so every offset found in the folded
+    // string lands one character late in the original: this used to mark "ail"
+    // of "İsmail", and a one-character match marked "" — an empty <mark>. The
+    // round-trip check below cannot see either, because joining the runs back
+    // up still gives the original string; only the cut points are wrong.
+    expect(splitOnQuery("İsmail", "mail")).toEqual([{ text: "İsmail", hit: false }]);
+    expect(splitOnQuery("İa", "a")).toEqual([{ text: "İa", hit: false }]);
+    // Nothing in the string folds to a different length, so the mark lands.
+    expect(marked("ismail", "mail")).toEqual(["mail"]);
+  });
+
   it("treats the query as literal text rather than a pattern", () => {
     // The graph's search is a substring test; a regex-flavoured query must not
     // start matching things the count in the toolbar does not count.

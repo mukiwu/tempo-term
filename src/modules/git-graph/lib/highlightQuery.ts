@@ -18,6 +18,20 @@ export function splitOnQuery(text: string, query: string): QuerySegment[] {
     return [{ text, hit: false }];
   }
   const haystack = text.toLowerCase();
+  // Offsets found in the folded string are used to cut the original, which
+  // only holds while folding preserves length. It almost always does — the one
+  // character in the BMP that breaks it is U+0130 (İ), which lowercases to two
+  // code units, and an author or message carrying one would have every mark
+  // past it placed a character late: "İsmail" searched for "mail" marks "ail",
+  // and a match one character long marks nothing at all, leaving an empty
+  // <mark>. Worse, a cut can land inside a surrogate pair and split an emoji
+  // across two elements, which renders as two replacement characters.
+  //
+  // Marking nothing is better than marking the wrong characters, and the
+  // caller already handles the one-unmarked-run shape.
+  if (haystack.length !== text.length) {
+    return [{ text, hit: false }];
+  }
   const runs: QuerySegment[] = [];
   let from = 0;
   for (;;) {

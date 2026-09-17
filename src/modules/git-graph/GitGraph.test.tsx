@@ -774,10 +774,15 @@ describe("GitGraph search marking", () => {
   });
 
   it("marks the author when that is what matched", () => {
+    // Also the case where the whole string is one matched run, which the
+    // component used to mistake for "nothing matched" and leave unmarked.
     renderSearch("muki");
 
-    expect(document.querySelectorAll("mark")).toHaveLength(1);
-    expect(document.querySelector("mark")?.textContent).toBe("muki");
+    const marks = document.querySelectorAll("mark");
+    expect(marks).toHaveLength(1);
+    expect(marks[0].textContent).toBe("muki");
+    // In the author column, not leaking onto the hash beside it.
+    expect(marks[0].closest("span")?.className).toContain("max-w-[70px]");
   });
 
   it("gives no row a background just for matching", () => {
@@ -835,12 +840,17 @@ describe("GitGraph search marking", () => {
         commits={ROWS}
         selection={{ mode: "single", commit: ROWS[0] }}
         onSelectCommit={vi.fn()}
+        // A cursor left over from a search that has since been cleared. Without
+        // the empty-query guard this row would still be tinted as the current
+        // match, which is why the hash is passed rather than left out.
+        currentMatchHash="aaa1111"
         labels={LABELS}
       />,
     );
 
     expect(rowOf("aaa1111").className).toContain("bg-bg-elevated/60");
     expect(rowOf("aaa1111").className).not.toContain("bg-accent");
+    expect(document.querySelectorAll("mark")).toHaveLength(0);
   });
 
   it("marks the row the arrows are on more strongly than the rest", () => {
@@ -865,15 +875,9 @@ describe("GitGraph search marking", () => {
     expect(other.className).toContain("bg-accent/");
   });
 
-  it("marks and tints nothing without a query", () => {
-    renderSearch("");
-
-    expect(document.querySelectorAll("mark")).toHaveLength(0);
-    expect(rowOf("aaa1111").className).not.toContain("bg-accent");
-  });
-
   it("never marks the date, which the search does not look at", () => {
-    // Every row's date is "today"; searching for it must find nothing rather
+    // Leans on the fixture: `commit()` dates every row "today", so this query
+    // matches the date column and nothing else. It must find nothing rather
     // than marking a column `commitMatches` never read.
     renderSearch("today");
 
