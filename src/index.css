@@ -644,21 +644,34 @@ textarea:focus-visible,
  * here" is unmistakable without disturbing the calm commit rows.
  */
 .git-head-node {
+  /* The three sizes are how far the glow reaches at a full-width lane. The
+     graph overrides them once the lanes narrow, because a glow that reaches
+     17px at its peak washes out the track 9px away — and that track is the
+     thing the reader is being helped to follow. */
+  --git-head-glow: 11px;
+  --git-head-spread: 2px;
+  --git-head-glow-low: 8px;
+  --git-head-spread-low: 1px;
+  --git-head-glow-high: 14px;
+  --git-head-spread-high: 3px;
   box-shadow:
     0 0 0 1.5px var(--color-accent),
-    0 0 11px 2px color-mix(in srgb, var(--color-accent) 60%, transparent);
+    0 0 var(--git-head-glow) var(--git-head-spread)
+      color-mix(in srgb, var(--color-accent) 60%, transparent);
   animation: git-head-pulse 2.6s ease-in-out infinite;
 }
 @keyframes git-head-pulse {
   0%, 100% {
     box-shadow:
       0 0 0 1.5px var(--color-accent),
-      0 0 8px 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+      0 0 var(--git-head-glow-low) var(--git-head-spread-low)
+        color-mix(in srgb, var(--color-accent) 45%, transparent);
   }
   50% {
     box-shadow:
       0 0 0 1.5px var(--color-accent),
-      0 0 14px 3px color-mix(in srgb, var(--color-accent) 72%, transparent);
+      0 0 var(--git-head-glow-high) var(--git-head-spread-high)
+        color-mix(in srgb, var(--color-accent) 72%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {
