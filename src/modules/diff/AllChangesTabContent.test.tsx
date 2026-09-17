@@ -69,6 +69,9 @@ const PANE = "leaf-1";
 describe("AllChangesTabContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // One test swaps in a ResizeObserver it can fire by hand; the stub setup.ts
+    // installs has to be back for every other one.
+    vi.unstubAllGlobals();
     useWorkspaceStore.setState({ rootPath: "/repo" });
     useDiffCommentStore.setState({ comments: [] });
     useSettingsStore.setState({ diffUnified: false });
@@ -304,6 +307,202 @@ describe("AllChangesTabContent", () => {
     // has been sitting there all along, so any offset reads as a flinch.
     await waitFor(() => expect(scrollTop).toBe(1000));
     expect(middle.getBoundingClientRect().top).toBeCloseTo(0);
+  });
+
+  it("holds the header there while the files above it finish measuring", async () => {
+    // Shutting a file is not the end of the page moving: the neighbours that
+    // come into the mount window swap their estimated heights for measured
+    // ones a moment later, and the ones above the pinned header push it back
+    // down. A correction made once, at the moment of the click, misses that.
+    const observers: ResizeObserverCallback[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          observers.push(callback);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [
+        { path: "src/a.ts", staged: false, status: "M" },
+        { path: "src/b.ts", staged: false, status: "M" },
+        { path: "src/c.ts", staged: false, status: "M" },
+      ],
+    });
+    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
+      staged ? "" : diffFor("src/a.ts") + diffFor("src/b.ts") + diffFor("src/c.ts"),
+    );
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() => expect(container.querySelectorAll(".cm-mergeView").length).toBe(3));
+
+    const root = container.querySelector<HTMLElement>(".overflow-auto")!;
+    let scrollTop = 3000;
+    Object.defineProperty(root, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    root.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    // Where the middle file starts inside the page's content. The file above
+    // it is still holding an estimate, so this is where it sits for now.
+    let contentTop = 1000;
+    const middle = container.querySelector<HTMLElement>('[data-diff-file="w:src/b.ts"]')!;
+    middle.getBoundingClientRect = () => ({ top: contentTop - scrollTop }) as DOMRect;
+
+    fireEvent.click(
+      within(middle).getByRole("button", { name: new RegExp("^allChangesCollapseFile") }),
+    );
+    await waitFor(() => expect(scrollTop).toBe(1000));
+
+    // The file above finishes building and turns out to be 600px taller than
+    // the space it was holding, which pushes this header 600px down the pane.
+    contentTop = 1600;
+    for (const callback of observers) {
+      act(() => callback([], {} as ResizeObserver));
+    }
+
+    // Put back, rather than left 600px down with the file above it now
+    // occupying the top of the pane.
+    await waitFor(() => expect(scrollTop).toBe(1600));
+    expect(middle.getBoundingClientRect().top).toBeCloseTo(0);
+  });
+
+  it("keeps a file asked for from the panel at the top while it loads", async () => {
+    // The file a panel row asks for is usually one that is not up yet, so the
+    // page it is scrolled to is a page of estimates. A single scroll taken
+    // then leaves it wherever the measured heights push it.
+    const observers: ResizeObserverCallback[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          observers.push(callback);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [
+        { path: "src/a.ts", staged: false, status: "M" },
+        { path: "src/b.ts", staged: false, status: "M" },
+      ],
+    });
+    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
+      staged ? "" : diffFor("src/a.ts") + diffFor("src/b.ts"),
+    );
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() => expect(container.querySelectorAll(".cm-mergeView").length).toBe(2));
+
+    const root = container.querySelector<HTMLElement>(".overflow-auto")!;
+    let scrollTop = 0;
+    Object.defineProperty(root, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    root.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    // The second file, as far down the page as the estimate above it says.
+    let contentTop = 400;
+    const second = container.querySelector<HTMLElement>('[data-diff-file="w:src/b.ts"]')!;
+    second.getBoundingClientRect = () => ({ top: contentTop - scrollTop }) as DOMRect;
+
+    act(() => {
+      useAllChangesLinkStore.getState().request(PANE, { rel: "src/b.ts", staged: false });
+    });
+    await waitFor(() => expect(scrollTop).toBe(400));
+
+    // The file above it finishes building and takes 500px more than the space
+    // it was holding.
+    contentTop = 900;
+    for (const callback of observers) {
+      act(() => callback([], {} as ResizeObserver));
+    }
+
+    // Still at the top of the pane, rather than 500px down it.
+    await waitFor(() => expect(scrollTop).toBe(900));
+    expect(second.getBoundingClientRect().top).toBeCloseTo(0);
+  });
+
+  it("lets the reader take the page back while a header is still being held", async () => {
+    // The pin corrects the page for a stretch after the click, so a reader who
+    // scrolls during it has to win: a scroll position this page did not write
+    // is theirs, and the pin lets go rather than dragging them back.
+    const observers: ResizeObserverCallback[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          observers.push(callback);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [
+        { path: "src/a.ts", staged: false, status: "M" },
+        { path: "src/b.ts", staged: false, status: "M" },
+        { path: "src/c.ts", staged: false, status: "M" },
+      ],
+    });
+    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
+      staged ? "" : diffFor("src/a.ts") + diffFor("src/b.ts") + diffFor("src/c.ts"),
+    );
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() => expect(container.querySelectorAll(".cm-mergeView").length).toBe(3));
+
+    const root = container.querySelector<HTMLElement>(".overflow-auto")!;
+    let scrollTop = 3000;
+    Object.defineProperty(root, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    root.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    let contentTop = 1000;
+    const middle = container.querySelector<HTMLElement>('[data-diff-file="w:src/b.ts"]')!;
+    middle.getBoundingClientRect = () => ({ top: contentTop - scrollTop }) as DOMRect;
+
+    fireEvent.click(
+      within(middle).getByRole("button", { name: new RegExp("^allChangesCollapseFile") }),
+    );
+    await waitFor(() => expect(scrollTop).toBe(1000));
+
+    // The reader scrolls away, and the page is measured again afterwards.
+    scrollTop = 2400;
+    fireEvent.scroll(root);
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    contentTop = 1600;
+    for (const callback of observers) {
+      act(() => callback([], {} as ResizeObserver));
+    }
+
+    // Left where they scrolled to, not pulled back to the header.
+    expect(scrollTop).toBe(2400);
   });
 
   it("re-reads the files already up, not just the file list", async () => {
