@@ -52,6 +52,17 @@ import type {
 } from "./types";
 
 const PAGE_SIZE = 200;
+// How many already-loaded commits each further page asks for again.
+//
+// A page starts where the last one ended, counted in rows of the walk — and
+// the walk can move between two presses. A commit landing in another terminal
+// pushes every later row down one, so a page that started at exactly the row
+// after the last one would repeat that row; refs going away pushes the other
+// way, and it would skip rows instead, leaving a hole in the graph that no
+// later page ever fills. Asking for a few rows back gives the stitch a hash to
+// match on and absorbs drift up to this much in either direction. Anything
+// wider falls back to reloading the whole window, which is always correct.
+const PAGE_OVERLAP = 20;
 // Local git reloads finish almost instantly; keep the busy spinner up at least
 // this long so the refresh feedback is actually perceptible.
 const MIN_BUSY_MS = 400;
@@ -92,6 +103,10 @@ export function GitGraphTabContent() {
   const [repo, setRepo] = useState<string | null>(null);
   const [resolved, setResolved] = useState(false);
   const [commits, setCommits] = useState<CommitNode[]>([]);
+  // Read by the paging callbacks, which must not be rebuilt every time the
+  // list grows: the pending-selection effect below depends on their identity.
+  const commitsRef = useRef(commits);
+  commitsRef.current = commits;
   const [branches, setBranches] = useState<Branch[]>([]);
   const [worktrees, setWorktrees] = useState<WorktreeItem[]>([]);
   // The working tree, feeding both the top row's counts and the details
@@ -157,8 +172,14 @@ export function GitGraphTabContent() {
 
   const currentBranch = branches.find((b) => b.isCurrent)?.name ?? "—";
 
+  // Bumped by every whole-window read. A page that was in flight when one
+  // landed is stale — the list it was going to be appended to is gone — so it
+  // is discarded rather than stitched onto a window it never saw.
+  const loadGeneration = useRef(0);
+
   const reload = useCallback(
     async (repoPath: string, nextLimit: number, opts: GraphOptions) => {
+      loadGeneration.current += 1;
       try {
         const [log, branchList, worktreeList, workingTree] = await Promise.all([
           gitGraphLog(repoPath, nextLimit, opts),
@@ -279,14 +300,76 @@ export function GitGraphTabContent() {
     [repo, limit, reload, options.branches, options.includeRemotes, options.includeTags, options.includeStashes, options.order],
   );
 
-  const loadMore = useCallback(() => {
+  // Re-read the whole window, one page deeper. Used where the graph has to be
+  // asked again rather than merely extended — see the pending-selection effect.
+  const reloadDeeper = useCallback(() => {
     if (!repo) {
       return;
     }
-    const next = limit + PAGE_SIZE;
+    const next = commitsRef.current.length + PAGE_SIZE;
     setLimit(next);
     void reload(repo, next, options);
-  }, [repo, limit, reload, options.branches, options.includeRemotes, options.includeTags, options.includeStashes, options.order]);
+  }, [repo, reload, options.branches, options.includeRemotes, options.includeTags, options.includeStashes, options.order]);
+
+  const loadingMore = useRef(false);
+
+  // Fetch the page after the ones already loaded and append it.
+  //
+  // This used to re-fetch everything with a larger limit — 200, then 400, then
+  // 600 — so a press cost as much as every press before it put together, and
+  // the whole list was re-parsed, re-sent over IPC and re-laid-out each time.
+  // It also ran into `graph_log`'s 2000-commit cap on a single call, past
+  // which the button stayed on screen and did nothing at all. A page costs a
+  // page now, and the cap is back to capping one call rather than the history.
+  //
+  // Branches, worktrees and the working tree are deliberately not re-read
+  // here: none of them change because the reader scrolled further back.
+  const loadMore = useCallback(() => {
+    if (!repo || loadingMore.current) {
+      return;
+    }
+    const loaded = commitsRef.current;
+    const overlap = Math.min(PAGE_OVERLAP, loaded.length);
+    const generation = loadGeneration.current;
+    loadingMore.current = true;
+    void (async () => {
+      try {
+        const log = await gitGraphLog(
+          repo,
+          PAGE_SIZE + overlap,
+          options,
+          loaded.length - overlap,
+        );
+        if (loadGeneration.current !== generation) {
+          return;
+        }
+        const last = loaded[loaded.length - 1];
+        // Where the page meets the rows already loaded. Not finding the last
+        // of them means the walk shifted further than the overlap covers.
+        const seam = last ? log.commits.findIndex((c) => c.hash === last.hash) : -1;
+        const fresh = last && seam < 0 ? [] : log.commits.slice(seam + 1);
+        if (fresh.length === 0 && (log.hasMore || (last && seam < 0))) {
+          // Either the seam is lost or the page brought nothing new while git
+          // still reports more history. Pressing on would re-request the same
+          // rows for ever, so re-read the window: slower, always correct.
+          const next = loaded.length + PAGE_SIZE;
+          setLimit(next);
+          await reload(repo, next, options);
+          return;
+        }
+        setCommits((prev) => [...prev, ...fresh]);
+        // What a whole-window reload (refresh, or any git action) should ask
+        // for from now on. Never less than it already asked for: a short first
+        // page in a small repo must not shrink the window a later one grows.
+        setLimit((prev) => Math.max(prev, loaded.length + fresh.length));
+        setHasMore(log.hasMore);
+      } catch (err: unknown) {
+        setError(getErrorMessage(err));
+      } finally {
+        loadingMore.current = false;
+      }
+    })();
+  }, [repo, reload, options.branches, options.includeRemotes, options.includeTags, options.includeStashes, options.order]);
 
   // Plain click/arrow-nav selects one commit. Shift+click while a commit is
   // already selected (single or as the "to" side of an existing compare)
@@ -414,26 +497,30 @@ export function GitGraphTabContent() {
       pendingSelectionAttempts.current = 0;
       return;
     }
-    // Not loaded yet. Keep paging even once hasMore is already false: it
+    // Not loaded yet. Keep looking even once hasMore is already false: it
     // reflects the state as of the last load, not the repo's current state
     // — e.g. the tab was already open when a new commit landed elsewhere
-    // (the sidebar's own commit form). loadMore's reload() re-queries git
-    // log for real, so it picks up that new commit regardless.
+    // (the sidebar's own commit form).
+    //
+    // This is the one caller that wants the whole window re-read rather than
+    // extended: the commit it is hunting for is as likely to be newer than
+    // everything loaded as older, and appending a page only ever reaches
+    // further back. Re-querying finds it either way.
     if (pendingSelectionAttempts.current < 5) {
       // One load per commits generation: effect re-runs while that load is
-      // still in flight (search typing, loadMore's own limit bump) must not
+      // still in flight (search typing, the retry's own reload) must not
       // burn the retry budget or stack duplicate reloads — each reload's
       // setCommits produces a new array identity, which unlocks the next try.
       if (pendingRetryCommits.current !== commits) {
         pendingRetryCommits.current = commits;
         pendingSelectionAttempts.current += 1;
-        loadMore();
+        reloadDeeper();
       }
     } else {
       usePendingGraphSelectionStore.getState().consume();
       pendingSelectionAttempts.current = 0;
     }
-  }, [pendingHash, commits, loadMore]);
+  }, [pendingHash, commits, reloadDeeper]);
 
   // Turning remotes off hides remote branches; drop any of them from the
   // filter so the dropdown's picks and the graphed refs stay in sync.

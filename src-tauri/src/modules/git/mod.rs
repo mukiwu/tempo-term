@@ -1414,6 +1414,11 @@ pub fn graph_log(
     skip: usize,
     options: &GraphOptions,
 ) -> Result<GraphLog, String> {
+    // A cap on one call, not on how far back the graph can reach: everything
+    // returned is serialised over IPC in one piece and the whole list is laid
+    // out again on the other side, so asking for a lot at once genuinely
+    // costs. Older history comes from paging with `skip` — the caller asks for
+    // one page at a time and never comes near this number.
     let limit = limit.clamp(1, 2000);
     let skip_arg = format!("--skip={skip}");
 

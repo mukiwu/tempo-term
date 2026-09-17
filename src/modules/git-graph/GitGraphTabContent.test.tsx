@@ -194,6 +194,115 @@ describe("GitGraphTabContent pending commit selection", () => {
   });
 });
 
+describe("GitGraphTabContent paging", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(gitWorktreeList).mockResolvedValue([]);
+    usePendingGraphSelectionStore.setState({ hash: null });
+    useWorkspaceStore.getState().setRoot("/repo");
+  });
+
+  /** `count` distinct hashes starting at `from`, newest first like git log. */
+  function page(from: number, count: number) {
+    return Array.from({ length: count }, (_, i) => `c${String(from + i).padStart(6, "0")}`);
+  }
+
+  const loadMoreButton = () => screen.getByRole("button", { name: "Load more" });
+
+  it("asks git for the page after the ones loaded, not for a bigger window", async () => {
+    // 25 loaded, so the next page skips past all but the 20-commit overlap and
+    // asks for one page plus that overlap. The old shape asked for 225 from the
+    // top, which is what made each press cost more than the last.
+    vi.mocked(gitGraphLog)
+      .mockResolvedValueOnce(commitList(page(0, 25), true))
+      .mockResolvedValueOnce(commitList([...page(5, 20), ...page(25, 10)], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg c000000");
+
+    fireEvent.click(loadMoreButton());
+
+    await waitFor(() => expect(vi.mocked(gitGraphLog)).toHaveBeenCalledTimes(2));
+    const [repoPath, limit, , skip] = vi.mocked(gitGraphLog).mock.calls[1];
+    expect(repoPath).toBe("/repo");
+    expect(limit).toBe(220);
+    expect(skip).toBe(5);
+  });
+
+  it("appends the page without repeating the commits the overlap brought back", async () => {
+    vi.mocked(gitGraphLog)
+      .mockResolvedValueOnce(commitList(["aaa1111", "bbb2222"], true))
+      // Fewer rows are loaded than the overlap, so this page starts at the top
+      // and hands back both of them again before the new one.
+      .mockResolvedValueOnce(commitList(["aaa1111", "bbb2222", "ccc3333"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(loadMoreButton());
+
+    await screen.findByText("msg ccc3333");
+    // Three rows, not five: the two the overlap handed back are the seam, not
+    // new history.
+    expect(screen.getAllByText(/^msg /)).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("re-reads the whole window when the walk moved too far to stitch onto", async () => {
+    // Everything loaded has been rewritten away between the two presses, so
+    // the page shares no commit with the list it would be appended to. There
+    // is no way to tell how far it moved, and appending would leave a hole.
+    vi.mocked(gitGraphLog)
+      .mockResolvedValueOnce(commitList(["aaa1111", "bbb2222"], true))
+      .mockResolvedValueOnce(commitList(["zzz9999", "yyy8888"], true))
+      .mockResolvedValueOnce(commitList(["zzz9999", "yyy8888", "xxx7777"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(loadMoreButton());
+
+    await screen.findByText("msg xxx7777");
+    expect(screen.queryByText("msg aaa1111")).not.toBeInTheDocument();
+    // The recovery re-reads from the top: no skip, a window a page deeper.
+    const [, limit, , skip] = vi.mocked(gitGraphLog).mock.calls[2];
+    expect(limit).toBe(202);
+    expect(skip).toBeUndefined();
+  });
+
+  it("ignores a page that was in flight when a reload replaced the list", async () => {
+    // A git action (or the refresh button) landing mid-page must win: the list
+    // the page was measured against is gone, and stitching onto the new one
+    // would splice rows from two different walks together.
+    let resolvePage!: (value: ReturnType<typeof commitList>) => void;
+    vi.mocked(gitGraphLog)
+      .mockResolvedValueOnce(commitList(["aaa1111", "bbb2222"], true))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ReturnType<typeof commitList>>((resolve) => {
+            resolvePage = resolve;
+          }),
+      )
+      .mockResolvedValue(commitList(["new0000"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(loadMoreButton());
+    await waitFor(() => expect(vi.mocked(gitGraphLog)).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await screen.findByText("msg new0000");
+
+    await act(async () => {
+      resolvePage(commitList(["aaa1111", "bbb2222", "ccc3333"], false));
+    });
+
+    expect(screen.queryByText("msg ccc3333")).not.toBeInTheDocument();
+    expect(screen.getByText("msg new0000")).toBeInTheDocument();
+  });
+});
+
 describe("GitGraphTabContent search navigation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
