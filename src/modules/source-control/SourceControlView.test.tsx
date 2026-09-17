@@ -23,7 +23,7 @@ vi.mock("./lib/aiCommit", () => ({
 import { SourceControlView } from "./SourceControlView";
 import * as gitBridge from "./lib/gitBridge";
 import type { GitStatus } from "./lib/gitBridge";
-import { activeAllChangesPane, useTabsStore } from "@/stores/tabsStore";
+import { activeAllChangesPane, activeDiffPane, useTabsStore } from "@/stores/tabsStore";
 import { usePendingGraphSelectionStore } from "@/modules/git-graph/lib/pendingGraphSelectionStore";
 import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
 
@@ -46,7 +46,7 @@ describe("SourceControlView row interactions", () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue(STATUS_ONE_MODIFIED);
     useWorkspaceStore.getState().setRoot("/repo");
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
-    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {} });
+    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {}, listing: {} });
   });
 
   it("opens the all-changes tab from the panel toolbar", async () => {
@@ -102,12 +102,38 @@ describe("SourceControlView row interactions", () => {
 
     fireEvent.click(await screen.findByText("src/a.ts"));
 
-    // No second tab: the page in front is asked to scroll to the file.
+    // No second tab: the page in front is asked to scroll to the file. Only
+    // while it is comparing the working tree, which is what these rows are --
+    // the test below is the same click with a base picked.
     expect(useTabsStore.getState().tabs).toHaveLength(1);
     expect(useAllChangesLinkStore.getState().file[pane()]).toEqual({
       rel: "src/a.ts",
       staged: false,
     });
+  });
+
+  it("opens a regular diff from Changes even while All Changes is in front", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+    expect(useTabsStore.getState().tabs).toHaveLength(1);
+    act(() => {
+      useAllChangesLinkStore.getState().setListing(pane(), {
+        label: "upstream/master",
+        range: false,
+        files: [{ rel: "src/deep/b.ts", status: "M" }],
+      });
+    });
+    expect(await screen.findByText("src/deep/b.ts")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByText("src/a.ts"));
+
+    // This working-tree file is not in the comparison above, but it must still
+    // have its ordinary diff tab route rather than being sent to that page.
+    expect(useTabsStore.getState().tabs.map((tab) => tab.kind)).toEqual([
+      "all-changes",
+      "diff",
+    ]);
+    expect(useAllChangesLinkStore.getState().file[pane()]).toBeUndefined();
   });
 
   it("keeps the right-click route to a single-file diff tab", async () => {
@@ -144,24 +170,155 @@ describe("SourceControlView row interactions", () => {
     expect(await screen.findByPlaceholderText("Commit message")).toBeInTheDocument();
   });
 
-  it("marks the row the all-changes page is showing", async () => {
+  it("marks the comparison row the all-changes page is showing", async () => {
     render(<SourceControlView />);
-    const row = await screen.findByText("src/a.ts");
-    // Nothing marked: no diff pane in front, and no page reporting a file.
-    expect(row.closest("li")).not.toHaveAttribute("aria-current");
-
+    await screen.findByText("src/a.ts");
     fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
     act(() => {
-      useAllChangesLinkStore.getState().setShowing(pane(), { rel: "src/a.ts", staged: false });
+      useAllChangesLinkStore.getState().setListing(pane(), {
+        label: "upstream/master",
+        range: false,
+        files: [{ rel: "src/a.ts", status: "M" }],
+      });
+    });
+    const matchingRows = (await screen.findAllByText("src/a.ts")).map((element) =>
+      element.closest("li"),
+    );
+    expect(matchingRows).toHaveLength(2);
+    const comparisonRow = matchingRows[0]!;
+    const workingTreeRow = matchingRows[1]!;
+    expect(comparisonRow).not.toHaveAttribute("aria-current");
+    expect(workingTreeRow).not.toHaveAttribute("aria-current");
+
+    act(() => {
+      useAllChangesLinkStore.getState().setShowing(pane(), {
+        rel: "src/a.ts",
+        staged: false,
+      });
     });
 
-    expect(screen.getByText("src/a.ts").closest("li")).toHaveAttribute("aria-current", "true");
+    expect(comparisonRow).toHaveAttribute("aria-current", "true");
+    expect(workingTreeRow).not.toHaveAttribute("aria-current");
 
     // The mark is the page's while that page is in front; it goes with it.
     act(() => {
       useAllChangesLinkStore.getState().setShowing(pane(), null);
     });
-    expect(screen.getByText("src/a.ts").closest("li")).not.toHaveAttribute("aria-current");
+    expect(comparisonRow).not.toHaveAttribute("aria-current");
+    expect(workingTreeRow).not.toHaveAttribute("aria-current");
+  });
+
+  it("shows the read-only comparison beside actionable staged and unstaged changes", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [{ path: "src/staged.ts", staged: true, status: "M" }],
+      unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
+    });
+    render(<SourceControlView />);
+    await screen.findByText("src/a.ts");
+    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+
+    act(() => {
+      useAllChangesLinkStore.getState().setListing(pane(), {
+        label: "upstream/master",
+        range: false,
+        files: [{ rel: "src/deep/b.ts", status: "M" }],
+      });
+    });
+
+    expect(screen.getByText("Difference from upstream/master")).toBeInTheDocument();
+    expect(screen.getByText("src/deep/b.ts")).toBeInTheDocument();
+    expect(screen.getByText("Staged changes")).toBeInTheDocument();
+    expect(screen.getByText("src/staged.ts")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stage" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unstage" })).toBeInTheDocument();
+    expect(screen.getByText("read-only")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
+    await waitFor(() => expect(gitBridge.gitStage).toHaveBeenCalledWith("/repo", "src/a.ts"));
+    fireEvent.click(screen.getByRole("button", { name: "Unstage" }));
+    await waitFor(() =>
+      expect(gitBridge.gitUnstage).toHaveBeenCalledWith("/repo", "src/staged.ts"),
+    );
+  });
+
+  it("navigates the comparison row within All Changes rather than opening another tab", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+    act(() => {
+      useAllChangesLinkStore.getState().setListing(pane(), {
+        label: "upstream/master",
+        range: false,
+        files: [{ rel: "src/deep/b.ts", status: "M" }],
+      });
+    });
+
+    fireEvent.click(await screen.findByText("src/deep/b.ts"));
+
+    expect(useTabsStore.getState().tabs.map((tab) => tab.kind)).toEqual(["all-changes"]);
+    expect(useAllChangesLinkStore.getState().file[pane()]).toEqual({
+      rel: "src/deep/b.ts",
+      staged: false,
+    });
+    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+  });
+
+  it("opens the staged side as a staged diff while a comparison page is in front", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [{ path: "src/staged.ts", staged: true, status: "M" }],
+      unstaged: [],
+    });
+    render(<SourceControlView />);
+    await screen.findByText("src/staged.ts");
+    fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+    act(() => {
+      useAllChangesLinkStore.getState().setListing(pane(), {
+        label: "upstream/master",
+        range: false,
+        files: [{ rel: "src/deep/b.ts", status: "M" }],
+      });
+    });
+    const comparisonPane = pane();
+
+    fireEvent.click(screen.getByText("src/staged.ts"));
+
+    const { tabs, activeId } = useTabsStore.getState();
+    expect(tabs.map((tab) => tab.kind)).toEqual(["all-changes", "diff"]);
+    expect(activeDiffPane(tabs, activeId)).toEqual({
+      path: "/repo/src/staged.ts",
+      staged: true,
+    });
+    expect(useAllChangesLinkStore.getState().file[comparisonPane]).toBeUndefined();
+  });
+
+  it("keeps the comparison and working-tree sections independently collapsible", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+    act(() => {
+      useAllChangesLinkStore.getState().setListing(pane(), {
+        label: "upstream/master",
+        range: false,
+        files: [{ rel: "src/deep/b.ts", status: "M" }],
+      });
+    });
+    await screen.findByText("src/deep/b.ts");
+
+    const comparisonHeader = screen.getByRole("button", {
+      name: "Difference from upstream/master",
+    });
+    const changesHeader = screen.getByRole("button", { name: "Changes" });
+    fireEvent.click(comparisonHeader);
+
+    expect(screen.queryByText("src/deep/b.ts")).not.toBeInTheDocument();
+    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+    expect(changesHeader).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(changesHeader);
+    expect(screen.queryByText("src/a.ts")).not.toBeInTheDocument();
+    expect(comparisonHeader).toHaveAttribute("aria-expanded", "false");
   });
 
   it("reloads the all-changes page along with itself", async () => {
@@ -179,7 +336,7 @@ describe("SourceControlView row interactions", () => {
     await waitFor(() => expect(useAllChangesLinkStore.getState().rescan[pane()]).toBe(1));
   });
 
-  it("brings the marked row back into view, and only when it has left", async () => {
+  it("brings the marked comparison row back into view, and only when it has left", async () => {
     // jsdom has no layout, so the browser's own "already visible, do nothing"
     // cannot be exercised here; what is asserted is that the row asks, with
     // the nearest-edge options that leave a visible row alone.
@@ -192,10 +349,21 @@ describe("SourceControlView row interactions", () => {
       render(<SourceControlView />);
       await screen.findByText("src/a.ts");
       fireEvent.click(screen.getByRole("button", { name: "All Changes" }));
+      act(() => {
+        useAllChangesLinkStore.getState().setListing(pane(), {
+          label: "upstream/master",
+          range: false,
+          files: [{ rel: "src/deep/b.ts", status: "M" }],
+        });
+      });
+      await screen.findByText("src/deep/b.ts");
       expect(scrollIntoView).not.toHaveBeenCalled();
 
       act(() => {
-        useAllChangesLinkStore.getState().setShowing(pane(), { rel: "src/a.ts", staged: false });
+        useAllChangesLinkStore.getState().setShowing(pane(), {
+          rel: "src/deep/b.ts",
+          staged: false,
+        });
       });
 
       expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });

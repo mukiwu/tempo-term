@@ -36,6 +36,7 @@ const LABELS = {
   noDiff: "No diff",
   noFileSelected: "Select a file",
   close: "Close",
+  openInTab: "Open in a tab",
   compareBadge: "Comparing",
   diffTab: "Diff",
   aiTab: "AI Explain",
@@ -256,6 +257,58 @@ describe("CommitDetailsPanel compare mode", () => {
 
     expect(await screen.findByText("No diff")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "AI Explain" })).not.toBeInTheDocument();
+  });
+});
+
+describe("CommitDetailsPanel open-in-a-tab button", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("offers the button only when the selection has somewhere to open", async () => {
+    // The panel gets a few hundred pixels; the all-changes page gets a whole
+    // tab. Which selections can be read there is not the panel's decision --
+    // a root commit has no parent to be the other end of a range -- so the
+    // button follows the handler, and nothing but the handler.
+    vi.mocked(gitCommitDetails).mockResolvedValue({ message: "feat: x", files: [] });
+    const panel = (onOpenInTab?: () => void) => (
+      <CommitDetailsPanel
+        repo="/repo"
+        selection={{ mode: "single", commit: COMMIT }}
+        onClose={() => {}}
+        onOpenInTab={onOpenInTab}
+        labels={LABELS}
+      />
+    );
+    const { rerender } = render(panel(undefined));
+    await screen.findByText("No changes");
+
+    expect(screen.queryByRole("button", { name: "Open in a tab" })).toBeNull();
+
+    const open = vi.fn();
+    rerender(panel(open));
+    fireEvent.click(screen.getByRole("button", { name: "Open in a tab" }));
+
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers it for the working tree as well, which is not a commit at all", async () => {
+    // #415 added a row above the newest commit for the working tree. Selecting
+    // it opened a panel whose header had nothing but a close button, though
+    // what that row summarises is what the all-changes page was built to show.
+    const open = vi.fn();
+    render(
+      <CommitDetailsPanel
+        repo="/repo"
+        selection={{ mode: "workspace" }}
+        onClose={() => {}}
+        onOpenInTab={open}
+        uncommitted={{ branch: "main", staged: [], unstaged: [] }}
+        labels={LABELS}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open in a tab" }));
+
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });
 

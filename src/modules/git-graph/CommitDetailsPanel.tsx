@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, FolderTree, List, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FileDiff,
+  FolderTree,
+  List,
+  X,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Resizer } from "@/components/Resizer";
 import { Tooltip } from "@/components/Tooltip";
@@ -29,6 +36,8 @@ export interface CommitDetailsLabels {
   noDiff: string;
   noFileSelected: string;
   close: string;
+  /** Take this comparison to a tab, where there is room to read it. */
+  openInTab: string;
   /** Badge shown next to the header hashes while comparing two commits. */
   compareBadge: string;
   diffTab: string;
@@ -57,6 +66,13 @@ interface CommitDetailsPanelProps {
   repo: string;
   selection: GraphSelection;
   onClose: () => void;
+  /**
+   * Take this comparison somewhere with room. This panel is a few hundred
+   * pixels tall with a file list along the left third of them, which is
+   * enough to glance at a commit and not enough to read one -- the reason
+   * #398 exists. Absent when there is nowhere to send it (no repo).
+   */
+  onOpenInTab?: () => void;
   labels: CommitDetailsLabels;
   /**
    * The working tree, for the `workspace` selection. Passed in rather than
@@ -277,6 +293,7 @@ export function CommitDetailsPanel({
   repo,
   selection,
   onClose,
+  onOpenInTab,
   labels,
   uncommitted,
   headHash,
@@ -555,7 +572,20 @@ export function CommitDetailsPanel({
             </span>
           )}
         </div>
-        <Tooltip label={labels.close}>
+        <div className="flex items-center gap-0.5">
+          {onOpenInTab && (
+            <Tooltip label={labels.openInTab}>
+              <button
+                type="button"
+                onClick={onOpenInTab}
+                aria-label={labels.openInTab}
+                className="rounded p-1 text-fg-subtle hover:bg-bg-elevated hover:text-fg"
+              >
+                <FileDiff className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip label={labels.close}>
           <button
             type="button"
             onClick={onClose}
@@ -564,7 +594,8 @@ export function CommitDetailsPanel({
           >
             <X className="h-3.5 w-3.5" />
           </button>
-        </Tooltip>
+          </Tooltip>
+        </div>
       </div>
 
       {error && <div className="px-3 py-1.5 text-xs text-danger" role="alert">{error}</div>}

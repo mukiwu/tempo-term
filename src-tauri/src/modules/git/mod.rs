@@ -1598,19 +1598,24 @@ pub struct ComparisonBase {
     /// 它為什麼在清單上：`remoteDefault`（某個遠端的預設分支）、
     /// `upstream`（目前分支的追蹤分支）、`localDefault`（本地的 main/master/develop）。
     pub kind: String,
+    /// The whole refname, e.g. `refs/remotes/upstream/main`, `refs/heads/master`.
+    ///
+    /// A short name is what a reader recognises, but it is not an answer git
+    /// can act on: a branch and a tag can both be called `v1`, and a bare `v1`
+    /// resolves to the tag. The caller picked one of these rows, so what it
+    /// picked travels with it.
+    #[serde(rename = "ref")]
+    pub ref_name: String,
     /// tip commit 的 committer 時間（Unix 秒），拿不到時為 0。
     #[serde(rename = "lastCommitAt")]
     pub last_commit_at: i64,
 }
 
-/// 候選基準加上建議值。fallback 的順序留在後端，前端只負責畫 —— 散在前端的話
-/// 兩邊各有一份順序，遲早會不一致。
+/// Comparison bases. Keep fallback ordering in the backend so it cannot drift
+/// from a second copy of the same ordering in the frontend.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ComparisonBases {
     pub bases: Vec<ComparisonBase>,
-    /// 照順序找到的第一個；一個都沒有時是 None，這時前端該讓使用者自己挑，
-    /// 不要猜。
-    pub suggested: Option<String>,
 }
 
 /// 每個遠端的預設分支、目前分支的追蹤分支，以及本地的 main/master/develop。
@@ -1629,17 +1634,17 @@ pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
     let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
     let mut bases: Vec<ComparisonBase> = Vec::new();
 
-    let mut push = |name: String, kind: &str| {
+    let mut push = |name: String, ref_name: String, kind: &str| {
         if bases.iter().any(|b| b.name == name) {
             return;
         }
         let last_commit_at = repo
-            .revparse_single(&name)
+            .revparse_single(&ref_name)
             .ok()
             .and_then(|obj| obj.peel_to_commit().ok())
             .map(|c| c.time().seconds())
             .unwrap_or(0);
-        bases.push(ComparisonBase { name, kind: kind.to_string(), last_commit_at });
+        bases.push(ComparisonBase { name, ref_name, kind: kind.to_string(), last_commit_at });
     };
 
     // 1. 各遠端的預設分支。remotes() 的順序是 git 自己的（字典序），照它走，
@@ -1659,7 +1664,8 @@ pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
             let Some(short) = target.strip_prefix("refs/remotes/") else {
                 continue;
             };
-            push(short.to_string(), "remoteDefault");
+            // `target` is already the whole refname this HEAD points at.
+            push(short.to_string(), target.to_string(), "remoteDefault");
         }
     }
 
@@ -1671,7 +1677,15 @@ pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
                 if let Ok(branch) = repo.find_branch(short, git2::BranchType::Local) {
                     if let Ok(upstream) = branch.upstream() {
                         if let Ok(Some(name)) = upstream.name() {
-                            push(name.to_string(), "upstream");
+                            // Usually a remote-tracking branch, but
+                            // `--set-upstream-to` accepts a local one, so the
+                            // reference is asked rather than assumed.
+                            let ref_name = upstream
+                                .get()
+                                .name()
+                                .map(|r| r.to_string())
+                                .unwrap_or_else(|| format!("refs/remotes/{name}"));
+                            push(name.to_string(), ref_name, "upstream");
                         }
                     }
                 }
@@ -1682,14 +1696,189 @@ pub fn comparison_bases(repo_path: &str) -> Result<ComparisonBases, String> {
     // 3. 本地主線，給沒有遠端的 repo。
     for name in ["main", "master", "develop"] {
         if repo.find_branch(name, git2::BranchType::Local).is_ok() {
-            push(name.to_string(), "localDefault");
+            push(name.to_string(), format!("refs/heads/{name}"), "localDefault");
         }
     }
 
-    // 建議值就是照這個順序找到的第一個。三種都沒有時回 None：與其猜一個可能
-    // 不相干的分支，不如讓前端問。
-    let suggested = bases.first().map(|b| b.name.clone());
-    Ok(ComparisonBases { bases, suggested })
+    Ok(ComparisonBases { bases })
+}
+
+/// A tag and when it was made, so it can be ordered among the branches by
+/// how recently each was touched.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct TagInfo {
+    pub name: String,
+    /// `refs/tags/<name>`, so a tag sharing a name with a branch still names
+    /// itself when it reaches git.
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+    /// An annotated tag's own date; for a lightweight tag, the date of the
+    /// commit it points at. 0 when neither can be read.
+    #[serde(rename = "lastCommitAt")]
+    pub last_commit_at: i64,
+}
+
+/// Every tag in the repository.
+///
+/// A base is picked by name, and a tag is a name the same way a branch is --
+/// "what changed since the last release" is a question worth asking twice.
+/// Nothing here could answer it before: tags were only read out of `git log`'s
+/// decorations, which is what the ref chips use, and that never reaches a tag
+/// older than the last few hundred commits.
+pub fn tags(repo_path: &str) -> Result<Vec<TagInfo>, String> {
+    let out = run_git(
+        repo_path,
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)%09%(refname)%09%(creatordate:unix)",
+            "refs/tags",
+        ],
+    )?;
+    Ok(out
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let name = parts.next()?;
+            let ref_name = parts.next()?;
+            let when = parts.next()?;
+            if name.is_empty() || ref_name.is_empty() {
+                return None;
+            }
+            Some(TagInfo {
+                name: name.to_string(),
+                ref_name: ref_name.to_string(),
+                last_commit_at: when.trim().parse().unwrap_or(0),
+            })
+        })
+        .collect())
+}
+
+/// A rev that does not resolve is `Ok(None)` rather than `Err`: that is the
+/// question this answers, not a failure to answer it.
+pub fn resolve_rev(repo_path: &str, rev: &str) -> Result<Option<String>, String> {
+    let rev = rev.trim();
+    if rev.is_empty() {
+        return Ok(None);
+    }
+    ensure_not_flag(rev)?;
+    Ok(
+        run_git(repo_path, &["rev-parse", "--verify", "--quiet", &format!("{rev}^{{commit}}")])
+            .ok()
+            .map(|out| out.trim().to_string())
+            .filter(|sha| !sha.is_empty()),
+    )
+}
+
+/// One comparison: the resolved near end and the whole diff from there to the
+/// far end or working tree.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct BaseDiff {
+    /// The sha the base resolved to. Each file's older side is read at it, so
+    /// it has to be the point the diff below was taken from -- resolving the
+    /// two separately comes apart the moment someone pushes between them.
+    pub rev: String,
+    /// The far end's sha in a two-point comparison. Each file's newer side is
+    /// read at it, so it must be the point the diff below was taken to.
+    #[serde(rename = "toRev")]
+    pub to_rev: Option<String>,
+    /// The diff between `rev` and `to_rev`, or between `rev` and the working
+    /// tree when `to_rev` is absent.
+    pub diff: String,
+}
+
+/// The difference from `base` to the working tree or named `to` point, as one diff.
+///
+/// #398 settled on running the merge base against the working tree once
+/// rather than stitching two diffs together: committed work and work still on
+/// disk read as one total, which is what a reviewer judges. So this is not
+/// `from..to` -- the far side is not a commit, it is the files on disk.
+///
+/// With `merge_base` the starting point is where the two parted rather than
+/// where `base` stands now: otherwise commits the mainline gained after you
+/// left would count as yours.
+/// `to` names the far end. Absent it is the working tree (or HEAD, per
+/// `include_uncommitted`); naming a commit makes this a comparison between
+/// two points, where neither end is anything on disk and the uncommitted
+/// flag has nothing to say.
+pub fn diff_from_base(
+    repo_path: &str,
+    base: &str,
+    merge_base: bool,
+    include_uncommitted: bool,
+    to: Option<&str>,
+) -> Result<BaseDiff, String> {
+    let base = base.trim();
+    if base.is_empty() {
+        return Err("base is required".to_string());
+    }
+    ensure_not_flag(base)?;
+    // Where the two parted is a question about this branch and the one it left;
+    // a far end names both sides outright. Asking for both would measure from
+    // the merge base to a point that had nothing to do with it, which is
+    // neither thing a caller can mean -- and the merge base is this command's
+    // default, so an added caller that forgot to say otherwise would be handed
+    // that third answer without being told.
+    if merge_base && to.is_some() {
+        return Err("a far end and a merge base are different questions".to_string());
+    }
+    let rev = if merge_base {
+        // `merge-base` answers "these two never met" by exiting non-zero with
+        // nothing on either stream, so an empty message is its answer rather
+        // than a missing one. Whatever it does say -- a base it cannot resolve
+        // -- is git's own account, and reads better than ours would.
+        match run_git(repo_path, &["merge-base", base, "HEAD"]) {
+            Ok(out) if out.trim().is_empty() => {
+                return Err(format!("no common history with {base}"))
+            }
+            Ok(out) => out.trim().to_string(),
+            Err(e) if e.is_empty() => return Err(format!("no common history with {base}")),
+            Err(e) => return Err(e),
+        }
+    } else {
+        run_git(repo_path, &["rev-parse", "--verify", "--quiet", &format!("{base}^{{commit}}")])
+            .map_err(|_| format!("unknown rev: {base}"))?
+            .trim()
+            .to_string()
+    };
+    // No second end means the working tree, which is the whole point of this
+    // command. When disk changes are excluded, snapshot HEAD once too, so both
+    // file sides are read from the exact points that produced this diff.
+    let (to_rev, diff) = match to {
+        // Two named points: the working tree is not involved either side, so
+        // the uncommitted flag has nothing to say about it.
+        Some(to) => {
+            let to = to.trim();
+            ensure_not_flag(to)?;
+            // The sha this resolves to is what gets compared, the same way the
+            // near end is. Handing the name back to `git diff` would resolve it
+            // a second time -- the very thing `rev` exists to stop -- and a
+            // name that is also a path on disk stops git dead: "ambiguous
+            // argument 'src': both revision and filename". A branch called
+            // `src` or `docs` is not exotic.
+            let far = run_git(
+                repo_path,
+                &["rev-parse", "--verify", "--quiet", &format!("{to}^{{commit}}")],
+            )
+            .map_err(|_| format!("unknown rev: {to}"))?
+            .trim()
+            .to_string();
+            let diff = run_git(repo_path, &["diff", &rev, &far, "--"])?;
+            (Some(far), diff)
+        }
+        None if include_uncommitted => (None, run_git(repo_path, &["diff", &rev, "--"])?),
+        None => {
+            let head = run_git(
+                repo_path,
+                &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+            )
+            .map_err(|_| "unknown rev: HEAD".to_string())?
+            .trim()
+            .to_string();
+            let diff = run_git(repo_path, &["diff", &rev, &head, "--"])?;
+            (Some(head), diff)
+        }
+    };
+    Ok(BaseDiff { rev, to_rev, diff })
 }
 
 /// Check out an existing branch.
@@ -2195,6 +2384,41 @@ pub async fn git_commit_file_diff(
     tauri::async_runtime::spawn_blocking(move || commit_file_diff(&repo_path, &commit, &file))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_tags(repo_path: String) -> Result<Vec<TagInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || tags(&repo_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_resolve_rev(repo_path: String, rev: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || resolve_rev(&repo_path, &rev))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_diff_from_base(
+    repo_path: String,
+    base: String,
+    merge_base: Option<bool>,
+    include_uncommitted: Option<bool>,
+    to: Option<String>,
+) -> Result<BaseDiff, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        diff_from_base(
+            &repo_path,
+            &base,
+            merge_base.unwrap_or(true),
+            include_uncommitted.unwrap_or(true),
+            to.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// `merge_base` absent means two-dot, which is what every caller before #398
@@ -3089,9 +3313,9 @@ mod tests {
         let names: Vec<&str> = found.bases.iter().map(|b| b.name.as_str()).collect();
         assert!(names.contains(&"origin/main"), "{names:?}");
         assert!(names.contains(&"upstream/main"), "{names:?}");
-        // The remote defaults come first, so the suggestion is one of them.
-        assert!(found.suggested.as_deref() == Some("origin/main")
-            || found.suggested.as_deref() == Some("upstream/main"));
+        // The remote defaults come first, so one of them leads the list.
+        let first = found.bases.first().map(|b| b.name.as_str());
+        assert!(first == Some("origin/main") || first == Some("upstream/main"), "{names:?}");
         for base in &found.bases {
             if base.name.starts_with("origin/") || base.name.starts_with("upstream/") {
                 assert_eq!(base.kind, "remoteDefault");
@@ -3122,7 +3346,7 @@ mod tests {
         let found = comparison_bases(&path).unwrap();
         let names: Vec<&str> = found.bases.iter().map(|b| b.name.as_str()).collect();
         assert!(!names.iter().any(|n| n.starts_with("origin/")), "{names:?}");
-        assert_eq!(found.suggested.as_deref(), Some("main"));
+        assert_eq!(found.bases.first().map(|b| b.name.as_str()), Some("main"));
         assert_eq!(found.bases[0].kind, "localDefault");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -3174,7 +3398,7 @@ mod tests {
 
         let found = comparison_bases(&path).unwrap();
         assert!(found.bases.is_empty(), "{:?}", found.bases);
-        assert_eq!(found.suggested, None);
+        assert!(found.bases.is_empty(), "{:?}", found.bases);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3310,6 +3534,205 @@ mod tests {
         let staged_diff = diff(&path, true).unwrap();
         assert!(staged_diff.contains("a.txt"));
         assert!(staged_diff.contains("+hello world"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tags_are_listed_with_a_time_to_sort_them_by() {
+        // The base picker offers names, and a tag is a name -- "what changed
+        // since the last release" is a question people ask more than once.
+        // Both kinds: an annotated tag carries its own date, a lightweight one
+        // borrows the commit's.
+        let (dir, path) = repo_with_a_commit("tags-list");
+        run_git(&path, &["tag", "v0.1"]).unwrap();
+        run_git(&path, &["tag", "-a", "v0.2", "-m", "release"]).unwrap();
+
+        let found = tags(&path).unwrap();
+        let names: Vec<&str> = found.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"v0.1"), "{names:?}");
+        assert!(names.contains(&"v0.2"), "{names:?}");
+        for tag in &found {
+            assert!(tag.last_commit_at > 0, "{tag:?}");
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_rev_answers_the_question_rather_than_failing() {
+        // The base box asks this before it acts: a hash pasted from a pull
+        // request is the one thing its list cannot vouch for. "No" is an
+        // answer, so it comes back as None rather than as an error.
+        let (dir, path) = repo_with_a_commit("resolve-rev");
+        run_git(&path, &["tag", "v9"]).unwrap();
+        let head = run_git(&path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+        assert_eq!(resolve_rev(&path, "HEAD").unwrap().as_deref(), Some(head.as_str()));
+        assert_eq!(resolve_rev(&path, "main").unwrap().as_deref(), Some(head.as_str()));
+        assert_eq!(resolve_rev(&path, "v9").unwrap().as_deref(), Some(head.as_str()));
+        // A short hash resolves to the whole one, which is what makes the
+        // paste-a-prefix case work.
+        assert_eq!(resolve_rev(&path, &head[..7]).unwrap().as_deref(), Some(head.as_str()));
+
+        assert_eq!(resolve_rev(&path, "no-such-thing").unwrap(), None);
+        assert_eq!(resolve_rev(&path, "deadbeef").unwrap(), None);
+        assert_eq!(resolve_rev(&path, "").unwrap(), None);
+        // A value shaped like an option is refused outright rather than
+        // answered, since answering means putting it in git's argv.
+        assert!(resolve_rev(&path, "--upload-pack=x").is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_base_can_be_compared_with_or_without_what_is_still_on_disk() {
+        // Same base, two questions: "what does this branch change" and "what
+        // does it change that I have actually committed". The second is what
+        // you read before pushing.
+        let (dir, path) = repo_with_a_commit("base-uncommitted");
+        run_git(&path, &["checkout", "-q", "-b", "feature"]).unwrap();
+        std::fs::write(dir.join("committed.txt"), "done").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "committed work"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "still editing").unwrap();
+
+        let with = diff_from_base(&path, "main", true, true, None).unwrap();
+        assert!(with.diff.contains("committed.txt"), "{}", with.diff);
+        assert!(with.diff.contains("a.txt"), "{}", with.diff);
+
+        let without = diff_from_base(&path, "main", true, false, None).unwrap();
+        assert!(without.diff.contains("committed.txt"), "{}", without.diff);
+        assert!(!without.diff.contains("a.txt"), "{}", without.diff);
+        let head = run_git(&path, &["rev-parse", "HEAD"])
+            .unwrap()
+            .trim()
+            .to_string();
+        assert_eq!(without.to_rev.as_deref(), Some(head.as_str()));
+
+        // Both read from the same point, so a file's "before" is the same
+        // either way.
+        assert_eq!(with.rev, without.rev);
+        assert_eq!(with.to_rev, None);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_named_points_leave_the_working_tree_out_of_it() {
+        // A range picked out of the graph: neither end is on disk, so an edit
+        // in the buffer must not turn up in it however the uncommitted flag is
+        // set. Two-dot as well -- these are two points, not a branch and the
+        // line it left.
+        let (dir, path) = repo_with_a_commit("range-two-points");
+        std::fs::write(dir.join("b.txt"), "second").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "second"]).unwrap();
+        let second = run_git(&path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        std::fs::write(dir.join("scratch.txt"), "not committed").unwrap();
+
+        let found = diff_from_base(&path, "main~1", false, true, Some(&second)).unwrap();
+        assert!(found.diff.contains("b.txt"), "{}", found.diff);
+        assert!(!found.diff.contains("scratch.txt"), "{}", found.diff);
+
+        // The far end is checked like the near one: nonsense is refused rather
+        // than reaching git's argv.
+        assert!(diff_from_base(&path, "main", false, true, Some("no-such-rev")).is_err());
+        assert!(diff_from_base(&path, "main", false, true, Some("--upload-pack=x")).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_whole_refname_tells_a_branch_from_a_tag_of_the_same_name() {
+        // `git rev-parse v1` answers with the tag -- it even warns that the
+        // name is ambiguous -- so a reader who picked the branch would be
+        // shown the tag's commits with the branch's name over them. The whole
+        // refname is what each row carries out of `tags` and
+        // `comparison_bases`, and it is what settles this.
+        let (dir, path) = repo_with_a_commit("ref-name-collision");
+        let first = run_git(&path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        run_git(&path, &["tag", "v1"]).unwrap();
+        std::fs::write(dir.join("later.txt"), "after the tag").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "after the tag"]).unwrap();
+        let second = run_git(&path, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        run_git(&path, &["branch", "v1"]).unwrap();
+
+        let tagged = tags(&path).unwrap();
+        assert_eq!(tagged.len(), 1);
+        assert_eq!(tagged[0].ref_name, "refs/tags/v1");
+
+        // The bare name is the tag, which is why nothing may rely on it.
+        assert_eq!(diff_from_base(&path, "v1", false, true, None).unwrap().rev, first);
+        assert_eq!(
+            diff_from_base(&path, "refs/tags/v1", false, true, None).unwrap().rev,
+            first
+        );
+        // And the branch is reachable only by saying so.
+        assert_eq!(
+            diff_from_base(&path, "refs/heads/v1", false, true, None).unwrap().rev,
+            second
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_far_end_named_after_a_folder_is_still_read_as_a_commit() {
+        // Branches get called `src` and `docs`. Handing that name to `git
+        // diff` stops it dead -- "ambiguous argument 'src': both revision and
+        // filename" -- so the far end goes in as the sha it resolved to, the
+        // same way the near end does.
+        let (dir, path) = repo_with_a_commit("range-ambiguous-far-end");
+        std::fs::create_dir(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src").join("only-here.txt"), "inside").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "a folder called src"]).unwrap();
+        run_git(&path, &["branch", "src"]).unwrap();
+
+        let far_rev = run_git(&path, &["rev-parse", "refs/heads/src"])
+            .unwrap()
+            .trim()
+            .to_string();
+        let found = diff_from_base(&path, "main~1", false, true, Some("src")).unwrap();
+
+        assert!(found.diff.contains("src/only-here.txt"), "{}", found.diff);
+        assert_eq!(found.to_rev.as_deref(), Some(far_rev.as_str()));
+        let serialized = serde_json::to_value(&found).unwrap();
+        assert_eq!(serialized["toRev"].as_str(), Some(far_rev.as_str()));
+        assert!(serialized.get("to_rev").is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_histories_that_never_met_say_so() {
+        // `merge-base` reports it by exiting non-zero with nothing on either
+        // stream. Passing that through as the error left the reader with a
+        // blank message, and the line that explains it unreachable.
+        let (dir, path) = repo_with_a_commit("range-no-common-history");
+        run_git(&path, &["checkout", "-q", "--orphan", "stranger"]).unwrap();
+        std::fs::write(dir.join("elsewhere.txt"), "unrelated").unwrap();
+        run_git(&path, &["add", "."]).unwrap();
+        run_git(&path, &["commit", "-m", "a history of its own"]).unwrap();
+
+        let err = diff_from_base(&path, "main", true, true, None).unwrap_err();
+
+        assert!(err.contains("no common history"), "{err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_far_end_and_a_merge_base_are_refused_together() {
+        // They are different questions, and the merge base is the default: an
+        // added caller that named a far end and left the rest alone would be
+        // measuring from where this branch parted from HEAD to a point with no
+        // bearing on it, and nothing would say so.
+        let (dir, path) = repo_with_a_commit("range-both-questions");
+
+        assert!(diff_from_base(&path, "main", true, true, Some("HEAD")).is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

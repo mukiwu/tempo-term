@@ -34,6 +34,8 @@ export interface ChangedFile {
   status: string;
   /** From the scan, or null for a file `git diff` never reports (untracked). */
   stats: FileDiffStats | null;
+  /** The name the file had on the old side, when it moved. */
+  from?: string;
 }
 
 /** What a mounted section can answer about where its lines sit. */
@@ -62,6 +64,12 @@ interface DiffFileSectionProps {
   onExpand: () => void;
   /** The reader closed this file by hand, having read it. */
   collapsed: boolean;
+  /** Rev the "before" document comes from, or null for the working tree. */
+  baseRev: string | null;
+  /** Rev the "after" document comes from, when the comparison does not end at
+   * the working tree: the far end of a range, or HEAD when uncommitted work is
+   * being left out. Null reads the file on disk. */
+  baseTo: string | null;
   onToggleCollapse: () => void;
   /** Height to hold while unmounted: measured once, estimated before that. */
   reserved: number;
@@ -102,6 +110,8 @@ export function DiffFileSection({
   expanded,
   onExpand,
   collapsed,
+  baseRev,
+  baseTo,
   onToggleCollapse,
   reserved,
   onMeasure,
@@ -180,12 +190,26 @@ export function DiffFileSection({
       return;
     }
     let cancelled = false;
+    const was = file.from ?? file.rel;
     async function load() {
       try {
+        // With a base picked, "before" is that base for every file and "after"
+        // is the working copy: one comparison, the same one the scan measured.
+        // Without one, the two sides are the index and disk as before.
         const [left, right] = await Promise.all(
-          file.staged
-            ? [gitFileAtRev(repo, "HEAD", file.rel), gitFileAtRev(repo, ":", file.rel)]
-            : [gitFileAtRev(repo, ":", file.rel), fsReadFile(file.path).catch(() => "")],
+          baseRev
+            ? [
+                // A file that moved is read at the name it had there. The
+                // name it has now does not exist at the old end, and reading
+                // both sides at it turns a move into a whole file added.
+                gitFileAtRev(repo, baseRev, was),
+                baseTo
+                  ? gitFileAtRev(repo, baseTo, file.rel)
+                  : fsReadFile(file.path).catch(() => ""),
+              ]
+            : file.staged
+              ? [gitFileAtRev(repo, "HEAD", was), gitFileAtRev(repo, ":", file.rel)]
+              : [gitFileAtRev(repo, ":", file.rel), fsReadFile(file.path).catch(() => "")],
         );
         if (!cancelled) {
           setError(false);
@@ -206,7 +230,7 @@ export function DiffFileSection({
     return () => {
       cancelled = true;
     };
-  }, [shouldLoad, repo, file.rel, file.path, file.staged, reloadKey]);
+  }, [shouldLoad, repo, file.rel, file.from, file.path, file.staged, reloadKey, baseRev, baseTo]);
 
   // The old side is read through a ref so that folding a stretch back up
   // never lands in the dependencies of the effect that builds the editors.
@@ -368,6 +392,14 @@ export function DiffFileSection({
             {file.status}
           </span>
           <span className="min-w-0 truncate font-mono text-xs text-fg">{name}</span>
+          {/* Where it came from, when that is not where it is. Without it a
+              rename reads as a file with no history: the diff below is empty
+              or nearly so, and nothing on the row says why. */}
+          {file.from && file.from !== file.rel && (
+            <span className="min-w-0 shrink-[4] truncate font-mono text-[11px] text-fg-subtle">
+              ← {file.from}
+            </span>
+          )}
           {dir && (
             <span className="min-w-0 shrink-[4] truncate font-mono text-[11px] text-fg-subtle">
               {dir}

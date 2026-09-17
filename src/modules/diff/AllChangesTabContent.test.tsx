@@ -4,8 +4,14 @@ import { AllChangesTabContent } from "./AllChangesTabContent";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, vars?: Record<string, unknown>) =>
-      vars && "count" in vars ? `${key}:${String(vars.count)}` : key,
+    t: (key: string, vars?: Record<string, unknown>) => {
+      for (const slot of ["count", "name"]) {
+        if (vars && slot in vars) {
+          return `${key}:${String(vars[slot])}`;
+        }
+      }
+      return key;
+    },
   }),
   // tabsStore transitively pulls in the real i18n init, which registers this
   // plugin object during module load.
@@ -14,8 +20,10 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/modules/source-control/lib/gitBridge", () => ({
   gitResolveRepo: vi.fn(),
+  gitResolveRev: vi.fn(),
   gitStatus: vi.fn(),
   gitDiff: vi.fn(),
+  gitDiffFromBase: vi.fn(),
   gitFileAtRev: vi.fn(),
 }));
 
@@ -29,8 +37,10 @@ vi.mock("@/modules/terminal/lib/terminalBus", () => ({
 
 import {
   gitDiff,
+  gitDiffFromBase,
   gitFileAtRev,
   gitResolveRepo,
+  gitResolveRev,
   gitStatus,
 } from "@/modules/source-control/lib/gitBridge";
 import { fsReadFile } from "@/modules/explorer/lib/fsBridge";
@@ -38,6 +48,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useDiffCommentStore } from "./lib/diffCommentStore";
 import { useAllChangesLinkStore } from "./lib/allChangesLinkStore";
+import { useComparisonBaseStore } from "./lib/comparisonBaseStore";
 
 /**
  * The n/N counter, whichever numbers it holds. Its left-hand number is read
@@ -75,9 +86,13 @@ describe("AllChangesTabContent", () => {
     useWorkspaceStore.setState({ rootPath: "/repo" });
     useDiffCommentStore.setState({ comments: [] });
     useSettingsStore.setState({ diffUnified: false });
-    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {} });
+    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {}, listing: {} });
+    // Session state, so a base one test picks would otherwise be the base
+    // every test after it starts from.
+    useComparisonBaseStore.setState({ byRepo: {}, includeUncommitted: true });
     vi.mocked(gitResolveRepo).mockResolvedValue("/repo");
     vi.mocked(gitDiff).mockResolvedValue("");
+    vi.mocked(gitResolveRev).mockResolvedValue("1111111");
     vi.mocked(gitFileAtRev).mockResolvedValue("");
     vi.mocked(fsReadFile).mockResolvedValue("");
     vi.mocked(gitStatus).mockResolvedValue({ branch: "main", staged: [], unstaged: [] });
@@ -221,7 +236,7 @@ describe("AllChangesTabContent", () => {
     expect(gitFileAtRev).not.toHaveBeenCalled();
 
     // It carries no button of its own: the header opens it, like any file.
-    fireEvent.click(screen.getByRole("button", { name: "allChangesExpandFile" }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp("^allChangesExpandFile") }));
 
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
     // And the reason goes with the fold — the file is no longer shut by a rule.
@@ -243,7 +258,7 @@ describe("AllChangesTabContent", () => {
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
     expect(counter(1)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "allChangesCollapseFile" }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp("^allChangesCollapseFile") }));
 
     // The editors go, and so does the file's hunk in the page's navigation —
     // there is nothing on screen left to land on.
@@ -253,11 +268,11 @@ describe("AllChangesTabContent", () => {
     // The header still reads, counts and all — and the counts are part of the
     // same target, so there is no dead strip along the right of the row.
     expect(screen.getByText("a.ts")).toBeInTheDocument();
-    const header = screen.getByRole("button", { name: "allChangesExpandFile" });
+    const header = screen.getByRole("button", { name: new RegExp("^allChangesExpandFile") });
     expect(within(header).getByText("+3")).toBeInTheDocument();
     expect(within(header).getByText("−1")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "allChangesExpandFile" }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp("^allChangesExpandFile") }));
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
   });
 
@@ -299,7 +314,7 @@ describe("AllChangesTabContent", () => {
     const middle = container.querySelector<HTMLElement>('[data-diff-file="w:src/b.ts"]')!;
     middle.getBoundingClientRect = () => ({ top: 1000 - scrollTop }) as DOMRect;
 
-    fireEvent.click(within(middle).getByRole("button", { name: "allChangesCollapseFile" }));
+    fireEvent.click(within(middle).getByRole("button", { name: new RegExp("^allChangesCollapseFile") }));
 
     // Without the pin the page stays at 3,000 and the reader is left in
     // whatever file has moved up into that position. The header goes to the
@@ -534,6 +549,469 @@ describe("AllChangesTabContent", () => {
     expect(gitStatus).toHaveBeenCalledTimes(2);
   });
 
+  it("starts a new comparison at the top, and leaves a rescan where it was", async () => {
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [{ path: "src/a.ts", staged: false, status: "M" }],
+    });
+    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
+      staged ? "" : diffFor("src/a.ts"),
+    );
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "1111111",
+      toRev: null,
+      diff: diffFor("src/z.ts"),
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() =>
+      expect(container.querySelector('[data-diff-file="w:src/a.ts"]')).toBeTruthy(),
+    );
+
+    // The reader is a long way down the working tree's files. jsdom lays
+    // nothing out, so the offset is stubbed; all that matters is that it is
+    // not already zero. Every write is kept as well as the value: the landing
+    // that opens a fresh page on its first change would, with no layout to
+    // read, scroll to zero as well, so the value alone cannot say whether it
+    // ran -- and it must not, or the heading naming the new comparison is the
+    // one thing scrolled off.
+    const root = container.querySelector<HTMLElement>(".overflow-auto")!;
+    let scrollTop = 3000;
+    const writes: number[] = [];
+    Object.defineProperty(root, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        writes.push(v);
+        scrollTop = v;
+      },
+    });
+
+    act(() => {
+      useComparisonBaseStore.getState().setBase("/repo", { kind: "ref", name: "origin/main" });
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-diff-file="w:src/z.ts"]')).toBeTruthy(),
+    );
+    // Left where it was, the reader is dropped part way into a stack of files
+    // they have not read a line of, at a depth that measured the comparison
+    // that is gone.
+    expect(scrollTop).toBe(0);
+    expect(writes).toEqual([0]);
+
+    // A rescan of the same comparison is the page they are already reading.
+    writes.length = 0;
+    root.scrollTop = 1500;
+    writes.length = 0;
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(gitDiffFromBase).toHaveBeenCalledTimes(2));
+    expect(writes).toEqual([]);
+    expect(scrollTop).toBe(1500);
+  });
+
+  it("shows a file that was never added, while it says it includes them", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "ref", name: "origin/main" } },
+      includeUncommitted: true,
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "1111111",
+      toRev: null,
+      diff: diffFor("tracked.ts"),
+    });
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [
+        { path: "tracked.ts", staged: false, status: "M" },
+        { path: "brand-new.ts", staged: false, status: "?" },
+      ],
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+
+    // `git diff <rev>` cannot see a file that was never added, so the page
+    // was leaving one out while the checkbox beside it promised uncommitted
+    // work was in. Both are here, sorted together rather than tacked on.
+    await waitFor(() =>
+      expect(container.querySelectorAll("[data-diff-file]").length).toBe(2),
+    );
+    expect(container.querySelector('[data-diff-file="w:brand-new.ts"]')).toBeTruthy();
+    expect(useAllChangesLinkStore.getState().listing[PANE]?.files).toEqual([
+      { rel: "brand-new.ts", status: "?" },
+      { rel: "tracked.ts", status: "M" },
+    ]);
+  });
+
+  it("leaves the working tree alone when the comparison does not reach it", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "range", from: "aaa", to: "bbb" } },
+      includeUncommitted: true,
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "aaa",
+      toRev: null,
+      diff: diffFor("tracked.ts"),
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() =>
+      expect(container.querySelectorAll("[data-diff-file]").length).toBe(1),
+    );
+
+    // Neither end of a range is on disk, so there is nothing on disk to ask
+    // about -- and asking anyway would put a file in the list that belongs to
+    // neither of the two points being compared.
+    expect(gitStatus).not.toHaveBeenCalled();
+  });
+
+  it("reads a range's right-hand file at the far-end sha from the same diff", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": {
+          kind: "range",
+          from: "refs/heads/release",
+          to: "v2",
+          toRef: "refs/tags/v2",
+        },
+      },
+      includeUncommitted: true,
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "resolved-left-sha",
+      toRev: "resolved-right-sha",
+      diff: diffFor("file.ts"),
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-diff-file="w:file.ts"]')).toBeTruthy(),
+    );
+    await waitFor(() =>
+      expect(gitFileAtRev).toHaveBeenCalledWith("/repo", "resolved-right-sha", "file.ts"),
+    );
+    expect(gitDiffFromBase).toHaveBeenCalledWith(
+      "/repo",
+      "refs/heads/release",
+      false,
+      true,
+      "refs/tags/v2",
+    );
+    expect(gitFileAtRev).toHaveBeenCalledWith("/repo", "resolved-left-sha", "file.ts");
+  });
+
+  it("names the ref that went away, and offers the way back", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "ref", name: "origin/merged-and-deleted" } },
+    });
+    vi.mocked(gitDiffFromBase).mockRejectedValue(new Error("unknown rev"));
+    vi.mocked(gitResolveRev).mockResolvedValue(null);
+
+    render(<AllChangesTabContent paneId={PANE} />);
+
+    // A base picked at the start of a session can be gone by the middle of
+    // it. "Something went wrong" about a name still shown in the header is
+    // no help; this says which name and why.
+    await waitFor(() =>
+      expect(
+        screen.getByText("baseGone:origin/merged-and-deleted"),
+      ).toBeInTheDocument(),
+    );
+    expect(gitResolveRev).toHaveBeenCalledWith("/repo", "origin/merged-and-deleted");
+    expect(screen.queryByText("diffLoadError")).not.toBeInTheDocument();
+
+    // And the way out drops the base rather than leaving the reader to work
+    // out that the selector in the header is now the only door.
+    fireEvent.click(screen.getByRole("button", { name: "baseBackToWorktree" }));
+
+    await waitFor(() => expect(gitStatus).toHaveBeenCalled());
+    expect(useComparisonBaseStore.getState().byRepo["/repo"]).toBeUndefined();
+  });
+
+  it("checks that a selected branch ref still exists without falling through to a same-name tag", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": { kind: "ref", name: "release", ref: "refs/heads/release" },
+      },
+    });
+    vi.mocked(gitDiffFromBase).mockRejectedValue(new Error("unknown rev"));
+    vi.mocked(gitResolveRev).mockImplementation(async (_repoPath, rev) =>
+      rev === "refs/heads/release" ? null : "2222222",
+    );
+
+    render(<AllChangesTabContent paneId={PANE} />);
+
+    await waitFor(() => expect(screen.getByText("baseGone:release")).toBeInTheDocument());
+    expect(gitResolveRev).toHaveBeenCalledWith("/repo", "refs/heads/release");
+    expect(screen.queryByText("diffLoadError")).not.toBeInTheDocument();
+  });
+
+  it("still says only that it failed when the base is fine", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "ref", name: "origin/main" } },
+    });
+    vi.mocked(gitDiffFromBase).mockRejectedValue(new Error("fatal: bad object"));
+    vi.mocked(gitResolveRev).mockResolvedValue("1111111");
+
+    render(<AllChangesTabContent paneId={PANE} />);
+
+    // The ref resolves, so whatever went wrong was not that -- and blaming
+    // the base would send the reader after the wrong thing.
+    await waitFor(() => expect(screen.getByText("diffLoadError")).toBeInTheDocument());
+    expect(screen.queryByText(/^baseGone/)).not.toBeInTheDocument();
+  });
+
+  it("takes the panel's list down when the next base cannot be read", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "ref", name: "origin/main" } },
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "1111111",
+      toRev: null,
+      diff: [
+        "diff --git a/kept.ts b/kept.ts",
+        "--- a/kept.ts",
+        "+++ b/kept.ts",
+        "@@ -1 +1 @@",
+        "-x",
+        "+y",
+        "",
+      ].join("\n"),
+    });
+
+    render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() =>
+      expect(useAllChangesLinkStore.getState().listing[PANE]?.files).toEqual([
+        { rel: "kept.ts", status: "M" },
+      ]),
+    );
+
+    // The panel is this page's index. With the next base unreadable there is
+    // nothing to be an index of -- and left standing, the old list sits beside
+    // the failure still offering rows that ask the page to scroll to files it
+    // never read.
+    vi.mocked(gitDiffFromBase).mockRejectedValue(new Error("unknown rev"));
+    vi.mocked(gitResolveRev).mockResolvedValue(null);
+    act(() => {
+      useComparisonBaseStore.getState().setBase("/repo", { kind: "ref", name: "gone" });
+    });
+
+    await waitFor(() => expect(screen.getByText("baseGone:gone")).toBeInTheDocument());
+    expect(useAllChangesLinkStore.getState().listing[PANE]).toBeUndefined();
+  });
+
+  it("says two histories never met, rather than that something went wrong", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "ref", name: "stranger" } },
+    });
+    // A branch is compared from where it and HEAD parted, and two histories
+    // that never met have no such point. The command says so; the page used
+    // to throw that away and ask whether the ref still existed instead --
+    // which it does, so the reader got the generic failure about a name still
+    // shown in the header.
+    vi.mocked(gitDiffFromBase).mockRejectedValue(
+      new Error("no common history with stranger"),
+    );
+    vi.mocked(gitResolveRev).mockResolvedValue("1111111");
+
+    render(<AllChangesTabContent paneId={PANE} />);
+
+    await waitFor(() => expect(screen.getByText("baseUnrelated:stranger")).toBeInTheDocument());
+    expect(screen.queryByText("diffLoadError")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^baseGone/)).not.toBeInTheDocument();
+
+    // Same way out as any other base that cannot be read.
+    fireEvent.click(screen.getByRole("button", { name: "baseBackToWorktree" }));
+
+    await waitFor(() => expect(gitStatus).toHaveBeenCalled());
+    expect(useComparisonBaseStore.getState().byRepo["/repo"]).toBeUndefined();
+  });
+
+  it("reads a file that moved at the name it moved from", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "ref", name: "origin/main" } },
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "1111111",
+      toRev: null,
+      diff: [
+        "diff --git a/old/name.ts b/new/name.ts",
+        "similarity index 90%",
+        "rename from old/name.ts",
+        "rename to new/name.ts",
+        "--- a/old/name.ts",
+        "+++ b/new/name.ts",
+        "@@ -1 +1 @@",
+        "-a",
+        "+b",
+        "",
+      ].join("\n"),
+    });
+    vi.mocked(gitFileAtRev).mockResolvedValue("a\n");
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() =>
+      expect(container.querySelector('[data-diff-file="w:new/name.ts"]')).toBeTruthy(),
+    );
+
+    // git reports a rename as one entry under the new name, and the new name
+    // does not exist at the base -- so reading the old side there gave an
+    // empty document and the file read as a whole new one.
+    await waitFor(() =>
+      expect(gitFileAtRev).toHaveBeenCalledWith("/repo", "1111111", "old/name.ts"),
+    );
+    expect(gitFileAtRev).not.toHaveBeenCalledWith("/repo", "1111111", "new/name.ts");
+    // And the row says where it came from, or a file that merely moved shows
+    // an empty diff with nothing to explain it.
+    expect(screen.getByText("← old/name.ts")).toBeInTheDocument();
+  });
+
+  it("uses merge-base for a branch and compares tags or commits literally", async () => {
+    const cases = [
+      {
+        base: { kind: "ref" as const, name: "feature", ref: "refs/heads/feature" },
+        spec: "refs/heads/feature",
+        mergeBase: true,
+      },
+      {
+        base: { kind: "ref" as const, name: "v1", ref: "refs/tags/v1" },
+        spec: "refs/tags/v1",
+        mergeBase: false,
+      },
+      {
+        base: { kind: "ref" as const, name: "abcdef1234567890" },
+        spec: "abcdef1234567890",
+        mergeBase: false,
+      },
+    ];
+
+    for (const { base, spec, mergeBase } of cases) {
+      vi.clearAllMocks();
+      vi.mocked(gitDiffFromBase).mockResolvedValue({ rev: "base-sha", toRev: null, diff: "" });
+      useComparisonBaseStore.setState({ byRepo: { "/repo": base }, includeUncommitted: true });
+
+      const { unmount } = render(<AllChangesTabContent paneId={PANE} />);
+      await waitFor(() => expect(gitDiffFromBase).toHaveBeenCalledTimes(1));
+      expect(gitDiffFromBase).toHaveBeenCalledWith("/repo", spec, mergeBase, true, undefined);
+      unmount();
+    }
+  });
+
+  it("reads a committed-only comparison at the HEAD sha from its diff", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": { kind: "ref", name: "feature", ref: "refs/heads/feature" },
+      },
+      includeUncommitted: false,
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "merge-base-sha",
+      toRev: "resolved-head-sha",
+      diff: diffFor("file.ts"),
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-diff-file="w:file.ts"]')).toBeTruthy(),
+    );
+    expect(gitDiffFromBase).toHaveBeenCalledWith(
+      "/repo",
+      "refs/heads/feature",
+      true,
+      false,
+      undefined,
+    );
+    await waitFor(() =>
+      expect(gitFileAtRev).toHaveBeenCalledWith("/repo", "resolved-head-sha", "file.ts"),
+    );
+    expect(gitFileAtRev).not.toHaveBeenCalledWith("/repo", "HEAD", "file.ts");
+    expect(gitStatus).not.toHaveBeenCalled();
+  });
+
+  it("keeps the uncommitted toggle available after switching it off", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": { kind: "ref", name: "feature", ref: "refs/heads/feature" },
+      },
+      includeUncommitted: true,
+    });
+    vi.mocked(gitDiffFromBase).mockImplementation(async (_repo, _base, _merge, include) => ({
+      rev: "merge-base-sha",
+      toRev: include ? null : "resolved-head-sha",
+      diff: diffFor("file.ts"),
+    }));
+
+    render(<AllChangesTabContent paneId={PANE} />);
+
+    const toggle = await screen.findByRole("checkbox", { name: "baseIncludeUncommitted" });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(gitDiffFromBase).toHaveBeenCalledTimes(2));
+    const committedOnlyToggle = screen.getByRole("checkbox", {
+      name: "baseIncludeUncommitted",
+    });
+    expect(committedOnlyToggle).not.toBeChecked();
+    fireEvent.click(committedOnlyToggle);
+    await waitFor(() => expect(gitDiffFromBase).toHaveBeenCalledTimes(3));
+    expect(gitDiffFromBase).toHaveBeenLastCalledWith(
+      "/repo",
+      "refs/heads/feature",
+      true,
+      true,
+      undefined,
+    );
+  });
+
+  it("labels a file by what happened to it, not by whether it lost lines", async () => {
+    useComparisonBaseStore.setState({
+      byRepo: { "/repo": { kind: "ref", name: "origin/main" } },
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "1111111",
+      toRev: null,
+      diff: [
+        "diff --git a/grew.ts b/grew.ts",
+        "--- a/grew.ts",
+        "+++ b/grew.ts",
+        "@@ -1 +1,2 @@",
+        " keep",
+        "+added",
+        "diff --git a/fresh.ts b/fresh.ts",
+        "new file mode 100644",
+        "--- /dev/null",
+        "+++ b/fresh.ts",
+        "@@ -0,0 +1 @@",
+        "+hello",
+        "",
+      ].join("\n"),
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() =>
+      expect(container.querySelectorAll("[data-diff-file]").length).toBe(2),
+    );
+
+    // A comparison of two points in history has no `git status` to ask, and
+    // the counts it does have cannot tell an edit that only added lines from
+    // a file that is genuinely new. The diff says which is which.
+    const grew = container.querySelector<HTMLElement>('[data-diff-file="w:grew.ts"]')!;
+    const fresh = container.querySelector<HTMLElement>('[data-diff-file="w:fresh.ts"]')!;
+    expect(within(grew).getByText("M")).toBeInTheDocument();
+    expect(within(fresh).getByText("A")).toBeInTheDocument();
+    // And the panel is handed the same letters, being the same list.
+    expect(useAllChangesLinkStore.getState().listing[PANE]?.files).toEqual([
+      { rel: "fresh.ts", status: "A" },
+      { rel: "grew.ts", status: "M" },
+    ]);
+  });
+
   it("names a binary file instead of trying to show it", async () => {
     vi.mocked(gitStatus).mockResolvedValue({
       branch: "main",
@@ -615,6 +1093,37 @@ describe("AllChangesTabContent", () => {
     expect(gitStatus).not.toHaveBeenCalled();
   });
 
+  it("clears the old linked file list when the resolved repo disappears", async () => {
+    vi.mocked(gitResolveRepo).mockResolvedValueOnce("/repo").mockResolvedValue(null);
+    useComparisonBaseStore.setState({
+      byRepo: {
+        "/repo": {
+          kind: "ref",
+          name: "origin/main",
+          ref: "refs/remotes/origin/main",
+        },
+      },
+    });
+    vi.mocked(gitDiffFromBase).mockResolvedValue({
+      rev: "base-sha",
+      toRev: null,
+      diff: diffFor("kept.ts"),
+    });
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() =>
+      expect(useAllChangesLinkStore.getState().listing[PANE]?.files).toEqual([
+        { rel: "kept.ts", status: "M" },
+      ]),
+    );
+
+    act(() => useWorkspaceStore.setState({ rootPath: "/outside" }));
+
+    await waitFor(() => expect(screen.getByText("noRepo")).toBeInTheDocument());
+    expect(useAllChangesLinkStore.getState().listing[PANE]).toBeUndefined();
+    expect(container.querySelectorAll("[data-diff-file]")).toHaveLength(0);
+  });
+
   it("says so when nothing has changed", async () => {
     render(<AllChangesTabContent paneId={PANE} />);
 
@@ -634,7 +1143,7 @@ describe("AllChangesTabContent", () => {
     const { container } = render(<AllChangesTabContent paneId={PANE} />);
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "allChangesCollapseFile" }));
+    fireEvent.click(screen.getByRole("button", { name: new RegExp("^allChangesCollapseFile") }));
     await waitFor(() => expect(container.querySelector(".cm-mergeView")).toBeNull());
 
     // Clicking that row in the panel means "show me this file", so a file the

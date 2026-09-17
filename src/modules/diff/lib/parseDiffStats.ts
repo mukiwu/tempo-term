@@ -8,7 +8,11 @@
  * comparison itself is built from two full documents, the same way the
  * single-file tab does it. This is only the scan.
  */
-import { diffHeaderPath, stripGitPathSide } from "@/lib/gitPath";
+import {
+  diffHeaderPath,
+  stripGitPathSide,
+  unquoteGitPath,
+} from "@/lib/gitPath";
 
 /** Where one hunk sits, and how tall it reads. */
 export interface DiffHunk {
@@ -24,6 +28,25 @@ export interface FileDiffStats {
   /** git called the file binary, so it has no lines to show. */
   binary: boolean;
   hunks: DiffHunk[];
+  /**
+   * The letter git status would use: A, D, R, C, or M — read off the diff's
+   * own extended headers, which say what happened to the file outright.
+   *
+   * The alternative is guessing from the counts, and the counts do not know:
+   * a file that only gained lines is not a new file, and one that lost every
+   * line it had is not necessarily a deleted one.
+   */
+  status: string;
+  /**
+   * The name the file had on the old side, when that is not the name it has
+   * now: a rename, or the source a copy was taken from.
+   *
+   * Whoever reads the two documents needs it. `git diff` reports a rename as
+   * one entry under the new name, and the new name does not exist at the old
+   * end -- so reading both sides at it makes a file that merely moved look
+   * like a whole file added.
+   */
+  from?: string;
 }
 
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
@@ -79,10 +102,32 @@ export function parseDiffStats(diff: string): Map<string, FileDiffStats> {
     if (line.startsWith("diff --git ")) {
       flush();
       path = diffHeaderPath(line);
-      stats = { added: 0, deleted: 0, binary: false, hunks: [] };
+      stats = { added: 0, deleted: 0, binary: false, hunks: [], status: "M" };
       continue;
     }
     if (!stats) {
+      continue;
+    }
+    // git's extended headers, which only appear for a file something other
+    // than an edit happened to. A rename is reported as a pair of them, and
+    // either one is enough to name it.
+    if (line.startsWith("new file mode")) {
+      stats.status = "A";
+      continue;
+    }
+    if (line.startsWith("deleted file mode")) {
+      stats.status = "D";
+      continue;
+    }
+    if (line.startsWith("rename from ") || line.startsWith("copy from ")) {
+      stats.status = line.startsWith("rename from ") ? "R" : "C";
+      // Written bare, with no a/ prefix, and quoted by the same rules as any
+      // other path git prints.
+      stats.from = unquoteGitPath(line.slice(line.indexOf("from ") + 5).trim());
+      continue;
+    }
+    if (line.startsWith("rename to ") || line.startsWith("copy to ")) {
+      stats.status = line.startsWith("rename to ") ? "R" : "C";
       continue;
     }
     // The ---/+++ pair names the file authoritatively; /dev/null means the

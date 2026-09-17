@@ -28,7 +28,7 @@ use modules::fs::{
 };
 use modules::git::{
     git_branch_checkout, git_branch_checkout_track, git_branch_create_at, git_branch_delete,
-    git_branches, git_cherry_pick, git_comparison_bases, git_commit, git_commit_details, git_commit_file_diff,
+    git_branches, git_cherry_pick, git_comparison_bases, git_diff_from_base, git_tags, git_resolve_rev, git_commit, git_commit_details, git_commit_file_diff,
     git_commit_range_file_diff, git_commit_range_files, git_commits_in_range, git_diff, git_fetch,
     git_file_at_rev, git_graph_log, git_log, git_merge, git_pull, git_push, git_push_delete,
     git_rebase, git_reset, git_resolve_repo, git_restore_file, git_revert, git_stage, git_status,
@@ -323,6 +323,9 @@ pub fn run() {
             git_graph_log,
             git_branches,
             git_comparison_bases,
+            git_diff_from_base,
+            git_tags,
+            git_resolve_rev,
             git_branch_checkout,
             git_branch_create_at,
             git_branch_delete,

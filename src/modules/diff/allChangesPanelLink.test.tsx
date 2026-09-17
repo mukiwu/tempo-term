@@ -114,7 +114,7 @@ describe("the Source Control panel beside the all-changes page", () => {
     localStorage.clear();
     useWorkspaceStore.getState().setRoot("/repo");
     useTabsStore.setState({ tabs: [], activeId: null, spaces: [], activeSpaceId: null });
-    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {} });
+    useAllChangesLinkStore.setState({ file: {}, showing: {}, rescan: {}, listing: {} });
     vi.mocked(gitStatus).mockResolvedValue({
       branch: "main",
       staged: [],
