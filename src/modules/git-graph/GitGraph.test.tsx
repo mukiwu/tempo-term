@@ -368,6 +368,152 @@ describe("GitGraph compare-mode highlighting", () => {
   });
 });
 
+describe("GitGraph search marking", () => {
+  const ROWS = [
+    { ...commit("aaa1111", [], "fix the lane"), author: "muki" },
+    { ...commit("bbb2222", [], "unrelated work"), author: "yw" },
+  ];
+
+  function renderSearch(searchQuery: string) {
+    render(
+      <GitGraph
+        commits={ROWS}
+        selection={null}
+        onSelectCommit={vi.fn()}
+        searchQuery={searchQuery}
+        labels={LABELS}
+      />,
+    );
+  }
+
+  // Keyed on the hash, not the message: once a run is marked the message is
+  // several elements and getByText cannot see it as one string.
+  const rowOf = (hash: string) => screen.getByText(hash).closest("div[class*='absolute']")!;
+
+  it("marks the run that matched, in the field that matched", () => {
+    renderSearch("lane");
+
+    const marks = document.querySelectorAll("mark");
+    expect(marks).toHaveLength(1);
+    expect(marks[0].textContent).toBe("lane");
+    // The message carried the match, so the mark belongs there and nowhere
+    // else: a mark on the hash or the author would claim a match that is not.
+    expect(marks[0].closest("span")?.className).toContain("font-sans");
+  });
+
+  it("marks the author when that is what matched", () => {
+    // Also the case where the whole string is one matched run, which the
+    // component used to mistake for "nothing matched" and leave unmarked.
+    renderSearch("muki");
+
+    const marks = document.querySelectorAll("mark");
+    expect(marks).toHaveLength(1);
+    expect(marks[0].textContent).toBe("muki");
+    // In the author column, not leaking onto the hash beside it.
+    expect(marks[0].closest("span")?.className).toContain("max-w-[70px]");
+  });
+
+  it("gives no row a background just for matching", () => {
+    // A band of coloured rows leaves the one the counter points at with
+    // nothing to tell it apart. The marks in the text say which rows matched.
+    renderSearch("lane");
+
+    expect(rowOf("aaa1111").className).not.toContain("bg-accent");
+    expect(rowOf("bbb2222").className).not.toContain("bg-accent");
+  });
+
+  it("tints the row the counter is on, keeping the selection's own style under it", () => {
+    render(
+      <GitGraph
+        commits={ROWS}
+        selection={{ mode: "single", commit: ROWS[0] }}
+        onSelectCommit={vi.fn()}
+        searchQuery="lane"
+        currentMatchHash="aaa1111"
+        labels={LABELS}
+      />,
+    );
+
+    // The accent is added to what the row already means, not swapped for it:
+    // this is the "1" of "1 / 10" and the selection at the same time.
+    expect(rowOf("aaa1111").className).toContain("bg-accent/10");
+    expect(rowOf("aaa1111").className).toContain("border-border-strong");
+    expect(rowOf("bbb2222").className).not.toContain("bg-accent");
+  });
+
+  it("lets the counter's row and the selection be different rows", () => {
+    // The arrows move both; clicking moves only the selection, so as soon as
+    // the reader looks at something else the two part company — and each still
+    // has to say what it is.
+    render(
+      <GitGraph
+        commits={ROWS}
+        selection={{ mode: "single", commit: ROWS[1] }}
+        onSelectCommit={vi.fn()}
+        searchQuery="lane"
+        currentMatchHash="aaa1111"
+        labels={LABELS}
+      />,
+    );
+
+    expect(rowOf("aaa1111").className).toContain("bg-accent/10");
+    expect(rowOf("aaa1111").className).not.toContain("border-border-strong");
+    expect(rowOf("bbb2222").className).toContain("bg-bg-elevated/60");
+    expect(rowOf("bbb2222").className).not.toContain("bg-accent");
+  });
+
+  it("leaves the selection looking like itself when nothing is being searched for", () => {
+    render(
+      <GitGraph
+        commits={ROWS}
+        selection={{ mode: "single", commit: ROWS[0] }}
+        onSelectCommit={vi.fn()}
+        // A cursor left over from a search that has since been cleared. Without
+        // the empty-query guard this row would still be tinted as the current
+        // match, which is why the hash is passed rather than left out.
+        currentMatchHash="aaa1111"
+        labels={LABELS}
+      />,
+    );
+
+    expect(rowOf("aaa1111").className).toContain("bg-bg-elevated/60");
+    expect(rowOf("aaa1111").className).not.toContain("bg-accent");
+    expect(document.querySelectorAll("mark")).toHaveLength(0);
+  });
+
+  it("marks the row the arrows are on more strongly than the rest", () => {
+    render(
+      <GitGraph
+        commits={ROWS}
+        selection={null}
+        onSelectCommit={vi.fn()}
+        searchQuery="e"
+        currentMatchHash="bbb2222"
+        labels={LABELS}
+      />,
+    );
+
+    // Every match has to be visible while scrolling, but only one of them is
+    // where the next arrow press leaves from.
+    const current = rowOf("bbb2222").querySelector("mark")!;
+    const other = rowOf("aaa1111").querySelector("mark")!;
+    expect(current.className).not.toBe(other.className);
+    // Neither is a solid block: a marked run is meant to be read, not covered.
+    expect(current.className).toContain("bg-accent/");
+    expect(other.className).toContain("bg-accent/");
+  });
+
+  it("never marks the date, which the search does not look at", () => {
+    // Leans on the fixture: `commit()` dates every row "today", so this query
+    // matches the date column and nothing else. It must find nothing rather
+    // than marking a column `commitMatches` never read.
+    renderSearch("today");
+
+    expect(document.querySelectorAll("mark")).toHaveLength(0);
+    expect(rowOf("aaa1111").className).not.toContain("bg-accent");
+  });
+});
+
 describe("GitGraph working-tree row", () => {
   const commits = [commit("c", ["b"], "msg c"), commit("b", [], "msg b")];
 
@@ -737,151 +883,5 @@ describe("GitGraph wide histories", () => {
     // lanes the top rows are all past the ceiling, so far fewer nodes survive
     // than at twenty, where every one of them still has a column.
     expect(drawn[2]).toBeLessThan(drawn[0]);
-  });
-});
-
-describe("GitGraph search marking", () => {
-  const ROWS = [
-    { ...commit("aaa1111", [], "fix the lane"), author: "muki" },
-    { ...commit("bbb2222", [], "unrelated work"), author: "yw" },
-  ];
-
-  function renderSearch(searchQuery: string) {
-    render(
-      <GitGraph
-        commits={ROWS}
-        selection={null}
-        onSelectCommit={vi.fn()}
-        searchQuery={searchQuery}
-        labels={LABELS}
-      />,
-    );
-  }
-
-  // Keyed on the hash, not the message: once a run is marked the message is
-  // several elements and getByText cannot see it as one string.
-  const rowOf = (hash: string) => screen.getByText(hash).closest("div[class*='absolute']")!;
-
-  it("marks the run that matched, in the field that matched", () => {
-    renderSearch("lane");
-
-    const marks = document.querySelectorAll("mark");
-    expect(marks).toHaveLength(1);
-    expect(marks[0].textContent).toBe("lane");
-    // The message carried the match, so the mark belongs there and nowhere
-    // else: a mark on the hash or the author would claim a match that is not.
-    expect(marks[0].closest("span")?.className).toContain("font-sans");
-  });
-
-  it("marks the author when that is what matched", () => {
-    // Also the case where the whole string is one matched run, which the
-    // component used to mistake for "nothing matched" and leave unmarked.
-    renderSearch("muki");
-
-    const marks = document.querySelectorAll("mark");
-    expect(marks).toHaveLength(1);
-    expect(marks[0].textContent).toBe("muki");
-    // In the author column, not leaking onto the hash beside it.
-    expect(marks[0].closest("span")?.className).toContain("max-w-[70px]");
-  });
-
-  it("gives no row a background just for matching", () => {
-    // A band of coloured rows leaves the one the counter points at with
-    // nothing to tell it apart. The marks in the text say which rows matched.
-    renderSearch("lane");
-
-    expect(rowOf("aaa1111").className).not.toContain("bg-accent");
-    expect(rowOf("bbb2222").className).not.toContain("bg-accent");
-  });
-
-  it("tints the row the counter is on, keeping the selection's own style under it", () => {
-    render(
-      <GitGraph
-        commits={ROWS}
-        selection={{ mode: "single", commit: ROWS[0] }}
-        onSelectCommit={vi.fn()}
-        searchQuery="lane"
-        currentMatchHash="aaa1111"
-        labels={LABELS}
-      />,
-    );
-
-    // The accent is added to what the row already means, not swapped for it:
-    // this is the "1" of "1 / 10" and the selection at the same time.
-    expect(rowOf("aaa1111").className).toContain("bg-accent/10");
-    expect(rowOf("aaa1111").className).toContain("border-border-strong");
-    expect(rowOf("bbb2222").className).not.toContain("bg-accent");
-  });
-
-  it("lets the counter's row and the selection be different rows", () => {
-    // The arrows move both; clicking moves only the selection, so as soon as
-    // the reader looks at something else the two part company — and each still
-    // has to say what it is.
-    render(
-      <GitGraph
-        commits={ROWS}
-        selection={{ mode: "single", commit: ROWS[1] }}
-        onSelectCommit={vi.fn()}
-        searchQuery="lane"
-        currentMatchHash="aaa1111"
-        labels={LABELS}
-      />,
-    );
-
-    expect(rowOf("aaa1111").className).toContain("bg-accent/10");
-    expect(rowOf("aaa1111").className).not.toContain("border-border-strong");
-    expect(rowOf("bbb2222").className).toContain("bg-bg-elevated/60");
-    expect(rowOf("bbb2222").className).not.toContain("bg-accent");
-  });
-
-  it("leaves the selection looking like itself when nothing is being searched for", () => {
-    render(
-      <GitGraph
-        commits={ROWS}
-        selection={{ mode: "single", commit: ROWS[0] }}
-        onSelectCommit={vi.fn()}
-        // A cursor left over from a search that has since been cleared. Without
-        // the empty-query guard this row would still be tinted as the current
-        // match, which is why the hash is passed rather than left out.
-        currentMatchHash="aaa1111"
-        labels={LABELS}
-      />,
-    );
-
-    expect(rowOf("aaa1111").className).toContain("bg-bg-elevated/60");
-    expect(rowOf("aaa1111").className).not.toContain("bg-accent");
-    expect(document.querySelectorAll("mark")).toHaveLength(0);
-  });
-
-  it("marks the row the arrows are on more strongly than the rest", () => {
-    render(
-      <GitGraph
-        commits={ROWS}
-        selection={null}
-        onSelectCommit={vi.fn()}
-        searchQuery="e"
-        currentMatchHash="bbb2222"
-        labels={LABELS}
-      />,
-    );
-
-    // Every match has to be visible while scrolling, but only one of them is
-    // where the next arrow press leaves from.
-    const current = rowOf("bbb2222").querySelector("mark")!;
-    const other = rowOf("aaa1111").querySelector("mark")!;
-    expect(current.className).not.toBe(other.className);
-    // Neither is a solid block: a marked run is meant to be read, not covered.
-    expect(current.className).toContain("bg-accent/");
-    expect(other.className).toContain("bg-accent/");
-  });
-
-  it("never marks the date, which the search does not look at", () => {
-    // Leans on the fixture: `commit()` dates every row "today", so this query
-    // matches the date column and nothing else. It must find nothing rather
-    // than marking a column `commitMatches` never read.
-    renderSearch("today");
-
-    expect(document.querySelectorAll("mark")).toHaveLength(0);
-    expect(rowOf("aaa1111").className).not.toContain("bg-accent");
   });
 });
