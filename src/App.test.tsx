@@ -7,6 +7,7 @@ import { useUiStore, DEFAULT_DOCK } from "@/stores/uiStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useTabsStore } from "@/stores/tabsStore";
 import { leaf, splitLeaf, type LayoutNode } from "@/modules/terminal/lib/terminalLayout";
+import { useGraphSearchRequestStore } from "@/modules/git-graph/lib/graphSearchRequestStore";
 
 // "Close Tab" clicked in the WindowMenuBar's File menu delivers a
 // `menu:close-tab` event to this webview's scoped listener. Capture that
@@ -33,6 +34,7 @@ vi.mock("@/components/TitleBar", () => ({ TitleBar: () => null }));
 
 describe("App shell", () => {
   beforeEach(() => {
+    useGraphSearchRequestStore.setState({ token: 0 });
     useSettingsStore.setState({ language: "en", themeId: "vitesse-dark" });
     // Show the sidebar (with its Explorer/Git/Notes tabs) and the settings
     // modal (with the language picker); keep it light for jsdom.
@@ -65,6 +67,34 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "正體中文" }));
     expect(await screen.findByRole("button", { name: "檔案總管" })).toBeInTheDocument();
     expect(screen.getByText("顯示語言")).toBeInTheDocument();
+  });
+
+  it("opens the Git Graph's search with Cmd+F, and only when the graph is the focused pane", () => {
+    const tab = (kind: "launcher" | "git-graph") => ({
+      id: "t1",
+      spaceId: "s1",
+      title: "t",
+      kind: "launcher" as const,
+      paneTree: leaf("t1-leaf", { kind }),
+      activeLeafId: "t1-leaf",
+      paneOrder: ["t1-leaf"],
+    });
+    const base = { spaces: [{ id: "s1", name: "Space 1" }], activeSpaceId: "s1", activeId: "t1" };
+
+    useTabsStore.setState({ ...base, tabs: [tab("launcher")] });
+    const { unmount } = render(<App />);
+    fireEvent.keyDown(window, { code: "KeyF", key: "f", metaKey: true });
+
+    // Not the graph's key here: in a terminal Cmd/Ctrl+F is readline's
+    // forward-char, so the shortcut has to let it through.
+    expect(useGraphSearchRequestStore.getState().token).toBe(0);
+    unmount();
+
+    useTabsStore.setState({ ...base, tabs: [tab("git-graph")] });
+    render(<App />);
+    fireEvent.keyDown(window, { code: "KeyF", key: "f", metaKey: true });
+
+    expect(useGraphSearchRequestStore.getState().token).toBe(1);
   });
 
   it("switches to the Nth tab of the active space with Cmd+digit", () => {

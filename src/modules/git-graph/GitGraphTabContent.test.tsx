@@ -351,7 +351,7 @@ describe("GitGraphTabContent search navigation", () => {
     fireEvent.change(search, { target: { value: "fix:" } });
 
     expect(screen.getByText("keep this row")).toBeInTheDocument();
-    expect(screen.getByText("0 / 2 matches (loaded)")).toBeInTheDocument();
+    expect(screen.getByText("0 / 2")).toBeInTheDocument();
 
     fireEvent.keyDown(search, { key: "Enter" });
     await waitFor(() => expect(gitCommitDetails).toHaveBeenLastCalledWith("/repo", "ccc3333"));
@@ -361,7 +361,7 @@ describe("GitGraphTabContent search navigation", () => {
 
     fireEvent.keyDown(search, { key: "Enter", shiftKey: true });
     await waitFor(() => expect(gitCommitDetails).toHaveBeenLastCalledWith("/repo", "ccc3333"));
-    expect(screen.getByText("2 / 2 matches (loaded)")).toBeInTheDocument();
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
 
     const detailsCallCount = vi.mocked(gitCommitDetails).mock.calls.length;
     fireEvent.change(search, { target: { value: "" } });
