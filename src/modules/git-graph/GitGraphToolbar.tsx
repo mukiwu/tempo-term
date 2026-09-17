@@ -16,6 +16,7 @@ import { basename } from "@/modules/explorer/lib/paths";
 import { BranchFilter } from "./BranchFilter";
 import type { WorktreeItem } from "./lib/gitGraphBridge";
 import type { Branch, CommitOrder } from "./types";
+import { useGraphSearchRequestStore } from "./lib/graphSearchRequestStore";
 
 // Below this measured toolbar width the layout switches to compact: the action
 // icons fold into a single overflow menu. Sized to the point where the roomy
@@ -181,6 +182,24 @@ export function GitGraphToolbar({
 
   const rootRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number | null>(null);
+
+  // Ctrl/Cmd+F, routed through a store because the shortcut is handled at the
+  // window and the box's open state lives here. Keyed on the token changing,
+  // not on its value, so a request that arrived before this toolbar mounted
+  // does not pop the box open on arrival.
+  const searchRequest = useGraphSearchRequestStore((s) => s.token);
+  const seenSearchRequest = useRef(searchRequest);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (searchRequest === seenSearchRequest.current) {
+      return;
+    }
+    seenSearchRequest.current = searchRequest;
+    setSearchOpen(true);
+    // Already open: select what is there, the way a browser's find bar does, so
+    // the next keystroke replaces the query instead of appending to it.
+    searchInputRef.current?.select();
+  }, [searchRequest]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -394,6 +413,7 @@ export function GitGraphToolbar({
         {searchOpen ? (
           <div className="flex min-w-0 items-center gap-1">
             <input
+              ref={searchInputRef}
               autoFocus
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}

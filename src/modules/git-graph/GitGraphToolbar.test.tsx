@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitGraphToolbar, type GitGraphToolbarLabels } from "./GitGraphToolbar";
 import type { Branch } from "./types";
+import { useGraphSearchRequestStore } from "./lib/graphSearchRequestStore";
 
 // jsdom's ResizeObserver is a no-op, so swap in a controllable one that lets a
 // test feed a width through the same callback the component listens on. This
@@ -31,6 +32,7 @@ function setToolbarWidth(width: number) {
 
 beforeEach(() => {
   observers = [];
+  useGraphSearchRequestStore.setState({ token: 0 });
   vi.stubGlobal("ResizeObserver", ControllableResizeObserver);
 });
 
@@ -151,6 +153,24 @@ describe("GitGraphToolbar responsive layout", () => {
     fireEvent.click(screen.getByLabelText(labels.search));
 
     expect(screen.getAllByLabelText(labels.branches).length).toBeGreaterThan(0);
+  });
+
+  it("opens the search box when the shortcut asks for it", () => {
+    renderToolbar();
+    expect(screen.queryByPlaceholderText(labels.searchPlaceholder)).not.toBeInTheDocument();
+
+    act(() => useGraphSearchRequestStore.getState().open());
+
+    expect(screen.getByPlaceholderText(labels.searchPlaceholder)).toBeInTheDocument();
+  });
+
+  it("does not reopen a closed box for a request that predates the toolbar", () => {
+    // The store outlives any one toolbar. Mounting after a press must not act
+    // on it — the graph would pop its search open on every remount.
+    act(() => useGraphSearchRequestStore.getState().open());
+    renderToolbar();
+
+    expect(screen.queryByPlaceholderText(labels.searchPlaceholder)).not.toBeInTheDocument();
   });
 
   it("names the button that closes the search for what it does", () => {

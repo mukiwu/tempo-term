@@ -26,6 +26,7 @@ import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { findPaneContent, leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { focusedTerminalOps } from "@/modules/terminal/lib/terminalBus";
 import { getPreviewControls, type PreviewControls } from "@/modules/preview/lib/previewControls";
+import { useGraphSearchRequestStore } from "@/modules/git-graph/lib/graphSearchRequestStore";
 import { menuCopy, menuPaste, menuSelectAll } from "@/lib/editActions";
 import { backgroundSurfaceStyle } from "@/lib/backgroundAppearance";
 import { useBackgroundImage } from "@/lib/useBackgroundImage";
@@ -134,6 +135,20 @@ function focusedPreviewControls(): PreviewControls | undefined {
   }
   const focused = findPaneContent(tab.paneTree, tab.activeLeafId);
   return focused?.kind === "preview" ? getPreviewControls(tab.activeLeafId) : undefined;
+}
+
+/**
+ * Whether the focused leaf is the Git Graph, on the same strict reading as
+ * `focusedPreviewControls`: a graph open in a sibling pane does not count, or
+ * Ctrl/Cmd+F would be taken out of whichever pane is being typed into.
+ */
+function gitGraphIsFocused(): boolean {
+  const state = useTabsStore.getState();
+  const tab = state.tabs.find((tt) => tt.id === state.activeId);
+  if (!tab) {
+    return false;
+  }
+  return findPaneContent(tab.paneTree, tab.activeLeafId)?.kind === "git-graph";
 }
 
 /**
@@ -506,6 +521,14 @@ function App() {
         if (e.code === "KeyN" && (IS_WINDOWS ? e.shiftKey : !e.shiftKey)) {
           e.preventDefault();
           void invoke("open_new_window").catch(() => {});
+          return;
+        }
+        // F opens the Git Graph's search box, or reselects it if it is already
+        // open. Gated on the graph being the focused pane: in a terminal
+        // Ctrl+F is readline's forward-char, which is not ours to take.
+        if (e.code === "KeyF" && !e.shiftKey && gitGraphIsFocused()) {
+          e.preventDefault();
+          useGraphSearchRequestStore.getState().open();
           return;
         }
         // L focuses the active preview's address bar. Only acts on a preview
