@@ -520,6 +520,71 @@ describe("AllChangesTabContent", () => {
     expect(scrollTop).toBe(2400);
   });
 
+  it("lets the reader win even when a measurement lands before the scroll is read", async () => {
+    // The same takeover, in the order the release check used to miss. Releasing
+    // happened only in the scroll handler's rAF, while `applyPin` rewrote the
+    // position it compares against -- so a measurement arriving between the
+    // reader's scroll and that frame (a neighbour's editors finishing, which
+    // resolves off a promise rather than a frame) absorbed the reader's scroll
+    // and pulled the page back.
+    const observers: ResizeObserverCallback[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          observers.push(callback);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    vi.mocked(gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [
+        { path: "src/a.ts", staged: false, status: "M" },
+        { path: "src/b.ts", staged: false, status: "M" },
+        { path: "src/c.ts", staged: false, status: "M" },
+      ],
+    });
+    vi.mocked(gitDiff).mockImplementation(async (_repo, staged) =>
+      staged ? "" : diffFor("src/a.ts") + diffFor("src/b.ts") + diffFor("src/c.ts"),
+    );
+
+    const { container } = render(<AllChangesTabContent paneId={PANE} />);
+    await waitFor(() => expect(container.querySelectorAll(".cm-mergeView").length).toBe(3));
+
+    const root = container.querySelector<HTMLElement>(".overflow-auto")!;
+    let scrollTop = 3000;
+    Object.defineProperty(root, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    root.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    let contentTop = 1000;
+    const middle = container.querySelector<HTMLElement>('[data-diff-file="w:src/b.ts"]')!;
+    middle.getBoundingClientRect = () => ({ top: contentTop - scrollTop }) as DOMRect;
+
+    fireEvent.click(
+      within(middle).getByRole("button", { name: new RegExp("^allChangesCollapseFile") }),
+    );
+    await waitFor(() => expect(scrollTop).toBe(1000));
+
+    // The reader scrolls away; a neighbour finishes measuring before the frame
+    // that reads the scroll gets to run.
+    scrollTop = 2400;
+    contentTop = 1600;
+    for (const callback of observers) {
+      act(() => callback([], {} as ResizeObserver));
+    }
+
+    expect(scrollTop).toBe(2400);
+  });
+
   it("re-reads the files already up, not just the file list", async () => {
     vi.mocked(gitStatus).mockResolvedValue({
       branch: "main",
