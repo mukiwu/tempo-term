@@ -269,10 +269,29 @@ export function EditorTabContent({
   }, [path]);
 
   if (loadError) {
+    // The toolbar stays: without it a pane whose file has gone -- deleted or
+    // moved since the workspace was last open -- has no close button at all,
+    // since the tab's own X closes the whole tab rather than one pane of a
+    // split. The breadcrumb is the other way out, to a sibling that is still
+    // there, and refresh retries the read for a file that has come back.
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-sm text-fg-subtle">
-        <span>{t("loadError")}</span>
-        <span className="max-w-full break-all text-xs">{loadError}</span>
+      <div className="flex h-full w-full flex-col overflow-hidden bg-bg">
+        <EditorPaneHeader
+          path={path}
+          wordWrap={wordWrap}
+          onToggleWordWrap={toggleWordWrap}
+          onRefresh={handleRefresh}
+          onOpenWebPreview={onOpenWebPreview}
+          mode={effectiveMode}
+          onSetMode={setMode}
+          onSwitchFile={(next) => onSwitchFile?.(next)}
+          showClose={showClose}
+          onClose={() => onClose?.()}
+        />
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-sm text-fg-subtle">
+          <span>{t("loadError")}</span>
+          <span className="max-w-full break-all text-xs">{loadError}</span>
+        </div>
       </div>
     );
   }
