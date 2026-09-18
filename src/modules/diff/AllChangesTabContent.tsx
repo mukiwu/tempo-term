@@ -553,21 +553,34 @@ export function AllChangesTabContent({
   const applyPin = useCallback(() => {
     const pin = pinRef.current;
     const root = scrollRef.current;
-    const element = pin ? elementsRef.current.get(pin.key) : null;
-    if (!pin || !root || !element) {
+    if (!pin || !root) {
       return;
     }
-    if (Date.now() > pin.until) {
+    // Both entry points ask the same two questions first, so whether the
+    // reader keeps their scroll cannot depend on which of them runs. The
+    // scroll handler's frame is not guaranteed to come before a measurement:
+    // a neighbour's editors finish off a promise, which is not aligned to a
+    // frame, so the reader's scroll can arrive here first.
+    if (Date.now() > pin.until || Math.abs(root.scrollTop - pin.at) > 1) {
+      pinRef.current = null;
+      return;
+    }
+    // A pinned section that is no longer in the tree measures as zeros, which
+    // reads as a position and scrolls the page by the pane's own offset. It is
+    // gone for good -- a rescan rebuilds the map -- so let the hold go.
+    const element = elementsRef.current.get(pin.key);
+    if (!element || !element.isConnected) {
       pinRef.current = null;
       return;
     }
     const now = element.getBoundingClientRect().top - root.getBoundingClientRect().top;
     const target = Math.max(pin.top, 0);
-    if (Math.abs(now - target) >= 1) {
-      root.scrollTop = Math.max(0, root.scrollTop + now - target);
+    if (Math.abs(now - target) < 1) {
+      return;
     }
+    root.scrollTop = Math.max(0, root.scrollTop + now - target);
     // Read back rather than trusting the write: what the browser kept is what
-    // a later scroll event has to match to count as this page's own doing.
+    // a later scroll has to match to count as this page's own doing.
     pin.at = root.scrollTop;
   }, []);
 

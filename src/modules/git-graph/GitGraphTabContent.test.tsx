@@ -270,6 +270,54 @@ describe("GitGraphTabContent paging", () => {
     expect(skip).toBeUndefined();
   });
 
+  it("ignores a page that started while a reload was already in flight", async () => {
+    // The other order, and the one the generation counter used to miss: the
+    // reload bumps on its way IN, so a page starting after it captures the
+    // same generation and passes the check. It then computes its seam from the
+    // list the reload has already thrown away and appends to the new one,
+    // leaving a hole -- and a hole holds a lane for ever, which draws parent
+    // lines that do not exist.
+    let resolveReload!: (value: ReturnType<typeof commitList>) => void;
+    let resolvePage!: (value: ReturnType<typeof commitList>) => void;
+    vi.mocked(gitGraphLog)
+      .mockResolvedValueOnce(commitList(["aaa1111", "bbb2222"], true))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ReturnType<typeof commitList>>((resolve) => {
+            resolveReload = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ReturnType<typeof commitList>>((resolve) => {
+            resolvePage = resolve;
+          }),
+      );
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(vi.mocked(gitGraphLog)).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(loadMoreButton());
+    await waitFor(() => expect(vi.mocked(gitGraphLog)).toHaveBeenCalledTimes(3));
+
+    await act(async () => {
+      resolveReload(commitList(["new0000"], false));
+    });
+    await screen.findByText("msg new0000");
+
+    // The page's seam is bbb2222, the last row of the list it measured itself
+    // against -- a list that is no longer on screen.
+    await act(async () => {
+      resolvePage(commitList(["bbb2222", "ccc3333"], false));
+    });
+
+    expect(screen.queryByText("msg ccc3333")).not.toBeInTheDocument();
+    expect(screen.getByText("msg new0000")).toBeInTheDocument();
+  });
+
   it("ignores a page that was in flight when a reload replaced the list", async () => {
     // A git action (or the refresh button) landing mid-page must win: the list
     // the page was measured against is gone, and stitching onto the new one

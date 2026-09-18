@@ -193,12 +193,20 @@ export function GitGraphTabContent() {
           // quiet the top row, not blank the whole graph.
           gitStatus(repoPath).catch((): GitStatus | null => null),
         ]);
+        // Bump again on the way out. The bump above only catches a page that
+        // was already in flight when this read started; a page that starts
+        // DURING it captures the same generation and would pass the check,
+        // then splice rows measured against the list this line replaces.
+        loadGeneration.current += 1;
         setCommits(log.commits);
         setHasMore(log.hasMore);
         setBranches(branchList);
         setWorktrees(worktreeList);
         setStatus(workingTree);
       } catch (err: unknown) {
+        // Same reason as the success path: a page started during this read
+        // measured itself against a list that is about to be emptied.
+        loadGeneration.current += 1;
         setCommits([]);
         setBranches([]);
         setWorktrees([]);
