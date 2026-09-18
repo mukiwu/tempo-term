@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { gitFileAtRev } from "@/modules/source-control/lib/gitBridge";
@@ -9,7 +9,6 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { changedLines, estimatedRows, type FileDiffStats } from "./lib/parseDiffStats";
 import {
   buildDiffViews,
-  collapseDiffRegion,
   destroyDiffViews,
   diffSideView,
   type DiffViews,
@@ -232,17 +231,6 @@ export function DiffFileSection({
     };
   }, [shouldLoad, repo, file.rel, file.from, file.path, file.staged, reloadKey, baseRev, baseTo]);
 
-  // The old side is read through a ref so that folding a stretch back up
-  // never lands in the dependencies of the effect that builds the editors.
-  const docsRef = useRef<DiffDocs | null>(null);
-  docsRef.current = docs;
-  const collapseRegion = useCallback((side: "a" | "b", pos: number) => {
-    const views = viewsRef.current;
-    if (views) {
-      collapseDiffRegion(views, side, pos, docsRef.current?.left ?? "");
-    }
-  }, []);
-
   useEffect(() => {
     const parent = hostRef.current;
     if (!docs || !parent || hidden || !mount) {
@@ -263,7 +251,12 @@ export function DiffFileSection({
       unified,
       unchangedLines: t("diffUnchangedLines"),
       foldLabels: { fold: t("diffCollapseUnchanged"), unfold: t("diffExpandUnchanged") },
-      onCollapseRegion: collapseRegion,
+      runLabels: {
+        // The bar says how many lines its own press will reveal, which is the
+        // step until the last few come with it.
+        up: (lines: number) => t("diffRunExpandUp", { count: lines }),
+        down: (lines: number) => t("diffRunExpandDown", { count: lines }),
+      },
       commentHandlers,
       cancelled: () => cancelled,
     }).then((built) => {

@@ -21,7 +21,6 @@ import { selectTerminalFontFamily, useFontStore } from "@/stores/fontStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   buildDiffViews,
-  collapseDiffRegion,
   destroyDiffViews,
   diffChunks,
   type DiffViews,
@@ -164,7 +163,12 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
       unified,
       unchangedLines: t("diffUnchangedLines"),
       foldLabels,
-      onCollapseRegion: collapseRegion,
+      runLabels: {
+        // The bar says how many lines its own press will reveal, which is the
+        // step until the last few come with it.
+        up: (lines: number) => t("diffRunExpandUp", { count: lines }),
+        down: (lines: number) => t("diffRunExpandDown", { count: lines }),
+      },
       commentHandlers,
       cancelled: () => cancelled,
     }).then((built) => {
@@ -214,15 +218,6 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
     };
   }, [docs, path, themeId, fontFamily, fontSize, wordWrap, unified]);
 
-
-  // Fold one expanded stretch back up; the replay of what stays open lives
-  // with the view builder, since both diff surfaces need it.
-  function collapseRegion(side: "a" | "b", pos: number) {
-    const views = viewsRef.current;
-    if (views) {
-      collapseDiffRegion(views, side, pos, docs?.left ?? "");
-    }
-  }
 
   function currentChunks(): readonly Chunk[] {
     return diffChunks(viewsRef.current);

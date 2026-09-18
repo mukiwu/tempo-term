@@ -64,6 +64,8 @@
   "diffSplitView": "並排檢視",
   "diffCollapseUnchanged": "收合未變更",
   "diffExpandUnchanged": "展開未變更",
+  "diffRunExpandUp": "往上顯示 {{count}} 行",
+  "diffRunExpandDown": "往下顯示 {{count}} 行",
   "diffUnchangedLines": "$ 行未變更",
   "expandFolder": "展開 {{name}}",
   "collapseFolder": "收合 {{name}}",
