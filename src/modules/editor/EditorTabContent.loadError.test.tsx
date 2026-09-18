@@ -73,6 +73,24 @@ describe("EditorTabContent failed load", () => {
     expect(useEditorStore.getState().buffers["/big.log"]).toBeUndefined();
   });
 
+  // A file that has gone since the workspace was last open fails to load, and
+  // the error state used to replace the whole pane -- toolbar included. In a
+  // split that left no way to close the pane at all: the tab's own X closes
+  // the tab, not one pane of it.
+  it("keeps the pane's toolbar, so a split pane can still be closed", async () => {
+    mockFsReadFile.mockRejectedValue("No such file or directory (os error 2)");
+    const onClose = vi.fn();
+    render(
+      <EditorTabContent path="/big.log" leafId="leaf1" showClose onClose={onClose} />,
+    );
+    await act(async () => {});
+
+    expect(screen.getByText("This file cannot be opened")).toBeInTheDocument();
+    const close = screen.getByRole("button", { name: "Close pane" });
+    close.click();
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("refuses to save, so the real file is never truncated", async () => {
     render(<EditorTabContent path="/big.log" leafId="leaf1" />);
     await act(async () => {});
