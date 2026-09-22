@@ -10,6 +10,11 @@
 
 - 修正 macOS 15 以下完全開不起來的問題，Apple Intelligence 的框架改為弱連結，系統上沒有就不去載入；那台機器上除了 Apple Intelligence 以外的功能都照常 (#448)
 
+### 貢獻者
+
+- @yw-chan (#430, #441, #442)
+- @fdjkgh580 (#448)
+
 ## English
 
 ### feat
@@ -21,3 +26,8 @@
 ### fix
 
 - Open on macOS 15 and earlier again: the Apple Intelligence framework is weak-linked, so a Mac without it simply does not load it, and everything but Apple Intelligence works as before (#448)
+
+### Contributors
+
+- @yw-chan (#430, #441, #442)
+- @fdjkgh580 (#448)
