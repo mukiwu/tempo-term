@@ -1,45 +1,15 @@
-import { EditorView, gutter, GutterMarker } from "@codemirror/view";
-import { StateEffect, StateField, type Extension } from "@codemirror/state";
+import { type EditorView, gutter, GutterMarker } from "@codemirror/view";
+import { type Extension } from "@codemirror/state";
 import {
-  getChunks,
-  mergeViewSiblings,
-  uncollapseUnchanged,
-  type Chunk,
-} from "@codemirror/merge";
+  barredRuns,
+  foldRun,
+  openedRuns,
+  runKeyAt,
+  RunWidget,
+  unfoldRun,
+} from "./collapseRuns";
 import { FOLD_VERTICAL, lucideIcon, UNFOLD_VERTICAL } from "./lucideDom";
 import { withGutterHint } from "./gutterHint";
-
-/**
- * Forget every tracked expansion. Dispatched right after the collapsed bars
- * are rebuilt, so the ones that stay open can be replayed on top.
- */
-export const clearExpandedEffect = StateEffect.define<null>();
-
-/**
- * Where the reader expanded an unchanged stretch, in document order.
- *
- * @codemirror/merge consumes its "N unchanged lines" bar on the way out and
- * offers no way back, so this remembers the positions those bars sat at. The
- * library dispatches the same effect to both sides of a MergeView, which is
- * what lets the two sides be paired up by index when one is folded back.
- */
-export const expandedRegions = StateField.define<readonly number[]>({
-  create: () => [],
-  update(value, tr) {
-    let next = value;
-    for (const effect of tr.effects) {
-      if (effect.is(clearExpandedEffect)) {
-        next = [];
-      } else if (effect.is(uncollapseUnchanged) && !next.includes(effect.value)) {
-        next = [...next, effect.value].sort((a, b) => a - b);
-      }
-    }
-    return next;
-  },
-});
-
-/** The type tag @codemirror/merge gives its collapsed-lines block widget. */
-const COLLAPSED_WIDGET = "collapsed-unchanged-code";
 
 class IconMarker extends GutterMarker {
   constructor(
@@ -63,79 +33,75 @@ class IconMarker extends GutterMarker {
 }
 
 /**
- * Translate a position in unchanged text to the same text on the other side of
- * a MergeView. Mirrors the mapping the library's own collapsed bar does
- * internally so that clicking it opens both sides at once.
+ * Whether this line is where a stretch's way back lives: opened, and with
+ * nothing left hidden behind a bar to hang the icon on instead.
  */
-function mapAcross(pos: number, chunks: readonly Chunk[], fromA: boolean): number {
-  let ours = 0;
-  let theirs = 0;
-  for (const chunk of chunks) {
-    if ((fromA ? chunk.fromA : chunk.fromB) >= pos) {
-      break;
-    }
-    [ours, theirs] = fromA ? [chunk.toA, chunk.toB] : [chunk.toB, chunk.toA];
-  }
-  return theirs + (pos - ours);
-}
-
-/** Open one collapsed stretch, keeping the other side of a split in step. */
-function expandRegion(view: EditorView, pos: number) {
-  view.dispatch({ effects: uncollapseUnchanged.of(pos) });
-  const siblings = mergeViewSiblings(view);
-  if (!siblings) {
-    return;
-  }
-  const info = getChunks(view.state);
-  const other = siblings.a === view ? siblings.b : siblings.a;
-  other.dispatch({
-    effects: uncollapseUnchanged.of(mapAcross(pos, info?.chunks ?? [], info?.side === "a")),
-  });
+function foldsFromItsFirstLine(view: EditorView, pos: number): boolean {
+  return openedRuns(view.state).has(pos) && !barredRuns(view.state).has(pos);
 }
 
 /**
- * A gutter that opens and closes the unchanged stretches: an unfold icon
- * beside each "N unchanged lines" bar, and a fold icon on the first line of
- * every stretch that is open. The column carries no marker when a file has
- * neither, so it costs no width there.
+ * A fold icon on the first line of every unchanged stretch the reader has
+ * opened. The column carries no marker when a file has none open, so it costs
+ * no width there.
  *
- * Opening is self-contained; folding back needs the whole bar set rebuilt, so
- * `onCollapse` hands that to the host — the only thing that knows about the
- * other side of the diff.
+ * Only the fold half now: the bars carry their own controls for opening (see
+ * collapseRuns.ts), but a stretch opened all the way leaves no bar behind, so
+ * the way back has to live in the gutter.
  */
-export function collapseBackExtension(
-  labels: { fold: string; unfold: string },
-  onCollapse: (pos: number) => void,
-): Extension {
+export function collapseBackExtension(labels: { fold: string; unfold: string }): Extension {
   return [
-    expandedRegions,
     gutter({
       class: "cm-diff-fold-gutter",
+      // A stretch with nothing left hidden has no bar to hang an icon beside,
+      // so its way back sits on the line it starts at instead.
       lineMarker: (view, line) =>
-        view.state.field(expandedRegions).includes(line.from)
+        foldsFromItsFirstLine(view, line.from)
           ? new IconMarker(line.from, "fold", labels.fold)
           : null,
-      widgetMarker: (_view, widget, block) =>
-        (widget as { type?: unknown }).type === COLLAPSED_WIDGET
-          ? new IconMarker(block.from, "unfold", labels.unfold)
-          : null,
+      // Beside a bar the icon says what pressing it will do, which depends on
+      // whether the stretch has been opened at all: shut it again, or open the
+      // rest of it.
+      widgetMarker: (view, widget, block) => {
+        if (!(widget instanceof RunWidget)) {
+          return null;
+        }
+        const opened = openedRuns(view.state).has(widget.start);
+        return new IconMarker(
+          block.from,
+          opened ? "fold" : "unfold",
+          opened ? labels.fold : labels.unfold,
+        );
+      },
       lineMarkerChange: (update) =>
-        update.startState.field(expandedRegions) !== update.state.field(expandedRegions),
+        openedRuns(update.startState) !== openedRuns(update.state),
       domEventHandlers: {
         mousedown(view, block, event) {
-          if (view.state.field(expandedRegions).includes(block.from)) {
-            event.preventDefault();
-            onCollapse(block.from);
-            return true;
+          // By the stretch the block belongs to, never by where the block is
+          // drawn: opening the top edge moves the bar down, and a key taken
+          // from its new position matches no stretch at all.
+          const key = runKeyAt(view.state, block.from);
+          if (key === null) {
+            return false;
           }
-          // A collapsed stretch is replaced by one block, so its gutter cell
-          // covers more than the single line it starts on.
           const line = view.state.doc.lineAt(block.from);
-          if (block.to <= line.to) {
+          const onBar = block.to > line.to;
+          // The same question the icon is drawn by. CodeMirror hangs this
+          // handler on the whole gutter column and works the block out from
+          // the pointer's height, with no regard for whether that line has a
+          // marker -- so asking anything looser than the icon does leaves
+          // stretches of gutter that are invisible and still act. A stretch
+          // opened at its top has both an icon beside its bar and none on its
+          // first line, and that first line was folding the lot.
+          if (!onBar && !foldsFromItsFirstLine(view, block.from)) {
             return false;
           }
           event.preventDefault();
-          expandRegion(view, block.from);
+          if (openedRuns(view.state).has(key)) {
+            foldRun(view, key);
+          } else {
+            unfoldRun(view, key);
+          }
           return true;
         },
       },

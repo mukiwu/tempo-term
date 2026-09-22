@@ -9,29 +9,14 @@
  * its content and lets the page scroll. That belongs to the caller's CSS.
  */
 
-import {
-  getChunks,
-  MergeView,
-  uncollapseUnchanged,
-  unifiedMergeView,
-  type Chunk,
-} from "@codemirror/merge";
-import { Compartment, EditorState } from "@codemirror/state";
+import { getChunks, MergeView, unifiedMergeView, type Chunk } from "@codemirror/merge";
+import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { loadLanguageExtension } from "@/modules/editor/lib/language";
 import { editorSyntaxTheme } from "@/themes/editorTheme";
-import {
-  clearExpandedEffect,
-  collapseBackExtension,
-  expandedRegions,
-} from "./collapseBack";
+import { collapseBackExtension } from "./collapseBack";
+import { collapseRunsExtension, type RunLabels } from "./collapseRuns";
 import { diffCommentsExtension, type CommentHandlers } from "./diffCommentsExtension";
-
-/**
- * Collapse long unchanged stretches into an expandable bar (VS Code style),
- * so a large file reads as just its changes.
- */
-export const COLLAPSE_UNCHANGED = { margin: 3, minSize: 5 };
 
 /**
  * @codemirror/merge defaults to `{ scanLimit: 500 }`, which abandons the
@@ -63,7 +48,8 @@ export function unifiedExtension(original: string) {
     // The accept/reject controls write to the document; these surfaces only
     // read one.
     mergeControls: false,
-    collapseUnchanged: COLLAPSE_UNCHANGED,
+    // No `collapseUnchanged`: the bars are ours (see collapseRuns.ts), so that
+    // they can name what they lead into and open twenty lines at a time.
     diffConfig: DIFF_CONFIG,
   });
 }
@@ -75,7 +61,7 @@ export function unifiedExtension(original: string) {
  */
 export type DiffViews =
   | { kind: "split"; merge: MergeView }
-  | { kind: "unified"; view: EditorView; collapse: Compartment };
+  | { kind: "unified"; view: EditorView };
 
 export interface DiffViewOptions {
   parent: HTMLElement;
@@ -94,8 +80,7 @@ export interface DiffViewOptions {
   /** Localized "$ unchanged lines" for the collapsed bars. */
   unchangedLines: string;
   foldLabels: { fold: string; unfold: string };
-  /** Fold one expanded stretch back up — see `collapseDiffRegion`. */
-  onCollapseRegion: (side: "a" | "b", pos: number) => void;
+  runLabels: { up: (lines: number) => string; down: (lines: number) => string };
   commentHandlers: (side: "a" | "b") => CommentHandlers;
   /**
    * Checked after the grammar loads: the caller's effect may have been torn
@@ -126,47 +111,49 @@ export async function buildDiffViews(options: DiffViewOptions): Promise<DiffView
     unified,
     unchangedLines,
     foldLabels,
-    onCollapseRegion,
+    runLabels,
     commentHandlers,
   } = options;
+
+  const runs: RunLabels = {
+    unchanged: unchangedLines,
+    up: runLabels.up,
+    down: runLabels.down,
+  };
 
   const extensions = [
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
-    // Localizes the collapsed-region bar ("$ unchanged lines").
-    EditorState.phrases.of({ "$ unchanged lines": unchangedLines }),
     editorSyntaxTheme(themeId),
     EditorView.theme({
       "&": { fontSize: `${fontSize}px` },
       ".cm-content, .cm-gutters, .cm-scroller": { fontFamily },
     }),
     lineNumbers(),
+    collapseRunsExtension(runs),
     ...(wordWrap ? [EditorView.lineWrapping] : []),
     ...language,
   ];
 
-  // Inline has no reconfigure() of its own, so its merge extension goes in a
-  // compartment the fold button can re-init (see collapseDiffRegion).
-  const collapse = new Compartment();
   if (unified) {
     const view = new EditorView({
       doc: right,
       parent,
       extensions: [
         // First in the list means leftmost gutter, out at the surface edge.
-        collapseBackExtension(foldLabels, (pos) => onCollapseRegion("b", pos)),
+        collapseBackExtension(foldLabels),
         ...extensions,
         diffCommentsExtension(commentHandlers("b")),
-        collapse.of(unifiedExtension(left)),
+        unifiedExtension(left),
       ],
     });
-    return { kind: "unified", view, collapse };
+    return { kind: "unified", view };
   }
   const merge = new MergeView({
     a: {
       doc: left,
       extensions: [
-        collapseBackExtension(foldLabels, (pos) => onCollapseRegion("a", pos)),
+        collapseBackExtension(foldLabels),
         ...extensions,
         diffCommentsExtension(commentHandlers("a")),
       ],
@@ -174,14 +161,13 @@ export async function buildDiffViews(options: DiffViewOptions): Promise<DiffView
     b: {
       doc: right,
       extensions: [
-        collapseBackExtension(foldLabels, (pos) => onCollapseRegion("b", pos)),
+        collapseBackExtension(foldLabels),
         ...extensions,
         diffCommentsExtension(commentHandlers("b")),
       ],
     },
     parent,
     gutter: true,
-    collapseUnchanged: COLLAPSE_UNCHANGED,
     diffConfig: DIFF_CONFIG,
   });
   return { kind: "split", merge };
@@ -218,46 +204,3 @@ export function diffChunks(views: DiffViews | null): readonly Chunk[] {
   return getChunks(state)?.chunks ?? [];
 }
 
-/**
- * Fold one expanded stretch back up. @codemirror/merge can only rebuild every
- * bar at once, so the ones the reader still wants open are replayed on top of
- * the rebuild. The editors themselves are left alone, which keeps the scroll
- * position.
- */
-export function collapseDiffRegion(
-  views: DiffViews,
-  side: "a" | "b",
-  pos: number,
-  left: string,
-): void {
-  if (views.kind === "unified") {
-    const { view } = views;
-    const keep = view.state.field(expandedRegions).filter((p) => p !== pos);
-    view.dispatch({
-      effects: [
-        views.collapse.reconfigure(unifiedExtension(left)),
-        clearExpandedEffect.of(null),
-      ],
-    });
-    view.dispatch({ effects: keep.map((p) => uncollapseUnchanged.of(p)) });
-    return;
-  }
-  // Split: the same stretch sits at a different offset on each side, and the
-  // library expands both together — so the two lists line up one for one and
-  // the clicked entry is dropped by index, not by position.
-  const clicked = side === "a" ? views.merge.a : views.merge.b;
-  const index = clicked.state.field(expandedRegions).indexOf(pos);
-  if (index < 0) {
-    return;
-  }
-  // No diffConfig here on purpose: reconfigure() reads it as `"diffConfig" in config`,
-  // so leaving the key out keeps the one the view was built with. Passing it
-  // again would read as if it did something.
-  views.merge.reconfigure({ collapseUnchanged: COLLAPSE_UNCHANGED });
-  for (const view of [views.merge.a, views.merge.b]) {
-    const keep = view.state.field(expandedRegions).filter((_, i) => i !== index);
-    view.dispatch({
-      effects: [clearExpandedEffect.of(null), ...keep.map((p) => uncollapseUnchanged.of(p))],
-    });
-  }
-}

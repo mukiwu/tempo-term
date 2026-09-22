@@ -64,6 +64,8 @@
   "diffSplitView": "Side-by-Side View",
   "diffCollapseUnchanged": "Collapse Unchanged",
   "diffExpandUnchanged": "Expand Unchanged",
+  "diffRunExpandUp": "Show {{count}} lines above",
+  "diffRunExpandDown": "Show {{count}} lines below",
   "diffUnchangedLines": "$ unchanged lines",
   "expandFolder": "Expand {{name}}",
   "collapseFolder": "Collapse {{name}}",

@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DiffTabContent } from "./DiffTabContent";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    // The count is part of what a label promises, so it has to survive the
+    // mock -- a bare key cannot tell "open 20" from "open 23".
+    t: (key: string, vars?: Record<string, unknown>) =>
+      vars && "count" in vars ? `${key}:${String(vars.count)}` : key,
+  }),
   // tabsStore transitively pulls in the real i18n init, which registers this
   // plugin object during module load.
   initReactI18next: { type: "3rdParty", init: () => {} },
@@ -125,7 +130,61 @@ describe("DiffTabContent", () => {
     expect(css).toContain("font-size: 20px");
   });
 
-  it("folds expanded unchanged regions back up", async () => {
+  it("opens an unchanged stretch by twenty lines, or all of it, on both sides", async () => {
+    const lines = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`);
+    vi.mocked(gitFileAtRev).mockResolvedValue(lines.join("\n") + "\n");
+    vi.mocked(fsReadFile).mockResolvedValue(
+      lines.map((line, i) => (i === 29 ? "changed" : line)).join("\n") + "\n",
+    );
+
+    const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
+
+    const bars = () => [...container.querySelectorAll<HTMLElement>(".cm-diff-run")];
+    const hidden = () => bars().map((bar) => Number(bar.dataset.lines));
+    // Two stretches, above and below the change, one bar each per side.
+    await waitFor(() => expect(bars().length).toBe(4));
+    // Three lines of context are kept either side of the change, so 26 of the
+    // 29 lines above it are hidden and 28 of the 31 below -- 31 because the
+    // trailing newline leaves a last, empty line.
+    expect(hidden()).toEqual([26, 28, 26, 28]);
+
+    // The last stretch runs to the end of the file, so there is no change
+    // below it for a declaration to contain, and no up arrow to press: both
+    // would be answering a question nobody asked.
+    expect(bars()[1].querySelector(".cm-diff-run-name")).toBeNull();
+    expect(
+      bars()[1].querySelector<HTMLButtonElement>('[aria-label^="diffRunExpandUp"]')!.disabled,
+    ).toBe(true);
+    expect(bars()[0].querySelector(".cm-diff-run-name")).toBeTruthy();
+
+    // The first bar is the top of the file, so the arrow that grows the code
+    // above it downwards has nothing to grow from and is dead.
+    expect(
+      bars()[0].querySelector<HTMLButtonElement>('[aria-label^="diffRunExpandDown"]')!.disabled,
+    ).toBe(true);
+
+    // Twenty lines at a time, from whichever end was asked for -- the reason
+    // the bars are ours rather than the library's, whose bar only ever opens
+    // the lot.
+    fireEvent.mouseDown(bars()[0].querySelector('[aria-label^="diffRunExpandUp"]')!);
+    await waitFor(() => expect(hidden()[0]).toBe(6));
+    // And the other side moved with it, or the two would no longer be reading
+    // the same stretch.
+    expect(hidden()).toEqual([6, 28, 6, 28]);
+
+    // Pressing again would leave four lines hidden behind a bar that takes a
+    // row to say so, so the last of them are simply shown.
+    fireEvent.mouseDown(bars()[0].querySelector('[aria-label^="diffRunExpandUp"]')!);
+    await waitFor(() => expect(bars().length).toBe(2));
+
+    // Opening the lot is the gutter's icon beside the bar rather than a third
+    // button on it; the test next door presses that, since jsdom resolves a
+    // gutter click by coordinate and every click lands on the first block.
+
+
+  });
+
+  it("folds an opened stretch back up from the gutter", async () => {
     const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`);
     vi.mocked(gitFileAtRev).mockResolvedValue(lines.join("\n") + "\n");
     vi.mocked(fsReadFile).mockResolvedValue(
@@ -134,29 +193,30 @@ describe("DiffTabContent", () => {
 
     const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
 
-    const bars = () => container.querySelectorAll(".cm-collapsedLines").length;
+    const bars = () => container.querySelectorAll(".cm-diff-run").length;
     const backs = () => container.querySelectorAll(".cm-diff-fold");
-    // Two unchanged stretches (above and below the change), one bar each per
-    // side of the diff.
     await waitFor(() => expect(bars()).toBe(4));
 
-    // Expanding a stretch is one-way in the library: the bar is consumed. The
-    // gutter's unfold icon opens both sides at once, same as the bar does.
-    expect(container.querySelectorAll(".cm-diff-unfold").length).toBe(4);
+    // jsdom has no layout, so a gutter click carries no usable coordinate and
+    // the view resolves every one to the first block. That is the first bar
+    // here, which is the one this test is about.
+
+    // Opened all the way, a stretch leaves no bar behind, so the way back has
+    // to live somewhere else: the gutter grows a fold icon on its first line.
     fireEvent.mouseDown(container.querySelector(".cm-diff-unfold")!);
     await waitFor(() => expect(bars()).toBe(2));
-    fireEvent.click(container.querySelector(".cm-collapsedLines")!);
-    await waitFor(() => expect(bars()).toBe(0));
+    await waitFor(() => expect(backs().length).toBe(2));
 
-    // Each expanded stretch grows its own fold-back bar where the old one
-    // was, and folding one leaves the other open.
-    await waitFor(() => expect(backs().length).toBe(4));
     fireEvent.mouseDown(backs()[0]);
-    await waitFor(() => expect(bars()).toBe(2));
-    expect(backs().length).toBe(2);
+    await waitFor(() => expect(bars()).toBe(4));
+    expect(backs().length).toBe(0);
   });
 
-  it("folds expanded unchanged regions back up inline too", async () => {
+  it("folds an opened stretch back up inline too", async () => {
+    // One editor rather than two, so every count here is half the split
+    // case's -- and the gutter the way back lives in is a different gutter.
+    // The pane had a test for this before the bars were ours; it went with
+    // the library's class name and was not replaced.
     useSettingsStore.setState({ diffUnified: true });
     const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`);
     vi.mocked(gitFileAtRev).mockResolvedValue(lines.join("\n") + "\n");
@@ -166,20 +226,73 @@ describe("DiffTabContent", () => {
 
     const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
 
-    const bars = () => container.querySelectorAll(".cm-collapsedLines").length;
-    await waitFor(() => expect(bars()).toBeGreaterThan(0));
-    const collapsed = bars();
+    const bars = () => container.querySelectorAll(".cm-diff-run").length;
+    const backs = () => container.querySelectorAll(".cm-diff-fold");
+    await waitFor(() => expect(bars()).toBe(2));
 
-    fireEvent.click(container.querySelector(".cm-collapsedLines")!);
-    await waitFor(() => expect(bars()).toBeLessThan(collapsed));
+    fireEvent.mouseDown(container.querySelector(".cm-diff-unfold")!);
+    await waitFor(() => expect(bars()).toBe(1));
+    await waitFor(() => expect(backs().length).toBe(1));
 
-    // The expanded stretch grows a fold control in its own gutter, on the
-    // first line it revealed.
-    const back = container.querySelector(".cm-diff-fold");
-    expect(back).toBeTruthy();
-    fireEvent.mouseDown(back!);
-    await waitFor(() => expect(bars()).toBe(collapsed));
-    expect(container.querySelector(".cm-diff-fold")).toBeNull();
+    fireEvent.mouseDown(backs()[0]);
+    await waitFor(() => expect(bars()).toBe(2));
+    expect(backs().length).toBe(0);
+  });
+
+  it("promises the number of lines the press will actually open", async () => {
+    // Twenty-three hidden: a step of twenty would leave three behind a bar
+    // that takes a row of its own to say so, so the press opens all of them.
+    // The label has to say twenty-three, or it undercounts what it does.
+    const lines = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
+    vi.mocked(gitFileAtRev).mockResolvedValue(lines.join("\n") + "\n");
+    vi.mocked(fsReadFile).mockResolvedValue(
+      lines.map((line, i) => (i === 26 ? "changed" : line)).join("\n") + "\n",
+    );
+
+    const { container } = render(<DiffTabContent path="/repo/a.ts" staged={false} />);
+    const bar = () => container.querySelector<HTMLElement>(".cm-diff-run")!;
+    await waitFor(() => expect(bar()).toBeTruthy());
+
+    const hidden = Number(bar().dataset.lines);
+    expect(hidden).toBe(23);
+    expect(
+      bar().querySelector('[aria-label^="diffRunExpandUp"]')!.getAttribute("aria-label"),
+    ).toBe(`diffRunExpandUp:${hidden}`);
+
+    fireEvent.mouseDown(bar().querySelector('[aria-label^="diffRunExpandUp"]')!);
+    // And it opened the lot, which is what the label had just promised.
+    await waitFor(() => expect(container.querySelector(".cm-diff-run")).toBeNull());
+  });
+
+  it("names the declaration the hidden lines lead into", async () => {
+    const before = [
+      "use std::fmt;",
+      "",
+      "fn build_log_refs() -> Vec<String> {",
+      ...Array.from({ length: 30 }, (_, i) => `    let x${i} = ${i};`),
+      "    let tail = 1;",
+      "}",
+    ];
+    vi.mocked(gitFileAtRev).mockResolvedValue(before.join("\n") + "\n");
+    vi.mocked(fsReadFile).mockResolvedValue(
+      before.map((line) => (line === "    let tail = 1;" ? "    let tail = 999;" : line)).join("\n") +
+        "\n",
+    );
+
+    const { container } = render(<DiffTabContent path="/repo/a.rs" staged={false} />);
+
+    // What GitHub puts after the `@@`, and what the library's bar has no room
+    // to say: the changes under this bar are inside this declaration.
+    await waitFor(() => expect(container.querySelectorAll(".cm-diff-run").length).toBe(2));
+    // One bar each side of the split, and both have to say it: the two are
+    // the same stretch of the same file, and a name on one of them only would
+    // read as a difference between the sides.
+    expect(
+      [...container.querySelectorAll(".cm-diff-run")].map((el) => el.textContent),
+    ).toEqual([
+      "diffUnchangedLinesfn build_log_refs() -> Vec<String> ",
+      "diffUnchangedLinesfn build_log_refs() -> Vec<String> ",
+    ]);
   });
 
   it("renders a saved review comment as a card inside the diff", async () => {
