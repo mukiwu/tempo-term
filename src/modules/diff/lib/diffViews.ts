@@ -40,7 +40,7 @@ import { diffCommentsExtension, type CommentHandlers } from "./diffCommentsExten
  */
 export const DIFF_CONFIG = { timeout: 1000 };
 
-/** The inline mode's merge extension, rebuilt whenever the bars are reset. */
+/** The inline mode's merge extension. */
 export function unifiedExtension(original: string) {
   return unifiedMergeView({
     original,
@@ -130,7 +130,7 @@ export async function buildDiffViews(options: DiffViewOptions): Promise<DiffView
       ".cm-content, .cm-gutters, .cm-scroller": { fontFamily },
     }),
     lineNumbers(),
-    collapseRunsExtension(runs),
+    collapseRunsExtension(runs, fontSize),
     ...(wordWrap ? [EditorView.lineWrapping] : []),
     ...language,
   ];

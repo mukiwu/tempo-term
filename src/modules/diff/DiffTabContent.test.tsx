@@ -180,8 +180,6 @@ describe("DiffTabContent", () => {
     // Opening the lot is the gutter's icon beside the bar rather than a third
     // button on it; the test next door presses that, since jsdom resolves a
     // gutter click by coordinate and every click lands on the first block.
-
-
   });
 
   it("folds an opened stretch back up from the gutter", async () => {
@@ -290,8 +288,8 @@ describe("DiffTabContent", () => {
     expect(
       [...container.querySelectorAll(".cm-diff-run")].map((el) => el.textContent),
     ).toEqual([
-      "diffUnchangedLinesfn build_log_refs() -> Vec<String> ",
-      "diffUnchangedLinesfn build_log_refs() -> Vec<String> ",
+      "diffUnchangedLinesfn build_log_refs() -> Vec<String>",
+      "diffUnchangedLinesfn build_log_refs() -> Vec<String>",
     ]);
   });
 
