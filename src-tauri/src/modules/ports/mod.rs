@@ -164,7 +164,7 @@ pub async fn ports_ai_available() -> bool {
     #[cfg(target_os = "macos")]
     {
         tauri::async_runtime::spawn_blocking(|| {
-            fm_rs::SystemLanguageModel::new()
+            crate::modules::ai::foundation_models::system_model()
                 .map(|m| m.is_available())
                 .unwrap_or(false)
         })
@@ -194,7 +194,8 @@ pub async fn ports_ai_explain(
     #[cfg(target_os = "macos")]
     {
         tauri::async_runtime::spawn_blocking(move || {
-            let model = fm_rs::SystemLanguageModel::new().map_err(|e| e.to_string())?;
+            let model = crate::modules::ai::foundation_models::system_model()
+                .map_err(|_| "apple-intelligence-unavailable".to_string())?;
             if !model.is_available() {
                 return Err("apple-intelligence-unavailable".to_string());
             }
@@ -203,8 +204,7 @@ pub async fn ports_ai_explain(
             } else {
                 "You are a terminal app's built-in helper. In two or three plain sentences: what this locally listening process is, what it is likely doing, and whether stopping it now is safe. Be direct; no bullet lists."
             };
-            let session = fm_rs::Session::with_instructions(&model, instructions)
-                .map_err(|e| e.to_string())?;
+
             let prompt = format!(
                 "Port :{port}
 Service: {service_label}
@@ -215,10 +215,7 @@ Uptime: {uptime_secs}s",
                 command.as_deref().unwrap_or("(unknown)"),
                 cwd.as_deref().unwrap_or("(none)"),
             );
-            let response = session
-                .respond(&prompt, &fm_rs::GenerationOptions::default())
-                .map_err(|e| e.to_string())?;
-            Ok(response.content().to_string())
+            crate::modules::ai::foundation_models::respond(&model, instructions, &prompt)
         })
         .await
         .map_err(|e| e.to_string())?
@@ -354,17 +351,18 @@ mod tests {
     #[ignore]
     #[cfg(target_os = "macos")]
     fn ports_ai_spike_end_to_end() {
-        let model = fm_rs::SystemLanguageModel::new().expect("model handle");
+        let model =
+            crate::modules::ai::foundation_models::system_model().expect("model handle");
         println!("available: {}", model.is_available());
         if !model.is_available() {
             return;
         }
-        let session =
-            fm_rs::Session::with_instructions(&model, "Answer in one short sentence.").unwrap();
-        let response = session
-            .respond("What is a Vite dev server?", &fm_rs::GenerationOptions::default())
-            .unwrap();
-        let text = response.content();
+        let text = crate::modules::ai::foundation_models::respond(
+            &model,
+            "Answer in one short sentence.",
+            "What is a Vite dev server?",
+        )
+        .unwrap();
         println!("response: {text}");
         assert!(!text.trim().is_empty());
     }

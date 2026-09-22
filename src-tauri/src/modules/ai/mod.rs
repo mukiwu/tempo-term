@@ -2,6 +2,8 @@
 //! backend keychain and provider calls are not blocked by the webview's CORS
 //! policy.
 
+#[cfg(target_os = "macos")]
+pub(crate) mod foundation_models;
 mod provider;
 
 pub use provider::ChatMessage;
@@ -61,11 +63,8 @@ pub async fn ai_chat(
 pub async fn ai_apple_available() -> bool {
     #[cfg(target_os = "macos")]
     {
-        if !foundation_models_runtime_present() {
-            return false;
-        }
         tauri::async_runtime::spawn_blocking(|| {
-            fm_rs::SystemLanguageModel::new()
+            foundation_models::system_model()
                 .map(|m| m.is_available())
                 .unwrap_or(false)
         })
@@ -82,25 +81,13 @@ pub async fn ai_apple_available() -> bool {
 async fn apple_chat(messages: Vec<ChatMessage>) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        if !foundation_models_runtime_present() {
-            return Err("Apple Intelligence requires macOS 26 or later.".to_string());
-        }
         tauri::async_runtime::spawn_blocking(move || {
-            let model = fm_rs::SystemLanguageModel::new().map_err(|e| e.to_string())?;
+            let model = foundation_models::system_model()?;
             if !model.is_available() {
                 return Err("Apple Intelligence is not available on this Mac.".to_string());
             }
             let (instructions, prompt) = build_apple_parts(&messages);
-            let session = if instructions.is_empty() {
-                fm_rs::Session::new(&model)
-            } else {
-                fm_rs::Session::with_instructions(&model, &instructions)
-            }
-            .map_err(|e| e.to_string())?;
-            let response = session
-                .respond(&prompt, &fm_rs::GenerationOptions::default())
-                .map_err(|e| e.to_string())?;
-            Ok(response.content().to_string())
+            foundation_models::respond(&model, &instructions, &prompt)
         })
         .await
         .map_err(|e| e.to_string())?
@@ -113,42 +100,3 @@ async fn apple_chat(messages: Vec<ChatMessage>) -> Result<String, String> {
 
 #[cfg(target_os = "macos")]
 use provider::apple_prompt_parts as build_apple_parts;
-
-/// Whether FoundationModels.framework is present on this Mac.
-///
-/// The framework ships with macOS 26 and is weak-linked (see build.rs), so on
-/// an older macOS every fm-rs entry point resolves to a null symbol. Nothing
-/// may call into fm-rs unless this returns true.
-#[cfg(target_os = "macos")]
-fn foundation_models_runtime_present() -> bool {
-    sysinfo::System::os_version()
-        .as_deref()
-        .is_some_and(macos_version_supports_foundation_models)
-}
-
-/// `version` is the product version sysinfo reports, e.g. "15.7.9" or "26.1".
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn macos_version_supports_foundation_models(version: &str) -> bool {
-    version
-        .trim()
-        .split('.')
-        .next()
-        .and_then(|major| major.parse::<u32>().ok())
-        .is_some_and(|major| major >= 26)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::macos_version_supports_foundation_models;
-
-    #[test]
-    fn foundation_models_needs_macos_26() {
-        assert!(!macos_version_supports_foundation_models("15.7.9"));
-        assert!(!macos_version_supports_foundation_models("14.0"));
-        assert!(macos_version_supports_foundation_models("26.0"));
-        assert!(macos_version_supports_foundation_models("26.1 "));
-        assert!(macos_version_supports_foundation_models("27.0.1"));
-        assert!(!macos_version_supports_foundation_models(""));
-        assert!(!macos_version_supports_foundation_models("Version 26"));
-    }
-}
