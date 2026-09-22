@@ -86,6 +86,12 @@ export interface OpenEnd {
   lane: number;
   x: number;
   y: number;
+  /**
+   * The child node's own x. A merge's extra parent waits on a lane of its
+   * own, so the line has to leave the node before it can run down that lane —
+   * without this it would start level with the node but a lane away from it.
+   */
+  childX: number;
   colorIndex: number;
   /** Row it leaves from; it always reaches the foot of the page. */
   childIndex: number;
@@ -364,6 +370,12 @@ export function computeGraphLayout(
   // The caller decides whether to show them: once the walk is exhausted a
   // parent that still will not resolve is a shallow clone's graft boundary,
   // where the history really does stop and the line would be a lie.
+  //
+  // That test is all there is, and it only catches a graft at the end of the
+  // walk. A graft reached with pages still to load draws a line to history
+  // that will never arrive. Telling the two apart costs a call per unresolved
+  // parent, which a page of them would spend on a case a terminal rarely
+  // meets, so the seam is left open knowingly.
   for (const link of waiting) {
     if (resolveParent(link.parentHash)) {
       continue;
@@ -376,6 +388,7 @@ export function computeGraphLayout(
       lane: link.lane,
       x: laneX(link.lane, geometry, sizing),
       y: child.y,
+      childX: child.x,
       colorIndex: laneColors[link.lane] ?? 0,
       childIndex: link.row,
     });
@@ -454,4 +467,28 @@ export function edgePath(edge: GraphEdge, rowHeight: number): string {
   // vertical track down the branch's own lane to the parent.
   const by = cy + bend;
   return `M ${cx} ${cy} C ${cx} ${cy + bend * 0.5}, ${px} ${by - bend * 0.5}, ${px} ${by} L ${px} ${py}`;
+}
+
+/**
+ * SVG path data for a line that leaves the page: out of its node, into the
+ * lane held for the parent, and straight down to `footY`.
+ *
+ * Always the merge-in bend, in either direction, unlike `edgePath` — which
+ * delays the bend when the parent is on a lower lane so a branch's colour does
+ * not paint over the trunk it is rejoining. There is nothing to paint over
+ * here: the lane is held for a parent that never arrives, so it stays empty
+ * for the rest of the page, while the child's own lane is already carrying the
+ * line to its first parent. Delaying the bend would run this line down that
+ * one instead.
+ */
+export function openEndPath(end: OpenEnd, footY: number, rowHeight: number): string {
+  const { x, y, childX } = end;
+  if (childX === x) {
+    return `M ${x} ${y} L ${x} ${footY}`;
+  }
+  // A node on the last row is half a row above the foot, so the bend takes
+  // whatever room is left rather than overshooting it.
+  const bend = Math.min(rowHeight, footY - y);
+  const by = y + bend;
+  return `M ${childX} ${y} C ${childX} ${y + bend * 0.5}, ${x} ${by - bend * 0.5}, ${x} ${by} L ${x} ${footY}`;
 }

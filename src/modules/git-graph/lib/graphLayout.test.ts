@@ -7,8 +7,10 @@ import {
   laneContinuationRowIndex,
   laneSizing,
   laneX,
+  openEndPath,
   type GraphEdge,
   type GraphGeometry,
+  type OpenEnd,
 } from "./graphLayout";
 import type { CommitNode } from "../types";
 
@@ -345,6 +347,54 @@ describe("computeGraphLayout open ends", () => {
 
     expect(openEnds).toHaveLength(1);
     expect(openEnds[0].x).not.toBe(layouts["m"].x);
+  });
+
+  it("carries the child's own x so the line can reach back to the node", () => {
+    // The lane is where the line runs; the node is where it has to start.
+    const commits = [commit("m", ["a", "not-loaded"]), commit("a", [])];
+    const { layouts, openEnds } = computeGraphLayout(commits);
+
+    expect(openEnds[0].childX).toBe(layouts["m"].x);
+  });
+});
+
+describe("openEndPath", () => {
+  function openEnd(x: number, childX: number, y = 20): OpenEnd {
+    return { lane: 1, x, y, childX, colorIndex: 0, childIndex: 0 };
+  }
+
+  it("draws a straight line down a lane the node is already on", () => {
+    expect(openEndPath(openEnd(20, 20), 74, 36)).toBe("M 20 20 L 20 74");
+  });
+
+  it("bends out of the node before running down the lane held for the parent", () => {
+    const path = openEndPath(openEnd(34, 20), 110, 36);
+
+    // Starts at the node, not a lane away from it.
+    expect(path.startsWith("M 20 20 C")).toBe(true);
+    // And is down the parent's lane by the end of the first row.
+    expect(path).toContain("L 34 110");
+  });
+
+  it("bends the same way when the lane held for the parent is to the left", () => {
+    // claimLane() hands out the leftmost free slot, which can sit lower than
+    // the child's own. edgePath delays this bend so a branch's colour does not
+    // paint over the trunk; here the lane is held for a parent that never
+    // arrives, and delaying it would run the line down the child's lane, which
+    // is already carrying the line to its first parent.
+    const path = openEndPath(openEnd(20, 34), 110, 36);
+
+    expect(path.startsWith("M 34 20 C")).toBe(true);
+    expect(path).toContain("L 20 110");
+  });
+
+  it("keeps the bend inside what is left of the page", () => {
+    // Leaving from the last row: the foot is half a row below the node, and a
+    // full row of bend would overshoot it.
+    const path = openEndPath(openEnd(34, 20, 56), 74, 36);
+
+    expect(path).toContain("34 74");
+    expect(path).not.toContain("92");
   });
 });
 
