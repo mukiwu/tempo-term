@@ -1,0 +1,66 @@
+name: macOS Link Check
+
+# FoundationModels.framework only exists on macOS 26, and fm-rs links it
+# unconditionally. Strongly linked, dyld refuses the binary before main() runs
+# and the app cannot be opened at all on macOS 15 or earlier (#448) -- with a
+# build that exits 0 and says nothing. build.rs weak-links it; this says so out
+# loud if that ever stops being true.
+on:
+  pull_request:
+    paths:
+      - "src-tauri/build.rs"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+      - ".github/workflows/macos-link-check.yml"
+  push:
+    branches:
+      - master
+    paths:
+      - "src-tauri/build.rs"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+      - ".github/workflows/macos-link-check.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-link-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  weak-link:
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build the binary
+        working-directory: src-tauri
+        run: cargo build --bin tempo-term
+
+      # Asked of the load command rather than of otool's wording: LC_LOAD_DYLIB
+      # is the one that stops the app opening.
+      - name: FoundationModels must be weak-linked
+        working-directory: src-tauri
+        run: |
+          set -euo pipefail
+          load_command=$(otool -l target/debug/tempo-term \
+            | grep -B3 'FoundationModels.framework' \
+            | grep -o 'LC_LOAD[A-Z_]*' \
+            | head -1)
+          echo "FoundationModels load command: ${load_command:-<none>}"
+          if [ "$load_command" != "LC_LOAD_WEAK_DYLIB" ]; then
+            echo "::error::FoundationModels is not weak-linked (${load_command:-not linked at all})."
+            echo "A strong link means dyld refuses the app on macOS 15 and earlier."
+            exit 1
+          fi
