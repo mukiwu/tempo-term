@@ -739,3 +739,42 @@ describe("GitGraph wide histories", () => {
     expect(drawn[2]).toBeLessThan(drawn[0]);
   });
 });
+
+describe("GitGraph open ends", () => {
+  // The second row's parent is not in the page, so the only thing joining
+  // anything is the edge between the two rows that are here.
+  const partial = [commit("c", ["b"], "msg c"), commit("b", ["not-loaded"], "msg b")];
+  // Only the tracks layer — the row icons are svgs with paths of their own.
+  const paths = () =>
+    document.querySelectorAll('svg[class*="pointer-events-none"] path').length;
+
+  it("carries the line past the last row while there is more to load", () => {
+    render(
+      <GitGraph
+        commits={partial}
+        selection={null}
+        onSelectCommit={vi.fn()}
+        hasMore
+        labels={LABELS}
+      />,
+    );
+    // The edge between the two rows, plus the line leaving the page.
+    expect(paths()).toBe(2);
+  });
+
+  it("draws nothing once the walk is exhausted", () => {
+    // A parent that still will not resolve with nothing left to load is a
+    // shallow clone's boundary: the history really does stop there, and a
+    // line promising more below it would be a lie.
+    render(
+      <GitGraph
+        commits={partial}
+        selection={null}
+        onSelectCommit={vi.fn()}
+        hasMore={false}
+        labels={LABELS}
+      />,
+    );
+    expect(paths()).toBe(1);
+  });
+});

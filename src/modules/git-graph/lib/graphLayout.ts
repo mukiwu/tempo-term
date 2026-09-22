@@ -81,9 +81,21 @@ export interface GraphEdge {
   colorIndex: number;
 }
 
+/** A line whose parent is not in this page, so it runs off the bottom. */
+export interface OpenEnd {
+  lane: number;
+  x: number;
+  y: number;
+  colorIndex: number;
+  /** Row it leaves from; it always reaches the foot of the page. */
+  childIndex: number;
+}
+
 export interface GraphLayout {
   layouts: Record<string, CommitLayout>;
   edges: GraphEdge[];
+  /** Lines that leave the page rather than reaching a drawn parent. */
+  openEnds: OpenEnd[];
   /** Lanes this layout actually uses. */
   lanes: number;
   /** Width each of them was given. */
@@ -169,6 +181,8 @@ export function computeGraphLayout(
 ): GraphLayout {
   const layouts: Record<string, CommitLayout> = {};
   let widest = 0;
+  /** Every parent link, and the lane slot it was put on. */
+  const waiting: { lane: number; row: number; parentHash: string }[] = [];
 
   // Each slot holds the hash a lane is currently waiting for. An empty string
   // marks a freed lane that a new branch can reuse.
@@ -250,8 +264,15 @@ export function computeGraphLayout(
     // lanes. A root commit frees the lane.
     if (commit.parents.length > 0) {
       activeLanes[lane] = commit.parents[0];
+      waiting.push({ lane, row: index, parentHash: commit.parents[0] });
       for (let idx = 1; idx < commit.parents.length; idx++) {
-        activeLanes[claimLane()] = commit.parents[idx];
+        const extra = claimLane();
+        activeLanes[extra] = commit.parents[idx];
+        // Which lane is waiting for which parent, so a parent that never
+        // arrives can still be drawn on the track that was reserved for it
+        // rather than on its child's, where it would hide under the line to
+        // the first parent.
+        waiting.push({ lane: extra, row: index, parentHash: commit.parents[idx] });
       }
     } else {
       activeLanes[lane] = "";
@@ -284,6 +305,16 @@ export function computeGraphLayout(
     return key ? layouts[key] : undefined;
   };
 
+  // A lane held for a parent the page never reached carries a line but no
+  // node, so counting only the nodes leaves it out — and then the column
+  // ceiling clamps its line onto the last counted column, on top of a lane it
+  // does not belong to. It needs a column of its own like any other.
+  for (const link of waiting) {
+    if (link.lane > widest && !resolveParent(link.parentHash)) {
+      widest = link.lane;
+    }
+  }
+
   const lanes = widest + 1;
   const sizing = laneSizing(lanes, geometry);
   for (const layout of Object.values(layouts)) {
@@ -291,6 +322,7 @@ export function computeGraphLayout(
   }
 
   const edges: GraphEdge[] = [];
+  const openEnds: OpenEnd[] = [];
   commits.forEach((commit, index) => {
     const child = layouts[commit.hash];
     if (!child) {
@@ -321,9 +353,38 @@ export function computeGraphLayout(
     });
   });
 
+  // A parent the page never reached. The commit names it, so it exists; the
+  // walk is closed under parents, so it is not somewhere else — it is further
+  // down, past the last row loaded. Its lane goes on waiting for it, which
+  // means the slot is never freed or reused, so a line straight down that lane
+  // to the foot of the page is only drawing what the lane bookkeeping already
+  // says. Where the parent actually sits is not needed to draw it, so this
+  // costs no extra history.
+  //
+  // The caller decides whether to show them: once the walk is exhausted a
+  // parent that still will not resolve is a shallow clone's graft boundary,
+  // where the history really does stop and the line would be a lie.
+  for (const link of waiting) {
+    if (resolveParent(link.parentHash)) {
+      continue;
+    }
+    const child = layouts[commits[link.row].hash];
+    if (!child) {
+      continue;
+    }
+    openEnds.push({
+      lane: link.lane,
+      x: laneX(link.lane, geometry, sizing),
+      y: child.y,
+      colorIndex: laneColors[link.lane] ?? 0,
+      childIndex: link.row,
+    });
+  }
+
   return {
     layouts,
     edges,
+    openEnds,
     lanes,
     laneWidth: sizing.laneWidth,
     gutter: sizing.gutter,

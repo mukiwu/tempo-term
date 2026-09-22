@@ -322,6 +322,32 @@ describe("edgePath", () => {
   });
 });
 
+describe("computeGraphLayout open ends", () => {
+  it("reports a parent the page never reached", () => {
+    const commits = [commit("c", ["b"]), commit("b", ["older-than-this-page"])];
+    const { layouts, openEnds } = computeGraphLayout(commits);
+
+    expect(openEnds).toHaveLength(1);
+    expect(openEnds[0].childIndex).toBe(1);
+    expect(openEnds[0].x).toBe(layouts["b"].x);
+  });
+
+  it("reports nothing when every parent is in the page", () => {
+    const commits = [commit("c", ["b"]), commit("b", ["a"]), commit("a", [])];
+    expect(computeGraphLayout(commits).openEnds).toHaveLength(0);
+  });
+
+  it("puts a merge's unreached parent on the lane reserved for it", () => {
+    // The second parent claimed a lane of its own. Drawing its line on the
+    // child's lane instead would hide it under the line to the first parent.
+    const commits = [commit("m", ["a", "not-loaded"]), commit("a", [])];
+    const { layouts, openEnds } = computeGraphLayout(commits);
+
+    expect(openEnds).toHaveLength(1);
+    expect(openEnds[0].x).not.toBe(layouts["m"].x);
+  });
+});
+
 describe("firstParentRowIndex", () => {
   it("finds the row of the first parent in a simple chain", () => {
     const commits = [commit("c", ["b"]), commit("b", ["a"]), commit("a", [])];
