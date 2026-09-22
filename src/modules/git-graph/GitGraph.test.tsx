@@ -249,6 +249,70 @@ describe("GitGraph auto-scroll", () => {
     expect(scrollContainer.scrollTop).toBe(70);
   });
 
+  it("brings the search cursor's row in without being told to select it", () => {
+    // A fresh query puts the counter on the first match, which is what makes it
+    // read "1 / 140" rather than "0 / 140". The reader may be hundreds of rows
+    // past it, and the counter is then naming a row that is nowhere on screen.
+    // The selection has not moved -- deliberately, so that stepping a search
+    // does not fetch a commit's details on every press -- so the row the
+    // counter names has to be brought in on its own account.
+    const { rerender } = render(
+      <GitGraph
+        commits={commits}
+        selection={{ mode: "single", commit: commits[0] }}
+        onSelectCommit={vi.fn()}
+        labels={LABELS}
+      />,
+    );
+    const scrollContainer = container("msg c");
+    Object.defineProperty(scrollContainer, "clientHeight", { value: 40, configurable: true });
+    scrollContainer.scrollTop = 0;
+
+    rerender(
+      <GitGraph
+        commits={commits}
+        selection={{ mode: "single", commit: commits[0] }}
+        onSelectCommit={vi.fn()}
+        searchQuery="msg a"
+        currentMatchHash="a"
+        labels={LABELS}
+      />,
+    );
+
+    // Same row as the test above, reached by the cursor rather than the
+    // selection: y = 20 + 2*36 = 92, bottom edge 110, a 40px window at 0.
+    expect(scrollContainer.scrollTop).toBe(70);
+  });
+
+  it("leaves the cursor's row alone once the search is emptied", () => {
+    // The cursor outlives the box being cleared; scrolling to it then would
+    // yank the reader somewhere for a search that is over.
+    const { rerender } = render(
+      <GitGraph
+        commits={commits}
+        selection={{ mode: "single", commit: commits[0] }}
+        onSelectCommit={vi.fn()}
+        labels={LABELS}
+      />,
+    );
+    const scrollContainer = container("msg c");
+    Object.defineProperty(scrollContainer, "clientHeight", { value: 40, configurable: true });
+    scrollContainer.scrollTop = 0;
+
+    rerender(
+      <GitGraph
+        commits={commits}
+        selection={{ mode: "single", commit: commits[0] }}
+        onSelectCommit={vi.fn()}
+        searchQuery=""
+        currentMatchHash="a"
+        labels={LABELS}
+      />,
+    );
+
+    expect(scrollContainer.scrollTop).toBe(0);
+  });
+
   it("does not scroll when the newly active row is already fully visible", () => {
     const { rerender } = render(
       <GitGraph
@@ -411,6 +475,19 @@ describe("GitGraph search marking", () => {
     expect(marks[0].textContent).toBe("muki");
     // In the author column, not leaking onto the hash beside it.
     expect(marks[0].closest("span")?.className).toContain("max-w-[70px]");
+  });
+
+  it("marks the hash when that is what matched", () => {
+    // The counter reads the hash as one of the three fields it searches, so a
+    // query only a hash carries still counts its row. Counting a row and
+    // marking nothing on it leaves the reader to guess what was found.
+    renderSearch("aaa");
+
+    const marks = document.querySelectorAll("mark");
+    expect(marks).toHaveLength(1);
+    expect(marks[0].textContent).toBe("aaa");
+    // In the hash column, which is the only one wearing `select-all`.
+    expect(marks[0].closest("span")?.className).toContain("select-all");
   });
 
   it("gives no row a background just for matching", () => {
