@@ -422,6 +422,11 @@ export function GitGraphTabContent() {
       //
       // Only while a search is running: `commitMatches` answers true for an
       // empty query, so without this every click would park a cursor.
+      //
+      // Every way of landing on a row, not just a click: shift-clicking a
+      // comparison range and stepping the list with the arrow keys both arrive
+      // here, and both leave the reader standing on that commit. The counter
+      // should say where they are standing.
       if (searchQuery.trim() !== "" && commitMatches(commit, searchQuery)) {
         setMatchCursor(commit.hash);
       }

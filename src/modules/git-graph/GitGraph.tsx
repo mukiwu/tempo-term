@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import { Clock, GitBranch, User } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import type {
@@ -149,6 +149,52 @@ function uncommittedPath(x: number, y: number, headX: number, headY: number): st
   const bend = Math.min(ROW_HEIGHT, headY - y);
   const turn = headY - bend;
   return `M ${x} ${y} L ${x} ${turn} C ${x} ${turn + bend * 0.5}, ${headX} ${headY - bend * 0.5}, ${headX} ${headY}`;
+}
+
+/**
+ * Keep a row in view when something other than the reader's own scrolling
+ * names it: keyboard navigation, or a search cursor landing on a match.
+ *
+ * Gated on the hash actually changing — not on `layouts`, which gets a new
+ * reference every time more history pages in — so browsing further down the
+ * list doesn't keep snapping back to the row that is still named.
+ */
+function useRowInView(
+  hash: string | null,
+  layouts: Record<string, { y: number }>,
+  scrollRef: RefObject<HTMLDivElement | null>,
+): void {
+  const previous = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hash || !scrollRef.current) {
+      previous.current = hash;
+      return;
+    }
+    if (hash === previous.current) {
+      return;
+    }
+
+    const layout = layouts[hash];
+    if (!layout) {
+      // Layout for this hash isn't ready yet (e.g. its page is still
+      // loading) — leave `previous` alone so a later render, once the layout
+      // does exist, still recognizes this as an unhandled hash change
+      // instead of skipping it.
+      return;
+    }
+    previous.current = hash;
+
+    const container = scrollRef.current;
+    const rowTop = layout.y - ROW_HEIGHT / 2;
+    const rowBottom = layout.y + ROW_HEIGHT / 2;
+    const { scrollTop, clientHeight } = container;
+
+    if (rowTop < scrollTop) {
+      container.scrollTop = rowTop;
+    } else if (rowBottom > scrollTop + clientHeight) {
+      container.scrollTop = rowBottom - clientHeight;
+    }
+  }, [hash, layouts, scrollRef]);
 }
 
 export function GitGraph({
@@ -419,42 +465,15 @@ export function GitGraph({
     }
   }
 
-  // Keep the active commit in view when keyboard navigation moves it off
-  // the visible edge of the (virtualized, manually-scrolled) container.
-  // Gated on activeHash actually changing (not just `layouts`, which gets a
-  // new reference every time more history pages in) so browsing further
-  // down the list doesn't keep snapping back to the still-selected row.
-  const prevActiveHashRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!activeHash || !scrollRef.current) {
-      prevActiveHashRef.current = activeHash;
-      return;
-    }
-    if (activeHash === prevActiveHashRef.current) {
-      return;
-    }
-
-    const layout = layouts[activeHash];
-    if (!layout) {
-      // Layout for this hash isn't ready yet (e.g. its page is still
-      // loading) — leave prevActiveHashRef alone so a later render, once
-      // the layout does exist, still recognizes this as an unhandled
-      // hash change instead of skipping it.
-      return;
-    }
-    prevActiveHashRef.current = activeHash;
-
-    const container = scrollRef.current;
-    const rowTop = layout.y - ROW_HEIGHT / 2;
-    const rowBottom = layout.y + ROW_HEIGHT / 2;
-    const { scrollTop, clientHeight } = container;
-
-    if (rowTop < scrollTop) {
-      container.scrollTop = rowTop;
-    } else if (rowBottom > scrollTop + clientHeight) {
-      container.scrollTop = rowBottom - clientHeight;
-    }
-  }, [activeHash, layouts]);
+  // Two rows the reader is meant to be looking at, and they part company: the
+  // selection, and the row the search counter is counting. Clicking a commit
+  // the search did not find moves one and leaves the other, and a fresh query
+  // puts the cursor on its first match without touching the selection at all
+  // — which is the counter reading "1 / 140" about a row hundreds above the
+  // viewport unless this brings it in. Both are brought in the same way, and
+  // the search one only while a search is running.
+  useRowInView(activeHash, layouts, scrollRef);
+  useRowInView(searching ? currentMatchHash : null, layouts, scrollRef);
 
   // Stepping onto the working-tree row brings it into view. It lives above the
   // first commit, so that is simply the top; the hash-keyed effect above can't
@@ -779,7 +798,7 @@ export function GitGraph({
               const rowState = isCurrentMatch
                 ? isSelected
                   ? "border-border-strong bg-accent/10 text-fg shadow-sm"
-                  : "border-transparent bg-accent/10 text-fg"
+                  : "border-transparent bg-accent/10 text-fg hover:bg-accent/20"
                 : isSelected
                   ? "border-border-strong bg-bg-elevated/60 text-fg shadow-sm"
                   : isCurrent

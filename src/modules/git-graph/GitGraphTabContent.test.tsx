@@ -543,6 +543,32 @@ describe("GitGraphTabContent search navigation", () => {
     await waitFor(() => expect(screen.getByText("1 / 1")).toBeInTheDocument());
   });
 
+  it("keeps the cursor on its commit when another page is appended", async () => {
+    vi.mocked(gitGraphLog)
+      .mockResolvedValueOnce(commitList(["aaa1111", "bbb2222"], true))
+      // Fewer rows loaded than the overlap, so the page hands both back before
+      // the new one; the list the cursor is looked up in is a new array.
+      .mockResolvedValueOnce(commitList(["aaa1111", "bbb2222", "ccc3333"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    fireEvent.change(screen.getByPlaceholderText("Search message, author, hash…"), {
+      target: { value: "msg" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    // Keyed on the hash, so history the reader has not looked at yet moves the
+    // total and leaves their place in the search where they put it. Waited on
+    // the counter rather than the new row: a marked message is several
+    // elements and `findByText` cannot see it as one string.
+    await waitFor(() => expect(screen.getByText("2 / 3")).toBeInTheDocument());
+  });
+
   it("says nothing found rather than pointing at a match that is not there", async () => {
     vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111", "bbb2222"], false));
 
