@@ -232,7 +232,9 @@ function declarationsAt(state: EditorState, lines: readonly number[]): string[] 
   for (const text of state.doc.iterLines(1, lines[lines.length - 1] + 1)) {
     n += 1;
     if (/^[A-Za-z_$]/.test(text)) {
-      seen = text.trim().replace(/[{(:]\s*$/, "");
+      // `trimEnd` after the cut as well as before it: dropping the brace off
+      // `fn f() -> T {` leaves behind the space that was in front of it.
+      seen = text.trim().replace(/[{(:]\s*$/, "").trimEnd();
     }
     while (next < lines.length && lines[next] === n) {
       found[next] = seen;
@@ -301,8 +303,25 @@ export class RunWidget extends WidgetType {
     /** Nothing below it: it runs to the end of the file. */
     readonly atEnd: boolean,
     readonly labels: RunLabels,
+    /** What this bar will come to once it is drawn; see `barHeight`. */
+    private readonly height: number,
   ) {
     super();
+  }
+
+  /**
+   * CodeMirror's own answer for a widget that does not give one is a single
+   * line of code, and a bar is three or four pixels over that. A lock file's
+   * few hundred of them leave the document measurably shorter than it turns
+   * out to be, so the scrollbar resizes under the reader as each one is
+   * reached and `lineBlockAt` aims a scroll at the wrong place until it is.
+   *
+   * Not measured off a drawn bar: a wrong measurement poisons the height map
+   * for every bar the viewport has not reached, which is worse than the
+   * estimate it replaces.
+   */
+  get estimatedHeight(): number {
+    return this.height;
   }
 
   eq(other: RunWidget): boolean {
@@ -461,7 +480,23 @@ export function foldRun(view: EditorView, start: number): void {
   pair?.other.dispatch({ effects: closeRun.of(pair.start) });
 }
 
-function decorations(state: EditorState, labels: RunLabels): DecorationSet {
+/**
+ * What a bar comes to, from the same font size the pane sizes the editor with.
+ *
+ * The bar's own type is 0.85em at a line height of 1.6, and it carries a row
+ * of padding and a border top and bottom. Derived rather than written down for
+ * the reason the CSS is relative: the size follows the reader's diff font
+ * setting, and the pane rebuilds this extension whenever that changes.
+ */
+export function barHeight(fontSize: number): number {
+  return Math.round(fontSize * 0.85 * 1.6) + 4;
+}
+
+function decorations(
+  state: EditorState,
+  labels: RunLabels,
+  height: number,
+): DecorationSet {
   const doc = state.doc;
   const open = state.field(opened);
   const bars: { start: number; from: number; to: number; lines: number; atEnd: boolean }[] = [];
@@ -503,6 +538,7 @@ function decorations(state: EditorState, labels: RunLabels): DecorationSet {
           bar.from === 0,
           bar.atEnd,
           labels,
+          height,
         ),
         block: true,
       }).range(bar.from, bar.to),
@@ -564,12 +600,12 @@ const theme = EditorView.baseTheme({
 });
 
 /** Our own collapsed-runs bars, in place of the library's `collapseUnchanged`. */
-export function collapseRunsExtension(labels: RunLabels): Extension {
+export function collapseRunsExtension(labels: RunLabels, fontSize: number): Extension {
   return [
     opened,
     theme,
     StateField.define<DecorationSet>({
-      create: (state) => decorations(state, labels),
+      create: (state) => decorations(state, labels, barHeight(fontSize)),
       update: (value, tr) => {
         // Only when something the bars are built from has moved. A transaction
         // is dispatched for a click, a focus, a selection -- none of which
@@ -581,7 +617,7 @@ export function collapseRunsExtension(labels: RunLabels): Extension {
           !tr.docChanged &&
           before.field(opened, false) === after.field(opened, false) &&
           getChunks(before)?.chunks === getChunks(after)?.chunks;
-        return same ? value : decorations(after, labels);
+        return same ? value : decorations(after, labels, barHeight(fontSize));
       },
       provide: (field) => EditorView.decorations.from(field),
     }),

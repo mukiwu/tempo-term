@@ -3,6 +3,7 @@ import { getChunks, MergeView } from "@codemirror/merge";
 import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import {
+  barHeight,
   barredRuns,
   RunWidget,
   collapseRunsExtension,
@@ -11,6 +12,9 @@ import {
   runKeyAt,
   STEP,
 } from "./collapseRuns";
+
+/** The pane's default; the bars take their size from it. */
+const FONT_SIZE = 13;
 
 const LABELS = {
   unchanged: "$ unchanged lines",
@@ -27,7 +31,7 @@ function view() {
     a: { doc: lines.join("\n") },
     b: {
       doc: lines.map((line, i) => (i === 39 ? "changed" : line)).join("\n"),
-      extensions: [collapseRunsExtension(LABELS)],
+      extensions: [collapseRunsExtension(LABELS, FONT_SIZE)],
     },
     parent,
   }).b;
@@ -80,8 +84,8 @@ function pair(a: string, b: string) {
   const parent = document.createElement("div");
   document.body.append(parent);
   return new MergeView({
-    a: { doc: a, extensions: [collapseRunsExtension(LABELS)] },
-    b: { doc: b, extensions: [collapseRunsExtension(LABELS)] },
+    a: { doc: a, extensions: [collapseRunsExtension(LABELS, FONT_SIZE)] },
+    b: { doc: b, extensions: [collapseRunsExtension(LABELS, FONT_SIZE)] },
     parent,
   });
 }
@@ -182,7 +186,7 @@ describe("what a press opens", () => {
       a: { doc: lines.join('\n') },
       b: {
         doc: lines.map((line, i) => (i === 26 ? "changed" : line)).join('\n'),
-        extensions: [collapseRunsExtension(LABELS)],
+        extensions: [collapseRunsExtension(LABELS, FONT_SIZE)],
       },
       parent,
     }).b;
@@ -267,8 +271,8 @@ describe("every stretch, against the library's own answer", () => {
       const parent = document.createElement("div");
       document.body.append(parent);
       const m = new MergeView({
-        a: { doc: a.join("\n"), extensions: [collapseRunsExtension(LABELS)] },
-        b: { doc: b.join("\n"), extensions: [collapseRunsExtension(LABELS)] },
+        a: { doc: a.join("\n"), extensions: [collapseRunsExtension(LABELS, FONT_SIZE)] },
+        b: { doc: b.join("\n"), extensions: [collapseRunsExtension(LABELS, FONT_SIZE)] },
         parent,
       });
       const j = JSON.stringify;
@@ -313,8 +317,8 @@ describe("the bar across a press", () => {
     // the focus loss this is all about.
     const editor = view();
     const bar = editor.dom.querySelector<HTMLElement>("[data-lines]")!;
-    const mine = new RunWidget(0, 30, "", false, false, LABELS);
-    const theirs = new RunWidget(999, 30, "", false, false, LABELS);
+    const mine = new RunWidget(0, 30, "", false, false, LABELS, barHeight(FONT_SIZE));
+    const theirs = new RunWidget(999, 30, "", false, false, LABELS, barHeight(FONT_SIZE));
 
     expect(mine.updateDOM(bar, editor, theirs)).toBe(false);
     expect(mine.updateDOM(bar, editor, mine)).toBe(true);
@@ -335,5 +339,20 @@ describe("the bar across a press", () => {
 
     expect(tip()).not.toBe(promised);
     expect(tip()).toBe(arrow.getAttribute("aria-label"));
+  });
+});
+
+describe("barHeight", () => {
+  it("stands taller than the line of code CodeMirror would guess", () => {
+    // A widget that gives no estimate is taken to be one line high, and these
+    // bars are not: a lock file's few hundred of them leave the document short
+    // enough that the scrollbar resizes as the reader travels down it.
+    for (const fontSize of [11, 13, 16, 20]) {
+      expect(barHeight(fontSize)).toBeGreaterThan(Math.round(fontSize * 1.4));
+    }
+  });
+
+  it("follows the reader's diff font setting", () => {
+    expect(barHeight(26)).toBeGreaterThan(barHeight(13));
   });
 });
