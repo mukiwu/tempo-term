@@ -777,4 +777,86 @@ describe("GitGraph open ends", () => {
     );
     expect(paths()).toBe(1);
   });
+
+  const WORKSPACE_LABELS = {
+    emptyTitle: "No commits",
+    emptyHint: "",
+    loadMore: "Load more",
+    refHint: "{{name}}",
+    uncommittedTitle: "Uncommitted changes",
+    uncommittedClean: "No uncommitted changes",
+    uncommittedSummary: () => "",
+  } as never;
+
+  const trackPaths = (): string[] =>
+    Array.from(
+      document.querySelectorAll<SVGPathElement>('svg[class*="pointer-events-none"] path'),
+    ).map((p) => p.getAttribute("d") ?? "");
+
+  const commitNodes = (): HTMLElement[] =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>("button[class*='rounded-full']"),
+    ).filter((n) => n.getAttribute("aria-label") !== "Uncommitted changes");
+
+  /** How far down the lowest track reaches. */
+  const foot = (): number =>
+    Math.max(...trackPaths().map((d) => parseFloat(d.trim().split(" ").pop() as string)));
+
+  it("leaves the node it belongs to, even while waiting on another lane", () => {
+    // A merge's second parent waits on a lane of its own. Starting the line on
+    // that lane leaves it hanging a lane clear of the node, so it reads as a
+    // line beginning in mid-air rather than as that merge's missing history.
+    render(
+      <GitGraph
+        commits={[commit("m", ["a", "not-loaded"], "merge"), commit("a", [], "root")]}
+        selection={null}
+        onSelectCommit={vi.fn()}
+        hasMore
+        labels={LABELS}
+      />,
+    );
+
+    const centres = new Set(
+      commitNodes().map((n) => parseFloat(n.style.left) + NODE_OFFSET),
+    );
+    const starts = trackPaths().map((d) => parseFloat(d.slice(2).split(" ")[0]));
+    // The edge between the merge and its loaded parent, and the line leaving.
+    expect(starts).toHaveLength(2);
+    for (const x of starts) {
+      expect(centres.has(x)).toBe(true);
+    }
+  });
+
+  it("stops half a row past the last node, and follows the working-tree row down", () => {
+    const { unmount } = render(
+      <GitGraph
+        commits={partial}
+        selection={null}
+        onSelectCommit={vi.fn()}
+        hasMore
+        labels={LABELS}
+      />,
+    );
+    // Every open end ends on the same line, below the last row rather than
+    // level with a dot that happens to be on another lane.
+    const lastNodeY = Math.max(
+      ...commitNodes().map((n) => parseFloat(n.style.top) + NODE_OFFSET),
+    );
+    const bare = foot();
+    expect(bare).toBe(lastNodeY + DEFAULT_GEOMETRY.rowHeight / 2);
+    unmount();
+
+    render(
+      <GitGraph
+        commits={partial}
+        selection={null}
+        onSelectCommit={vi.fn()}
+        hasMore
+        uncommitted={{ staged: 0, unstaged: 0 }}
+        labels={WORKSPACE_LABELS}
+      />,
+    );
+    // The working-tree row pushes every commit down one, and the foot with it.
+    expect(foot()).toBe(bare + DEFAULT_GEOMETRY.rowHeight);
+  });
 });

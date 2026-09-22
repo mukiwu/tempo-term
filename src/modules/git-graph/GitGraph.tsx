@@ -17,6 +17,7 @@ import {
   GUTTER_TRAIL,
   laneContinuationRowIndex,
   laneX,
+  openEndPath,
 } from "./lib/graphLayout";
 import { isCurrentCommit } from "./lib/currentCommit";
 import { BRANCH_COLORS } from "./lib/branchColors";
@@ -519,7 +520,7 @@ export function GitGraph({
                   end.childIndex > visibleEnd ? null : (
                     <path
                       key={`open-${idx}`}
-                      d={`M ${end.x} ${end.y} L ${end.x} ${pageEdge}`}
+                      d={openEndPath(end, pageEdge, ROW_HEIGHT)}
                       fill="none"
                       stroke={strokeFor(end.colorIndex)}
                       strokeWidth={2}
