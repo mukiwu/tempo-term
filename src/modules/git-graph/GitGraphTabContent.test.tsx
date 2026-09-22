@@ -399,7 +399,8 @@ describe("GitGraphTabContent search navigation", () => {
     fireEvent.change(search, { target: { value: "fix:" } });
 
     expect(screen.getByText("keep this row")).toBeInTheDocument();
-    expect(screen.getByText("0 / 2")).toBeInTheDocument();
+    // A query lands on its first match: "1 / 2", not "0 / 2".
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
 
     fireEvent.keyDown(search, { key: "Enter" });
     await waitFor(() => expect(gitCommitDetails).toHaveBeenLastCalledWith("/repo", "ccc3333"));
@@ -417,7 +418,169 @@ describe("GitGraphTabContent search navigation", () => {
     expect(screen.queryByText(/matches \(loaded\)/)).not.toBeInTheDocument();
     expect(gitCommitDetails).toHaveBeenCalledTimes(detailsCallCount);
   });
+  it("keeps the counter, and its tint, where they were when an unmatched row is clicked", async () => {
+    // Messages that do not repeat the hash, so a query can match one row while
+    // leaving both hashes as single text nodes to find the rows by.
+    const row = (hash: string, message: string) => ({
+      hash,
+      parents: [],
+      author: "a",
+      date: "d",
+      message,
+      refs: [],
+    });
+    vi.mocked(gitGraphLog).mockResolvedValue({
+      commits: [row("aaa1111", "alpha"), row("bbb2222", "beta")],
+      hasMore: false,
+    });
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    fireEvent.change(screen.getByPlaceholderText("Search message, author, hash…"), {
+      target: { value: "alpha" },
+    });
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
+
+    // Stepping off the matches leaves the counter where it was rather than
+    // reading "0 / 1", which said nothing useful.
+    fireEvent.click(screen.getByText("beta").closest("div[class*='absolute']")!);
+
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
+    // And the tint stays on that row rather than following the click — which
+    // is the line handing the cursor to the graph, and nothing else covers it:
+    // passing the selection's hash there reads the same in every other test.
+    const rowOf = (hash: string) =>
+      screen.getAllByText(hash)[0].closest("div[class*='absolute']")!;
+    expect(rowOf("aaa1111").className).toContain("bg-accent/10");
+    expect(rowOf("bbb2222").className).not.toContain("bg-accent");
+  });
+  it("moves the counter onto a row the search did find when it is clicked", async () => {
+    vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111", "bbb2222"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    fireEvent.change(screen.getByPlaceholderText("Search message, author, hash…"), {
+      target: { value: "msg" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+
+    // Standing on a match, the counter comes along — so the next arrow press
+    // carries on from where the reader is rather than from where they were.
+    //
+    // Found by hash, and [0] of those: "msg" is marked in the message, so that
+    // text is several elements now, and the details panel shows the hash too.
+    fireEvent.click(screen.getAllByText("aaa1111")[0].closest("div[class*='absolute']")!);
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+  });
+  it("keeps the cursor through an edit that does not change what it points at", async () => {
+    vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111", "bbb2222"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    const search = screen.getByPlaceholderText("Search message, author, hash…");
+    fireEvent.change(search, { target: { value: "msg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+
+    // A trailing space leaves the match set alone, so the reader has not gone
+    // anywhere. Resetting the cursor on any query change snapped this back to
+    // "1 / 2" and lost their place mid-word.
+    fireEvent.change(search, { target: { value: "msg " } });
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+
+    // Narrowing it past what the cursor named does move them: that commit is
+    // not a match any more, so the counter falls back to the first one.
+    fireEvent.change(search, { target: { value: "msg aaa" } });
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
+  });
+
+  it("does not park a cursor on a row clicked while no search is running", async () => {
+    vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111", "bbb2222"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    // `commitMatches` answers true for an empty query, so without a guard this
+    // click leaves a cursor behind and the search below opens on "2 / 2".
+    fireEvent.click(screen.getByText("msg bbb2222").closest("div[class*='absolute']")!);
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    fireEvent.change(screen.getByPlaceholderText("Search message, author, hash…"), {
+      target: { value: "msg" },
+    });
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+  });
+
+  it("recovers when the commit the cursor names is no longer loaded", async () => {
+    vi.mocked(gitGraphLog)
+      .mockResolvedValueOnce(commitList(["aaa1111", "bbb2222"], false))
+      .mockResolvedValue(commitList(["aaa1111"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg bbb2222");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    fireEvent.change(screen.getByPlaceholderText("Search message, author, hash…"), {
+      target: { value: "msg" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+
+    // A reload drops that commit — a branch filter or a ref toggle does the
+    // same. The cursor names a row that is gone, and used to stick at "0 / 1"
+    // with nothing tinted until the query was edited.
+    fireEvent.click(screen.getByLabelText("Refresh"));
+
+    await waitFor(() => expect(screen.getByText("1 / 1")).toBeInTheDocument());
+  });
+
+  it("says nothing found rather than pointing at a match that is not there", async () => {
+    vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111", "bbb2222"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    fireEvent.change(screen.getByPlaceholderText("Search message, author, hash…"), {
+      target: { value: "nothing here" },
+    });
+
+    expect(screen.getByText("0 / 0")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next match" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Previous match" })).toBeDisabled();
+    expect(document.querySelectorAll("mark")).toHaveLength(0);
+  });
+
+  it("starts over rather than carrying on when the box is emptied and used again", async () => {
+    vi.mocked(gitGraphLog).mockResolvedValue(commitList(["aaa1111", "bbb2222"], false));
+
+    render(<GitGraphTabContent />);
+    await screen.findByText("msg aaa1111");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search commits" }));
+    const search = screen.getByPlaceholderText("Search message, author, hash…");
+    fireEvent.change(search, { target: { value: "msg" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+
+    // Emptying ends that search. The old cursor still matches the query typed
+    // next, so without dropping it here the counter would come back at "2 / 2".
+    fireEvent.change(search, { target: { value: "" } });
+    fireEvent.change(search, { target: { value: "msg" } });
+
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+  });
 });
+
 
 describe("GitGraphTabContent worktree selector wiring", () => {
   beforeEach(() => {

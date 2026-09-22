@@ -33,7 +33,7 @@ import {
 } from "./lib/gitGraphBridge";
 import { GitGraphToolbar, type GitGraphToolbarLabels } from "./GitGraphToolbar";
 import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore";
-import { findCommitMatchIndexes } from "./lib/filterCommits";
+import { commitMatches, findCommitMatchIndexes } from "./lib/filterCommits";
 import { buildCommitMenu, buildRefMenu, buildWorkingTreeMenu } from "./lib/contextMenuItems";
 import { isCurrentCommit } from "./lib/currentCommit";
 import { openChangesInTab } from "./lib/openChangesInTab";
@@ -135,6 +135,8 @@ export function GitGraphTabContent() {
     localStorage.getItem("tempoterm-gitgraph-commit-order") === "topo" ? "topo" : "date",
   );
   const [searchQuery, setSearchQuery] = useState("");
+  /** Hash of the match the counter is on; null until the arrows are used. */
+  const [matchCursor, setMatchCursor] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
   // Any action that reloads the graph (refresh button + context-menu git ops)
   // flips this so the refresh icon spins while the reload is in flight.
@@ -148,9 +150,10 @@ export function GitGraphTabContent() {
     order: commitOrder,
   };
 
-  // Memoized so the pending-selection effect below only re-runs when the
-  // inputs really change — a fresh array identity every render would re-fire
-  // it on every unrelated re-render.
+  // Memoized because it walks the whole loaded history, and the counter and
+  // the arrows both read it on every render of the tab — including ones that
+  // have nothing to do with the search, like dragging the details panel's
+  // divider.
   const matchIndexes = useMemo(
     () => findCommitMatchIndexes(commits, searchQuery),
     [commits, searchQuery],
@@ -159,16 +162,42 @@ export function GitGraphTabContent() {
     () => new Map(commits.map((commit, index) => [commit.hash, index])),
     [commits],
   );
-  const selectedCommitHash =
-    selection?.mode === "single"
-      ? selection.commit.hash
-      : selection?.mode === "compare"
-        ? selection.to.hash
-        : null;
-  const selectedCommitIndex = selectedCommitHash
-    ? (commitIndexByHash.get(selectedCommitHash) ?? -1)
-    : -1;
-  const currentMatchIndex = matchIndexes.indexOf(selectedCommitIndex);
+  // The match the counter is pointing at, which is not the same as what is
+  // selected. The arrows move both — the details panel still follows them — but
+  // clicking a row moves only the selection, so a click cannot walk off with
+  // the reader's place in the search, and the two can sit on different rows.
+  //
+  // Before the arrows have been used it sits on the first match, so a query
+  // reads "1 / 10" the moment it is typed rather than "0 / 10" — there is a
+  // match and this is which one. It also means clearing the box and typing
+  // again starts over instead of carrying on from wherever the last search
+  // ended up.
+  //
+  // Worked out while rendering rather than reset in an effect, so there is no
+  // render in between where the counter is reading a cursor the query has
+  // already invalidated. An effect runs after the commit, and that one frame
+  // showed "0 / 141" and tinted a row that no longer matched.
+  //
+  // A cursor is live while the commit it names is still loaded and still
+  // matches. That covers the commit dropping out of the list — a branch filter
+  // or a reload — as well as the query changing, and it lets the cursor stay
+  // put through an edit that does not change what it points at: adding a
+  // trailing space used to snap the counter back to the first match.
+  const searching = searchQuery.trim() !== "";
+  const cursorIndex = matchCursor ? (commitIndexByHash.get(matchCursor) ?? -1) : -1;
+  const cursorIsLive =
+    cursorIndex >= 0 && searching && commitMatches(commits[cursorIndex], searchQuery);
+  // Falling back to the first match rather than to nothing: a query that found
+  // something is somewhere, so it reads "1 / 140" the moment it is typed.
+  const currentMatchIndex = !searching
+    ? -1
+    : cursorIsLive
+      ? matchIndexes.indexOf(cursorIndex)
+      : matchIndexes.length > 0
+        ? 0
+        : -1;
+  const cursorHash =
+    currentMatchIndex >= 0 ? commits[matchIndexes[currentMatchIndex]].hash : null;
   const matchPosition = currentMatchIndex < 0 ? 0 : currentMatchIndex + 1;
 
   const currentBranch = branches.find((b) => b.isCurrent)?.name ?? "—";
@@ -387,6 +416,15 @@ export function GitGraphTabContent() {
   // git call is needed to know which side is which.
   const handleSelectCommit = useCallback(
     (commit: CommitNode, { shiftKey }: { shiftKey: boolean }) => {
+      // The counter follows the reader onto a row the search found, and stays
+      // where it was when they step off one: "0 / 140" said nothing useful, and
+      // the row it was on is still marked, which is how they get back to it.
+      //
+      // Only while a search is running: `commitMatches` answers true for an
+      // empty query, so without this every click would park a cursor.
+      if (searchQuery.trim() !== "" && commitMatches(commit, searchQuery)) {
+        setMatchCursor(commit.hash);
+      }
       if (!shiftKey) {
         setSelection((prev) => {
           if (prev?.mode === "single" && prev.commit.hash === commit.hash) {
@@ -424,8 +462,27 @@ export function GitGraphTabContent() {
         return { mode: "compare", from, to };
       });
     },
-    [commits],
+    [commits, searchQuery],
   );
+
+  // The cursor survives an edit that leaves the commit it names a match — a
+  // trailing space must not snap the counter back to the first result — and is
+  // dropped by anything else, including emptying the box.
+  //
+  // Dropped here rather than only ignored while rendering: a cursor merely
+  // ignored is still in state, so widening the query again brings it back to
+  // life, and the counter and the tint teleport to a row the reader was moved
+  // off several keystrokes ago without them touching an arrow.
+  const handleSearchChange = useCallback((query: string) => {
+    setSearchQuery(query);
+    setMatchCursor((hash) => {
+      if (!hash || query.trim() === "") {
+        return null;
+      }
+      const commit = commitsRef.current.find((c) => c.hash === hash);
+      return commit && commitMatches(commit, query) ? hash : null;
+    });
+  }, []);
 
   const handleNavigateMatch = useCallback(
     (direction: "next" | "previous") => {
@@ -433,43 +490,26 @@ export function GitGraphTabContent() {
         return;
       }
 
-      let targetMatchIndex: number;
+      // The counter is never between matches: with any match at all the cursor
+      // resolves to one, falling back to the first. So a press is always a step
+      // from somewhere, and wraps at both ends.
+      //
+      // The reader's own position is deliberately not consulted. It was, before
+      // the counter started on the first match — a search begun while reading
+      // row 500 used to jump to the next match below it. It cannot do both:
+      // having just said "1 / 140", the next press has to be 2.
+      const step = direction === "next" ? 1 : -1;
+      const targetMatchIndex =
+        (currentMatchIndex + step + matchIndexes.length) % matchIndexes.length;
 
-      if (currentMatchIndex >= 0) {
-        const step = direction === "next" ? 1 : -1;
-        targetMatchIndex =
-          (currentMatchIndex + step + matchIndexes.length) % matchIndexes.length;
-      } else {
-        if (selectedCommitIndex < 0) {
-          targetMatchIndex = direction === "next" ? 0 : matchIndexes.length - 1;
-        } else if (direction === "next") {
-          targetMatchIndex = matchIndexes.findIndex((index) => index > selectedCommitIndex);
-          if (targetMatchIndex < 0) {
-            targetMatchIndex = 0;
-          }
-        } else {
-          targetMatchIndex = -1;
-          for (let index = matchIndexes.length - 1; index >= 0; index -= 1) {
-            if (matchIndexes[index] < selectedCommitIndex) {
-              targetMatchIndex = index;
-              break;
-            }
-          }
-          if (targetMatchIndex < 0) {
-            targetMatchIndex = matchIndexes.length - 1;
-          }
-        }
-      }
-
-      setSelection({ mode: "single", commit: commits[matchIndexes[targetMatchIndex]] });
+      const target = commits[matchIndexes[targetMatchIndex]];
+      // The arrows move both: the cursor, which the counter reads, and the
+      // selection, so the details panel still follows a search the way it
+      // always has.
+      setMatchCursor(target.hash);
+      setSelection({ mode: "single", commit: target });
     },
-    [
-      commits,
-      currentMatchIndex,
-      matchIndexes,
-      searchQuery,
-      selectedCommitIndex,
-    ],
+    [commits, currentMatchIndex, matchIndexes, searchQuery],
   );
 
   // Consume a pending "select this commit" request from the sidebar's history
@@ -867,7 +907,7 @@ export function GitGraphTabContent() {
           commitOrder={commitOrder}
           onChangeOrder={handleChangeOrder}
           searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+          onSearchChange={handleSearchChange}
           matchPosition={matchPosition}
           matchCount={matchIndexes.length}
           onNavigateMatch={handleNavigateMatch}
@@ -900,6 +940,8 @@ export function GitGraphTabContent() {
             refChipOptions={refChipOptions}
             hasMore={hasMore}
             onLoadMore={loadMore}
+            searchQuery={searchQuery}
+            currentMatchHash={cursorHash}
             uncommitted={uncommittedSummary}
             onSelectWorkspace={() => setSelection({ mode: "workspace" })}
             onWorkspaceContextMenu={(x, y) => setMenu({ type: "workingTree", x, y })}
