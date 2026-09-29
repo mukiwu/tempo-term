@@ -120,7 +120,7 @@ describe("CommitDetailsPanel changed-files tree", () => {
     expect(screen.queryByText("dist/aaa/x.ts")).not.toBeInTheDocument();
   });
 
-  it("collapsing a folder in tree mode hides its files", async () => {
+  it("folds a single-folder chain into one row that collapses as a whole", async () => {
     vi.mocked(gitCommitDetails).mockResolvedValue({
       message: "feat: x",
       files: [{ status: "M", path: "dist/aaa/x.ts" }],
@@ -135,9 +135,12 @@ describe("CommitDetailsPanel changed-files tree", () => {
     );
     await screen.findByText("dist/aaa/x.ts");
     fireEvent.click(screen.getByRole("button", { name: "Group by folder" }));
-    await screen.findByText("dist");
+    // dist holds nothing but aaa, so the two are one row, not two rows of indent.
+    await screen.findByText("dist/aaa");
+    expect(screen.queryByText("dist")).not.toBeInTheDocument();
+    expect(screen.queryByText("aaa")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Collapse dist" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse dist/aaa" }));
 
     expect(screen.queryByText("x.ts")).not.toBeInTheDocument();
   });
