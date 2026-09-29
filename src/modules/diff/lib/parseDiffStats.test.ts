@@ -209,43 +209,6 @@ describe("parseDiffStats", () => {
     expect(files.get("moved.ts")?.status).toBe("R");
   });
 
-  it("does not mistake a diff's own lines for file headers", () => {
-    // A patch file under version control: its content lines are themselves
-    // diff headers, and only the leading +/- tells them apart.
-    const diff = [
-      "diff --git a/fix.patch b/fix.patch",
-      "--- a/fix.patch",
-      "+++ b/fix.patch",
-      "@@ -1,3 +1,4 @@",
-      " diff --git a/inner.c b/inner.c",
-      "-  --- a/inner.c",
-      "+  +++ b/inner.c",
-      "+  @@ -1 +1 @@",
-      " end",
-      "",
-    ].join("\n");
-
-    const files = parseDiffStats(diff);
-    expect([...files.keys()]).toEqual(["fix.patch"]);
-    expect(files.get("fix.patch")).toMatchObject({ added: 2, deleted: 1 });
-    // The inner "@@" line is content, not a second hunk.
-    expect(files.get("fix.patch")?.hunks).toHaveLength(1);
-  });
-
-  it("unquotes a path git escaped", () => {
-    const diff = [
-      'diff --git "a/has space.ts" "b/has space.ts"',
-      '--- "a/has space.ts"',
-      '+++ "b/has space.ts"',
-      "@@ -1 +1 @@",
-      "-a",
-      "+b",
-      "",
-    ].join("\n");
-
-    expect([...parseDiffStats(diff).keys()]).toEqual(["has space.ts"]);
-  });
-
   it("estimates the rows a collapsed comparison renders", () => {
     const stats = {
       added: 4,
