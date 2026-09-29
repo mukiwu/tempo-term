@@ -33,7 +33,7 @@ import type { SessionStatus } from "@/modules/claude-progress/lib/sessionStatus"
 import type { AgentKind } from "@/modules/claude-progress/lib/codexNormalize";
 import { tabSessionStatus } from "./lib/tabSessionStatus";
 import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
-import { deriveTabCwd } from "./lib/tabCwd";
+import { deriveTabCwd, tabGitPlaces } from "./lib/tabCwd";
 import { selectCardTitle } from "./lib/cardTitle";
 import { collectTabSessions, type TabSession } from "./lib/tabSessions";
 import { useWorktreeStore } from "./lib/worktreeStore";
@@ -140,9 +140,11 @@ function BranchLine({
 }
 
 /**
- * The branch/cwd block under a card title. A linked worktree shows two lines
- * (main repo, then worktree); a normal repo shows one. Before info loads, it
- * falls back to the plain cwd. Branch and cwd visibility follow settings.
+ * The branch/cwd block for one directory: its branch and its working tree's
+ * path. A linked worktree shows only itself, not the main repo it was cut
+ * from — a card lists the main repo only when a pane actually sits there.
+ * Before info loads, it falls back to the plain cwd. Branch and cwd visibility
+ * follow settings.
  */
 function BranchBlock({
   info,
@@ -158,28 +160,6 @@ function BranchBlock({
     return showCwd && cwd ? (
       <BranchLine branch={null} path={cwd} agent={agent} showBranch={showBranch} showCwd={showCwd} />
     ) : null;
-  }
-  if (info.isWorktree) {
-    // Extra space between the two repo groups so each branch stays visually
-    // paired with its own path. The agent runs in the worktree, so only that
-    // line carries the CLI icon.
-    return (
-      <span className="block space-y-1.5">
-        <BranchLine
-          branch={info.mainBranch}
-          path={info.mainPath}
-          showBranch={showBranch}
-          showCwd={showCwd}
-        />
-        <BranchLine
-          branch={info.branch}
-          path={info.cwd}
-          agent={agent}
-          showBranch={showBranch}
-          showCwd={showCwd}
-        />
-      </span>
-    );
   }
   return (
     <BranchLine
@@ -327,6 +307,8 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
   const primary = sessions[0];
   const status = tabSessionStatus(tab, statuses);
   const info = cwd ? infos[cwd] : undefined;
+  const places = tabGitPlaces(tab, infos);
+  const focusedPlace = places.some((place) => place.leafIds.includes(tab.activeLeafId));
   const autoTitle =
     !multi && primary?.cwd && primary?.agent
       ? titles[
@@ -445,13 +427,46 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
             </span>
           ) : (
             <>
-              <BranchBlock
-                info={info}
-                cwd={cwd}
-                agent={cardAgent}
-                showBranch={card.branch}
-                showCwd={card.cwd}
-              />
+              {places.length >= 2 ? (
+                // Split across repos: every place a pane sits in, so a tab with
+                // one side on the main repo and one on a worktree shows both.
+                <span className="block space-y-1.5">
+                  {places.map((place) => {
+                    // The focused pane's repo keeps full strength and the rest
+                    // step back, so the card says which one the tab is on now.
+                    // Focus on a pane with no repo (an editor, say) dims none.
+                    const focused = place.leafIds.includes(tab.activeLeafId);
+                    const dimmed = !focused && focusedPlace;
+                    return (
+                      <span
+                        key={place.cwd}
+                        aria-current={focused ? "true" : undefined}
+                        className={`block ${dimmed ? "opacity-50" : ""}`}
+                      >
+                        <BranchBlock
+                          info={infos[place.cwd]}
+                          cwd={place.cwd}
+                          agent={
+                            cardAgent && primary && place.leafIds.includes(primary.leafId)
+                              ? cardAgent
+                              : undefined
+                          }
+                          showBranch={card.branch}
+                          showCwd={card.cwd}
+                        />
+                      </span>
+                    );
+                  })}
+                </span>
+              ) : (
+                <BranchBlock
+                  info={info}
+                  cwd={cwd}
+                  agent={cardAgent}
+                  showBranch={card.branch}
+                  showCwd={card.cwd}
+                />
+              )}
               {card.pr && pr && (
                 <span className="mt-0.5 flex">
                   <PrBadge pr={pr} />

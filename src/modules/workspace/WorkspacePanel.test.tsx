@@ -1,9 +1,9 @@
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { WorkspacePanel } from "./WorkspacePanel";
 import { useTabsStore } from "@/stores/tabsStore";
-import { leaf } from "@/modules/terminal/lib/terminalLayout";
+import { leaf, splitLeaf } from "@/modules/terminal/lib/terminalLayout";
 import { useSessionStatusStore } from "@/modules/claude-progress/lib/sessionStatusStore";
 import { progressKey } from "@/modules/claude-progress/lib/progressStore";
 import { useWorktreeStore } from "./lib/worktreeStore";
@@ -155,7 +155,7 @@ describe("WorkspacePanel", () => {
     expect(within(card).getByText("main")).toBeInTheDocument();
   });
 
-  it("shows main and worktree branch lines for a worktree card", () => {
+  it("shows only the worktree's own branch for a card that sits in a worktree", () => {
     useWorktreeStore.setState({
       infos: {
         "/b": {
@@ -169,8 +169,115 @@ describe("WorkspacePanel", () => {
     });
     render(<WorkspacePanel />);
     const card = screen.getByRole("button", { name: /beta/ });
-    expect(within(card).getByText("main")).toBeInTheDocument();
+    // No pane of this tab is in the main working tree, so its branch is not
+    // this card's to show: listed first, it read as the branch the card is on.
     expect(within(card).getByText("feature")).toBeInTheDocument();
+    expect(within(card).queryByText("main")).toBeNull();
+    expect(within(card).queryByText("/main")).toBeNull();
+  });
+
+  /** One tab split between the main working tree and a worktree cut from it. */
+  function splitAcrossWorktree(activeLeafId: "p1" | "p9") {
+    useTabsStore.setState({
+      ...useTabsStore.getState(),
+      tabs: [
+        {
+          id: "t1",
+          spaceId: "s1",
+          title: "gamma",
+          kind: "terminal",
+          paneTree: splitLeaf(leaf("p1", { kind: "terminal", cwd: "/main" }), "p1", "row", "p9", {
+            kind: "terminal",
+            cwd: "/wt",
+          }),
+          activeLeafId,
+          paneOrder: ["p1", "p9"],
+        },
+      ],
+      activeId: "t1",
+    });
+    useWorktreeStore.setState({
+      infos: {
+        "/main": { branch: "master", cwd: "/main", isWorktree: false, mainBranch: null, mainPath: null },
+        "/wt": {
+          branch: "test/wt-card",
+          cwd: "/wt",
+          isWorktree: true,
+          mainBranch: "master",
+          mainPath: "/main",
+        },
+      },
+    });
+  }
+
+  it("lists every pane's repo on a card whose tab is split across a worktree", () => {
+    splitAcrossWorktree("p1");
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /gamma/ });
+    // The focused pane is in the main repo, and the other one still counts:
+    // the card is the whole tab, not whichever pane last had the caret.
+    expect(within(card).getByText("master")).toBeInTheDocument();
+    expect(within(card).getByText("test/wt-card")).toBeInTheDocument();
+  });
+
+  it("marks the repo of the focused pane, and moves the mark with the focus", () => {
+    splitAcrossWorktree("p1");
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /gamma/ });
+    const current = (text: string) => within(card).getByText(text).closest("[aria-current='true']");
+
+    expect(current("master")).not.toBeNull();
+    expect(current("test/wt-card")).toBeNull();
+
+    act(() =>
+      useTabsStore.setState({
+        tabs: useTabsStore.getState().tabs.map((tab) => ({ ...tab, activeLeafId: "p9" })),
+      }),
+    );
+
+    expect(current("master")).toBeNull();
+    expect(current("test/wt-card")).not.toBeNull();
+  });
+
+  it("puts the CLI logomark on the repo the agent runs in", () => {
+    // The agent is in the worktree pane; focus is on the main repo's.
+    splitAcrossWorktree("p1");
+    useSessionStatusStore.setState({ statuses: { p9: "active" }, agents: { p9: "claude" } });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /gamma/ });
+    // The logomark takes the indent slot of the directory line it marks.
+    const line = (path: string) => within(card).getByText(path).parentElement!;
+
+    expect(within(card).getAllByRole("img", { name: "Claude" })).toHaveLength(1);
+    expect(within(line("/wt")).getByRole("img", { name: "Claude" })).toBeInTheDocument();
+    expect(within(line("/main")).queryByRole("img", { name: "Claude" })).toBeNull();
+  });
+
+  it("lists a repo once when two panes sit in it", () => {
+    useTabsStore.setState({
+      ...useTabsStore.getState(),
+      tabs: [
+        {
+          id: "t1",
+          spaceId: "s1",
+          title: "gamma",
+          kind: "terminal",
+          paneTree: splitLeaf(leaf("p1", { kind: "terminal", cwd: "/a" }), "p1", "row", "p9", {
+            kind: "terminal",
+            cwd: "/a/src",
+          }),
+          activeLeafId: "p1",
+          paneOrder: ["p1", "p9"],
+        },
+      ],
+      activeId: "t1",
+    });
+    // A subdirectory resolves to the same working tree, so it is the same place.
+    const main = { branch: "main", cwd: "/a", isWorktree: false, mainBranch: null, mainPath: null };
+    useWorktreeStore.setState({ infos: { "/a": main, "/a/src": main } });
+    render(<WorkspacePanel />);
+    const card = screen.getByRole("button", { name: /gamma/ });
+    expect(within(card).getAllByText("main")).toHaveLength(1);
   });
 
   it("shows the auto session title instead of the tab title", () => {
@@ -406,7 +513,7 @@ describe("WorkspacePanel", () => {
     expect(within(card).getAllByRole("img", { name: "Codex" })).toHaveLength(1);
   });
 
-  it("puts the CLI logomark on the worktree line only, not the main repo line", () => {
+  it("puts the CLI logomark on a worktree card's directory line once", () => {
     useWorktreeStore.setState({
       infos: {
         "/a": {
