@@ -32,7 +32,7 @@ function setToolbarWidth(width: number) {
 
 beforeEach(() => {
   observers = [];
-  useGraphSearchRequestStore.setState({ token: 0 });
+  useGraphSearchRequestStore.setState({ token: 0, leafId: null });
   vi.stubGlobal("ResizeObserver", ControllableResizeObserver);
 });
 
@@ -97,6 +97,7 @@ function renderToolbar(overrides: Partial<Parameters<typeof GitGraphToolbar>[0]>
 
 function toolbarProps(overrides: Partial<Parameters<typeof GitGraphToolbar>[0]> = {}) {
   return {
+    paneId: "leaf-1",
     branches,
     selectedBranches: [] as string[],
     onSelectBranches: vi.fn(),
@@ -159,15 +160,37 @@ describe("GitGraphToolbar responsive layout", () => {
     renderToolbar();
     expect(screen.queryByPlaceholderText(labels.searchPlaceholder)).not.toBeInTheDocument();
 
-    act(() => useGraphSearchRequestStore.getState().open());
+    act(() => useGraphSearchRequestStore.getState().open("leaf-1"));
 
     expect(screen.getByPlaceholderText(labels.searchPlaceholder)).toBeInTheDocument();
+  });
+
+  it("opens the search box only in the pane the shortcut was pressed in", () => {
+    // Two graphs side by side in a split. The shortcut names the focused one;
+    // the other keeps its box shut, so the caret cannot land there instead.
+    render(
+      <>
+        <div data-testid="left">
+          <GitGraphToolbar {...toolbarProps({ paneId: "left-leaf" })} />
+        </div>
+        <div data-testid="right">
+          <GitGraphToolbar {...toolbarProps({ paneId: "right-leaf" })} />
+        </div>
+      </>,
+    );
+
+    act(() => useGraphSearchRequestStore.getState().open("left-leaf"));
+
+    const left = within(screen.getByTestId("left"));
+    const right = within(screen.getByTestId("right"));
+    expect(left.getByPlaceholderText(labels.searchPlaceholder)).toBeInTheDocument();
+    expect(right.queryByPlaceholderText(labels.searchPlaceholder)).not.toBeInTheDocument();
   });
 
   it("does not reopen a closed box for a request that predates the toolbar", () => {
     // The store outlives any one toolbar. Mounting after a press must not act
     // on it — the graph would pop its search open on every remount.
-    act(() => useGraphSearchRequestStore.getState().open());
+    act(() => useGraphSearchRequestStore.getState().open("leaf-1"));
     renderToolbar();
 
     expect(screen.queryByPlaceholderText(labels.searchPlaceholder)).not.toBeInTheDocument();
@@ -207,6 +230,20 @@ describe("GitGraphToolbar responsive layout", () => {
     expect(screen.getByText(labels.showRemoteBranches)).toBeInTheDocument();
   });
 
+  it("does not fold the row on the first keystroke", () => {
+    const { rerender } = renderToolbarForRerender();
+    // Roomy with an empty box open. The counts that typing brings have to come
+    // out of the box's own room, or the icons fold away mid-word and come back
+    // when the query is deleted.
+    setToolbarWidth(880);
+    fireEvent.click(screen.getByLabelText(labels.search));
+    expect(screen.getByLabelText(labels.refresh)).toBeInTheDocument();
+
+    rerender("a");
+
+    expect(screen.getByLabelText(labels.refresh)).toBeInTheDocument();
+  });
+
   it("charges an open search against the width the rest of the row gets", () => {
     renderToolbar();
     // Wide enough for the roomy row, but not for the roomy row plus a search
@@ -219,6 +256,17 @@ describe("GitGraphToolbar responsive layout", () => {
 
     expect(screen.getByLabelText(labels.more)).toBeInTheDocument();
     expect(screen.queryByLabelText(labels.refresh)).not.toBeInTheDocument();
+  });
+
+  it("offers the remote-branches toggle once while the search squeezes the row", () => {
+    renderToolbar();
+    // Roomy enough that the toggle keeps its place on the left, but not with
+    // the search box open, so the right-hand icons fold into the menu.
+    setToolbarWidth(700);
+    fireEvent.click(screen.getByLabelText(labels.search));
+    fireEvent.click(screen.getByLabelText(labels.more));
+
+    expect(screen.getAllByText(labels.showRemoteBranches)).toHaveLength(1);
   });
 
   it("gives the row back when the search closes", () => {
@@ -243,7 +291,15 @@ describe("GitGraphToolbar responsive layout", () => {
     // Spelling it out on the row costs about what the remote toggle beside it
     // costs, and it is read once where the numbers are read every keystroke.
     expect(screen.getByText("3 / 12")).toBeInTheDocument();
-    expect(screen.queryByText("3 / 12 matches (loaded)")).not.toBeInTheDocument();
+  });
+
+  it("still gives the match counts their full sentence without a hover", () => {
+    renderToolbar({ searchQuery: "abc", matchPosition: 3, matchCount: 12 });
+    fireEvent.click(screen.getByLabelText(labels.search));
+
+    // The tooltip only mounts its text on mouseenter, so a keyboard or
+    // screen-reader user would otherwise hear a bare "3 / 12".
+    expect(screen.getByText("3 / 12 matches (loaded)")).toBeInTheDocument();
   });
 
   it("drops the HEAD button before compact, and the overflow menu carries it again", () => {

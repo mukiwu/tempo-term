@@ -138,17 +138,20 @@ function focusedPreviewControls(): PreviewControls | undefined {
 }
 
 /**
- * Whether the focused leaf is the Git Graph, on the same strict reading as
- * `focusedPreviewControls`: a graph open in a sibling pane does not count, or
- * Ctrl/Cmd+F would be taken out of whichever pane is being typed into.
+ * The focused leaf's id when that leaf is the Git Graph, else null — on the
+ * same strict reading as `focusedPreviewControls`: a graph open in a sibling
+ * pane does not count, or Ctrl/Cmd+F would be taken out of whichever pane is
+ * being typed into.
  */
-function gitGraphIsFocused(): boolean {
+function focusedGitGraphLeaf(): string | null {
   const state = useTabsStore.getState();
   const tab = state.tabs.find((tt) => tt.id === state.activeId);
   if (!tab) {
-    return false;
+    return null;
   }
-  return findPaneContent(tab.paneTree, tab.activeLeafId)?.kind === "git-graph";
+  return findPaneContent(tab.paneTree, tab.activeLeafId)?.kind === "git-graph"
+    ? tab.activeLeafId
+    : null;
 }
 
 /**
@@ -526,9 +529,10 @@ function App() {
         // F opens the Git Graph's search box, or reselects it if it is already
         // open. Gated on the graph being the focused pane: in a terminal
         // Ctrl+F is readline's forward-char, which is not ours to take.
-        if (e.code === "KeyF" && !e.shiftKey && gitGraphIsFocused()) {
+        const graphLeaf = e.code === "KeyF" && !e.shiftKey ? focusedGitGraphLeaf() : null;
+        if (graphLeaf) {
           e.preventDefault();
-          useGraphSearchRequestStore.getState().open();
+          useGraphSearchRequestStore.getState().open(graphLeaf);
           return;
         }
         // L focuses the active preview's address bar. Only acts on a preview

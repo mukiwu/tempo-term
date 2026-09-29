@@ -34,7 +34,7 @@ vi.mock("@/components/TitleBar", () => ({ TitleBar: () => null }));
 
 describe("App shell", () => {
   beforeEach(() => {
-    useGraphSearchRequestStore.setState({ token: 0 });
+    useGraphSearchRequestStore.setState({ token: 0, leafId: null });
     useSettingsStore.setState({ language: "en", themeId: "vitesse-dark" });
     // Show the sidebar (with its Explorer/Git/Notes tabs) and the settings
     // modal (with the language picker); keep it light for jsdom.
@@ -95,6 +95,33 @@ describe("App shell", () => {
     fireEvent.keyDown(window, { code: "KeyF", key: "f", metaKey: true });
 
     expect(useGraphSearchRequestStore.getState().token).toBe(1);
+  });
+
+  it("addresses Cmd+F to the focused graph when a split shows two", () => {
+    const paneTree = splitLeaf(leaf("left-leaf", { kind: "git-graph" }), "left-leaf", "row", "right-leaf", {
+      kind: "git-graph",
+    });
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      activeId: "t1",
+      tabs: [
+        {
+          id: "t1",
+          spaceId: "s1",
+          title: "t",
+          kind: "launcher" as const,
+          paneTree,
+          activeLeafId: "left-leaf",
+          paneOrder: ["left-leaf", "right-leaf"],
+        },
+      ],
+    });
+    render(<App />);
+
+    fireEvent.keyDown(window, { code: "KeyF", key: "f", metaKey: true });
+
+    expect(useGraphSearchRequestStore.getState().leafId).toBe("left-leaf");
   });
 
   it("switches to the Nth tab of the active space with Cmd+digit", () => {
