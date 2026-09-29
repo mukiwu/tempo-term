@@ -70,6 +70,8 @@
   "expandFolder": "Expand {{name}}",
   "collapseFolder": "Collapse {{name}}",
   "menuViewInGraph": "View in Git Graph",
+  "menuOpenChanges": "Open changes",
+  "menuCompareWithWorkingTree": "Compare with working tree",
   "baseSelector": "Comparison base",
   "baseWorktree": "Uncommitted changes",
   "baseWorktreeHint": "working tree",

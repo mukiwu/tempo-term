@@ -70,6 +70,8 @@
   "expandFolder": "展開 {{name}}",
   "collapseFolder": "收合 {{name}}",
   "menuViewInGraph": "在 Git Graph 中查看",
+  "menuOpenChanges": "開啟變更",
+  "menuCompareWithWorkingTree": "和工作區比較",
   "baseSelector": "比較基準",
   "baseWorktree": "未 commit 的變更",
   "baseWorktreeHint": "工作區",

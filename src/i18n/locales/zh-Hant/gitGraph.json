@@ -81,6 +81,9 @@
     "copyBranchName": "複製分支名稱",
     "copyTagName": "複製標籤名稱",
     "openWorktree": "為這個分支開 worktree",
+    "openChanges": "開啟變更",
+    "compareWithWorkingTree": "和工作區比較",
+    "useAsComparisonBase": "設為比較基準",
     "openInSourceControl": "到原始碼控制側欄"
   },
   "modal": {

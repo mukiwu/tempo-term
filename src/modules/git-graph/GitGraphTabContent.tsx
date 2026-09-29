@@ -37,6 +37,10 @@ import { commitMatches, findCommitMatchIndexes } from "./lib/filterCommits";
 import { buildCommitMenu, buildRefMenu, buildWorkingTreeMenu } from "./lib/contextMenuItems";
 import { isCurrentCommit } from "./lib/currentCommit";
 import { openChangesInTab } from "./lib/openChangesInTab";
+import {
+  readAgainstRef,
+  readAgainstWorkingTree,
+} from "@/modules/diff/lib/comparisonBaseStore";
 import { uncommittedRowSummary } from "./lib/uncommittedRow";
 import { splitRemoteRef } from "./lib/remoteRef";
 import type { RefChipOptions } from "./lib/refChips";
@@ -776,6 +780,8 @@ export function GitGraphTabContent() {
   const commitMenuItems = (commit: CommitNode): ContextMenuItem[] =>
     buildCommitMenu(
       {
+        openChanges: t("menu.openChanges"),
+        compareWithWorkingTree: t("menu.compareWithWorkingTree"),
         addTag: t("menu.createTagHere"),
         createBranch: t("menu.createBranchHere"),
         checkout: t("menu.checkoutCommit"),
@@ -789,6 +795,13 @@ export function GitGraphTabContent() {
         copySubject: t("menu.copySubject"),
       },
       {
+        // Nothing to offer for a root commit: it has no parent to read against.
+        onOpenChanges: openChangesInTab(repo, { mode: "single", commit }),
+        onCompareWithWorkingTree: () => {
+          if (repo) {
+            readAgainstWorkingTree(repo, commit.hash);
+          }
+        },
         onAddTag: () => openCreateTagModal(commit),
         onCreateBranch: () => openCreateBranchModal(commit),
         onCheckout: () => void runAction(() => gitBranchCheckout(repo!, commit.hash)),
@@ -836,6 +849,7 @@ export function GitGraphTabContent() {
         copyBranchName: t("menu.copyBranchName"),
         copyTagName: t("menu.copyTagName"),
         openWorktree: t("menu.openWorktree"),
+        useAsComparisonBase: t("menu.useAsComparisonBase"),
         pullFrom: (remote: string) => t("menu.pullFrom", { remote }),
         deleteRemoteOn: (remote: string) => t("menu.deleteRemoteOn", { remote }),
       },
@@ -862,6 +876,16 @@ export function GitGraphTabContent() {
           });
         },
         onCopyRefName: () => void navigator.clipboard.writeText(ref.name),
+        // The full refname is what makes the page use the merge base with HEAD.
+        onUseAsComparisonBase: () => {
+          if (repo) {
+            readAgainstRef(
+              repo,
+              ref.name,
+              ref.kind === "remote" ? `refs/remotes/${ref.name}` : `refs/heads/${ref.name}`,
+            );
+          }
+        },
         // The branch already exists, so this checks it out into a worktree of
         // its own rather than cutting a new one — unlike checkout, it leaves
         // the current working tree and whatever is running in it alone.
