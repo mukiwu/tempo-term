@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { CommitDetailsPanel } from "./CommitDetailsPanel";
@@ -143,6 +143,39 @@ describe("CommitDetailsPanel changed-files tree", () => {
     fireEvent.click(screen.getByRole("button", { name: "Collapse dist/aaa" }));
 
     expect(screen.queryByText("x.ts")).not.toBeInTheDocument();
+  });
+
+  it("names a folded folder's full path on hover, since the row truncates it", async () => {
+    // src holds a file of its own, so the chain below it folds into a row
+    // named "modules/source-control/lib" -- long enough that the 280px column
+    // cuts off its deepest, most useful segment.
+    vi.mocked(gitCommitDetails).mockResolvedValue({
+      message: "feat: x",
+      files: [
+        { status: "M", path: "src/index.ts" },
+        { status: "M", path: "src/modules/source-control/lib/gitBridge.ts" },
+      ],
+    });
+    render(
+      <CommitDetailsPanel
+        repo="/repo"
+        selection={{ mode: "single", commit: COMMIT }}
+        onClose={() => {}}
+        labels={LABELS}
+      />,
+    );
+    await screen.findByText("src/index.ts");
+    fireEvent.click(screen.getByRole("button", { name: "Group by folder" }));
+    const row = await screen.findByText("modules/source-control/lib");
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.mouseEnter(row.parentElement!);
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByRole("tooltip")).toHaveTextContent("src/modules/source-control/lib");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("clicking a nested file in tree mode loads its diff", async () => {

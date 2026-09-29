@@ -873,7 +873,9 @@ describe("SourceControlView nested folder tree", () => {
 
     // Four folders that each hold only the next: one row naming the chain.
     expect(await screen.findByText("src/modules/source-control/lib")).toBeInTheDocument();
-    expect(screen.queryByText("modules")).not.toBeInTheDocument();
+    for (const segment of ["src", "modules", "source-control", "lib"]) {
+      expect(screen.queryByText(segment)).not.toBeInTheDocument();
+    }
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse src/modules/source-control/lib" }));
 

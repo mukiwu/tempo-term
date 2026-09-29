@@ -179,7 +179,12 @@ function DetailsTreeRows({
               className="flex w-full items-center gap-1 pr-2 text-left font-mono text-[13px] text-fg-subtle hover:bg-bg-elevated/50"
             >
               {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-              <span className="truncate">{node.name}</span>
+              {/* A folded chain can be long enough to lose its deepest segment
+                  to the truncation, so the full path is on hover, as in the
+                  Source Control panel. */}
+              <Tooltip label={node.path} className="min-w-0 flex-1">
+                <span className="block truncate">{node.name}</span>
+              </Tooltip>
             </button>
             {!isCollapsed && (
               <DetailsTreeRows

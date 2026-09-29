@@ -1,6 +1,7 @@
 /** A folder in a file tree built from a flat list of paths. */
 export interface TreeFolderNode<T> {
   kind: "folder";
+  /** What the row shows: one segment, or a folded chain such as "a/b/c". */
   name: string;
   /** Full path from the list root, e.g. "dist/aaa". */
   path: string;
