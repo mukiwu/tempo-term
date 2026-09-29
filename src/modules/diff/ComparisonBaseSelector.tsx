@@ -504,7 +504,13 @@ export function ComparisonBaseSelector({ repo, narrow }: { repo: string | null; 
                   submit();
                   return;
                 }
-                if (e.key === "Tab" && !e.shiftKey) {
+                if (e.key === "Tab" && e.shiftKey) {
+                  // Focus is leaving backwards; the list goes with it rather
+                  // than staying open behind a box nobody is typing in.
+                  setOpen(false);
+                  return;
+                }
+                if (e.key === "Tab") {
                   // Completes rather than commits: the text becomes the row the
                   // cursor is on and the list stays open, so a name can be
                   // filled in and then built on. Enter is what takes it.
@@ -656,7 +662,7 @@ function BaseRow({
   onSelect: () => void;
   onHover: () => void;
 }) {
-  const ref = useRef<HTMLButtonElement>(null);
+  const ref = useRef<HTMLLIElement>(null);
 
   // Arrowing past the bottom of a scrolled list has to bring the row with it,
   // or the cursor is somewhere the reader cannot see.
@@ -669,37 +675,37 @@ function BaseRow({
   return (
     <>
       {separated && <li className="my-1 border-t border-border" aria-hidden="true" />}
-      <li>
-        <button
-          ref={ref}
-          id={id}
-          type="button"
-          role="option"
-          aria-selected={checked}
-          onClick={onSelect}
-          onMouseMove={onHover}
-          className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs ${
-            active ? "bg-bg text-fg" : "text-fg-muted"
-          }`}
+      {/* The option is the list item itself, not a button inside it: a
+          listbox may own only options, and the input keeps focus throughout
+          (aria-activedescendant), so nothing here belongs in the tab order. */}
+      <li
+        ref={ref}
+        id={id}
+        role="option"
+        aria-selected={checked}
+        onClick={onSelect}
+        onMouseMove={onHover}
+        className={`flex w-full cursor-default items-center gap-2 rounded-md px-2 py-1 text-left text-xs ${
+          active ? "bg-bg text-fg" : "text-fg-muted"
+        }`}
+      >
+        <span className="flex w-3 shrink-0 justify-center text-accent">
+          {checked && <Check size={11} />}
+        </span>
+        {tag && (
+          <Tag className="h-2.5 w-2.5 shrink-0 text-fg-subtle" aria-label={tag} />
+        )}
+        <span
+          data-row-label
+          className={`min-w-0 flex-1 truncate ${mono ? "font-mono" : ""}`}
         >
-          <span className="flex w-3 shrink-0 justify-center text-accent">
-            {checked && <Check size={11} />}
+          <Marked text={label} needle={needle} />
+        </span>
+        {hint && (
+          <span data-row-hint className="shrink-0 pl-2 text-[10.5px] text-fg-subtle">
+            {hint}
           </span>
-          {tag && (
-            <Tag className="h-2.5 w-2.5 shrink-0 text-fg-subtle" aria-label={tag} />
-          )}
-          <span
-            data-row-label
-            className={`min-w-0 flex-1 truncate ${mono ? "font-mono" : ""}`}
-          >
-            <Marked text={label} needle={needle} />
-          </span>
-          {hint && (
-            <span data-row-hint className="shrink-0 pl-2 text-[10.5px] text-fg-subtle">
-              {hint}
-            </span>
-          )}
-        </button>
+        )}
       </li>
     </>
   );

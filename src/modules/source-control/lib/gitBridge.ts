@@ -49,9 +49,9 @@ export function gitStatus(repoPath: string): Promise<GitStatus> {
 }
 
 /**
- * The refs worth comparing against, and which one to suggest. The fallback
- * order lives in the command, so there is one copy of it rather than one here
- * and one in Rust drifting apart.
+ * The refs worth comparing against. The fallback order lives in the command,
+ * so there is one copy of it rather than one here and one in Rust drifting
+ * apart.
  */
 export function gitComparisonBases(repoPath: string): Promise<ComparisonBases> {
   return invoke<ComparisonBases>("git_comparison_bases", { repoPath });

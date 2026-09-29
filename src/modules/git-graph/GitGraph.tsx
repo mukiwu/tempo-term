@@ -266,20 +266,18 @@ export function GitGraph({
   // put nodes on top of the hashes the moment the first copy could grow.
   const rowIndent = gutter - 12;
 
-  // Lanes the gutter had no room for keep their real position and run past it,
-  // over the rows. Rather than dimming those lines flat — which leaves faint
-  // tracks lying across every message — they fade out with distance: solid
-  // while they are inside the gutter, gone a little way beyond it. A line that
-  // only just overruns stays legible; one far out is a hint that something is
-  // there, not a mark to read. The stroke is a gradient in the svg's own
+  // Lanes the gutter has no column for keep their real position, to the right
+  // of the last one. Rather than stacking them onto that column or cutting them
+  // off flat, their lines fade out with distance: solid up to the last column,
+  // gone one lane beyond it. The stroke is a gradient in the svg's own
   // coordinates, so what fades is a position on the canvas rather than a
   // property of the line: a track that sweeps outward fades along its run, and
-  // the part still inside the gutter is untouched.
-  // From the last column the gutter really has, not from the gutter's outer
-  // edge: that edge is a lane and a half further right, so starting there left
-  // the first lane to overrun at full strength — the one case the fade exists
-  // for. Three lanes later it is gone, so the overrun reads as a gradient
-  // across the few tracks that do it rather than as a wall.
+  // the part inside the columns is untouched.
+  //
+  // The fade ends inside the gutter — its trailing room (`GUTTER_TRAIL`) is
+  // wider than one lane plus the 12px inset — so nothing is ever drawn over the
+  // rows. The svg clips at the gutter as well, so trimming that trail cuts the
+  // fade short rather than laying lines across the commit messages.
   const fadeFrom = laneX(columns - 1, geometry, { laneWidth, gutter, columns });
   const fadeTo = fadeFrom + laneWidth * LANE_FADE_LANES;
   // useId's own value carries colons, which have no business in a fragment
@@ -287,7 +285,6 @@ export function GitGraph({
   const laneFade = `lane-fade-${useId().replace(/:/g, "")}`;
   const strokeFor = (colorIndex: number) =>
     `url(#${laneFade}-${colorIndex % BRANCH_COLORS.length})`;
-  // A node is a div, not a stroke, so it reads the same ramp by hand.
   // The dot keeps its size at every lane width. What a lane has to clear is its
   // neighbour's track, which runs down that neighbour's centre, and a 12px dot
   // still stops 3px short of it at a 10px lane — being wider than the spacing
@@ -323,21 +320,20 @@ export function GitGraph({
   // beside it. The spread is a hard edge and scales plainly.
   const glowScale = roomy ? 1 : (laneWidth / DEFAULT_GEOMETRY.laneWidth) ** 2;
   const spreadScale = roomy ? 1 : laneWidth / DEFAULT_GEOMETRY.laneWidth;
+  // Ratios only: the sizes they scale are in `.git-head-node`.
   const headGlow = {
-    "--git-head-glow": `${Math.round(11 * glowScale)}px`,
-    "--git-head-spread": `${Math.round(2 * spreadScale)}px`,
-    "--git-head-glow-low": `${Math.round(8 * glowScale)}px`,
-    "--git-head-spread-low": `${Math.round(1 * spreadScale)}px`,
-    "--git-head-glow-high": `${Math.round(14 * glowScale)}px`,
-    "--git-head-spread-high": `${Math.round(3 * spreadScale)}px`,
+    "--git-head-glow-scale": glowScale,
+    "--git-head-spread-scale": spreadScale,
   } as React.CSSProperties;
   const selectedRing = {
     transform: roomy ? "scale(1.25)" : undefined,
     boxShadow: `0 0 0 ${ring}px color-mix(in srgb, var(--color-accent) 30%, transparent)`,
   };
 
-  const nodeOpacity = (x: number) =>
-    x <= fadeFrom ? 1 : Math.max(0, 1 - (x - fadeFrom) / (fadeTo - fadeFrom));
+  // Nodes sit on whole lanes and the fade is exactly one lane wide, so a node
+  // is either on a column or already past the end of the fade: there is no
+  // half-faded node to draw.
+  const nodeOnColumn = (x: number) => x <= fadeFrom;
 
   const isWorkspaceSelected = selection?.mode === "workspace";
   const activeHash =
@@ -565,7 +561,6 @@ export function GitGraph({
                 covered by the row tint. */}
             <svg
               className="pointer-events-none absolute inset-0 z-[1] h-full w-full"
-              style={{ overflow: "visible" }}
             >
               <defs>
                 {BRANCH_COLORS.map((color, idx) => (
@@ -676,12 +671,11 @@ export function GitGraph({
               if (!layout) {
                 return null;
               }
-              const shown = nodeOpacity(layout.x);
-              // Past the fade the node is not faint, it is gone — and one that
-              // is only invisible is still in the tab order, still clickable,
-              // still pops a tooltip. The row is a click target in its own
-              // right, so leaving the dot out costs nothing.
-              if (shown === 0) {
+              // Past the last column the node is not faint, it is gone — one
+              // that is only invisible is still in the tab order, still
+              // clickable, still pops a tooltip. The row is a click target in
+              // its own right, so leaving the dot out costs nothing.
+              if (!nodeOnColumn(layout.x)) {
                 return null;
               }
               const color = BRANCH_COLORS[layout.colorIndex % BRANCH_COLORS.length];
@@ -702,12 +696,11 @@ export function GitGraph({
                       top: `${layout.y - nodeBox / 2}px`,
                       width: `${nodeBox}px`,
                       height: `${nodeBox}px`,
-                      opacity: shown,
                       ...(isSelected ? selectedRing : null),
                     }}
-                    className={`absolute flex items-center justify-center rounded-full transition-all focus:outline-none ${
-                      layout.x > fadeFrom ? "z-0" : "z-10"
-                    } ${isSelected ? "" : "hover:scale-110"}`}
+                    className={`absolute z-10 flex items-center justify-center rounded-full transition-all focus:outline-none ${
+                      isSelected ? "" : "hover:scale-110"
+                    }`}
                   >
                     {/* The current (HEAD) node is filled with the accent — a colour
                         the branch lanes never use — and glows, so it reads as "you

@@ -363,6 +363,34 @@ describe("ComparisonBaseSelector", () => {
     expect(option(1).id).not.toBe(option(0).id);
   });
 
+  it("hangs its options straight off the listbox, out of the tab order", async () => {
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
+    openList();
+    await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
+
+    // A listbox may own only options (and groups). An option wrapped in a
+    // plain list item is not one of its children, so the row that
+    // aria-activedescendant names is not in the list it claims to be in.
+    const list = screen.getByRole("listbox");
+    for (const option of screen.getAllByRole("option")) {
+      expect(option.parentElement).toBe(list);
+      // The box being typed in keeps focus; the arrow keys move the cursor.
+      // A row Tab can land on takes focus out from under it.
+      expect(option.matches("button, [tabindex]:not([tabindex='-1'])")).toBe(false);
+      expect(option.querySelector("button, [tabindex]:not([tabindex='-1'])")).toBeNull();
+    }
+  });
+
+  it("closes the list when Shift+Tab takes focus out of it", async () => {
+    render(<ComparisonBaseSelector repo="/repo" narrow={false} />);
+    const input = openList();
+    await waitFor(() => expect(screen.getAllByRole("option").length).toBe(7));
+
+    fireEvent.keyDown(input, { key: "Tab", shiftKey: true });
+
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
   it("tells a branch from a tag of the same name", async () => {
     // `git rev-parse v1` answers with the tag, whichever one the reader
     // clicked -- git even warns that the name is ambiguous. A short name is

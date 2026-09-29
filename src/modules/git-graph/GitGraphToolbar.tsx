@@ -45,10 +45,12 @@ const HEAD_BUTTON_WIDTH = 900;
 // <branch>" label COMPACT_WIDTH allows for, which needs 900 and is long gone by
 // the time search is asking for room — charging full width on top of that
 // allowance folds controls away and leaves the gap they sat in.
+//
+// One figure whether or not anything is typed: the counts and the two step
+// buttons that a query brings are paid for by the box narrowing, not by the
+// row. Charging them to the row folded the icons away on the first keystroke
+// and brought them back when the query was deleted.
 const SEARCH_WIDTH = 230;
-// Typing adds the counts and the two step buttons; at some widths that is the
-// difference between fitting and not.
-const SEARCH_MATCHES_WIDTH = 60;
 
 interface WorktreeOption {
   label: string;
@@ -115,6 +117,8 @@ export interface GitGraphToolbarLabels {
 }
 
 interface GitGraphToolbarProps {
+  /** Leaf id of the pane this graph sits in; the search shortcut is addressed by it. */
+  paneId?: string;
   branches: Branch[];
   /** Branch names the graph is filtered to; empty means Show All. */
   selectedBranches: string[];
@@ -174,6 +178,7 @@ export function GitGraphToolbar({
   onCheckoutBranch,
   onCheckoutRemoteBranch,
   labels,
+  paneId,
 }: GitGraphToolbarProps) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -188,6 +193,7 @@ export function GitGraphToolbar({
   // not on its value, so a request that arrived before this toolbar mounted
   // does not pop the box open on arrival.
   const searchRequest = useGraphSearchRequestStore((s) => s.token);
+  const searchRequestLeaf = useGraphSearchRequestStore((s) => s.leafId);
   const seenSearchRequest = useRef(searchRequest);
   const searchInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -195,11 +201,14 @@ export function GitGraphToolbar({
       return;
     }
     seenSearchRequest.current = searchRequest;
+    if (searchRequestLeaf !== paneId) {
+      return;
+    }
     setSearchOpen(true);
     // Already open: select what is there, the way a browser's find bar does, so
     // the next keystroke replaces the query instead of appending to it.
     searchInputRef.current?.select();
-  }, [searchRequest]);
+  }, [searchRequest, searchRequestLeaf, paneId]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -216,11 +225,7 @@ export function GitGraphToolbar({
     return () => observer.disconnect();
   }, []);
 
-  // Reads the query, not `isCompact`, so the charge cannot depend on the answer
-  // it is used to compute.
-  const searchCost = !searchOpen
-    ? 0
-    : SEARCH_WIDTH + (searchQuery.trim() === "" ? 0 : SEARCH_MATCHES_WIDTH);
+  const searchCost = searchOpen ? SEARCH_WIDTH : 0;
   const usableWidth = width === null ? null : width - searchCost;
   // Search opens in the right-hand group, so only that group pays for it —
   // folding something on the left gives a box on the right no pixel it can use,
@@ -435,7 +440,9 @@ export function GitGraphToolbar({
                 onNavigateMatch(event.shiftKey ? "previous" : "next");
               }}
               placeholder={labels.searchPlaceholder}
-              className="w-52 min-w-0 rounded border border-border-strong bg-bg px-2 py-1 text-xs text-fg focus:outline-none focus:ring-1 focus:ring-accent"
+              // Gives up the room the counts and step buttons take (60px), so
+              // the search group is the same width with or without a query.
+              className={`${searchQuery.trim() === "" ? "w-52" : "w-[148px]"} min-w-0 rounded border border-border-strong bg-bg px-2 py-1 text-xs text-fg focus:outline-none focus:ring-1 focus:ring-accent`}
             />
             {searchQuery.trim() !== "" && (
               <>
@@ -449,8 +456,18 @@ export function GitGraphToolbar({
                     .replace("{{count}}", String(matchCount))}
                   className="shrink-0"
                 >
-                  <span className="whitespace-nowrap font-mono text-[11px] text-fg-subtle">
+                  <span
+                    aria-hidden="true"
+                    className="whitespace-nowrap font-mono text-[11px] text-fg-subtle"
+                  >
                     {labels.matchesShort
+                      .replace("{{current}}", String(matchPosition))
+                      .replace("{{count}}", String(matchCount))}
+                  </span>
+                  {/* The tooltip only mounts its text on hover, so the sentence
+                      is also here for anyone not pointing at the counts. */}
+                  <span className="sr-only">
+                    {labels.matches
                       .replace("{{current}}", String(matchPosition))
                       .replace("{{count}}", String(matchCount))}
                   </span>
@@ -573,11 +590,16 @@ export function GitGraphToolbar({
                     }}
                   />
                   <div className="my-1 border-t border-border" />
-                  <ToggleRow
-                    label={labels.showRemoteBranches}
-                    checked={includeRemotes}
-                    onChange={onToggleRemotes}
-                  />
+                  {/* Only once the row itself is narrow: the menu can open on
+                      search pressure alone, while the checkbox on the left,
+                      which tests the row's own width, is still there. */}
+                  {isNarrow && (
+                    <ToggleRow
+                      label={labels.showRemoteBranches}
+                      checked={includeRemotes}
+                      onChange={onToggleRemotes}
+                    />
+                  )}
                   {toggles.map((t) => (
                     <ToggleRow key={t.label} {...t} />
                   ))}

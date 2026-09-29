@@ -556,7 +556,7 @@ export function PaneTabContent({ tab }: { tab: Tab }) {
                     onClose={() => requestClosePane(pane.id)}
                   />
                 ) : pane.content.kind === "git-graph" ? (
-                  <GitGraphTabContent />
+                  <GitGraphTabContent paneId={pane.id} />
                 ) : pane.content.kind === "diff" ? (
                   <DiffTabContent
                     path={pane.content.path}

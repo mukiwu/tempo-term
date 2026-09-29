@@ -274,14 +274,14 @@ export function AllChangesTabContent({
     };
   }, [rootPath]);
 
-  // Re-scan when the window regains focus (e.g. after staging or committing
-  // elsewhere); cheap enough that no file watcher is needed. The same key is
-  // handed to every section, so the files already up re-read their own two
-  // documents rather than keeping whatever they loaded first.
   // The listing belongs to a page that is up; a panel left holding one after
   // the page closed would offer rows that scroll nothing.
   useEffect(() => () => useAllChangesLinkStore.getState().setListing(paneId, null), []);
 
+  // Re-scan when the window regains focus (e.g. after staging or committing
+  // elsewhere); cheap enough that no file watcher is needed. The same key is
+  // handed to every section, so the files already up re-read their own two
+  // documents rather than keeping whatever they loaded first.
   useEffect(() => {
     const bump = () => setRefreshKey((key) => key + 1);
     window.addEventListener("focus", bump);

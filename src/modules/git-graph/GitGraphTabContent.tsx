@@ -94,7 +94,7 @@ function getErrorMessage(error: unknown): string {
   return "Unexpected error";
 }
 
-export function GitGraphTabContent() {
+export function GitGraphTabContent({ paneId }: { paneId?: string } = {}) {
   const { t } = useTranslation("gitGraph");
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const gitGraphRefs = useSettingsStore((s) => s.gitGraphRefs);
@@ -900,6 +900,7 @@ export function GitGraphTabContent() {
 
       <div className="mb-2">
         <GitGraphToolbar
+          paneId={paneId}
           branches={branches}
           selectedBranches={selectedBranches}
           onSelectBranches={setSelectedBranches}

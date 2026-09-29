@@ -1,4 +1,4 @@
-import { createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { GitGraph } from "./GitGraph";
 import { DEFAULT_GEOMETRY, laneX } from "./lib/graphLayout";
@@ -938,28 +938,41 @@ describe("GitGraph wide histories", () => {
     ];
   }
 
-  it("leaves no node behind once it has faded out", () => {
-    // A node drawn at zero opacity is still in the tab order, still clickable
-    // and still pops a tooltip — a control nobody can see. Past the fade it is
-    // left out instead; the row is a click target in its own right.
-    const drawn: number[] = [];
-    for (const lanes of [20, 21, 40]) {
-      const { unmount } = render(
-        <GitGraph
-          commits={wideFirst(lanes)}
-          selection={null}
-          onSelectCommit={vi.fn()}
-          labels={LABELS}
-        />,
-      );
-      expect(nodes().map((n) => n.style.opacity)).not.toContain("0");
-      drawn.push(nodes().length);
-      unmount();
-    }
-    // Proof the case above is exercised rather than vacuously true: at forty
-    // lanes the top rows are all past the ceiling, so far fewer nodes survive
-    // than at twenty, where every one of them still has a column.
-    expect(drawn[2]).toBeLessThan(drawn[0]);
+  // One per row: the hash column repeats the root names, so count the messages.
+  const messages = (pattern: RegExp) =>
+    screen.queryAllByText(pattern).filter((el) => el.className.includes("font-sans"));
+  const rowCount = () => messages(/^(merge|r\d+)$/).length;
+
+  it("gives every lane a node up to the ceiling, and drops only the one past it", () => {
+    // Twenty lanes is the ceiling: each has a column, so every row on screen
+    // has its node. One lane more and exactly that lane's node is gone — left
+    // out rather than drawn invisible, since a node nobody can see would still
+    // be in the tab order and still clickable.
+    render(
+      <GitGraph commits={wideFirst(20)} selection={null} onSelectCommit={vi.fn()} labels={LABELS} />,
+    );
+    expect(nodes()).toHaveLength(rowCount());
+    cleanup();
+
+    render(
+      <GitGraph commits={wideFirst(21)} selection={null} onSelectCommit={vi.fn()} labels={LABELS} />,
+    );
+    expect(nodes()).toHaveLength(rowCount() - 1);
+  });
+
+  it("still selects a commit whose node was left out, from its row", () => {
+    const onSelectCommit = vi.fn();
+    const commits = wideFirst(40);
+    render(
+      <GitGraph commits={commits} selection={null} onSelectCommit={onSelectCommit} labels={LABELS} />,
+    );
+
+    fireEvent.click(messages(/^r39$/)[0]);
+
+    expect(onSelectCommit).toHaveBeenCalledWith(
+      commits.find((c) => c.hash === "r39"),
+      { shiftKey: false },
+    );
   });
 });
 
