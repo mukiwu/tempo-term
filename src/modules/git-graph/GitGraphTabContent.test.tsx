@@ -791,4 +791,75 @@ describe("GitGraphTabContent commit menu", () => {
     expect(useComparisonBaseStore.getState().includeUncommitted).toBe(true);
     expect(useTabsStore.getState().tabs.some((tab) => tab.kind === "all-changes")).toBe(true);
   });
+
+  it("open changes reads the commit against its first parent", async () => {
+    vi.mocked(gitGraphLog).mockImplementation(async () => ({
+      commits: [
+        { hash: "bbb2222", parents: ["aaa1111"], author: "a", date: "d", message: "msg bbb2222", refs: [] },
+        { hash: "aaa1111", parents: [], author: "a", date: "d", message: "msg aaa1111", refs: [] },
+      ],
+      hasMore: false,
+    }));
+
+    render(<GitGraphTabContent />);
+    await waitFor(() => screen.getByText("msg bbb2222"));
+
+    fireEvent.contextMenu(screen.getByText("msg bbb2222"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open changes" }));
+
+    // The same range the details panel's button reads, not the commit against
+    // the working tree: "the changes in this commit".
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
+      kind: "range",
+      from: "aaa1111",
+      to: "bbb2222",
+    });
+    expect(useTabsStore.getState().tabs.some((tab) => tab.kind === "all-changes")).toBe(true);
+  });
+
+  it("use as comparison base names the branch by its full refname", async () => {
+    // Local and remote on different commits, so each keeps a chip of its own.
+    vi.mocked(gitGraphLog).mockImplementation(async () => ({
+      commits: [
+        {
+          hash: "bbb2222",
+          parents: ["aaa1111"],
+          author: "a",
+          date: "d",
+          message: "msg bbb2222",
+          refs: [{ name: "feature", kind: "branch" }],
+        },
+        {
+          hash: "aaa1111",
+          parents: [],
+          author: "a",
+          date: "d",
+          message: "msg aaa1111",
+          refs: [{ name: "origin/feature", kind: "remote" }],
+        },
+      ],
+      hasMore: false,
+    }));
+
+    render(<GitGraphTabContent />);
+    await waitFor(() => screen.getByText("msg bbb2222"));
+
+    // The refs/ prefix is what makes the page start from the merge base, and
+    // what keeps a branch apart from a tag of the same short name.
+    fireEvent.contextMenu(screen.getByText("feature"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Use as comparison base" }));
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
+      kind: "ref",
+      name: "feature",
+      ref: "refs/heads/feature",
+    });
+
+    fireEvent.contextMenu(screen.getByText("origin/feature"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Use as comparison base" }));
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
+      kind: "ref",
+      name: "origin/feature",
+      ref: "refs/remotes/origin/feature",
+    });
+  });
 });
