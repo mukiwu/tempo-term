@@ -2,6 +2,8 @@
 
 ### feat
 
+- commit 和分支的右鍵選單可以開啟變更、和工作區比較，或設為比較基準 (#459)
+
 ### fix
 
 - Git Graph 最上面未提交變更那一列的文字，改成跟下方各列對齊；節點改用實線空心環，不再是碎掉的虛線圈 (#456)
@@ -11,9 +13,13 @@
 
 ### 貢獻者
 
+- @yw-chan (#459)
+
 ## English
 
 ### feat
+
+- Open changes, compare with the working tree, or set a comparison base from the commit and branch right-click menus (#459)
 
 ### fix
 
@@ -23,3 +29,5 @@
 - Keep the comparison base list out of the Tab order and close it when Shift+Tab leaves it (#458)
 
 ### Contributors
+
+- @yw-chan (#459)
