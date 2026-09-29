@@ -639,15 +639,16 @@ textarea:focus-visible,
  */
 .git-head-node {
   /* The three sizes are how far the glow reaches at a full-width lane. The
-     graph overrides them once the lanes narrow, because a glow that reaches
-     17px at its peak washes out the track 9px away — and that track is the
-     thing the reader is being helped to follow. */
-  --git-head-glow: 11px;
-  --git-head-spread: 2px;
-  --git-head-glow-low: 8px;
-  --git-head-spread-low: 1px;
-  --git-head-glow-high: 14px;
-  --git-head-spread-high: 3px;
+     graph scales them down once the lanes narrow, through the two scale
+     properties, because a glow that reaches 17px at its peak washes out the
+     track 9px away — and that track is the thing the reader is being helped
+     to follow. The numbers live only here; the graph sends ratios. */
+  --git-head-glow: calc(11px * var(--git-head-glow-scale, 1));
+  --git-head-spread: calc(2px * var(--git-head-spread-scale, 1));
+  --git-head-glow-low: calc(8px * var(--git-head-glow-scale, 1));
+  --git-head-spread-low: calc(1px * var(--git-head-spread-scale, 1));
+  --git-head-glow-high: calc(14px * var(--git-head-glow-scale, 1));
+  --git-head-spread-high: calc(3px * var(--git-head-spread-scale, 1));
   box-shadow:
     0 0 0 1.5px var(--color-accent),
     0 0 var(--git-head-glow) var(--git-head-spread)

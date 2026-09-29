@@ -35,7 +35,8 @@ export interface GraphGeometry {
    * sight — they keep their real position and simply run past the gutter,
    * where the caller draws them faded. The graph gives up the space, not the
    * truth: a couple of lanes over reads as a couple of faint tracks, fifty
-   * over reads as the thicket it is.
+   * over reads as the thicket it is. A value below `maxLane + 1` is raised to
+   * it: the gutter holds that many lanes whatever this says.
    */
   maxColumns?: number;
 }
@@ -139,7 +140,10 @@ export function laneSizing(lanes: number, geometry: GraphGeometry): LaneSizing {
       columns: geometry.maxLane + 1,
     };
   }
-  const columns = Math.min(lanes, geometry.maxColumns ?? lanes);
+  // The budget already holds maxLane + 1 full-width lanes, so a ceiling below
+  // that would give up no width — it would only fade lanes that fit.
+  const ceiling = Math.max(geometry.maxColumns ?? lanes, geometry.maxLane + 1);
+  const columns = Math.min(lanes, ceiling);
   const room = budget - geometry.paddingLeft - GUTTER_TRAIL;
   const laneWidth = Math.max(
     geometry.laneWidthMin,

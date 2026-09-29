@@ -203,6 +203,15 @@ describe("laneX", () => {
     expect(laneX(39, DEFAULT_GEOMETRY, sizing)).toBeGreaterThan(sizing.gutter);
   });
 
+  it("never puts the ceiling below the lanes the gutter already has room for", () => {
+    // A ceiling under maxLane + 1 would mark lanes as past the gutter while
+    // the gutter's own budget still holds them, and the graph would fade them
+    // out and drop their nodes for no width saved.
+    const geometry = { ...DEFAULT_GEOMETRY, maxColumns: 3 };
+    const sizing = laneSizing(DEFAULT_GEOMETRY.maxLane + 1, geometry);
+    expect(sizing.columns).toBe(DEFAULT_GEOMETRY.maxLane + 1);
+  });
+
   it("still clamps when no minimum width is set", () => {
     const beyond = laneX(COLLAPSING.maxLane + 3, COLLAPSING);
     expect(beyond).toBe(laneX(COLLAPSING.maxLane, COLLAPSING));
