@@ -2,7 +2,7 @@
 
 ### feat
 
-- 在 Git Graph 的 commit 或 Source Control 的最近 commit 按右鍵，可以直接開啟這個 commit 的變更，或拿它和工作區比較；在分支上按右鍵可以把它設為比較基準 (#459)
+- commit 和分支的右鍵選單可以開啟變更、和工作區比較，或設為比較基準 (#459)
 
 ### fix
 
@@ -19,7 +19,7 @@
 
 ### feat
 
-- Open a commit's changes or compare it with the working tree from the right-click menu in Git Graph and Source Control's recent commits, and set a branch as the comparison base from its own menu (#459)
+- Open changes, compare with the working tree, or set a comparison base from the commit and branch right-click menus (#459)
 
 ### fix
 
