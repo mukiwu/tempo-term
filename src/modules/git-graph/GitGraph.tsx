@@ -519,6 +519,9 @@ export function GitGraph({
   const uncommittedX = headLayout?.x ?? laneX(0, geometry);
   const uncommittedY = PADDING_TOP;
   const isDirty = uncommitted !== null && uncommitted.staged + uncommitted.unstaged > 0;
+  // Short hashes are not a fixed length (git widens them in big repos), so the
+  // placeholder takes the width of the hashes actually on screen.
+  const hashChars = commits[0]?.hash.length ?? 8;
 
   if (commits.length === 0) {
     return (
@@ -630,9 +633,10 @@ export function GitGraph({
               )}
             </svg>
 
-            {/* Working-tree node: hollow with a dashed ring, so it cannot be
-                mistaken for either of the filled kinds — HEAD (accent + glow)
-                or a commit (its lane's colour). */}
+            {/* Working-tree node: a hollow ring, so it cannot be mistaken for
+                either of the filled kinds — HEAD (accent + glow) or a commit
+                (its lane's colour). Solid, not dashed: at this size a dashed
+                border breaks into a few stray arcs. */}
             {showUncommitted && (
               <Tooltip label={labels.uncommittedTitle}>
                 <button
@@ -658,7 +662,7 @@ export function GitGraph({
                   }`}
                 >
                   <span
-                    className={`h-3 w-3 rounded-full border-2 border-dashed bg-bg ${
+                    className={`h-3 w-3 rounded-full border-2 bg-bg ${
                       isDirty ? "border-accent" : "border-fg-subtle opacity-60"
                     }`}
                   />
@@ -746,8 +750,11 @@ export function GitGraph({
                 <div className="flex items-center space-x-3 overflow-hidden pr-2">
                   {/* Placeholder in the hash column, dimmed and the same width,
                       so the columns still line up down the whole list. */}
-                  <span className="font-mono text-xs font-semibold text-fg-subtle opacity-50">
-                    •••••••
+                  <span
+                    style={{ width: `${hashChars}ch` }}
+                    className="inline-block shrink-0 overflow-hidden whitespace-nowrap font-mono text-xs font-semibold text-fg-subtle opacity-50"
+                  >
+                    {"•".repeat(hashChars)}
                   </span>
                   <span
                     className={`truncate font-sans text-[13px] font-medium ${
