@@ -22,6 +22,7 @@ const refLabels: RefMenuLabels = {
   copyBranchName: "Copy branch name",
   copyTagName: "Copy tag name",
   openWorktree: "Open worktree for this branch",
+  useAsComparisonBase: "Use as comparison base",
   pullFrom: (remote: string) => `Pull from ${remote}`,
   deleteRemoteOn: (remote: string) => `Delete branch on ${remote}`,
 };
@@ -38,10 +39,13 @@ function refActions(): RefMenuActions {
     onDeleteRemote: vi.fn(),
     onCopyRefName: vi.fn(),
     onOpenWorktree: vi.fn(),
+    onUseAsComparisonBase: vi.fn(),
   };
 }
 
 const commitLabels: CommitMenuLabels = {
+  openChanges: "Open changes",
+  compareWithWorkingTree: "Compare with working tree",
   addTag: "Add tag",
   createBranch: "Create branch",
   checkout: "Checkout",
@@ -57,6 +61,8 @@ const commitLabels: CommitMenuLabels = {
 
 function commitActions(): CommitMenuActions {
   return {
+    onOpenChanges: vi.fn(),
+    onCompareWithWorkingTree: vi.fn(),
     onAddTag: vi.fn(),
     onCreateBranch: vi.fn(),
     onCheckout: vi.fn(),
@@ -78,6 +84,7 @@ describe("buildRefMenu", () => {
     const ref: CommitRef = { name: "origin/feat/x", kind: "remote" };
     const items = buildRefMenu(ref, refLabels, refActions());
     expect(ids(items)).toEqual([
+      "useAsComparisonBase",
       "checkoutRemote",
       "mergeRemote",
       "pull",
@@ -106,6 +113,7 @@ describe("buildRefMenu", () => {
     const ref: CommitRef = { name: "feature", kind: "branch" };
     const items = buildRefMenu(ref, refLabels, refActions());
     expect(ids(items)).toEqual([
+      "useAsComparisonBase",
       "checkout",
       "merge",
       "openWorktree",
@@ -126,6 +134,32 @@ describe("buildRefMenu", () => {
     expect(actions.onCopyRefName).toHaveBeenCalledTimes(1);
   });
 
+  it("offers the comparison base first, in a group of its own, on branch and remote chips", () => {
+    const actions = refActions();
+    for (const ref of [
+      { name: "feature", kind: "branch" },
+      { name: "origin/feature", kind: "remote" },
+    ] as CommitRef[]) {
+      const items = buildRefMenu(ref, refLabels, actions);
+      expect(items[0].id).toBe("useAsComparisonBase");
+      expect(items.filter((i) => i.group === items[0].group)).toHaveLength(1);
+    }
+    const branch = buildRefMenu({ name: "feature", kind: "branch" }, refLabels, actions);
+    branch[0].onSelect();
+    expect(actions.onUseAsComparisonBase).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer the comparison base on head, tag or stash chips", () => {
+    for (const ref of [
+      { name: "main", kind: "head" },
+      { name: "HEAD", kind: "head" },
+      { name: "v1.0.0", kind: "tag" },
+      { name: "stash@{0}", kind: "stash" },
+    ] as CommitRef[]) {
+      expect(ids(buildRefMenu(ref, refLabels, refActions()))).not.toContain("useAsComparisonBase");
+    }
+  });
+
   it("offers nothing for a detached HEAD", () => {
     const ref: CommitRef = { name: "HEAD", kind: "head" };
     expect(buildRefMenu(ref, refLabels, refActions())).toEqual([]);
@@ -136,6 +170,7 @@ describe("buildRefMenu", () => {
     const remotes: CommitRef[] = [{ name: "origin/master", kind: "remote" }];
     const items = buildRefMenu(ref, refLabels, refActions(), remotes);
     expect(ids(items)).toEqual([
+      "useAsComparisonBase",
       "checkout",
       "merge",
       "openWorktree",
@@ -145,8 +180,8 @@ describe("buildRefMenu", () => {
       "copyBranchName",
     ]);
     // Both deletions sit in the same group so one divider fences them off.
-    expect(items.find((i) => i.id === "deleteBranch")?.group).toBe(2);
-    expect(items.find((i) => i.id === "deleteRemote:origin/master")?.group).toBe(2);
+    expect(items.find((i) => i.id === "deleteBranch")?.group).toBe(3);
+    expect(items.find((i) => i.id === "deleteRemote:origin/master")?.group).toBe(3);
     expect(items.find((i) => i.id === "deleteRemote:origin/master")?.danger).toBe(true);
   });
 
@@ -167,6 +202,8 @@ describe("buildRefMenu", () => {
     // With several remotes the label has to say which one it acts on.
     expect(items[0].label).toBe("Pull from origin");
     expect(items[1].label).toBe("Pull from upstream");
+    // The current branch is what the page compares against already.
+    expect(ids(items)).not.toContain("useAsComparisonBase");
   });
 
   it("passes each merged remote's own ref name to pull and delete", () => {
@@ -202,6 +239,8 @@ describe("buildCommitMenu", () => {
   it("lists the VSCode-style commit actions in order", () => {
     const items = buildCommitMenu(commitLabels, commitActions());
     expect(ids(items)).toEqual([
+      "openChanges",
+      "compareWithWorkingTree",
       "addTag",
       "createBranch",
       "checkout",
@@ -215,6 +254,35 @@ describe("buildCommitMenu", () => {
       "copySubject",
     ]);
     expect(items.find((i) => i.id === "resetHard")?.danger).toBe(true);
+  });
+
+  it("keeps the read-changes items in a first group of their own, ahead of the rest", () => {
+    const items = buildCommitMenu(commitLabels, commitActions());
+    expect(items.filter((i) => i.group === 0).map((i) => i.id)).toEqual([
+      "openChanges",
+      "compareWithWorkingTree",
+    ]);
+    // Groups only ever rise, so dividers land between the same items as before.
+    const groups = items.map((i) => i.group ?? 0);
+    expect(groups).toEqual([...groups].sort((a, b) => a - b));
+    expect(items.find((i) => i.id === "addTag")?.group).toBe(1);
+    expect(items.find((i) => i.id === "copyHash")?.group).toBe(4);
+  });
+
+  it("omits open changes for a root commit but still offers the working-tree comparison", () => {
+    const actions = commitActions();
+    const items = buildCommitMenu(commitLabels, { ...actions, onOpenChanges: undefined });
+    expect(ids(items)).not.toContain("openChanges");
+    items.find((i) => i.id === "compareWithWorkingTree")?.onSelect();
+    expect(actions.onCompareWithWorkingTree).toHaveBeenCalledTimes(1);
+  });
+
+  it("wires open changes to its callback", () => {
+    const actions = commitActions();
+    buildCommitMenu(commitLabels, actions)
+      .find((i) => i.id === "openChanges")
+      ?.onSelect();
+    expect(actions.onOpenChanges).toHaveBeenCalledTimes(1);
   });
 
   it("wires copy actions to their callbacks", () => {

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   baseFor,
+  readAgainstRef,
+  readAgainstWorkingTree,
   readComparison,
   readWorkingTree,
   useComparisonBaseStore,
@@ -119,5 +121,55 @@ describe("comparisonBaseStore", () => {
       kind: "ref",
       name: "origin/main",
     });
+  });
+
+  it("reads a commit against the working tree from the commit itself, with uncommitted work on", () => {
+    // No `ref`: the page then compares from the exact commit rather than from
+    // its merge base with HEAD. And with uncommitted work off the page would
+    // stop at HEAD while the label still said working tree.
+    useComparisonBaseStore.setState({ includeUncommitted: false });
+
+    readAgainstWorkingTree("/repo", "52ccbba");
+
+    const base = baseFor(useComparisonBaseStore.getState().byRepo, "/repo");
+    expect(base).toEqual({ kind: "ref", name: "52ccbba" });
+    expect("ref" in base).toBe(false);
+    expect(useComparisonBaseStore.getState().includeUncommitted).toBe(true);
+    expect(useTabsStore.getState().tabs.filter((tab) => tab.kind === "all-changes")).toHaveLength(
+      1,
+    );
+  });
+
+  it("switches the base of a page that is already open when read against the working tree", () => {
+    readAgainstWorkingTree("/repo", "aaaaaaa");
+    const first = useTabsStore.getState().activeId;
+    useTabsStore.getState().openLauncherTab();
+
+    readAgainstWorkingTree("/repo", "bbbbbbb");
+
+    expect(useTabsStore.getState().tabs.filter((tab) => tab.kind === "all-changes")).toHaveLength(
+      1,
+    );
+    expect(useTabsStore.getState().activeId).toBe(first);
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
+      kind: "ref",
+      name: "bbbbbbb",
+    });
+  });
+
+  it("uses a branch as the base by its full refname and leaves uncommitted work as it was", () => {
+    useComparisonBaseStore.setState({ includeUncommitted: false });
+
+    readAgainstRef("/repo", "origin/main", "refs/remotes/origin/main");
+
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
+      kind: "ref",
+      name: "origin/main",
+      ref: "refs/remotes/origin/main",
+    });
+    expect(useComparisonBaseStore.getState().includeUncommitted).toBe(false);
+    expect(useTabsStore.getState().tabs.filter((tab) => tab.kind === "all-changes")).toHaveLength(
+      1,
+    );
   });
 });

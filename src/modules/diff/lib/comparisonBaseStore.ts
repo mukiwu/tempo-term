@@ -119,3 +119,31 @@ export function readWorkingTree(repo: string): void {
   useComparisonBaseStore.getState().clear(repo);
   useTabsStore.getState().openAllChangesTab();
 }
+
+/**
+ * Read one commit against the working tree: everything that changed from that
+ * commit to what is on disk.
+ *
+ * The base carries no `ref`, so the page compares from the exact commit rather
+ * than from its merge base with HEAD -- "against the working tree" means the
+ * commit itself, whichever branch it sits on. Uncommitted work is switched on
+ * too, since with it off the page would stop at HEAD while the label still said
+ * working tree.
+ */
+export function readAgainstWorkingTree(repo: string, rev: string): void {
+  const store = useComparisonBaseStore.getState();
+  store.setBase(repo, { kind: "ref", name: rev });
+  store.setIncludeUncommitted(true);
+  useTabsStore.getState().openAllChangesTab();
+}
+
+/**
+ * Use a branch as the comparison base. `ref` is the full refname: that is what
+ * makes the page take the merge base with HEAD, and what keeps a branch apart
+ * from a tag of the same short name. Whether uncommitted work is included stays
+ * as the user left it.
+ */
+export function readAgainstRef(repo: string, name: string, ref: string): void {
+  useComparisonBaseStore.getState().setBase(repo, { kind: "ref", name, ref });
+  useTabsStore.getState().openAllChangesTab();
+}

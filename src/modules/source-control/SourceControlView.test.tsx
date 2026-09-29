@@ -26,6 +26,7 @@ import type { GitStatus } from "./lib/gitBridge";
 import { activeAllChangesPane, activeDiffPane, useTabsStore } from "@/stores/tabsStore";
 import { usePendingGraphSelectionStore } from "@/modules/git-graph/lib/pendingGraphSelectionStore";
 import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
+import { baseFor, useComparisonBaseStore } from "@/modules/diff/lib/comparisonBaseStore";
 
 const STATUS_ONE_MODIFIED: GitStatus = {
   branch: "main",
@@ -484,6 +485,38 @@ describe("SourceControlView row interactions", () => {
 
     expect(screen.getByRole("menuitem", { name: "Copy Hash" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Copy Message" })).toBeInTheDocument();
+  });
+
+  it("history row right-click offers open changes and compare with working tree", async () => {
+    vi.mocked(gitBridge.gitLog).mockResolvedValue([
+      { id: "abc1234", summary: "feat: x", author: "a", timestamp: 1, parents: ["def5678"] },
+    ]);
+    useComparisonBaseStore.setState({ byRepo: {}, includeUncommitted: false });
+    render(<SourceControlView />);
+    fireEvent.contextMenu(await screen.findByText("feat: x"));
+
+    expect(screen.getByRole("menuitem", { name: "Open changes" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Compare with working tree" }));
+
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
+      kind: "ref",
+      name: "abc1234",
+    });
+    expect(useComparisonBaseStore.getState().includeUncommitted).toBe(true);
+    expect(activeAllChangesPane(useTabsStore.getState().tabs, useTabsStore.getState().activeId)).not.toBeNull();
+  });
+
+  it("history row of a root commit has no open changes but can still compare", async () => {
+    vi.mocked(gitBridge.gitLog).mockResolvedValue([
+      { id: "abc1234", summary: "feat: root", author: "a", timestamp: 1, parents: [] },
+    ]);
+    render(<SourceControlView />);
+    fireEvent.contextMenu(await screen.findByText("feat: root"));
+
+    expect(screen.queryByRole("menuitem", { name: "Open changes" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Compare with working tree" }),
+    ).toBeInTheDocument();
   });
 
   it("offers no discard button for untracked or staged rows", async () => {

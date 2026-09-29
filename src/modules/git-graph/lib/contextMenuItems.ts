@@ -1,9 +1,11 @@
 import {
   Copy,
   DownloadCloud,
+  FileDiff,
   FolderGit2,
   GitBranch,
   GitCommit,
+  GitCompareArrows,
   GitMerge,
   GitPullRequestArrow,
   RotateCcw,
@@ -24,6 +26,8 @@ import { splitRemoteRef } from "./remoteRef";
  */
 
 export interface CommitMenuLabels {
+  openChanges: string;
+  compareWithWorkingTree: string;
   addTag: string;
   createBranch: string;
   checkout: string;
@@ -38,6 +42,9 @@ export interface CommitMenuLabels {
 }
 
 export interface CommitMenuActions {
+  /** Absent for a root commit, which has no parent to read the changes against. */
+  onOpenChanges?: () => void;
+  onCompareWithWorkingTree: () => void;
   onAddTag: () => void;
   onCreateBranch: () => void;
   onCheckout: () => void;
@@ -55,50 +62,69 @@ export function buildCommitMenu(
   labels: CommitMenuLabels,
   actions: CommitMenuActions,
 ): ContextMenuItem[] {
+  const { onOpenChanges } = actions;
   return [
-    { id: "addTag", label: labels.addTag, icon: Tag, group: 0, onSelect: actions.onAddTag },
+    ...(onOpenChanges
+      ? [
+          {
+            id: "openChanges",
+            label: labels.openChanges,
+            icon: FileDiff,
+            group: 0,
+            onSelect: onOpenChanges,
+          },
+        ]
+      : []),
+    {
+      id: "compareWithWorkingTree",
+      label: labels.compareWithWorkingTree,
+      icon: GitCompareArrows,
+      group: 0,
+      onSelect: actions.onCompareWithWorkingTree,
+    },
+    { id: "addTag", label: labels.addTag, icon: Tag, group: 1, onSelect: actions.onAddTag },
     {
       id: "createBranch",
       label: labels.createBranch,
       icon: GitBranch,
-      group: 0,
+      group: 1,
       onSelect: actions.onCreateBranch,
     },
     {
       id: "checkout",
       label: labels.checkout,
       icon: GitCommit,
-      group: 1,
+      group: 2,
       onSelect: actions.onCheckout,
     },
     {
       id: "cherryPick",
       label: labels.cherryPick,
       icon: GitCommit,
-      group: 1,
+      group: 2,
       onSelect: actions.onCherryPick,
     },
-    { id: "revert", label: labels.revert, icon: Undo2, group: 1, onSelect: actions.onRevert },
-    { id: "merge", label: labels.merge, icon: GitMerge, group: 2, onSelect: actions.onMerge },
+    { id: "revert", label: labels.revert, icon: Undo2, group: 2, onSelect: actions.onRevert },
+    { id: "merge", label: labels.merge, icon: GitMerge, group: 3, onSelect: actions.onMerge },
     {
       id: "rebase",
       label: labels.rebase,
       icon: GitPullRequestArrow,
-      group: 2,
+      group: 3,
       onSelect: actions.onRebase,
     },
     {
       id: "resetSoft",
       label: labels.resetSoft,
       icon: RotateCcw,
-      group: 2,
+      group: 3,
       onSelect: actions.onResetSoft,
     },
     {
       id: "resetHard",
       label: labels.resetHard,
       icon: RotateCcw,
-      group: 2,
+      group: 3,
       danger: true,
       onSelect: actions.onResetHard,
     },
@@ -106,14 +132,14 @@ export function buildCommitMenu(
       id: "copyHash",
       label: labels.copyHash,
       icon: Copy,
-      group: 3,
+      group: 4,
       onSelect: actions.onCopyHash,
     },
     {
       id: "copySubject",
       label: labels.copySubject,
       icon: Copy,
-      group: 3,
+      group: 4,
       onSelect: actions.onCopySubject,
     },
   ];
@@ -131,6 +157,7 @@ export interface RefMenuLabels {
   copyBranchName: string;
   copyTagName: string;
   openWorktree: string;
+  useAsComparisonBase: string;
   /** Names the remote, for a merged chip where the label alone is ambiguous. */
   pullFrom: (remote: string) => string;
   deleteRemoteOn: (remote: string) => string;
@@ -149,6 +176,8 @@ export interface RefMenuActions {
   /** Copies the ref's own name — the branch, the remote ref, or the tag. */
   onCopyRefName: () => void;
   onOpenWorktree: () => void;
+  /** Make this branch the all-changes page's comparison base. */
+  onUseAsComparisonBase: () => void;
 }
 
 /**
@@ -195,20 +224,28 @@ export function buildRefMenu(
     if (isBranch) {
       items.push(
         {
+          // The local ref, even on a merged chip that carries remotes.
+          id: "useAsComparisonBase",
+          label: labels.useAsComparisonBase,
+          icon: GitCompareArrows,
+          group: 0,
+          onSelect: actions.onUseAsComparisonBase,
+        },
+        {
           id: "checkout",
           label: labels.checkout,
           icon: GitBranch,
-          group: 0,
+          group: 1,
           onSelect: actions.onCheckout,
         },
-        { id: "merge", label: labels.merge, icon: GitMerge, group: 0, onSelect: actions.onMerge },
+        { id: "merge", label: labels.merge, icon: GitMerge, group: 1, onSelect: actions.onMerge },
         {
           // Branch off without leaving what you are doing: unlike checkout, this
           // touches neither the current working tree nor whatever is running in it.
           id: "openWorktree",
           label: labels.openWorktree,
           icon: FolderGit2,
-          group: 0,
+          group: 1,
           onSelect: actions.onOpenWorktree,
         },
       );
@@ -218,7 +255,7 @@ export function buildRefMenu(
         id: `pull:${remote.name}`,
         label: labels.pullFrom(splitRemoteRef(remote.name).remote),
         icon: DownloadCloud,
-        group: 1,
+        group: 2,
         onSelect: () => actions.onPull(remote.name),
       });
     }
@@ -227,7 +264,7 @@ export function buildRefMenu(
         id: "deleteBranch",
         label: labels.deleteBranch,
         icon: Trash2,
-        group: 2,
+        group: 3,
         danger: true,
         onSelect: actions.onDeleteBranch,
       });
@@ -237,7 +274,7 @@ export function buildRefMenu(
         id: `deleteRemote:${remote.name}`,
         label: labels.deleteRemoteOn(splitRemoteRef(remote.name).remote),
         icon: Trash2,
-        group: 2,
+        group: 3,
         danger: true,
         onSelect: () => actions.onDeleteRemote(remote.name),
       });
@@ -248,7 +285,7 @@ export function buildRefMenu(
       id: "copyBranchName",
       label: labels.copyBranchName,
       icon: Copy,
-      group: 3,
+      group: 4,
       onSelect: actions.onCopyRefName,
     });
     return items;
@@ -257,31 +294,38 @@ export function buildRefMenu(
   if (ref.kind === "remote") {
     return [
       {
+        id: "useAsComparisonBase",
+        label: labels.useAsComparisonBase,
+        icon: GitCompareArrows,
+        group: 0,
+        onSelect: actions.onUseAsComparisonBase,
+      },
+      {
         id: "checkoutRemote",
         label: labels.checkoutRemote,
         icon: GitBranch,
-        group: 0,
+        group: 1,
         onSelect: actions.onCheckoutRemote,
       },
       {
         id: "mergeRemote",
         label: labels.mergeRemote,
         icon: GitMerge,
-        group: 0,
+        group: 1,
         onSelect: actions.onMergeRemote,
       },
       {
         id: "pull",
         label: labels.pull,
         icon: DownloadCloud,
-        group: 0,
+        group: 1,
         onSelect: () => actions.onPull(ref.name),
       },
       {
         id: "deleteRemote",
         label: labels.deleteRemote,
         icon: Trash2,
-        group: 1,
+        group: 2,
         danger: true,
         onSelect: () => actions.onDeleteRemote(ref.name),
       },
@@ -289,7 +333,7 @@ export function buildRefMenu(
         id: "copyBranchName",
         label: labels.copyBranchName,
         icon: Copy,
-        group: 2,
+        group: 3,
         onSelect: actions.onCopyRefName,
       },
     ];

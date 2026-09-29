@@ -12,6 +12,7 @@ import {
   FolderTree,
   GitBranch,
   GitCompare,
+  GitCompareArrows,
   List,
   Loader2,
   Minus,
@@ -58,7 +59,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { STATUS_COLOR } from "./lib/fileStatus";
 import { activeAllChangesPane, activeDiffPane, useTabsStore } from "@/stores/tabsStore";
 import { useAllChangesLinkStore } from "@/modules/diff/lib/allChangesLinkStore";
-import { readComparison } from "@/modules/diff/lib/comparisonBaseStore";
+import { readAgainstWorkingTree, readComparison } from "@/modules/diff/lib/comparisonBaseStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { computeHistoryGraphLayout, HISTORY_GRAPH_GEOMETRY } from "./lib/commitGraph";
 
@@ -386,6 +387,28 @@ function HistoryRow({ commit, repoPath }: { commit: CommitInfo; repoPath: string
               group: 0,
               onSelect: viewInGraph,
             },
+            ...(readable
+              ? [
+                  {
+                    id: "openChanges",
+                    label: t("menuOpenChanges"),
+                    icon: FileDiff,
+                    group: 0,
+                    onSelect: openInPage,
+                  },
+                ]
+              : []),
+            ...(repoPath
+              ? [
+                  {
+                    id: "compareWithWorkingTree",
+                    label: t("menuCompareWithWorkingTree"),
+                    icon: GitCompareArrows,
+                    group: 0,
+                    onSelect: () => readAgainstWorkingTree(repoPath, commit.id),
+                  },
+                ]
+              : []),
             {
               id: "copyHash",
               label: t("menuCopyHash"),

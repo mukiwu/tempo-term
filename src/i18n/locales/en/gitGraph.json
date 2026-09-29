@@ -81,6 +81,9 @@
     "copyBranchName": "Copy branch name",
     "copyTagName": "Copy tag name",
     "openWorktree": "Open worktree for this branch",
+    "openChanges": "Open changes",
+    "compareWithWorkingTree": "Compare with working tree",
+    "useAsComparisonBase": "Use as comparison base",
     "openInSourceControl": "Open in Source Control"
   },
   "modal": {

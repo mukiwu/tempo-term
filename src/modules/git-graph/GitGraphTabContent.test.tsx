@@ -6,6 +6,7 @@ import { usePendingGraphSelectionStore } from "./lib/pendingGraphSelectionStore"
 import { useTabsStore } from "@/stores/tabsStore";
 import { leaf } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { baseFor, useComparisonBaseStore } from "@/modules/diff/lib/comparisonBaseStore";
 
 vi.mock("@/modules/source-control/lib/gitBridge", () => ({
   gitResolveRepo: vi.fn().mockResolvedValue("/repo"),
@@ -762,5 +763,32 @@ describe("GitGraphTabContent compare mode", () => {
     // compare pair.
     await waitFor(() => expect(screen.getAllByText("bbb2222").length).toBeGreaterThan(0));
     expect(screen.queryByText(/ \.\. /)).not.toBeInTheDocument();
+  });
+});
+
+describe("GitGraphTabContent commit menu", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(gitWorktreeList).mockResolvedValue([]);
+    useWorkspaceStore.getState().setRoot("/repo");
+    useComparisonBaseStore.setState({ byRepo: {}, includeUncommitted: false });
+    useTabsStore.setState({ tabs: [], activeId: null });
+  });
+
+  it("compare with working tree sets the base to that commit and opens the page", async () => {
+    vi.mocked(gitGraphLog).mockImplementation(async () => commitList(["aaa1111"], false));
+
+    render(<GitGraphTabContent />);
+    await waitFor(() => screen.getByText("msg aaa1111"));
+
+    fireEvent.contextMenu(screen.getByText("msg aaa1111"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Compare with working tree" }));
+
+    expect(baseFor(useComparisonBaseStore.getState().byRepo, "/repo")).toEqual({
+      kind: "ref",
+      name: "aaa1111",
+    });
+    expect(useComparisonBaseStore.getState().includeUncommitted).toBe(true);
+    expect(useTabsStore.getState().tabs.some((tab) => tab.kind === "all-changes")).toBe(true);
   });
 });
