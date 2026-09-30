@@ -3,6 +3,7 @@
 ### feat
 
 - commit 和分支的右鍵選單可以開啟變更、和工作區比較，或設為比較基準 (#459)
+- 樹狀檢視把只含一個子資料夾的資料夾合併成一列，例如 `src/modules/lib` (#465)
 
 ### fix
 
@@ -21,6 +22,7 @@
 ### feat
 
 - Open changes, compare with the working tree, or set a comparison base from the commit and branch right-click menus (#459)
+- Fold single-folder chains into one row in tree view, such as `src/modules/lib` (#465)
 
 ### fix
 
