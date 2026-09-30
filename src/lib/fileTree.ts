@@ -1,6 +1,7 @@
 /** A folder in a file tree built from a flat list of paths. */
 export interface TreeFolderNode<T> {
   kind: "folder";
+  /** What the row shows: one segment, or a folded chain such as "a/b/c". */
   name: string;
   /** Full path from the list root, e.g. "dist/aaa". */
   path: string;
@@ -33,7 +34,9 @@ interface MutableFolder<T> {
  * Builds a real nested tree from a flat list of paths: every ancestor
  * directory becomes its own parent node, so "dist/aaa/x.ts" and
  * "dist/bbb/y.ts" nest as dist → {aaa → x.ts, bbb → y.ts} instead of
- * "dist/aaa" and "dist/bbb" becoming two unrelated top-level groups.
+ * "dist/aaa" and "dist/bbb" becoming two unrelated top-level groups. A chain
+ * of folders that each hold only the next one is folded into a single node
+ * ("a/b/c"), keyed by the deepest folder's path.
  */
 export function buildFileTree<T extends { path: string }>(files: T[]): TreeNode<T>[] {
   const root: MutableFolder<T> = {
@@ -70,10 +73,25 @@ export function buildFileTree<T extends { path: string }>(files: T[]): TreeNode<
     cursor.files.set(fileName, { kind: "file", name: fileName, path: normalized, file });
   }
 
+  // A folder holding nothing but one other folder folds into it, the way VS
+  // Code's compact folders do: `src/modules/x/lib` on one row instead of four
+  // rows of indent that carry no information. The row is named for the whole
+  // chain and keyed by its deepest folder, so collapsing it collapses the lot.
+  // A folder with files of its own, or with two subfolders, stays a row.
+  function toFolderNode(folder: MutableFolder<T>): TreeFolderNode<T> {
+    let name = folder.name;
+    let deepest = folder;
+    while (deepest.files.size === 0 && deepest.folders.size === 1) {
+      deepest = deepest.folders.values().next().value!;
+      name = `${name}/${deepest.name}`;
+    }
+    return { kind: "folder", name, path: deepest.path, children: toSortedArray(deepest) };
+  }
+
   function toSortedArray(folder: MutableFolder<T>): TreeNode<T>[] {
     const folderNodes: TreeNode<T>[] = Array.from(folder.folders.values())
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map((f) => ({ kind: "folder", name: f.name, path: f.path, children: toSortedArray(f) }));
+      .map(toFolderNode);
     const fileNodes: TreeNode<T>[] = Array.from(folder.files.values()).sort((a, b) =>
       a.name.localeCompare(b.name),
     );

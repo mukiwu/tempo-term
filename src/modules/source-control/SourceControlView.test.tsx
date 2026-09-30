@@ -843,7 +843,14 @@ describe("SourceControlView nested folder tree", () => {
     vi.mocked(gitBridge.gitStatus).mockResolvedValue({
       branch: "main",
       staged: [],
-      unstaged: [{ path: "frontend/src/a.ts", staged: false, status: "M" }, { path: "backend/src/b.ts", staged: false, status: "M" }],
+      // Each top folder also holds a file of its own, so neither folds into its
+      // src and the two same-named folders stay rows of their own.
+      unstaged: [
+        { path: "frontend/src/a.ts", staged: false, status: "M" },
+        { path: "frontend/package.json", staged: false, status: "M" },
+        { path: "backend/src/b.ts", staged: false, status: "M" },
+        { path: "backend/go.mod", staged: false, status: "M" },
+      ],
     });
     render(<SourceControlView />);
     fireEvent.click(screen.getByRole("button", { name: "Group by folder" }));
@@ -853,6 +860,26 @@ describe("SourceControlView nested folder tree", () => {
     // each collapse button must carry a distinct, path-qualified label.
     expect(screen.getByRole("button", { name: "Collapse frontend/src" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Collapse backend/src" })).toBeInTheDocument();
+  });
+
+  it("folds a single-folder chain into one row that collapses as a whole", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [{ path: "src/modules/source-control/lib/gitBridge.ts", staged: false, status: "M" }],
+    });
+    render(<SourceControlView />);
+    fireEvent.click(screen.getByRole("button", { name: "Group by folder" }));
+
+    // Four folders that each hold only the next: one row naming the chain.
+    expect(await screen.findByText("src/modules/source-control/lib")).toBeInTheDocument();
+    for (const segment of ["src", "modules", "source-control", "lib"]) {
+      expect(screen.queryByText(segment)).not.toBeInTheDocument();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse src/modules/source-control/lib" }));
+
+    expect(screen.queryByText("gitBridge.ts")).not.toBeInTheDocument();
   });
 });
 
