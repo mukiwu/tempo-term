@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Sparkles,
   SquarePlus,
+  Trash2,
   Undo2,
   UploadCloud,
 } from "lucide-react";
@@ -27,7 +28,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InfoDialog } from "@/components/InfoDialog";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
 import { Resizer } from "@/components/Resizer";
-import { fsReveal } from "@/modules/explorer/lib/fsBridge";
+import { fsDelete, fsReveal } from "@/modules/explorer/lib/fsBridge";
 import {
   gitCommit,
   gitDiff,
@@ -117,6 +118,7 @@ function StatusRow({
   onAction,
   onOpen,
   onRequestDiscard,
+  onRequestDelete,
   active = false,
   readOnly = false,
   followsPage = false,
@@ -132,6 +134,8 @@ function StatusRow({
   onOpen: (path: string) => void;
   /** Present on tracked unstaged rows only: ask to discard this file. */
   onRequestDiscard?: (path: string) => void;
+  /** Present on working-tree lists: ask to move this file to the trash. */
+  onRequestDelete?: (path: string) => void;
   /** This file's diff is the one on screen: the row stays highlighted and
    * keeps its actions out without needing hover. */
   active?: boolean;
@@ -152,6 +156,8 @@ function StatusRow({
   const { t } = useTranslation("sourceControl");
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const discardable = !readOnly && onRequestDiscard && file.status !== "?";
+  // A file git reports as deleted is already gone from disk: nothing to trash.
+  const deletable = !readOnly && onRequestDelete && file.status !== "D";
   const absPath = `${repoPath}/${file.path}`;
   const rowRef = useRef<HTMLLIElement>(null);
 
@@ -246,6 +252,18 @@ function StatusRow({
             group: 3,
             danger: true,
             onSelect: () => onRequestDiscard(file.path),
+          } satisfies ContextMenuItem,
+        ]
+      : []),
+    ...(deletable
+      ? [
+          {
+            id: "delete",
+            label: t("menuDelete"),
+            icon: Trash2,
+            group: 3,
+            danger: true,
+            onSelect: () => onRequestDelete(file.path),
           } satisfies ContextMenuItem,
         ]
       : []),
@@ -630,6 +648,7 @@ function FileTreeRows({
   onFolderAction,
   onFileOpen,
   onRequestDiscard,
+  onRequestDelete,
   activePath,
   readOnly,
   followsPage,
@@ -646,6 +665,7 @@ function FileTreeRows({
   onFolderAction: (paths: string[]) => void;
   onFileOpen: (path: string) => void;
   onRequestDiscard?: (path: string) => void;
+  onRequestDelete?: (path: string) => void;
   activePath?: string | null;
   readOnly?: boolean;
   followsPage?: boolean;
@@ -669,6 +689,7 @@ function FileTreeRows({
               onAction={onFileAction}
               onOpen={onFileOpen}
               onRequestDiscard={onRequestDiscard}
+              onRequestDelete={onRequestDelete}
               active={node.file.path === activePath}
               readOnly={readOnly}
               followsPage={followsPage}
@@ -703,6 +724,7 @@ return (
               onFolderAction={onFolderAction}
               onFileOpen={onFileOpen}
               onRequestDiscard={onRequestDiscard}
+              onRequestDelete={onRequestDelete}
               activePath={activePath}
               readOnly={readOnly}
               followsPage={followsPage}
@@ -731,6 +753,7 @@ function FileList({
   onFolderAction,
   onFileOpen,
   onRequestDiscard,
+  onRequestDelete,
   activePath,
   readOnly,
   followsPage,
@@ -745,6 +768,7 @@ function FileList({
   onFolderAction: (paths: string[]) => void;
   onFileOpen: (path: string) => void;
   onRequestDiscard?: (path: string) => void;
+  onRequestDelete?: (path: string) => void;
   /** Repo-relative path of the file whose diff is on screen, if it is in this
    * list — the staged and unstaged lists never claim it at the same time. */
   activePath?: string | null;
@@ -771,6 +795,7 @@ function FileList({
             onAction={onFileAction}
             onOpen={onFileOpen}
             onRequestDiscard={onRequestDiscard}
+            onRequestDelete={onRequestDelete}
             active={file.path === activePath}
             readOnly={readOnly}
             followsPage={followsPage}
@@ -795,6 +820,7 @@ function FileList({
         onFolderAction={onFolderAction}
         onFileOpen={onFileOpen}
         onRequestDiscard={onRequestDiscard}
+        onRequestDelete={onRequestDelete}
         activePath={activePath}
         readOnly={readOnly}
         followsPage={followsPage}
@@ -942,6 +968,10 @@ export function SourceControlView() {
   const [discardTarget, setDiscardTarget] = useState<string | null>(null);
   // Basename of a file whose discard failed, shown in an error dialog.
   const [discardError, setDiscardError] = useState<string | null>(null);
+  // Repo-relative path of the file awaiting delete confirmation, if any.
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // Basename of a file that could not be moved to the trash.
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Status rows report repo-relative paths; the diff tab (like the editor)
   // wants an absolute path so it can resolve the repo on its own.
@@ -1302,6 +1332,7 @@ export function SourceControlView() {
                     })
                   }
                   onFileOpen={(path) => openDiff(path, true)}
+                  onRequestDelete={setDeleteTarget}
                   activePath={activeStaged ? activeRelPath : null}
                   followsPage={!listing && allChangesInFront}
                   repoPath={repoPath ?? ""}
@@ -1353,6 +1384,7 @@ export function SourceControlView() {
                   }
                   onFileOpen={(path) => openDiff(path, false)}
                   onRequestDiscard={setDiscardTarget}
+                  onRequestDelete={setDeleteTarget}
                   activePath={activeStaged ? null : activeRelPath}
                   followsPage={!listing && allChangesInFront}
                   repoPath={repoPath ?? ""}
@@ -1424,6 +1456,36 @@ export function SourceControlView() {
             });
           }}
           onCancel={() => setDiscardTarget(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title={t("deleteTitle")}
+          message={t("deleteMessage", { name: basename(deleteTarget) })}
+          confirmLabel={t("deleteConfirm")}
+          cancelLabel={tCommon("actions.cancel")}
+          onConfirm={() => {
+            const target = deleteTarget;
+            setDeleteTarget(null);
+            // To the trash, the way the explorer deletes, so a wrong click can
+            // be taken back. An untracked directory arrives as "dir/"; the
+            // command works that out from the path itself.
+            withRepo((repo) => fsDelete(`${repo}/${target}`, false)).catch(() => {
+              setDeleteError(basename(target));
+              void refresh();
+            });
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {deleteError && (
+        <InfoDialog
+          title={t("deleteTitle")}
+          message={t("deleteFailed", { name: deleteError })}
+          confirmLabel={tCommon("actions.confirm")}
+          onConfirm={() => setDeleteError(null)}
         />
       )}
 

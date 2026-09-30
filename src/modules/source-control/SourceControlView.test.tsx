@@ -16,12 +16,18 @@ vi.mock("./lib/gitBridge", () => ({
   gitRestoreFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/modules/explorer/lib/fsBridge", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/modules/explorer/lib/fsBridge")>()),
+  fsDelete: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("./lib/aiCommit", () => ({
   generateCommitMessage: vi.fn().mockResolvedValue(""),
 }));
 
 import { SourceControlView } from "./SourceControlView";
 import * as gitBridge from "./lib/gitBridge";
+import { fsDelete } from "@/modules/explorer/lib/fsBridge";
 import type { GitStatus } from "./lib/gitBridge";
 import { activeAllChangesPane, activeDiffPane, useTabsStore } from "@/stores/tabsStore";
 import { usePendingGraphSelectionStore } from "@/modules/git-graph/lib/pendingGraphSelectionStore";
@@ -445,6 +451,68 @@ describe("SourceControlView row interactions", () => {
     await waitFor(() =>
       expect(gitBridge.gitRestoreFile).toHaveBeenCalledWith("/repo", "src/a.ts"),
     );
+  });
+
+  it("moves an untracked file to the trash from its menu, after asking", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [{ path: "docs/HANDOVER.md", staged: false, status: "?" }],
+    });
+    render(<SourceControlView />);
+    fireEvent.contextMenu(await screen.findByText("docs/HANDOVER.md"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    // Nothing is touched until the dialog is answered.
+    expect(fsDelete).not.toHaveBeenCalled();
+    const loads = vi.mocked(gitBridge.gitStatus).mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Move to Trash" }));
+
+    await waitFor(() => expect(fsDelete).toHaveBeenCalledWith("/repo/docs/HANDOVER.md", false));
+    // The list is read again, so the row goes as soon as the file does.
+    await waitFor(() =>
+      expect(vi.mocked(gitBridge.gitStatus).mock.calls.length).toBeGreaterThan(loads),
+    );
+  });
+
+  it("deletes nothing when the trash dialog is cancelled", async () => {
+    render(<SourceControlView />);
+    fireEvent.contextMenu(await screen.findByText("src/a.ts"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("button", { name: "Move to Trash" })).not.toBeInTheDocument();
+    expect(fsDelete).not.toHaveBeenCalled();
+  });
+
+  it("offers no delete for a file that is already gone", async () => {
+    vi.mocked(gitBridge.gitStatus).mockResolvedValue({
+      branch: "main",
+      staged: [],
+      unstaged: [{ path: "src/gone.ts", staged: false, status: "D" }],
+    });
+    render(<SourceControlView />);
+    fireEvent.contextMenu(await screen.findByText("src/gone.ts"));
+
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument();
+  });
+
+  it("offers no delete on a comparison's read-only list", async () => {
+    render(<SourceControlView />);
+    fireEvent.click(await screen.findByRole("button", { name: "All Changes" }));
+    act(() => {
+      useAllChangesLinkStore.getState().setListing(pane(), {
+        label: "upstream/master",
+        range: false,
+        files: [{ rel: "src/deep/b.ts", status: "M" }],
+      });
+    });
+    // That list is what the page compares against a base, not the disk: a row
+    // there is not a file this panel can put in the trash.
+    fireEvent.contextMenu(await screen.findByText("src/deep/b.ts"));
+
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument();
   });
 
   it("right-click opens a custom menu with open, stage, copy and discard items", async () => {
