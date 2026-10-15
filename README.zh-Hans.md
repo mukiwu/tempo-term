@@ -107,4 +107,4 @@ cd src-tauri && cargo test      # 后端 Rust 测试
 
 如果这个项目对你有帮助，欢迎赞助支持我持续开发
 
-<a href="https://sponser.muki.tw"><img src="https://sponser.muki.tw/badge/sponsor-button.png" alt="贊助 MUKI" width="240"></a>
+<a href="https://sponsor.muki.tw"><img src="https://sponsor.muki.tw/badge/sponsor-button.png" alt="贊助 MUKI" width="240"></a>
