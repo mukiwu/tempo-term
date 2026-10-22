@@ -19,9 +19,11 @@ pub struct ParsedSession {
     pub model: Option<String>,
     /// Per local-day/hour message buckets, for the P2 heatmap.
     pub activity: Vec<ActivityBucket>,
+    /// Per local-day tool invocation counts, keyed by tool name.
+    pub tools: Vec<ToolBucket>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ActivityBucket {
     /// Local date, "YYYY-MM-DD".
     pub date: String,
@@ -29,6 +31,19 @@ pub struct ActivityBucket {
     pub messages: i64,
     pub user_messages: i64,
     pub output_tokens: i64,
+    /// Uncached input tokens (cache reads and writes are counted separately).
+    pub input_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+    pub tool_calls: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolBucket {
+    /// Local date, "YYYY-MM-DD".
+    pub date: String,
+    pub name: String,
+    pub calls: i64,
 }
 
 /// What `sessions_list` returns to the frontend.

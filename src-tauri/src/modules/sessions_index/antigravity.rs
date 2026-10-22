@@ -263,6 +263,7 @@ pub fn parse_antigravity_meta(path: &Path) -> Option<ParsedSession> {
             messages: 0,
             user_messages: 0,
             output_tokens: 0,
+            ..Default::default()
         });
         bucket.messages += 1;
         if step.is_user {
@@ -291,6 +292,7 @@ pub fn parse_antigravity_meta(path: &Path) -> Option<ParsedSession> {
         output_tokens: None, // see module doc: no confidently identifiable field
         model: extract_model(&conn),
         activity,
+        tools: Vec::new(),
     })
 }
 

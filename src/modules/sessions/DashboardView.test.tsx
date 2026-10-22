@@ -48,6 +48,10 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+function tokens(model: string, output_tokens: number) {
+  return { model, output_tokens, input_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 };
+}
+
 function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
   return {
     cards: {
@@ -58,10 +62,14 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
       active_days: 9,
       messages_per_session: 28.3333,
       output_tokens: 12500,
+      input_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      tool_calls: 0,
     },
     heatmap: [
-      { date: "2026-07-01", messages: 5, sessions: 2, output_tokens: 800 },
-      { date: "2026-07-02", messages: 12, sessions: 3, output_tokens: 2100 },
+      { date: "2026-07-01", messages: 5, sessions: 2, output_tokens: 800, tokens: 900 },
+      { date: "2026-07-02", messages: 12, sessions: 3, output_tokens: 2100, tokens: 2100 },
     ],
     top_by_messages: [
       { id: "s1", agent: "claude", title: "Fix flaky test", project_cwd: "/repo/app", value: 42 },
@@ -75,11 +83,14 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
         sessions: 3,
         messages: 80,
         output_tokens: 500,
-        models: [{ model: "claude-sonnet-5", output_tokens: 500 }],
+        tokens: 500,
+        models: [tokens("claude-sonnet-5", 500)],
       },
     ],
-    range_models: [{ model: "claude-sonnet-5", output_tokens: 12500 }],
+    range_models: [tokens("claude-sonnet-5", 12500)],
     hourly: new Array(24).fill(0),
+    daily_models: [],
+    top_tools: [],
     ...overrides,
   };
 }
@@ -123,11 +134,12 @@ describe("DashboardView", () => {
   it("fetches stats on mount for the default range and renders card values", async () => {
     render(<DashboardView />);
 
-    expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 365 });
-    // The single card row: sessions / messages / projects / active days / cost.
+    expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 });
+    // KPI tiles: sessions (with the project count as its hint) / messages /
+    // active days / cost.
     await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
     expect(screen.getByText("340")).toBeInTheDocument();
-    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getByText("sessions.dashboard.cards.sessionsHint:4")).toBeInTheDocument();
     expect(screen.getByText("9")).toBeInTheDocument();
     // Cost card prices the fixture's 12,500 sonnet tokens (15 $/Mtok), labelled US$.
     expect(screen.getByText("≈ US$ 0.19")).toBeInTheDocument();
@@ -137,8 +149,8 @@ describe("DashboardView", () => {
     render(<DashboardView />);
     await waitFor(() => expect(screen.getByText("12")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.range30" }));
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 }));
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.rangeToday" }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 0 }));
 
     fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.rangeAll" }));
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: null }));
@@ -208,7 +220,8 @@ describe("DashboardView", () => {
           sessions: 2,
           messages: 40,
           output_tokens: 1200,
-          models: [{ model: "mystery-model-x", output_tokens: 1200 }],
+          tokens: 1200,
+          models: [tokens("mystery-model-x", 1200)],
         },
       ],
     });
@@ -236,7 +249,7 @@ describe("DashboardView", () => {
     );
   });
 
-  it("switches the heatmap metric to output tokens on toggle", async () => {
+  it("switches the heatmap metric to tokens on toggle", async () => {
     render(<DashboardView />);
     await waitFor(() =>
       expect(screen.getByLabelText("sessions.dashboard.heatmapTooltip:12")).toBeInTheDocument(),
@@ -244,18 +257,68 @@ describe("DashboardView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.metricTokens" }));
 
-    // The label now reflects that day's output tokens (2100), not messages.
+    // The label now reflects that day's total tokens (2100), not messages.
     await waitFor(() =>
       expect(screen.getByLabelText("sessions.dashboard.heatmapTooltip:2100")).toBeInTheDocument(),
     );
+  });
+
+  it("shows the cache hit rate and ranks tools by calls", async () => {
+    statsFixture.current = stats({
+      cards: {
+        ...stats().cards,
+        input_tokens: 100,
+        cache_read_tokens: 900,
+        tool_calls: 7,
+      },
+      top_tools: [
+        { name: "Bash", calls: 5 },
+        { name: "Read", calls: 2 },
+      ],
+    });
+    render(<DashboardView />);
+
+    await waitFor(() => expect(screen.getByText("90.0%")).toBeInTheDocument());
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("Bash")).toBeInTheDocument();
+    expect(screen.getByText("Read")).toBeInTheDocument();
+  });
+
+  it("lists a heatmap day's sessions when the day is clicked, and clears back to top sessions", async () => {
+    useSessionsStore.setState({
+      sessions: [
+        session({
+          id: "d1",
+          title: "Day session",
+          started_at: new Date(2026, 6, 2, 9).getTime(),
+          ended_at: new Date(2026, 6, 2, 10).getTime(),
+        }),
+      ],
+    });
+    statsFixture.current = stats({
+      heatmap: [{ date: "2026-07-02", messages: 12, sessions: 3, output_tokens: 0, tokens: 0 }],
+    });
+    // The calendar only renders the last year; pin "now" inside that window.
+    vi.setSystemTime(new Date(2026, 6, 10));
+    render(<DashboardView />);
+
+    const cell = await screen.findByLabelText("sessions.dashboard.heatmapTooltip:12");
+    fireEvent.click(cell);
+
+    expect(screen.getByText("Day session")).toBeInTheDocument();
+    expect(screen.queryByText("Fix flaky test")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.dayClear" }));
+    expect(screen.getByText("Fix flaky test")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("keeps a single sessions-index:updated subscription across range changes", async () => {
     render(<DashboardView />);
     await waitFor(() => expect(mockListen).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.range30" }));
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 }));
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.range90" }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 90 }));
 
     // Changing the range refetches but must not tear down and re-create the
     // event listener.
@@ -267,8 +330,8 @@ describe("DashboardView", () => {
     render(<DashboardView />);
     await waitFor(() => expect(mockListen).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.range30" }));
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 }));
+    fireEvent.click(screen.getByRole("button", { name: "sessions.dashboard.range90" }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 90 }));
     mockInvoke.mockClear();
 
     // Fire the event callback the component registered on mount — the
@@ -277,7 +340,7 @@ describe("DashboardView", () => {
     const callback = mockListen.mock.calls[0][1] as () => void;
     callback();
 
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 90 }));
   });
 
   it("subscribes to sessions-index:updated and releases the listener on unmount", async () => {

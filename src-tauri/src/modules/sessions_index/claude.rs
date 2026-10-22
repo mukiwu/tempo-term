@@ -8,7 +8,7 @@ use std::path::Path;
 use chrono::{DateTime, Datelike, Local, Timelike};
 use serde_json::Value;
 
-use super::types::{ActivityBucket, ParsedSession, TranscriptMessage};
+use super::types::{ActivityBucket, ParsedSession, ToolBucket, TranscriptMessage};
 
 /// A fork whose first child's subtree holds this many user turns or fewer is
 /// treated as an abandoned attempt: the walk takes the last (retry) child
@@ -28,6 +28,14 @@ pub(crate) fn local_bucket(ms: i64) -> (String, u8) {
         format!("{:04}-{:02}-{:02}", local.year(), local.month(), local.day()),
         local.hour() as u8,
     )
+}
+
+/// Flattens per-(date, tool) counts into sorted `ToolBucket`s.
+pub(crate) fn tool_buckets(counts: HashMap<(String, String), i64>) -> Vec<ToolBucket> {
+    let mut tools: Vec<ToolBucket> =
+        counts.into_iter().map(|((date, name), calls)| ToolBucket { date, name, calls }).collect();
+    tools.sort_by(|a, b| (a.date.as_str(), a.name.as_str()).cmp(&(b.date.as_str(), b.name.as_str())));
+    tools
 }
 
 /// One parsed JSONL line, with its DAG identity pulled out for convenience.
@@ -230,6 +238,8 @@ pub fn parse_claude_meta(path: &Path) -> Option<ParsedSession> {
     let mut output_tokens: Option<i64> = None;
     let mut model: Option<String> = None;
     let mut buckets: HashMap<(String, u8), ActivityBucket> = HashMap::new();
+    let mut tool_counts: HashMap<(String, String), i64> = HashMap::new();
+    let mut seen_usage_ids: HashSet<String> = HashSet::new();
 
     for &i in &main {
         let entry = &entries[i];
@@ -250,32 +260,57 @@ pub fn parse_claude_meta(path: &Path) -> Option<ParsedSession> {
             user_message_count += 1;
         }
 
-        let tokens = entry
-            .value
-            .get("message")
-            .and_then(|m| m.get("usage"))
-            .and_then(|u| u.get("output_tokens"))
-            .and_then(Value::as_i64);
+        // Claude Code writes one line per content block and repeats the API
+        // message's `usage` on each of them, so usage is counted only on the
+        // first line carrying a given message id.
+        let message = entry.value.get("message");
+        let usage = message.and_then(|m| m.get("usage")).filter(|_| {
+            match message.and_then(|m| m.get("id")).and_then(Value::as_str) {
+                Some(mid) => seen_usage_ids.insert(mid.to_string()),
+                None => true,
+            }
+        });
+        let usage_field = |key: &str| usage.and_then(|u| u.get(key)).and_then(Value::as_i64);
+        let tokens = usage_field("output_tokens");
         if let Some(tokens) = tokens {
             // Saturate rather than overflow on absurd token counts from
             // corrupt files.
             let total = output_tokens.get_or_insert(0);
             *total = total.saturating_add(tokens);
         }
+        let input = usage_field("input_tokens").unwrap_or(0);
+        let cache_read = usage_field("cache_read_input_tokens").unwrap_or(0);
+        let cache_write = usage_field("cache_creation_input_tokens").unwrap_or(0);
+        let tool_names: Vec<&str> = if is_user {
+            Vec::new()
+        } else {
+            message
+                .and_then(|m| m.get("content"))
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter(|item| item.get("type").and_then(Value::as_str) == Some("tool_use"))
+                        .map(|item| item.get("name").and_then(Value::as_str).unwrap_or("tool"))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
         if !is_user {
-            if let Some(m) = entry.value.get("message").and_then(|m| m.get("model")).and_then(Value::as_str) {
+            if let Some(m) = message.and_then(|m| m.get("model")).and_then(Value::as_str) {
                 model = Some(m.to_string());
             }
         }
 
         if let Some(ts) = entry.value.get("timestamp").and_then(Value::as_str).and_then(epoch_ms) {
             let (date, hour) = local_bucket(ts);
+            for name in &tool_names {
+                *tool_counts.entry((date.clone(), name.to_string())).or_insert(0) += 1;
+            }
             let bucket = buckets.entry((date.clone(), hour)).or_insert_with(|| ActivityBucket {
                 date,
                 hour,
-                messages: 0,
-                user_messages: 0,
-                output_tokens: 0,
+                ..Default::default()
             });
             bucket.messages += 1;
             if is_user {
@@ -284,6 +319,10 @@ pub fn parse_claude_meta(path: &Path) -> Option<ParsedSession> {
             if let Some(tokens) = tokens {
                 bucket.output_tokens = bucket.output_tokens.saturating_add(tokens);
             }
+            bucket.input_tokens = bucket.input_tokens.saturating_add(input);
+            bucket.cache_read_tokens = bucket.cache_read_tokens.saturating_add(cache_read);
+            bucket.cache_write_tokens = bucket.cache_write_tokens.saturating_add(cache_write);
+            bucket.tool_calls += tool_names.len() as i64;
         }
     }
 
@@ -332,6 +371,7 @@ pub fn parse_claude_meta(path: &Path) -> Option<ParsedSession> {
 
     let mut activity: Vec<ActivityBucket> = buckets.into_values().collect();
     activity.sort_by(|a, b| (a.date.as_str(), a.hour).cmp(&(b.date.as_str(), b.hour)));
+    let tools = tool_buckets(tool_counts);
 
     Some(ParsedSession {
         id,
@@ -345,6 +385,7 @@ pub fn parse_claude_meta(path: &Path) -> Option<ParsedSession> {
         output_tokens,
         model,
         activity,
+        tools,
     })
 }
 
@@ -506,6 +547,28 @@ mod tests {
         assert_eq!(meta.model.as_deref(), Some("claude-sonnet-5"));
         assert!(meta.started_at < meta.ended_at);
         assert!(!meta.activity.is_empty());
+    }
+
+    #[test]
+    fn usage_counts_once_per_api_message_and_tools_are_tallied() {
+        // One API message (id m1) split across two lines, each repeating the
+        // same usage; plus a second message m2 with one tool call.
+        let contents = concat!(
+            r#"{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"s","timestamp":"2026-07-06T01:00:00.000Z","message":{"role":"user","content":"go"}}"#, "\n",
+            r#"{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-07-06T01:00:01.000Z","message":{"id":"m1","role":"assistant","model":"claude-sonnet-5","content":[{"type":"text","text":"thinking"}],"usage":{"input_tokens":3,"cache_read_input_tokens":100,"cache_creation_input_tokens":20,"output_tokens":9}}}"#, "\n",
+            r#"{"type":"assistant","uuid":"a2","parentUuid":"a1","timestamp":"2026-07-06T01:00:02.000Z","message":{"id":"m1","role":"assistant","model":"claude-sonnet-5","content":[{"type":"tool_use","name":"Bash","input":{}},{"type":"tool_use","name":"Read","input":{}}],"usage":{"input_tokens":3,"cache_read_input_tokens":100,"cache_creation_input_tokens":20,"output_tokens":9}}}"#, "\n",
+            r#"{"type":"assistant","uuid":"a3","parentUuid":"a2","timestamp":"2026-07-06T01:00:03.000Z","message":{"id":"m2","role":"assistant","model":"claude-sonnet-5","content":[{"type":"tool_use","name":"Bash","input":{}}],"usage":{"input_tokens":1,"cache_read_input_tokens":200,"output_tokens":4}}}"#, "\n",
+        );
+        let meta = parse_claude_meta(&write_fixture("dedupe", contents)).unwrap();
+        assert_eq!(meta.output_tokens, Some(13));
+        let sum = |f: fn(&ActivityBucket) -> i64| meta.activity.iter().map(f).sum::<i64>();
+        assert_eq!(sum(|b| b.input_tokens), 4);
+        assert_eq!(sum(|b| b.cache_read_tokens), 300);
+        assert_eq!(sum(|b| b.cache_write_tokens), 20);
+        assert_eq!(sum(|b| b.tool_calls), 3);
+        let calls = |name: &str| meta.tools.iter().filter(|t| t.name == name).map(|t| t.calls).sum::<i64>();
+        assert_eq!(calls("Bash"), 2);
+        assert_eq!(calls("Read"), 1);
     }
 
     #[test]

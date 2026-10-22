@@ -1,57 +1,62 @@
 import { describe, it, expect } from "vitest";
-import { estimateOutputCost, OUTPUT_PRICES_PER_MTOK } from "./cost";
+import { cacheHitRate, estimateCost, PRICES_PER_MTOK, totalTokens } from "./cost";
 import type { ModelTokens } from "./statsBridge";
 
-describe("estimateOutputCost", () => {
-  it("matches known model by substring and calculates cost", () => {
-    const models: ModelTokens[] = [
-      { model: "claude-opus-4-8", output_tokens: 1_000_000 }, // opus → 75 USD per M tokens
-    ];
-    const result = estimateOutputCost(models);
+const m = (model: string, tokens: Partial<Omit<ModelTokens, "model">>): ModelTokens => ({
+  model,
+  output_tokens: 0,
+  input_tokens: 0,
+  cache_read_tokens: 0,
+  cache_write_tokens: 0,
+  ...tokens,
+});
+
+describe("estimateCost", () => {
+  it("prices output tokens by substring match", () => {
+    const result = estimateCost([m("claude-opus-4-8", { output_tokens: 1_000_000 })]);
     expect(result).toEqual({ usd: 75, unpricedTokens: 0 });
   });
 
-  it("handles multiple known models with different prices", () => {
-    const models: ModelTokens[] = [
-      { model: "claude-sonnet-5", output_tokens: 1_000_000 }, // sonnet → 15 USD per M tokens
-      { model: "claude-haiku-4-5", output_tokens: 1_000_000 }, // haiku → 4 USD per M tokens
-    ];
-    const result = estimateOutputCost(models);
-    expect(result).toEqual({ usd: 19, unpricedTokens: 0 });
+  it("prices input, cache reads and cache writes at their own rates", () => {
+    // sonnet: input 3, cache read 0.3, cache write 3.75 per M.
+    const result = estimateCost([
+      m("claude-sonnet-5", {
+        input_tokens: 1_000_000,
+        cache_read_tokens: 1_000_000,
+        cache_write_tokens: 1_000_000,
+      }),
+    ]);
+    expect(result.usd).toBeCloseTo(3 + 0.3 + 3.75);
+    expect(result.unpricedTokens).toBe(0);
   });
 
-  it("accumulates unpriced tokens for unknown models", () => {
-    const models: ModelTokens[] = [
-      { model: "claude-sonnet-5", output_tokens: 1_000_000 }, // sonnet → 15 USD per M tokens
-      { model: "unknown-model-v1", output_tokens: 500_000 }, // unknown → 0 cost
-    ];
-    const result = estimateOutputCost(models);
-    expect(result).toEqual({ usd: 15, unpricedTokens: 500_000 });
+  it("accumulates every token of unknown models as unpriced", () => {
+    const result = estimateCost([
+      m("claude-sonnet-5", { output_tokens: 1_000_000 }),
+      m("unknown-model-v1", { output_tokens: 500_000, input_tokens: 100 }),
+    ]);
+    expect(result).toEqual({ usd: 15, unpricedTokens: 500_100 });
   });
 
-  it("returns zero cost and zero unpriced tokens for empty models array", () => {
-    const models: ModelTokens[] = [];
-    const result = estimateOutputCost(models);
-    expect(result).toEqual({ usd: 0, unpricedTokens: 0 });
-  });
-
-  it("handles partial token amounts correctly", () => {
-    const models: ModelTokens[] = [
-      { model: "claude-opus-4-8", output_tokens: 500_000 }, // 500k tokens @ 75 per M = 37.5 USD
-    ];
-    const result = estimateOutputCost(models);
-    expect(result).toEqual({ usd: 37.5, unpricedTokens: 0 });
+  it("returns zero for an empty models array", () => {
+    expect(estimateCost([])).toEqual({ usd: 0, unpricedTokens: 0 });
   });
 
   it("price table contains expected models", () => {
-    // Verify the price table has the documented models
-    const modelSubstrings = OUTPUT_PRICES_PER_MTOK.map(([pattern]) => pattern);
-    expect(modelSubstrings).toContain("opus");
-    expect(modelSubstrings).toContain("sonnet");
-    expect(modelSubstrings).toContain("haiku");
-    expect(modelSubstrings).toContain("gpt-5");
-    expect(modelSubstrings).toContain("codex");
-    expect(modelSubstrings).toContain("o3");
-    expect(modelSubstrings).toContain("gemini");
+    const patterns = PRICES_PER_MTOK.map(([pattern]) => pattern);
+    for (const p of ["opus", "sonnet", "haiku", "gpt-5", "codex", "o3", "gemini"]) {
+      expect(patterns).toContain(p);
+    }
+  });
+});
+
+describe("totalTokens / cacheHitRate", () => {
+  it("sums every token kind", () => {
+    expect(totalTokens(m("x", { input_tokens: 1, cache_read_tokens: 2, cache_write_tokens: 3, output_tokens: 4 }))).toBe(10);
+  });
+
+  it("is the cache-read share of all input, or null without input", () => {
+    expect(cacheHitRate(m("x", { input_tokens: 10, cache_read_tokens: 80, cache_write_tokens: 10 }))).toBe(80);
+    expect(cacheHitRate(m("x", { output_tokens: 5 }))).toBeNull();
   });
 });

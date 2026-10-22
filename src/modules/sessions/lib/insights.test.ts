@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { formatHour, modelSlices, OTHERS_SLICE, peakHour } from "./insights";
-import type { ModelTokens } from "./statsBridge";
+import { dailyUsage, formatHour, modelSlices, OTHERS_SLICE, peakHour, sessionsActiveOn } from "./insights";
+import type { DailyModelTokens, ModelTokens } from "./statsBridge";
+import type { SessionSummary } from "./sessionsBridge";
 
 describe("modelSlices", () => {
-  const m = (model: string, output_tokens: number): ModelTokens => ({ model, output_tokens });
+  const m = (model: string, output_tokens: number): ModelTokens => ({
+    model,
+    output_tokens,
+    input_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+  });
 
   it("sorts by tokens desc and computes percentage shares", () => {
     const slices = modelSlices([m("a", 100), m("b", 300)], 6);
@@ -44,5 +51,53 @@ describe("peakHour / formatHour", () => {
     expect(formatHour(9)).toBe("9 AM");
     expect(formatHour(12)).toBe("12 PM");
     expect(formatHour(23)).toBe("11 PM");
+  });
+});
+
+describe("dailyUsage", () => {
+  const row = (date: string, model: string, output_tokens: number, input_tokens = 0): DailyModelTokens => ({
+    date,
+    model,
+    output_tokens,
+    input_tokens,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+  });
+
+  it("returns seven days ending on `end`, zero-filling quiet days", () => {
+    const days = dailyUsage([row("2026-10-21", "claude-sonnet-5", 1_000_000)], new Date(2026, 9, 22));
+    expect(days.map((d) => d.date)).toEqual([
+      "2026-10-16", "2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22",
+    ]);
+    expect(days[5].output).toBe(1_000_000);
+    expect(days[5].usd).toBe(15);
+    expect(days[6].total).toBe(0);
+  });
+
+  it("sums every model of a day and flags unpriced models", () => {
+    const days = dailyUsage(
+      [row("2026-10-22", "claude-sonnet-5", 10, 5), row("2026-10-22", "", 20)],
+      new Date(2026, 9, 22),
+    );
+    expect(days[6].total).toBe(35);
+    expect(days[6].unpriced).toBe(true);
+  });
+});
+
+describe("sessionsActiveOn", () => {
+  const session = (id: string, start: Date, end: Date) =>
+    ({ id, started_at: start.getTime(), ended_at: end.getTime() }) as SessionSummary;
+
+  it("keeps sessions overlapping the day, newest first", () => {
+    const result = sessionsActiveOn(
+      [
+        session("before", new Date(2026, 9, 20, 9), new Date(2026, 9, 20, 10)),
+        session("spans", new Date(2026, 9, 20, 23), new Date(2026, 9, 21, 1)),
+        session("inside", new Date(2026, 9, 21, 12), new Date(2026, 9, 21, 13)),
+        session("after", new Date(2026, 9, 22, 0), new Date(2026, 9, 22, 1)),
+      ],
+      "2026-10-21",
+    );
+    expect(result.map((s) => s.id)).toEqual(["inside", "spans"]);
   });
 });

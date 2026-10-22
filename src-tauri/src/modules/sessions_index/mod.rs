@@ -311,6 +311,7 @@ mod tests {
             output_tokens: None,
             model: None,
             activity: Vec::new(),
+            tools: Vec::new(),
         };
         index.upsert_session(&session, &missing.to_string_lossy(), 1, 1).unwrap();
 

@@ -13,7 +13,10 @@ use super::types::{ParsedSession, SessionSummary};
 // "2": Codex titles/counts re-derived for the item_completed rollout format
 // (#372) plus the replayed-turn title fallback — a bump drops and rebuilds the
 // tables so files the old parser already fingerprinted get re-parsed.
-pub const SCHEMA_VERSION: &str = "2";
+// "3": input/cache token columns, tool-call counts and the `tool_usage`
+// table; Claude usage is now counted once per API message id instead of once
+// per content-block line, which also corrects inflated output totals.
+pub const SCHEMA_VERSION: &str = "3";
 
 pub struct Index {
     pub(crate) conn: Connection,
@@ -46,7 +49,8 @@ impl Index {
             // Stale or missing schema: drop derived data (cheap to rebuild from
             // source files) but keep pins (user state with no other home).
             self.conn
-                .execute_batch("DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS activity;")
+                .execute_batch("DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS activity;
+                     DROP TABLE IF EXISTS tool_usage;")
                 .map_err(|e| e.to_string())?;
         }
         self.conn
@@ -74,7 +78,18 @@ impl Index {
                    messages INTEGER NOT NULL,
                    user_messages INTEGER NOT NULL,
                    output_tokens INTEGER NOT NULL,
+                   input_tokens INTEGER NOT NULL,
+                   cache_read_tokens INTEGER NOT NULL,
+                   cache_write_tokens INTEGER NOT NULL,
+                   tool_calls INTEGER NOT NULL,
                    PRIMARY KEY(session_id, date, hour)
+                 );
+                 CREATE TABLE IF NOT EXISTS tool_usage(
+                   session_id TEXT NOT NULL,
+                   date TEXT NOT NULL,
+                   tool TEXT NOT NULL,
+                   calls INTEGER NOT NULL,
+                   PRIMARY KEY(session_id, date, tool)
                  );",
             )
             .map_err(|e| e.to_string())?;
@@ -118,9 +133,24 @@ impl Index {
         for b in &s.activity {
             self.conn
                 .execute(
-                    "INSERT INTO activity(session_id,date,hour,messages,user_messages,output_tokens)
-                     VALUES(?1,?2,?3,?4,?5,?6)",
-                    params![s.id, b.date, b.hour, b.messages, b.user_messages, b.output_tokens],
+                    "INSERT INTO activity(session_id,date,hour,messages,user_messages,output_tokens,
+                       input_tokens,cache_read_tokens,cache_write_tokens,tool_calls)
+                     VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                    params![
+                        s.id, b.date, b.hour, b.messages, b.user_messages, b.output_tokens,
+                        b.input_tokens, b.cache_read_tokens, b.cache_write_tokens, b.tool_calls
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        self.conn
+            .execute("DELETE FROM tool_usage WHERE session_id=?1", params![s.id])
+            .map_err(|e| e.to_string())?;
+        for t in &s.tools {
+            self.conn
+                .execute(
+                    "INSERT INTO tool_usage(session_id,date,tool,calls) VALUES(?1,?2,?3,?4)",
+                    params![s.id, t.date, t.name, t.calls],
                 )
                 .map_err(|e| e.to_string())?;
         }
@@ -277,6 +307,8 @@ impl Index {
         let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM activity WHERE session_id=?1", params![id])
             .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM tool_usage WHERE session_id=?1", params![id])
+            .map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM pins WHERE session_id=?1", params![id])
             .map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM sessions WHERE id=?1", params![id])
@@ -300,6 +332,9 @@ impl Index {
             if !existing.contains(&path) {
                 self.conn
                     .execute("DELETE FROM activity WHERE session_id IN (SELECT id FROM sessions WHERE file_path=?1)", params![path])
+                    .map_err(|e| e.to_string())?;
+                self.conn
+                    .execute("DELETE FROM tool_usage WHERE session_id IN (SELECT id FROM sessions WHERE file_path=?1)", params![path])
                     .map_err(|e| e.to_string())?;
                 self.conn
                     .execute("DELETE FROM sessions WHERE file_path=?1", params![path])
@@ -333,7 +368,9 @@ mod tests {
                 messages: 4,
                 user_messages: 2,
                 output_tokens: 50,
+                ..Default::default()
             }],
+            tools: Vec::new(),
         }
     }
 

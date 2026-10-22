@@ -14,7 +14,9 @@ use super::types::SessionSummary;
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionsStats {
     pub cards: StatsCards,
-    /// One entry per date with activity, ascending.
+    /// One entry per date with activity, ascending. Spans at least the last
+    /// 365 local days even for shorter ranges, so the calendar stays full;
+    /// all-time covers every date.
     pub heatmap: Vec<HeatmapDay>,
     /// Up to 10, ordered by message count descending.
     pub top_by_messages: Vec<TopSession>,
@@ -26,9 +28,31 @@ pub struct SessionsStats {
     /// cost estimate on the cards. NULL-model tokens are excluded here but
     /// still counted in `cards.output_tokens`.
     pub range_models: Vec<ModelTokens>,
-    /// Messages per hour-of-day (local) for TODAY, always length 24
-    /// (index 0 = 00:00), for the "today by hour" chart and peak-hour readout.
+    /// Messages per hour-of-day (local) over the selected range, always
+    /// length 24 (index 0 = 00:00), for the by-hour chart and peak-hour readout.
     pub hourly: Vec<i64>,
+    /// Last 7 local days (fixed window, independent of the range filter),
+    /// one row per (date, model) with activity. A NULL model is reported as
+    /// an empty string so its tokens still reach the daily totals.
+    pub daily_models: Vec<DailyModelTokens>,
+    /// Up to 10 most-invoked tools over the selected range.
+    pub top_tools: Vec<ToolCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct DailyModelTokens {
+    pub date: String,
+    pub model: String,
+    pub output_tokens: i64,
+    pub input_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ToolCount {
+    pub name: String,
+    pub calls: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -44,6 +68,11 @@ pub struct StatsCards {
     pub messages_per_session: f64,
     /// Total assistant output tokens in range (0 when none are recorded).
     pub output_tokens: i64,
+    /// Uncached input tokens in range.
+    pub input_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+    pub tool_calls: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -54,6 +83,8 @@ pub struct HeatmapDay {
     pub sessions: i64,
     /// Total assistant output tokens on this date.
     pub output_tokens: i64,
+    /// Input (uncached + cache read + cache write) plus output tokens.
+    pub tokens: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -71,6 +102,8 @@ pub struct WeeklyAgentRow {
     pub sessions: i64,
     pub messages: i64,
     pub output_tokens: i64,
+    /// Input (uncached + cache read + cache write) plus output tokens.
+    pub tokens: i64,
     pub models: Vec<ModelTokens>,
 }
 
@@ -78,6 +111,9 @@ pub struct WeeklyAgentRow {
 pub struct ModelTokens {
     pub model: String,
     pub output_tokens: i64,
+    pub input_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
 }
 
 /// Per-project aggregates + this project's recent sessions, for the project
@@ -109,6 +145,10 @@ pub(crate) fn empty_stats() -> SessionsStats {
             active_days: 0,
             messages_per_session: 0.0,
             output_tokens: 0,
+            input_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            tool_calls: 0,
         },
         heatmap: Vec::new(),
         top_by_messages: Vec::new(),
@@ -116,8 +156,31 @@ pub(crate) fn empty_stats() -> SessionsStats {
         weekly: Vec::new(),
         range_models: Vec::new(),
         hourly: vec![0; 24],
+        daily_models: Vec::new(),
+        top_tools: Vec::new(),
     }
 }
+
+/// SELECT-list fragment summing the token columns of `activity a`, in
+/// `ModelTokens` field order after the model (output, input, cache read,
+/// cache write).
+const TOKEN_SUMS: &str = "COALESCE(SUM(a.output_tokens),0), COALESCE(SUM(a.input_tokens),0),
+     COALESCE(SUM(a.cache_read_tokens),0), COALESCE(SUM(a.cache_write_tokens),0)";
+
+/// Reads a `ModelTokens` from a row laid out as (model, TOKEN_SUMS...)
+/// starting at column `at`.
+fn row_to_model_tokens(r: &Row, at: usize) -> rusqlite::Result<ModelTokens> {
+    Ok(ModelTokens {
+        model: r.get(at)?,
+        output_tokens: r.get(at + 1)?,
+        input_tokens: r.get(at + 2)?,
+        cache_read_tokens: r.get(at + 3)?,
+        cache_write_tokens: r.get(at + 4)?,
+    })
+}
+
+/// The heatmap never covers less than this many days, whatever the range.
+const HEATMAP_MIN_DAYS: i64 = 365;
 
 /// Local-date cutoff string ("YYYY-MM-DD") for `days` days back, or `""`
 /// (all-time) when `days` is `None`. `""` sorts before every real date
@@ -164,27 +227,67 @@ impl Index {
         let cutoff = range_cutoff(days);
         SessionsStats {
             cards: self.stats_cards(&cutoff),
-            heatmap: self.stats_heatmap(&cutoff),
+            heatmap: self.stats_heatmap(&range_cutoff(days.map(|d| d.max(HEATMAP_MIN_DAYS)))),
             top_by_messages: self.stats_top_by_messages(days, &cutoff),
             top_by_tokens: self.stats_top_by_tokens(days, &cutoff),
             weekly: self.stats_weekly(),
             range_models: self.stats_range_models(&cutoff),
-            hourly: self.stats_hourly_today(),
+            hourly: self.stats_hourly(&cutoff),
+            daily_models: self.stats_daily_models(),
+            top_tools: self.stats_top_tools(&cutoff),
         }
     }
 
-    /// Messages per hour-of-day (0..23) for TODAY (local), always length 24 —
-    /// a "what have I done today" view, independent of the range filter.
-    fn stats_hourly_today(&self) -> Vec<i64> {
+    /// Per-(date, model) token sums over the last 7 local days.
+    fn stats_daily_models(&self) -> Vec<DailyModelTokens> {
+        let cutoff = (Local::now().date_naive() - Duration::days(6)).format("%Y-%m-%d").to_string();
+        let sql = format!(
+            "SELECT a.date, COALESCE(s.model,''), {TOKEN_SUMS}
+             FROM activity a JOIN sessions s ON s.id = a.session_id
+             WHERE a.date >= ?1
+             GROUP BY a.date, COALESCE(s.model,'') ORDER BY a.date, 2"
+        );
+        let Ok(mut stmt) = self.conn.prepare(&sql) else { return Vec::new() };
+        let Ok(rows) = stmt.query_map(params![cutoff], |r| {
+            let m = row_to_model_tokens(r, 1)?;
+            Ok(DailyModelTokens {
+                date: r.get(0)?,
+                model: m.model,
+                output_tokens: m.output_tokens,
+                input_tokens: m.input_tokens,
+                cache_read_tokens: m.cache_read_tokens,
+                cache_write_tokens: m.cache_write_tokens,
+            })
+        }) else {
+            return Vec::new();
+        };
+        rows.flatten().collect()
+    }
+
+    fn stats_top_tools(&self, cutoff: &str) -> Vec<ToolCount> {
+        let Ok(mut stmt) = self.conn.prepare(
+            "SELECT tool, SUM(calls) AS total FROM tool_usage WHERE date >= ?1
+             GROUP BY tool ORDER BY total DESC, tool ASC LIMIT 10",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map(params![cutoff], |r| Ok(ToolCount { name: r.get(0)?, calls: r.get(1)? }))
+        else {
+            return Vec::new();
+        };
+        rows.flatten().collect()
+    }
+
+    /// Messages per hour-of-day (0..23) over the range, always length 24.
+    fn stats_hourly(&self, cutoff: &str) -> Vec<i64> {
         let mut hourly = vec![0i64; 24];
-        let today = Local::now().date_naive().format("%Y-%m-%d").to_string();
         let Ok(mut stmt) = self.conn.prepare(
             "SELECT hour, COALESCE(SUM(messages),0) FROM activity
-             WHERE date = ?1 GROUP BY hour",
+             WHERE date >= ?1 GROUP BY hour",
         ) else {
             return hourly;
         };
-        let Ok(rows) = stmt.query_map(params![today], |r| {
+        let Ok(rows) = stmt.query_map(params![cutoff], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
         }) else {
             return hourly;
@@ -198,19 +301,27 @@ impl Index {
     }
 
     fn stats_cards(&self, cutoff: &str) -> StatsCards {
-        let totals: Option<(i64, i64, i64, i64, i64)> = self
+        let totals: Option<[i64; 9]> = self
             .conn
             .query_row(
                 "SELECT COUNT(DISTINCT session_id), COALESCE(SUM(messages),0),
                         COALESCE(SUM(user_messages),0), COUNT(DISTINCT date),
-                        COALESCE(SUM(output_tokens),0)
+                        COALESCE(SUM(output_tokens),0), COALESCE(SUM(input_tokens),0),
+                        COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0),
+                        COALESCE(SUM(tool_calls),0)
                  FROM activity WHERE date >= ?1",
                 params![cutoff],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                |r| {
+                    let mut out = [0i64; 9];
+                    for (i, slot) in out.iter_mut().enumerate() {
+                        *slot = r.get(i)?;
+                    }
+                    Ok(out)
+                },
             )
             .ok();
-        let (sessions, messages, user_messages, active_days, output_tokens) =
-            totals.unwrap_or((0, 0, 0, 0, 0));
+        let [sessions, messages, user_messages, active_days, output_tokens, input_tokens, cache_read_tokens, cache_write_tokens, tool_calls] =
+            totals.unwrap_or([0; 9]);
 
         let projects: i64 = self
             .conn
@@ -234,6 +345,10 @@ impl Index {
             active_days,
             messages_per_session,
             output_tokens,
+            input_tokens,
+            cache_read_tokens,
+            cache_write_tokens,
+            tool_calls,
         }
     }
 
@@ -241,17 +356,16 @@ impl Index {
     /// NULL-model sessions are omitted (their tokens can't be priced) but are
     /// still part of `cards.output_tokens`.
     fn stats_range_models(&self, cutoff: &str) -> Vec<ModelTokens> {
-        let Ok(mut stmt) = self.conn.prepare(
-            "SELECT s.model, COALESCE(SUM(a.output_tokens),0)
+        let sql = format!(
+            "SELECT s.model, {TOKEN_SUMS}
              FROM activity a JOIN sessions s ON s.id = a.session_id
              WHERE a.date >= ?1 AND s.model IS NOT NULL
-             GROUP BY s.model ORDER BY s.model",
-        ) else {
+             GROUP BY s.model ORDER BY s.model"
+        );
+        let Ok(mut stmt) = self.conn.prepare(&sql) else {
             return Vec::new();
         };
-        let Ok(rows) = stmt.query_map(params![cutoff], |r| {
-            Ok(ModelTokens { model: r.get(0)?, output_tokens: r.get(1)? })
-        }) else {
+        let Ok(rows) = stmt.query_map(params![cutoff], |r| row_to_model_tokens(r, 0)) else {
             return Vec::new();
         };
         rows.flatten().collect()
@@ -260,7 +374,8 @@ impl Index {
     fn stats_heatmap(&self, cutoff: &str) -> Vec<HeatmapDay> {
         let Ok(mut stmt) = self.conn.prepare(
             "SELECT date, COALESCE(SUM(messages),0), COUNT(DISTINCT session_id),
-                    COALESCE(SUM(output_tokens),0)
+                    COALESCE(SUM(output_tokens),0),
+                    COALESCE(SUM(output_tokens + input_tokens + cache_read_tokens + cache_write_tokens),0)
              FROM activity WHERE date >= ?1 GROUP BY date ORDER BY date ASC",
         ) else {
             return Vec::new();
@@ -271,6 +386,7 @@ impl Index {
                 messages: r.get(1)?,
                 sessions: r.get(2)?,
                 output_tokens: r.get(3)?,
+                tokens: r.get(4)?,
             })
         }) else {
             return Vec::new();
@@ -323,7 +439,8 @@ impl Index {
 
         let Ok(mut stmt) = self.conn.prepare(
             "SELECT s.agent, COUNT(DISTINCT a.session_id), COALESCE(SUM(a.messages),0),
-                    COALESCE(SUM(a.output_tokens),0)
+                    COALESCE(SUM(a.output_tokens),0),
+                    COALESCE(SUM(a.output_tokens + a.input_tokens + a.cache_read_tokens + a.cache_write_tokens),0)
              FROM activity a JOIN sessions s ON s.id = a.session_id
              WHERE a.date >= ?1
              GROUP BY s.agent ORDER BY s.agent",
@@ -336,6 +453,7 @@ impl Index {
                 sessions: r.get(1)?,
                 messages: r.get(2)?,
                 output_tokens: r.get(3)?,
+                tokens: r.get(4)?,
                 models: Vec::new(),
             })
         }) else {
@@ -346,22 +464,23 @@ impl Index {
         // Per-model output tokens, grouped alongside agent; a NULL model is
         // skipped from the `models` breakdown but its tokens are already
         // counted in the agent-level total above.
-        let Ok(mut model_stmt) = self.conn.prepare(
-            "SELECT s.agent, s.model, COALESCE(SUM(a.output_tokens),0)
+        let model_sql = format!(
+            "SELECT s.agent, s.model, {TOKEN_SUMS}
              FROM activity a JOIN sessions s ON s.id = a.session_id
              WHERE a.date >= ?1 AND s.model IS NOT NULL
-             GROUP BY s.agent, s.model ORDER BY s.agent, s.model",
-        ) else {
+             GROUP BY s.agent, s.model ORDER BY s.agent, s.model"
+        );
+        let Ok(mut model_stmt) = self.conn.prepare(&model_sql) else {
             return rows;
         };
         let Ok(model_rows) = model_stmt.query_map(params![cutoff], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            Ok((r.get::<_, String>(0)?, row_to_model_tokens(r, 1)?))
         }) else {
             return rows;
         };
-        for (agent, model, output_tokens) in model_rows.flatten() {
+        for (agent, model) in model_rows.flatten() {
             if let Some(row) = rows.iter_mut().find(|row| row.agent == agent) {
-                row.models.push(ModelTokens { model, output_tokens });
+                row.models.push(model);
             }
         }
 
@@ -422,7 +541,7 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::sessions_index::types::{ActivityBucket, ParsedSession};
+    use crate::modules::sessions_index::types::{ActivityBucket, ParsedSession, ToolBucket};
 
     /// Builds a `ParsedSession` with a single activity bucket on `date`, so
     /// each fixture session contributes exactly one heatmap/weekly row.
@@ -454,7 +573,19 @@ mod tests {
                 messages: message_count,
                 user_messages: user_message_count,
                 output_tokens: output_tokens.unwrap_or(0),
+                input_tokens: output_tokens.map_or(0, |t| t * 2),
+                cache_read_tokens: output_tokens.map_or(0, |t| t * 30),
+                cache_write_tokens: output_tokens.map_or(0, |t| t * 5),
+                tool_calls: if output_tokens.is_some() { 3 } else { 0 },
             }],
+            tools: if output_tokens.is_some() {
+                vec![
+                    ToolBucket { date: date.into(), name: "Bash".into(), calls: 2 },
+                    ToolBucket { date: date.into(), name: "Read".into(), calls: 1 },
+                ]
+            } else {
+                Vec::new()
+            },
         }
     }
 
@@ -535,8 +666,43 @@ mod tests {
         assert_eq!(stats.cards.output_tokens, 100);
         assert_eq!(
             stats.range_models,
-            vec![ModelTokens { model: "claude-sonnet-5".into(), output_tokens: 100 }]
+            vec![ModelTokens {
+                model: "claude-sonnet-5".into(),
+                output_tokens: 100,
+                input_tokens: 200,
+                cache_read_tokens: 3000,
+                cache_write_tokens: 500,
+            }]
         );
+        assert_eq!(stats.cards.input_tokens, 200);
+        assert_eq!(stats.cards.cache_read_tokens, 3000);
+        assert_eq!(stats.cards.cache_write_tokens, 500);
+        assert_eq!(stats.cards.tool_calls, 3);
+    }
+
+    #[test]
+    fn top_tools_rank_by_calls_within_the_range() {
+        let index = seeded_index("top-tools");
+        let stats = index.stats(Some(0));
+        assert_eq!(
+            stats.top_tools,
+            vec![
+                ToolCount { name: "Bash".into(), calls: 2 },
+                ToolCount { name: "Read".into(), calls: 1 },
+            ]
+        );
+    }
+
+    #[test]
+    fn daily_models_cover_the_last_seven_days_including_null_models() {
+        let index = seeded_index("daily-models");
+        let stats = index.stats(Some(0));
+        // s1 (today, sonnet) and s2 (3 days ago, no model); s3 is 40 days old.
+        assert_eq!(stats.daily_models.len(), 2);
+        assert!(stats.daily_models.iter().any(|d| d.date == day_string(3) && d.model.is_empty()));
+        let today = stats.daily_models.iter().find(|d| d.date == day_string(0)).unwrap();
+        assert_eq!(today.model, "claude-sonnet-5");
+        assert_eq!(today.cache_read_tokens, 3000);
     }
 
     #[test]
@@ -574,14 +740,15 @@ mod tests {
     }
 
     #[test]
-    fn hourly_is_length_24_and_buckets_todays_messages_by_hour() {
+    fn hourly_is_length_24_and_follows_the_range() {
         let index = seeded_index("hourly");
-        let stats = index.stats(None);
-        assert_eq!(stats.hourly.len(), 24);
-        // Only today's session (s1: 10 messages on hour 9) counts — s2 (3 days
-        // ago) and s3 (40 days ago) are excluded from the today-only view.
-        assert_eq!(stats.hourly[9], 10);
-        assert_eq!(stats.hourly.iter().sum::<i64>(), 10);
+        // Today only: s1 (10 messages on hour 9).
+        let today = index.stats(Some(0));
+        assert_eq!(today.hourly.len(), 24);
+        assert_eq!(today.hourly[9], 10);
+        assert_eq!(today.hourly.iter().sum::<i64>(), 10);
+        // All time adds s2 (6) and s3 (4), all on hour 9 in the fixture.
+        assert_eq!(index.stats(None).hourly[9], 20);
     }
 
     #[test]
@@ -594,6 +761,16 @@ mod tests {
         assert_eq!(day.messages, 10);
         assert_eq!(day.sessions, 1);
         assert_eq!(day.output_tokens, 100);
+        assert_eq!(day.tokens, 100 + 200 + 3000 + 500);
+    }
+
+    #[test]
+    fn heatmap_spans_a_year_even_for_short_ranges() {
+        let index = seeded_index("heatmap-span");
+        // s3 is 40 days old: outside a 7-day range but inside the heatmap year.
+        let stats = index.stats(Some(7));
+        assert_eq!(stats.heatmap.len(), 3);
+        assert_eq!(stats.cards.sessions, 2);
     }
 
     #[test]
@@ -625,6 +802,7 @@ mod tests {
         assert_eq!(claude.sessions, 1); // only s1, not s3
         assert_eq!(claude.messages, 10);
         assert_eq!(claude.output_tokens, 100);
+        assert_eq!(claude.tokens, 3800);
         assert_eq!(claude.models.len(), 1);
         assert_eq!(claude.models[0].model, "claude-sonnet-5");
         assert_eq!(claude.models[0].output_tokens, 100);
