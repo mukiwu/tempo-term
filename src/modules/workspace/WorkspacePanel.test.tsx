@@ -636,14 +636,14 @@ describe("WorkspacePanel", () => {
     fireEvent.contextMenu(alpha);
     // The menu items match those in the main TabBar (Rename Tab / Close Tab).
     expect(screen.getByRole("menuitem", { name: /Rename Tab/i })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /Close Tab/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /^Close Tab$/i })).toBeInTheDocument();
   });
 
   it("closes a tab from the sidebar context menu", () => {
     render(<WorkspacePanel />);
     const beta = screen.getByRole("button", { name: /beta/ });
     fireEvent.contextMenu(beta);
-    fireEvent.click(screen.getByRole("menuitem", { name: /Close Tab/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Close Tab$/i }));
     expect(useTabsStore.getState().tabs.find((tab) => tab.id === "t2")).toBeUndefined();
   });
 
@@ -670,7 +670,7 @@ describe("WorkspacePanel", () => {
     render(<WorkspacePanel />);
     const beta = screen.getByRole("button", { name: /beta/ });
     fireEvent.contextMenu(beta);
-    fireEvent.click(screen.getByRole("menuitem", { name: /Close Tab/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Close Tab$/i }));
     // Tab must NOT close immediately — confirm dialog should appear and t2 stays.
     expect(useTabsStore.getState().tabs.find((tab) => tab.id === "t2")).toBeDefined();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -690,7 +690,7 @@ describe("WorkspacePanel", () => {
     try {
       fireEvent.contextMenu(screen.getByDisplayValue("alpha"));
       expect(screen.queryByRole("menuitem", { name: /Rename Tab/i })).toBeNull();
-      expect(screen.queryByRole("menuitem", { name: /Close Tab/i })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /^Close Tab$/i })).toBeNull();
       expect(onWindowContextMenu).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener("contextmenu", onWindowContextMenu);

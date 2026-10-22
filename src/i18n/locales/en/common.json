@@ -174,7 +174,26 @@
     "cut": "Cut",
     "copy": "Copy",
     "paste": "Paste",
-    "selectAll": "Select All"
+    "selectAll": "Select All",
+    "pinTab": "Pin Tab",
+    "unpinTab": "Unpin Tab",
+    "moveTabLeft": "Move Tab Left",
+    "moveTabRight": "Move Tab Right",
+    "closeOtherTabs": "Close Other Tabs",
+    "closeTabsToRight": "Close Tabs to the Right",
+    "tabColor": "Color",
+    "noColor": "No color",
+    "pinned": "Pinned",
+    "colors": {
+      "red": "Red",
+      "orange": "Orange",
+      "yellow": "Yellow",
+      "green": "Green",
+      "cyan": "Cyan",
+      "blue": "Blue",
+      "purple": "Purple",
+      "pink": "Pink"
+    }
   },
   "paneCapacityAlert": "This tab can hold at most 8 panes — close one and try again",
   "osc7Hint": {

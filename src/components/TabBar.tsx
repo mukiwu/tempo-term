@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { QuickLaunchButton } from "./QuickLaunchButton";
+import { TabColorRow } from "./TabColorRow";
+import { TAB_COLOR_HEX } from "./tabColors";
 import { useTranslation } from "react-i18next";
 import {
   FileCode,
@@ -13,6 +15,7 @@ import {
   LayoutGrid,
   PanelLeft,
   PanelRight,
+  Pin,
   Search,
   SquareTerminal,
   X,
@@ -96,11 +99,13 @@ function TabItem({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [hovered, setHovered] = useState(false);
   if (!tab) {
     return null;
   }
   const active = tab.id === activeId;
   const Icon = tabIcon(tab.kind);
+  const tabColor = tab.color ? TAB_COLOR_HEX[tab.color] : undefined;
 
   function startRename() {
     // `tab` is narrowed at line 80, but TS does not carry that into this
@@ -123,25 +128,25 @@ function TabItem({ id }: { id: string }) {
   return (
     <div
       ref={setNodeRef}
-      style={{
-        transform: transform
-          ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-          : undefined,
-        transition,
-      }}
       {...attributes}
       {...listeners}
       role="tab"
       data-tab-id={id}
       aria-selected={active}
       onClick={() => setActive(tab.id)}
+      // Hover only deepens a colored tab's tint; a filter would brighten
+      // the label too.
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onDoubleClick={startRename}
       onAuxClick={(e) => {
         // Middle-click closes the tab (browser/editor convention). Routed
         // through requestClose so a dirty editor still gets its confirm dialog.
         if (e.button === 1) {
           e.preventDefault();
-          requestClose();
+          if (!tab.pinned) {
+            requestClose();
+          }
         }
       }}
       onContextMenu={(e) => {
@@ -157,17 +162,32 @@ function TabItem({ id }: { id: string }) {
       // deliberately left untouched — labels render in the proportional Inter
       // font, so a bold/regular swap would jostle tab widths on every
       // activation.
+      // A colored tab trades the accent fill for a tint of its own color,
+      // stronger while active, and its underline takes that color too.
+      style={{
+        transform: transform
+          ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+          : undefined,
+        transition,
+        ...(tabColor && {
+          background: `color-mix(in srgb, ${tabColor} ${active ? 22 : hovered ? 18 : 12}%, transparent)`,
+        }),
+      }}
       className={`group relative flex cursor-pointer items-center gap-2 px-3 text-xs transition-colors ${
         active
-          ? "bg-accent/10 text-fg"
-          : "text-fg-muted hover:bg-bg-elevated/60"
+          ? `${tabColor ? "" : "bg-accent/10"} text-fg`
+          : `text-fg-muted ${tabColor ? "" : "hover:bg-bg-elevated/60"}`
       } ${isDragging ? "opacity-40" : ""}`}
     >
       {active && (
         <span
           aria-hidden="true"
-          className="absolute inset-x-0 bottom-0 h-[2px] bg-accent"
+          className={`absolute inset-x-0 bottom-0 h-[2px] ${tabColor ? "" : "bg-accent"}`}
+          style={tabColor ? { background: tabColor } : undefined}
         />
+      )}
+      {tab.pinned && (
+        <Pin size={11} aria-label={t("actions.pinned")} className="-mr-1 shrink-0 rotate-45 text-fg-subtle" />
       )}
       <Icon size={13} className="shrink-0" />
       {editing ? (
@@ -197,6 +217,8 @@ function TabItem({ id }: { id: string }) {
         all, with no undo — hovered to plain grey. The weight now matches the
         cost, and the tooltip names which is which.
       */}
+      {/* Pinned tabs have no close button; unpin from the menu first. */}
+      {!tab.pinned && (
       <Tooltip
         label={dirty ? t("editor:unsaved") : t("actions.closeTab")}
         side="bottom"
@@ -227,13 +249,16 @@ function TabItem({ id }: { id: string }) {
           )}
         </button>
       </Tooltip>
+      )}
       {confirmCloseDialog}
       {menu && (
         <ContextMenu
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
+          header={<TabColorRow tab={tab} onPicked={() => setMenu(null)} />}
           items={tabContextMenuItems(t, {
+            tab,
             onRename: startRename,
             onClose: requestClose,
           })}

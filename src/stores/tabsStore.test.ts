@@ -1635,3 +1635,53 @@ describe("activeEditorPath", () => {
     expect(activeEditorPath([{ ...tab, activeLeafId: "l2" }], "t1")).toBeNull();
   });
 });
+
+describe("tab color, pin and move", () => {
+  beforeEach(reset);
+
+  const ids = () => useTabsStore.getState().tabs.map((t) => t.id);
+  const tabOf = (id: string) => useTabsStore.getState().tabs.find((t) => t.id === id)!;
+
+  it("sets and clears a tab color", () => {
+    const a = useTabsStore.getState().newTerminalTab();
+    useTabsStore.getState().setTabColor(a, "yellow");
+    expect(tabOf(a).color).toBe("yellow");
+    useTabsStore.getState().setTabColor(a, undefined);
+    expect(tabOf(a).color).toBeUndefined();
+  });
+
+  it("pinning moves a tab to the end of the pinned group, unpinning back after it", () => {
+    const s = useTabsStore.getState();
+    const a = s.newTerminalTab();
+    const b = s.newTerminalTab();
+    const c = s.newTerminalTab();
+    s.setTabPinned(c, true);
+    expect(ids()).toEqual([c, a, b]);
+    s.setTabPinned(b, true);
+    expect(ids()).toEqual([c, b, a]);
+    s.setTabPinned(c, false);
+    expect(ids()).toEqual([b, c, a]);
+    expect(tabOf(c).pinned).toBe(false);
+  });
+
+  it("moves a tab within its group but never across the pinned boundary", () => {
+    const s = useTabsStore.getState();
+    const a = s.newTerminalTab();
+    const b = s.newTerminalTab();
+    const c = s.newTerminalTab();
+    s.setTabPinned(a, true);
+    s.moveTab(c, -1);
+    expect(ids()).toEqual([a, c, b]);
+    s.moveTab(c, -1);
+    expect(ids()).toEqual([a, c, b]);
+    s.reorderTab(b, a);
+    expect(ids()).toEqual([a, c, b]);
+  });
+
+  it("⌘W leaves a single-pane pinned tab open", () => {
+    const a = useTabsStore.getState().newTerminalTab();
+    useTabsStore.getState().setTabPinned(a, true);
+    useTabsStore.getState().closePaneOrTab();
+    expect(ids()).toEqual([a]);
+  });
+});

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { LucideProps } from "lucide-react";
 import { useOverlayGuard } from "@/lib/overlayGuard";
@@ -22,6 +22,9 @@ interface ContextMenuProps {
   y: number;
   items: ContextMenuItem[];
   onClose: () => void;
+  /** Custom content shown above the items, followed by a divider (e.g. a
+   *  color picker row). */
+  header?: ReactNode;
 }
 
 /**
@@ -30,7 +33,7 @@ interface ContextMenuProps {
  * Escape, scroll, or window resize. Items are grouped (by `group`) with thin
  * dividers between groups.
  */
-export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
+export function ContextMenu({ x, y, items, onClose, header }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
 
@@ -109,6 +112,12 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       }}
       className="z-[200] max-h-[60vh] min-w-[200px] overflow-y-auto rounded-md border border-border-strong bg-bg-elevated py-1 text-[13px] shadow-lg"
     >
+      {header && (
+        <>
+          {header}
+          <div className="my-1 h-px bg-border" />
+        </>
+      )}
       {items.map((item, index) => {
         const previous = items[index - 1];
         const newGroup =

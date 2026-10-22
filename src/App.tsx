@@ -231,6 +231,10 @@ function App() {
     const panes = computeLayout(tab.paneTree);
     const buffers = useEditorStore.getState().buffers;
     if (panes.length <= 1) {
+      // A pinned tab has to be unpinned before it can be closed.
+      if (tab.pinned) {
+        return;
+      }
       if (tabHasDirtyEditor(tab, buffers)) {
         setPendingCloseAction(() => () => tabsState.closeTab(tab.id));
       } else {

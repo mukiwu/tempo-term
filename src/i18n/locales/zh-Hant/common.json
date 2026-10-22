@@ -174,7 +174,26 @@
     "cut": "剪下",
     "copy": "複製",
     "paste": "貼上",
-    "selectAll": "全選"
+    "selectAll": "全選",
+    "pinTab": "釘選分頁",
+    "unpinTab": "取消釘選",
+    "moveTabLeft": "向左移動分頁",
+    "moveTabRight": "向右移動分頁",
+    "closeOtherTabs": "關閉其他分頁",
+    "closeTabsToRight": "關閉右側分頁",
+    "tabColor": "顏色",
+    "noColor": "無顏色",
+    "pinned": "已釘選",
+    "colors": {
+      "red": "紅色",
+      "orange": "橘色",
+      "yellow": "黃色",
+      "green": "綠色",
+      "cyan": "青色",
+      "blue": "藍色",
+      "purple": "紫色",
+      "pink": "粉紅色"
+    }
   },
   "paneCapacityAlert": "這個分頁最多只能開 8 個面板，請先關掉一個再試",
   "osc7Hint": {
