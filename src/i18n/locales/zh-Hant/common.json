@@ -288,7 +288,6 @@
   },
   "workspace": {
     "openFolder": "開啟資料夾",
-    "openFile": "開啟檔案",
     "noWorkspaceTitle": "尚未開啟資料夾",
     "noWorkspaceHint": "開啟一個資料夾開始工作",
     "closeWorkspace": "關閉資料夾",
@@ -299,8 +298,6 @@
     "note": "筆記",
     "newTerminal": "新增終端機",
     "connectSsh": "SSH 連線",
-    "claudeCode": "Claude Code",
-    "codex": "Codex",
     "launcherHint": "選擇要開啟的內容",
     "launcherGroup": {
       "workspace": "工作區",

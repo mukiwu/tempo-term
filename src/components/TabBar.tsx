@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { QuickLaunchButton } from "./QuickLaunchButton";
 import { useTranslation } from "react-i18next";
 import {
   FileCode,
@@ -12,7 +13,6 @@ import {
   LayoutGrid,
   PanelLeft,
   PanelRight,
-  Plus,
   Search,
   SquareTerminal,
   X,
@@ -289,7 +289,6 @@ export function TabBar() {
   const activeId = useTabsStore((s) => s.activeId);
   const activeSpaceId = useTabsStore((s) => s.activeSpaceId);
   const visibleTabs = tabs.filter((tab) => tab.spaceId === activeSpaceId);
-  const openLauncherTab = useTabsStore((s) => s.openLauncherTab);
   const toggleSide = useUiStore((s) => s.toggleSide);
   const leftVisible = useUiStore((s) => s.visible.left);
   const rightVisible = useUiStore((s) => s.visible.right);
@@ -303,6 +302,7 @@ export function TabBar() {
   const tabBarHover =
     entryTabBarHover ?? noteTabBarHover ?? sshTabBarHover ?? null;
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const tabBarRef = useRef<HTMLDivElement>(null);
   const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
   const draggingTab = visibleTabs.find((tab) => tab.id === draggingId);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -452,6 +452,7 @@ export function TabBar() {
             underneath, and the button stays put without needing a backdrop of
             its own to hide them behind. */}
         <div
+          ref={tabBarRef}
           data-tab-bar
           className="flex min-w-0 flex-1 items-stretch gap-1 self-stretch"
         >
@@ -515,20 +516,7 @@ export function TabBar() {
               <TabInsertionLine />
             )}
           </div>
-          <Tooltip
-            label={t("workspace.addTab")}
-            side="bottom"
-            className="shrink-0 self-center"
-          >
-            <button
-              type="button"
-              aria-label={t("workspace.addTab")}
-              onClick={() => openLauncherTab()}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-muted hover:bg-bg-elevated hover:text-fg"
-            >
-              <Plus size={16} />
-            </button>
-          </Tooltip>
+          <QuickLaunchButton boundsRef={tabBarRef} />
           {/* The slack the strip used to hold: still part of the drop target,
             still a place to grab the window by. */}
           <div data-tauri-drag-region className="min-w-0 flex-1 self-stretch" />

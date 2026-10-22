@@ -288,7 +288,6 @@
   },
   "workspace": {
     "openFolder": "Open Folder",
-    "openFile": "Open File",
     "noWorkspaceTitle": "No folder open",
     "noWorkspaceHint": "Open a folder to start working",
     "closeWorkspace": "Close folder",
@@ -299,8 +298,6 @@
     "note": "Note",
     "newTerminal": "New terminal",
     "connectSsh": "Connect SSH",
-    "claudeCode": "Claude Code",
-    "codex": "Codex",
     "launcherHint": "Choose what to open",
     "launcherGroup": {
       "workspace": "Workspace",
