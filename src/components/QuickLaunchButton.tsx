@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Plus } from "lucide-react";
+import { Plus, type LucideIcon } from "lucide-react";
 import { useTabsStore } from "@/stores/tabsStore";
 import { ConnectionForm } from "@/modules/ssh/ConnectionForm";
 import { Tooltip } from "./Tooltip";
@@ -23,6 +23,35 @@ const EDGE_GAP = 8;
 interface StripPosition {
   top: number;
   left: number;
+}
+
+/**
+ * One round icon button on the strip. The hover tint is driven by mouse
+ * events rather than CSS `:hover`, which WKWebView applies unreliably on
+ * pop-up overlays like this one.
+ */
+function StripButton({ label, icon: Icon, accent, onClick }: {
+  label: string;
+  icon: LucideIcon;
+  /** Tints the icon with the accent color even when not hovered. */
+  accent?: boolean;
+  onClick: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-[color,background-color,scale] active:scale-[0.96] ${
+        hovered ? "bg-accent/15 text-accent" : accent ? "text-accent" : "text-fg-muted"
+      }`}
+    >
+      <Icon size={16} />
+    </button>
+  );
 }
 
 interface QuickLaunchButtonProps {
@@ -82,31 +111,58 @@ export function QuickLaunchButton({ boundsRef }: QuickLaunchButtonProps) {
 
   useEffect(() => clearTimer, []);
 
-  // Place the strip once it is in the DOM and its width is known: aligned with
-  // the button's left edge, vertically centred on it, and pulled left as far
-  // as needed to stay inside the tab bar.
+  // Place the strip aligned with the button's left edge, vertically centred
+  // on it, and pulled left as far as needed to stay inside the tab bar. Runs
+  // on open and again whenever the window, the tab bar or the button resizes,
+  // so the strip follows the button while it is open.
   useLayoutEffect(() => {
-    if (!mounted || position) {
+    if (!mounted) {
       return;
     }
-    const button = buttonRef.current?.getBoundingClientRect();
-    const strip = stripRef.current?.getBoundingClientRect();
-    if (!button || !strip) {
-      return;
+    function place() {
+      const button = buttonRef.current?.getBoundingClientRect();
+      const strip = stripRef.current;
+      if (!button || !strip) {
+        return;
+      }
+      const limit = (boundsRef.current?.getBoundingClientRect().right ?? window.innerWidth) - EDGE_GAP;
+      const left = Math.max(EDGE_GAP, Math.min(button.left - STRIP_PADDING, limit - strip.offsetWidth));
+      const top = button.top + button.height / 2 - strip.offsetHeight / 2;
+      setPosition((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
     }
-    const limit = (boundsRef.current?.getBoundingClientRect().right ?? window.innerWidth) - EDGE_GAP;
-    const left = Math.max(EDGE_GAP, Math.min(button.left - STRIP_PADDING, limit - strip.width));
-    setPosition({ top: button.top + button.height / 2 - strip.height / 2, left });
-  }, [mounted, position, boundsRef]);
+    place();
+    window.addEventListener("resize", place);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    for (const el of [boundsRef.current, buttonRef.current]) {
+      if (el) {
+        observer?.observe(el);
+      }
+    }
+    return () => {
+      window.removeEventListener("resize", place);
+      observer?.disconnect();
+    };
+  }, [mounted, boundsRef]);
 
-  // Fade in on the frame after positioning, so the transition has a start state.
+  // Fade in on the frame after the first placement, so the transition has a
+  // start state. Later re-placements must not re-show a closing strip.
+  const placed = position !== null;
   useEffect(() => {
-    if (!position) {
+    if (!placed) {
       return;
     }
     const frame = requestAnimationFrame(() => setShown(true));
     return () => cancelAnimationFrame(frame);
-  }, [position]);
+  }, [placed]);
+
+  // Closes when keyboard focus leaves both the button and the strip.
+  function onBlur(e: React.FocusEvent) {
+    const next = e.relatedTarget as Node | null;
+    if (next && (buttonRef.current?.contains(next) || stripRef.current?.contains(next))) {
+      return;
+    }
+    scheduleClose();
+  }
 
   useEffect(() => {
     if (!mounted) {
@@ -119,7 +175,9 @@ export function QuickLaunchButton({ boundsRef }: QuickLaunchButtonProps) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  });
+    // scheduleClose only touches refs and state setters, so it never goes stale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
 
   return (
     <>
@@ -127,12 +185,16 @@ export function QuickLaunchButton({ boundsRef }: QuickLaunchButtonProps) {
         ref={buttonRef}
         type="button"
         aria-label={t("workspace.addTab")}
-        aria-haspopup="menu"
         aria-expanded={shown}
-        onClick={() => openLauncherTab()}
+        onClick={() => {
+          // A committed click wins over a pending hover-open.
+          scheduleClose(0);
+          openLauncherTab();
+        }}
         onMouseEnter={scheduleOpen}
         onMouseLeave={() => scheduleClose()}
         onFocus={scheduleOpen}
+        onBlur={onBlur}
         className="flex h-7 w-7 shrink-0 items-center justify-center self-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
       >
         <Plus size={16} />
@@ -141,49 +203,45 @@ export function QuickLaunchButton({ boundsRef }: QuickLaunchButtonProps) {
         createPortal(
           <div
             ref={stripRef}
-            role="menu"
+            role="toolbar"
+            aria-orientation="horizontal"
             aria-label={t("workspace.addTab")}
             onMouseEnter={scheduleOpen}
             onMouseLeave={() => scheduleClose()}
+            onFocus={scheduleOpen}
+            onBlur={onBlur}
             style={{
               top: position?.top ?? 0,
               left: position?.left ?? 0,
               visibility: position ? "visible" : "hidden",
             }}
             className={`fixed z-50 flex items-center gap-0.5 rounded-full border border-accent/40 bg-bg-elevated p-1 shadow-[0_8px_24px_rgb(0_0_0/0.35)] transition-[opacity,translate,scale] duration-150 ease-out ${
-              shown ? "translate-x-0 scale-100 opacity-100" : "-translate-x-1 scale-[0.97] opacity-0"
+              shown ? "translate-x-0 scale-100 opacity-100" : "pointer-events-none -translate-x-1 scale-[0.97] opacity-0"
             }`}
           >
             {/* Leading plus keeps the click target under the pointer: the
                 strip opens over the add button, so this opens the launcher
                 tab exactly as the button would. */}
-            <button
-              type="button"
-              role="menuitem"
-              aria-label={t("workspace.addTab")}
+            <StripButton
+              label={t("workspace.addTab")}
+              icon={Plus}
+              accent
               onClick={() => {
                 scheduleClose(0);
                 openLauncherTab();
               }}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-accent transition-[background-color,scale] hover:bg-accent/15 active:scale-[0.96]"
-            >
-              <Plus size={16} />
-            </button>
+            />
             <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />
-            {actions.map(({ key, label, icon: Icon, run }) => (
+            {actions.map(({ key, label, icon, run }) => (
               <Tooltip key={key} label={label} side="bottom" className="shrink-0">
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label={label}
+                <StripButton
+                  label={label}
+                  icon={icon}
                   onClick={() => {
                     scheduleClose(0);
                     void run();
                   }}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-fg-muted transition-[color,background-color,scale] hover:bg-accent/15 hover:text-accent active:scale-[0.96]"
-                >
-                  <Icon size={16} />
-                </button>
+                />
               </Tooltip>
             ))}
           </div>,

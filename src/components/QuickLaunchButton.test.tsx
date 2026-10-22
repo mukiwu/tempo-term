@@ -32,13 +32,34 @@ describe("QuickLaunchButton", () => {
     const button = screen.getByRole("button", { name: "Add tab" });
 
     fireEvent.mouseEnter(button);
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("toolbar")).not.toBeInTheDocument();
     act(() => vi.advanceTimersByTime(200));
-    expect(screen.getByRole("menuitem", { name: "Git Graph" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Git Graph" })).toBeInTheDocument();
 
     fireEvent.mouseLeave(button);
     act(() => vi.advanceTimersByTime(1000));
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("toolbar")).not.toBeInTheDocument();
+  });
+
+  it("cancels a pending hover-open when the button is clicked", () => {
+    useTabsStore.setState({ openLauncherTab: vi.fn() });
+    renderButton();
+    const button = screen.getByRole("button", { name: "Add tab" });
+    fireEvent.mouseEnter(button);
+    fireEvent.click(button);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.queryByRole("toolbar")).not.toBeInTheDocument();
+  });
+
+  it("closes when keyboard focus leaves the button", () => {
+    renderButton();
+    const button = screen.getByRole("button", { name: "Add tab" });
+    fireEvent.focus(button);
+    act(() => vi.advanceTimersByTime(200));
+    expect(screen.getByRole("toolbar")).toBeInTheDocument();
+    fireEvent.blur(button, { relatedTarget: document.body });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.queryByRole("toolbar")).not.toBeInTheDocument();
   });
 
   it("runs an action straight from the strip", () => {
@@ -47,7 +68,7 @@ describe("QuickLaunchButton", () => {
     renderButton();
     fireEvent.mouseEnter(screen.getByRole("button", { name: "Add tab" }));
     act(() => vi.advanceTimersByTime(200));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Git Graph" }));
+    fireEvent.click(screen.getByRole("button", { name: "Git Graph" }));
     expect(openGitGraphTab).toHaveBeenCalled();
   });
 });
