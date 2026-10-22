@@ -141,8 +141,8 @@ describe("DashboardView", () => {
     expect(screen.getByText("340")).toBeInTheDocument();
     expect(screen.getByText("sessions.dashboard.cards.sessionsHint:4")).toBeInTheDocument();
     expect(screen.getByText("9")).toBeInTheDocument();
-    // Cost card prices the fixture's 12,500 sonnet tokens (15 $/Mtok), labelled US$.
-    expect(screen.getByText("≈ US$ 0.19")).toBeInTheDocument();
+    // Cost card prices the fixture's 12,500 sonnet-5 output tokens (10 $/Mtok), labelled US$.
+    expect(screen.getByText("≈ US$ 0.13")).toBeInTheDocument();
   });
 
   it("refetches with the chosen range when a chip is clicked", async () => {

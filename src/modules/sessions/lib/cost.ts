@@ -1,25 +1,65 @@
 import type { ModelTokens } from "./statsBridge";
 
+/** List prices for one model family, in USD per 1M tokens. */
+export interface ModelPrice {
+  /** Substring of the model id, matched case-insensitively. */
+  pattern: string;
+  input: number;
+  cacheRead: number;
+  /** Cache-write rate; omitted for providers that do not bill writes
+   *  separately (their logs report no cache-write tokens). */
+  cacheWrite?: number;
+  output: number;
+}
+
+/** Claude Code writes its prompt cache with the 1-hour TTL almost always
+ *  (about 84% of cache-write tokens in local logs as of 2026-10-23), which
+ *  bills at 2x the input rate; the index does not split 1-hour from 5-minute
+ *  writes, so the 1-hour rate is used for all of them. */
+const CLAUDE_CACHE_WRITE = 2;
+
+function claude(pattern: string, input: number, output: number, cacheRead = input * 0.1): ModelPrice {
+  return { pattern, input, cacheRead, cacheWrite: input * CLAUDE_CACHE_WRITE, output };
+}
+
 /**
- * List prices per 1M tokens in USD as [input, output]. Models are matched by
- * substring; unknown models contribute 0 cost and are tracked as unpriced
- * tokens.
+ * Standard-tier list prices. The first matching pattern wins, so a specific
+ * version must come before the family name it contains (`opus-5-5` before
+ * `opus-5`, and both before `opus`).
+ *
+ * Sources: Anthropic model pricing as of 2026-10-06; OpenAI
+ * developers.openai.com/api/docs/pricing as of 2026-10-23 (short-context
+ * rates, prompts up to 272K tokens). Models not listed here, such as
+ * Antigravity's Gemini sessions (which record no tokens) and
+ * `codex-auto-review`, are reported as unpriced.
  */
-export const PRICES_PER_MTOK: ReadonlyArray<[pattern: string, input: number, output: number]> = [
-  ["opus", 15, 75],
-  ["sonnet", 3, 15],
-  ["haiku", 0.8, 4],
-  ["gpt-5", 1.25, 10],
-  ["codex", 1.25, 10],
-  ["o3", 2, 8],
-  ["gemini", 1.25, 10],
+export const MODEL_PRICES: readonly ModelPrice[] = [
+  claude("fable-5-1", 10, 50, 0.25),
+  claude("mythos-5-1", 10, 50, 0.25),
+  claude("fable", 10, 50),
+  claude("mythos", 10, 50),
+  claude("opus-5-5", 4, 20, 0.2),
+  claude("opus-5", 5, 25),
+  claude("opus-4-8", 5, 25),
+  claude("opus-4-7", 5, 25),
+  claude("opus-4-6", 5, 25),
+  claude("opus", 15, 75),
+  claude("sonnet-5-5", 2, 10, 0.2),
+  claude("sonnet-5", 2, 10),
+  claude("sonnet", 3, 15),
+  claude("haiku-5-5", 0.1, 0.5),
+  claude("haiku-4-5", 1, 5),
+  claude("haiku", 0.8, 4),
+  { pattern: "gpt-6-astra", input: 10, cacheRead: 1, output: 50 },
+  { pattern: "gpt-6.1-sol", input: 2, cacheRead: 0.1, output: 10 },
+  { pattern: "gpt-5.3-codex", input: 1.75, cacheRead: 0.175, output: 14 },
 ];
 
-/** Cache reads bill at a tenth of the input rate across these providers. */
-const CACHE_READ_MULTIPLIER = 0.1;
-/** Anthropic's 5-minute cache write rate; providers without a separate cache
- *  write report zero cache-write tokens, so this never applies to them. */
-const CACHE_WRITE_MULTIPLIER = 1.25;
+/** The price entry for a model id, or `undefined` when it is unpriced. */
+export function priceFor(model: string): ModelPrice | undefined {
+  const id = model.toLowerCase();
+  return MODEL_PRICES.find((price) => id.includes(price.pattern));
+}
 
 /** Every token a model processed: uncached input, cache reads and writes,
  *  and output. */
@@ -44,20 +84,16 @@ export function estimateCost(models: ModelTokens[]): { usd: number; unpricedToke
   let unpricedTokens = 0;
 
   for (const m of models) {
-    // Case-insensitive on purpose: model ids from different agents vary in
-    // casing (e.g. "GPT-5" vs "gpt-5"), and the table patterns are lowercase.
-    const id = m.model.toLowerCase();
-    const price = PRICES_PER_MTOK.find(([pattern]) => id.includes(pattern));
+    const price = priceFor(m.model);
     if (!price) {
       unpricedTokens += totalTokens(m);
       continue;
     }
-    const [, input, output] = price;
     usd +=
-      (m.input_tokens * input +
-        m.cache_read_tokens * input * CACHE_READ_MULTIPLIER +
-        m.cache_write_tokens * input * CACHE_WRITE_MULTIPLIER +
-        m.output_tokens * output) /
+      (m.input_tokens * price.input +
+        m.cache_read_tokens * price.cacheRead +
+        m.cache_write_tokens * (price.cacheWrite ?? price.input) +
+        m.output_tokens * price.output) /
       1_000_000;
   }
 

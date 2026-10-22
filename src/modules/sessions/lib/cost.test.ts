@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cacheHitRate, estimateCost, PRICES_PER_MTOK, totalTokens } from "./cost";
+import { cacheHitRate, estimateCost, priceFor, totalTokens } from "./cost";
 import type { ModelTokens } from "./statsBridge";
 
 const m = (model: string, tokens: Partial<Omit<ModelTokens, "model">>): ModelTokens => ({
@@ -12,41 +12,49 @@ const m = (model: string, tokens: Partial<Omit<ModelTokens, "model">>): ModelTok
 });
 
 describe("estimateCost", () => {
-  it("prices output tokens by substring match", () => {
-    const result = estimateCost([m("claude-opus-4-8", { output_tokens: 1_000_000 })]);
-    expect(result).toEqual({ usd: 75, unpricedTokens: 0 });
+  it("prices each Opus version at its own rate", () => {
+    expect(estimateCost([m("claude-opus-5-5", { output_tokens: 1_000_000 })]).usd).toBe(20);
+    expect(estimateCost([m("claude-opus-4-7", { output_tokens: 1_000_000 })]).usd).toBe(25);
+    expect(estimateCost([m("claude-opus-4-1", { output_tokens: 1_000_000 })]).usd).toBe(75);
   });
 
-  it("prices input, cache reads and cache writes at their own rates", () => {
-    // sonnet: input 3, cache read 0.3, cache write 3.75 per M.
+  it("matches the most specific version first", () => {
+    expect(priceFor("claude-sonnet-5-5")?.pattern).toBe("sonnet-5-5");
+    expect(priceFor("claude-sonnet-5")?.pattern).toBe("sonnet-5");
+    expect(priceFor("claude-sonnet-4-6")?.pattern).toBe("sonnet");
+    expect(priceFor("claude-fable-5-1")?.pattern).toBe("fable-5-1");
+  });
+
+  it("prices Claude cache reads per model and cache writes at the 1-hour rate", () => {
+    // opus-5-5: input 4, cache read 0.2, cache write 8 per M.
     const result = estimateCost([
-      m("claude-sonnet-5", {
+      m("claude-opus-5-5", {
         input_tokens: 1_000_000,
         cache_read_tokens: 1_000_000,
         cache_write_tokens: 1_000_000,
       }),
     ]);
-    expect(result.usd).toBeCloseTo(3 + 0.3 + 3.75);
-    expect(result.unpricedTokens).toBe(0);
+    expect(result.usd).toBeCloseTo(4 + 0.2 + 8);
+  });
+
+  it("prices OpenAI models from the official table", () => {
+    const result = estimateCost([
+      m("gpt-6-astra", { input_tokens: 1_000_000, cache_read_tokens: 1_000_000, output_tokens: 1_000_000 }),
+    ]);
+    expect(result.usd).toBeCloseTo(10 + 1 + 50);
+    expect(priceFor("gpt-6.1-sol")?.output).toBe(10);
   });
 
   it("accumulates every token of unknown models as unpriced", () => {
     const result = estimateCost([
-      m("claude-sonnet-5", { output_tokens: 1_000_000 }),
-      m("unknown-model-v1", { output_tokens: 500_000, input_tokens: 100 }),
+      m("claude-sonnet-5-5", { output_tokens: 1_000_000 }),
+      m("codex-auto-review", { output_tokens: 500_000, input_tokens: 100 }),
     ]);
-    expect(result).toEqual({ usd: 15, unpricedTokens: 500_100 });
+    expect(result).toEqual({ usd: 10, unpricedTokens: 500_100 });
   });
 
   it("returns zero for an empty models array", () => {
     expect(estimateCost([])).toEqual({ usd: 0, unpricedTokens: 0 });
-  });
-
-  it("price table contains expected models", () => {
-    const patterns = PRICES_PER_MTOK.map(([pattern]) => pattern);
-    for (const p of ["opus", "sonnet", "haiku", "gpt-5", "codex", "o3", "gemini"]) {
-      expect(patterns).toContain(p);
-    }
   });
 });
 
