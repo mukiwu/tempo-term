@@ -26,7 +26,8 @@ export function TabColorRow({ tab, onPicked }: { tab: Tab; onPicked: () => void 
       <button
         type="button"
         aria-label={t("actions.noColor")}
-        aria-pressed={!tab.color}
+        role="menuitemradio"
+        aria-checked={!tab.color}
         onClick={() => pick(undefined)}
         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-fg-subtle transition-[scale] active:scale-[0.96] ${ring(!tab.color)}`}
       >
@@ -37,7 +38,8 @@ export function TabColorRow({ tab, onPicked }: { tab: Tab; onPicked: () => void 
           key={color}
           type="button"
           aria-label={t(`actions.colors.${color}`)}
-          aria-pressed={tab.color === color}
+          role="menuitemradio"
+          aria-checked={tab.color === color}
           onClick={() => pick(color)}
           style={{ background: TAB_COLOR_HEX[color] }}
           className={`h-4 w-4 shrink-0 rounded-full transition-[scale] active:scale-[0.96] ${ring(tab.color === color)}`}

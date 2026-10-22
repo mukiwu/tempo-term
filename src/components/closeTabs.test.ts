@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useTabsStore } from "@/stores/tabsStore";
+import { useEditorStore } from "@/modules/editor/store/editorStore";
 import { closeTabsSafely, otherTabsOf, tabsRightOf } from "./closeTabs";
 
 describe("closeTabsSafely", () => {
@@ -18,5 +19,17 @@ describe("closeTabsSafely", () => {
 
     closeTabsSafely(otherTabsOf(a));
     expect(useTabsStore.getState().tabs.map((t) => t.id)).toEqual([c, a]);
+  });
+
+  it("leaves a tab with unsaved editor changes open", () => {
+    const s = useTabsStore.getState();
+    const keep = s.openPreviewTab("http://keep.test");
+    const dirty = s.openEditorTab("/repo/dirty.ts");
+    useEditorStore.setState({
+      buffers: { "/repo/dirty.ts": { content: "changed", baseline: "original" } },
+    } as never);
+
+    closeTabsSafely(otherTabsOf(keep));
+    expect(useTabsStore.getState().tabs.map((t) => t.id)).toEqual([keep, dirty]);
   });
 });

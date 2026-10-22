@@ -99,6 +99,7 @@ function TabItem({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [hovered, setHovered] = useState(false);
   if (!tab) {
     return null;
   }
@@ -133,6 +134,10 @@ function TabItem({ id }: { id: string }) {
       data-tab-id={id}
       aria-selected={active}
       onClick={() => setActive(tab.id)}
+      // Hover only deepens a colored tab's tint; a filter would brighten
+      // the label too.
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onDoubleClick={startRename}
       onAuxClick={(e) => {
         // Middle-click closes the tab (browser/editor convention). Routed
@@ -165,13 +170,13 @@ function TabItem({ id }: { id: string }) {
           : undefined,
         transition,
         ...(tabColor && {
-          background: `color-mix(in srgb, ${tabColor} ${active ? 22 : 12}%, transparent)`,
+          background: `color-mix(in srgb, ${tabColor} ${active ? 22 : hovered ? 18 : 12}%, transparent)`,
         }),
       }}
       className={`group relative flex cursor-pointer items-center gap-2 px-3 text-xs transition-colors ${
         active
           ? `${tabColor ? "" : "bg-accent/10"} text-fg`
-          : `text-fg-muted ${tabColor ? "hover:brightness-125" : "hover:bg-bg-elevated/60"}`
+          : `text-fg-muted ${tabColor ? "" : "hover:bg-bg-elevated/60"}`
       } ${isDragging ? "opacity-40" : ""}`}
     >
       {active && (

@@ -25,6 +25,9 @@ export function tabContextMenuItems(
   const index = group.findIndex((x) => x.id === tab.id);
   const others = otherTabsOf(tab.id).filter((x) => !x.pinned);
   const right = tabsRightOf(tab.id).filter((x) => !x.pinned);
+  // A launcher tab replaces itself with whatever it opens, so pinning it
+  // would not keep it around.
+  const pinnable = tab.kind !== "launcher";
   return [
     {
       id: "rename",
@@ -38,7 +41,8 @@ export function tabContextMenuItems(
       label: tab.pinned ? t("actions.unpinTab") : t("actions.pinTab"),
       icon: tab.pinned ? PinOff : Pin,
       group: 0,
-      onSelect: () => store.setTabPinned(tab.id, !tab.pinned),
+      disabled: !pinnable && !tab.pinned,
+      onSelect: () => useTabsStore.getState().setTabPinned(tab.id, !tab.pinned),
     },
     {
       id: "move-left",
@@ -46,7 +50,7 @@ export function tabContextMenuItems(
       icon: ChevronLeft,
       group: 1,
       disabled: index <= 0,
-      onSelect: () => store.moveTab(tab.id, -1),
+      onSelect: () => useTabsStore.getState().moveTab(tab.id, -1),
     },
     {
       id: "move-right",
@@ -54,7 +58,7 @@ export function tabContextMenuItems(
       icon: ChevronRight,
       group: 1,
       disabled: index < 0 || index >= group.length - 1,
-      onSelect: () => store.moveTab(tab.id, 1),
+      onSelect: () => useTabsStore.getState().moveTab(tab.id, 1),
     },
     {
       id: "close-others",
@@ -62,7 +66,7 @@ export function tabContextMenuItems(
       icon: XCircle,
       group: 2,
       disabled: others.length === 0,
-      onSelect: () => closeTabsSafely(others),
+      onSelect: () => closeTabsSafely(otherTabsOf(tab.id)),
     },
     {
       id: "close-right",
@@ -70,7 +74,7 @@ export function tabContextMenuItems(
       icon: XCircle,
       group: 2,
       disabled: right.length === 0,
-      onSelect: () => closeTabsSafely(right),
+      onSelect: () => closeTabsSafely(tabsRightOf(tab.id)),
     },
     {
       id: "close",
