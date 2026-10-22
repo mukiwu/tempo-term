@@ -20,8 +20,7 @@ const GROUPS: ShortcutGroup[] = [
   {
     titleKey: "shortcutsList.groups.general",
     items: [
-      { labelKey: "shortcutsList.newTab", keys: `${MOD} T` },
-      { labelKey: "shortcutsList.newTerminalTab", keys: `${MOD} ${SHIFT} T` },
+      { labelKey: "shortcutsList.newTerminalTab", keys: `${MOD} T` },
       { labelKey: "shortcutsList.closeTab", keys: `${MOD} W` },
       { labelKey: "shortcutsList.switchTab", keys: `${MOD} 1–9` },
       { labelKey: "shortcutsList.switchSidebar", keys: `${ALT} 1–8` },

@@ -23,8 +23,7 @@ import { ConnectionForm } from "@/modules/ssh/ConnectionForm";
 const DEFAULT_PREVIEW_URL = "http://localhost:3000";
 
 const MOD = IS_MAC ? "⌘" : "Ctrl";
-const SHIFT = IS_MAC ? "⇧" : "Shift";
-const TERMINAL_SHORTCUT = `${MOD} ${SHIFT} T`;
+const TERMINAL_SHORTCUT = `${MOD} T`;
 
 /**
  * Where a chosen launcher option should land.

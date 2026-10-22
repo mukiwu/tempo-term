@@ -65,12 +65,14 @@ export function isAppShortcut(event: AppShortcutEvent, isWindows: boolean): bool
   }
   if (isWindows && cmd && !event.altKey) {
     switch (event.code) {
-      // Close Tab / Close Window, New Tab / New Terminal Tab, Split Right / Split
-      // Down — the Shift variants are valid app shortcuts too, so match any Shift.
+      // Close Tab / Close Window, Split Right / Split Down — the Shift variants
+      // are valid app shortcuts too, so match any Shift.
       case "KeyW":
-      case "KeyT":
       case "KeyD":
         return true;
+      // New Terminal Tab. Ctrl+Shift+T has no app action, so it reaches the shell.
+      case "KeyT":
+        return !event.shiftKey;
       // Find Files, Toggle Sidebar and New Window moved to Ctrl+Shift+<letter>
       // so the bare combo reaches the shell: ^B is tmux's prefix and Claude
       // Code's background-run key, ^P and ^N walk readline history. The app

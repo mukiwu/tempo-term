@@ -233,7 +233,6 @@
       "editor": "Editor",
       "notes": "Notes"
     },
-    "newTab": "New tab",
     "newTerminalTab": "New terminal tab",
     "closeTab": "Close current tab",
     "switchTab": "Switch to tab 1–9",
