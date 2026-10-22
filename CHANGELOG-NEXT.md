@@ -8,6 +8,7 @@
 - ⌘T（Windows 為 Ctrl+T）直接開啟終端機分頁 (#474)
 - 啟動器移除 Claude Code、Codex 與開啟檔案；Claude Code 與 Codex 參數移到設定中的接續對話選項下方 (#473)
 - 移除 ⇧⌘T（Windows 為 Ctrl+Shift+T）快捷鍵，啟動器改由分頁列的 + 開啟 (#474)
+- 分頁右鍵選單新增顏色、釘選、左右移動、關閉其他分頁與關閉右側分頁；釘選的分頁固定在最左側且不會被關閉 (#475)
 
 ### fix
 
@@ -25,6 +26,7 @@
 - ⌘T (Ctrl+T on Windows) opens a terminal tab directly (#474)
 - Remove Claude Code, Codex and Open File from the launcher; the Claude Code and Codex flags move under the resume option in Settings (#473)
 - Remove the ⇧⌘T (Ctrl+Shift+T on Windows) shortcut; open the launcher from the + in the tab bar (#474)
+- Add color, pin, move left or right, close other tabs and close tabs to the right to the tab context menu; pinned tabs stay leftmost and cannot be closed (#475)
 
 ### fix
 
