@@ -77,6 +77,34 @@ export interface Tab {
   cwd?: string;
   /** True once the user renames the tab, so cwd changes stop overwriting it. */
   renamed?: boolean;
+  /** User-picked label color; absent means no color. */
+  color?: TabColor;
+  /** Pinned tabs sit before every unpinned tab of their space and cannot be
+   *  closed from the tab bar until unpinned. */
+  pinned?: boolean;
+}
+
+export const TAB_COLORS = ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"] as const;
+export type TabColor = (typeof TAB_COLORS)[number];
+
+/**
+ * Stable partition of one space's tabs so pinned ones come first, preserving
+ * the relative order inside each group. Other spaces' tabs keep their slots.
+ */
+function pinnedFirst(tabs: Tab[], spaceId: string): Tab[] {
+  const slots: number[] = [];
+  tabs.forEach((tab, index) => {
+    if (tab.spaceId === spaceId) {
+      slots.push(index);
+    }
+  });
+  const space = slots.map((index) => tabs[index]);
+  const ordered = [...space.filter((t) => t.pinned), ...space.filter((t) => !t.pinned)];
+  const next = [...tabs];
+  slots.forEach((slot, i) => {
+    next[slot] = ordered[i];
+  });
+  return next;
 }
 
 interface TabsState {
@@ -157,6 +185,13 @@ interface TabsState {
   setActive: (id: string) => void;
   /** Move `activeId` to `overId`'s slot within the same space. No-op across spaces. */
   reorderTab: (activeId: string, overId: string) => void;
+  /** Move a tab one slot left (-1) or right (1) within its space, without
+   *  crossing the pinned/unpinned boundary. */
+  moveTab: (id: string, delta: -1 | 1) => void;
+  setTabColor: (id: string, color: TabColor | undefined) => void;
+  /** Pin or unpin a tab; it moves to the end of the pinned group or the start
+   *  of the unpinned group respectively. */
+  setTabPinned: (id: string, pinned: boolean) => void;
   splitActivePane: (direction: SplitDirection) => void;
   setActiveLeaf: (tabId: string, leafId: string) => void;
   /** Cycle the active tab's focused pane to the next leaf (⌘`); wraps around. */
@@ -1045,7 +1080,10 @@ export const useTabsStore = create<TabsState>()(
     }
     const panes = computeLayout(tab.paneTree);
     if (panes.length <= 1) {
-      get().closeTab(tab.id);
+      // A pinned tab survives ⌘W; it has to be unpinned first.
+      if (!tab.pinned) {
+        get().closeTab(tab.id);
+      }
       return;
     }
     // Bottom-most wins; ties broken by right-most — so a split peels away from
@@ -1072,7 +1110,9 @@ export const useTabsStore = create<TabsState>()(
       }
       const moving = state.tabs.find((t) => t.id === activeId);
       const over = state.tabs.find((t) => t.id === overId);
-      if (!moving || !over || moving.spaceId !== over.spaceId) {
+      // Pinned tabs stay ahead of unpinned ones, so a drag never crosses
+      // the boundary between the two groups.
+      if (!moving || !over || moving.spaceId !== over.spaceId || !moving.pinned !== !over.pinned) {
         return state;
       }
       // Slots are the indices this space's tabs occupy in the flat array;
@@ -1093,6 +1133,45 @@ export const useTabsStore = create<TabsState>()(
         tabs[slotIndex] = reordered[k];
       });
       return { tabs };
+    }),
+
+  moveTab: (id, delta) => {
+    const state = get();
+    const tab = state.tabs.find((t) => t.id === id);
+    if (!tab) {
+      return;
+    }
+    const space = state.tabs.filter((t) => t.spaceId === tab.spaceId);
+    const neighbour = space[space.findIndex((t) => t.id === id) + delta];
+    if (neighbour) {
+      get().reorderTab(id, neighbour.id);
+    }
+  },
+
+  setTabColor: (id, color) =>
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === id ? { ...t, color } : t)),
+    })),
+
+  setTabPinned: (id, pinned) =>
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === id);
+      if (!tab || !tab.pinned === !pinned) {
+        return state;
+      }
+      // Pull the tab out and re-insert it at the end of its new group: after
+      // the last pinned tab when pinning, before the first unpinned one when
+      // unpinning (the same slot either way).
+      const updated = { ...tab, pinned };
+      const rest = state.tabs.filter((t) => t.id !== id);
+      const lastPinned = rest.reduce(
+        (last, t, index) => (t.spaceId === tab.spaceId && t.pinned ? index : last),
+        -1,
+      );
+      const firstOfSpace = rest.findIndex((t) => t.spaceId === tab.spaceId);
+      const at = lastPinned >= 0 ? lastPinned + 1 : firstOfSpace >= 0 ? firstOfSpace : rest.length;
+      const tabs = [...rest.slice(0, at), updated, ...rest.slice(at)];
+      return { tabs: pinnedFirst(tabs, tab.spaceId) };
     }),
 
   splitActivePane: (direction) =>

@@ -25,6 +25,7 @@ import { AgentIcon } from "@/components/AgentIcon";
 import { Tooltip } from "@/components/Tooltip";
 import { useIsTruncated } from "@/components/useIsTruncated";
 import { ContextMenu } from "@/components/ContextMenu";
+import { TabColorRow } from "@/components/TabColorRow";
 import { tabContextMenuItems } from "@/components/tabContextMenuItems";
 import { useTabCloseRequest } from "@/components/useTabCloseRequest";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -480,7 +481,9 @@ function TabCard({ tab, index }: { tab: Tab; index: number }) {
             x={menu.x}
             y={menu.y}
             onClose={() => setMenu(null)}
+            header={<TabColorRow tab={tab} onPicked={() => setMenu(null)} />}
             items={tabContextMenuItems(t, {
+              tab,
               onRename: startRename,
               onClose: requestClose,
             })}
