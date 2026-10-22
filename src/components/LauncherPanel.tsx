@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Bot,
-  FilePlus,
   FileText,
   FolderOpen,
   Globe,
   Server,
-  Sparkles,
   SquareTerminal,
   Waypoints,
   type LucideIcon,
@@ -18,12 +15,10 @@ import { useUiStore } from "@/stores/uiStore";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { pickNotesFolder } from "@/modules/notes/lib/pickNotesFolder";
-import { writeToTerminal } from "@/modules/terminal/lib/terminalBus";
-import { pickFile, pickFolder } from "@/lib/dialog";
+import { pickFolder } from "@/lib/dialog";
 import { IS_MAC } from "@/lib/platform";
 import type { PaneContent } from "@/modules/terminal/lib/terminalLayout";
 import { ConnectionForm } from "@/modules/ssh/ConnectionForm";
-import { buildLauncherCommand } from "./launcherCommand";
 
 const DEFAULT_PREVIEW_URL = "http://localhost:3000";
 
@@ -45,7 +40,7 @@ interface LauncherPanelProps {
   target?: LauncherTarget;
 }
 
-interface LauncherAction {
+export interface LauncherAction {
   key: string;
   label: string;
   icon: LucideIcon;
@@ -53,18 +48,20 @@ interface LauncherAction {
   run: () => void | Promise<void>;
 }
 
-interface LauncherGroup {
+export interface LauncherGroup {
   key: string;
   label: string;
   actions: LauncherAction[];
 }
 
-export function LauncherPanel({ target }: LauncherPanelProps) {
+/**
+ * The launcher's actions, grouped, plus the SSH form state one of them opens.
+ * Shared by the launcher tab/pane and the tab bar's quick-launch strip so both
+ * offer the same options and land them the same way.
+ */
+export function useLauncherActions(target?: LauncherTarget) {
   const { t } = useTranslation();
   const [sshFormOpen, setSshFormOpen] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const newTerminalTab = useTabsStore((s) => s.newTerminalTab);
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
@@ -77,17 +74,6 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
   const createNote = useNotesStore((s) => s.createNote);
 
   const resolved: LauncherTarget = target ?? { mode: "newTab" };
-
-  // Whether this launcher is the focused pane. A new-tab launcher is always
-  // "active"; a split launcher follows its tab's active leaf, so cycling panes
-  // with ⌘` moves keyboard focus into it.
-  const isActivePane = useTabsStore((s) => {
-    if (resolved.mode !== "replacePane") {
-      return true;
-    }
-    const tab = s.tabs.find((t) => t.id === resolved.tabId);
-    return tab?.activeLeafId === resolved.leafId;
-  });
 
   // Land the chosen content either by filling the split pane in place, or by
   // opening a new tab (and closing the launcher tab it replaces).
@@ -120,31 +106,6 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
     }
   }
 
-  // Open a terminal and auto-run a CLI command in it (e.g. `claude`, `codex`).
-  // The command is queued via writeToTerminal until the freshly spawned shell
-  // registers, so it runs once the prompt is ready.
-  function openTerminalWithCommand(command: string) {
-    // End with CR (`\r`), the byte the Enter key actually sends — PowerShell's
-    // PSReadLine binds CR to AcceptLine (submit) but LF to AddLine (a `>>`
-    // continuation line that never runs), so an injected LF would leave the
-    // command stranded on Windows. CR submits on macOS/Linux too. Strip any
-    // trailing CR/LF first so a caller-supplied newline can't yield `\n\r`.
-    const line = `${command.replace(/[\r\n]+$/, "")}\r`;
-    if (resolved.mode === "replacePane") {
-      setPaneContent(resolved.tabId, resolved.leafId, { kind: "terminal" });
-      writeToTerminal(resolved.leafId, line);
-      return;
-    }
-    const tabId = newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
-    const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
-    if (tab && tab.kind === "terminal") {
-      writeToTerminal(tab.activeLeafId, line);
-    }
-    if (resolved.closeTabId) {
-      closeTab(resolved.closeTabId);
-    }
-  }
-
   const showShortcuts = resolved.mode === "newTab";
 
   const groups: LauncherGroup[] = [
@@ -152,24 +113,6 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
       key: "workspace",
       label: t("workspace.launcherGroup.workspace"),
       actions: [
-        {
-          key: "claude-code",
-          label: t("workspace.claudeCode"),
-          icon: Sparkles,
-          run: () =>
-            openTerminalWithCommand(
-              buildLauncherCommand("claude", useSettingsStore.getState().claudeFlags),
-            ),
-        },
-        {
-          key: "codex",
-          label: t("workspace.codex"),
-          icon: Bot,
-          run: () =>
-            openTerminalWithCommand(
-              buildLauncherCommand("codex", useSettingsStore.getState().codexFlags),
-            ),
-        },
         {
           key: "terminal",
           label: t("workspace.terminal"),
@@ -189,18 +132,6 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
             setRoot(folder);
             activatePanel("explorer");
             apply({ kind: "terminal" });
-          },
-        },
-        {
-          key: "file",
-          label: t("workspace.openFile"),
-          icon: FilePlus,
-          run: async () => {
-            const file = await pickFile();
-            if (!file) {
-              return;
-            }
-            apply({ kind: "editor", path: file });
           },
         },
         {
@@ -233,6 +164,9 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
             }
             const notePath = await createNote(rootPath);
             apply({ kind: "note", noteId: notePath });
+            // Reveal the new note in the notes panel, as opening a folder
+            // switches to the explorer.
+            activatePanel("notes");
           },
         },
         {
@@ -250,6 +184,27 @@ export function LauncherPanel({ target }: LauncherPanelProps) {
       ],
     },
   ];
+
+  return { groups, resolved, sshFormOpen, setSshFormOpen };
+}
+
+export function LauncherPanel({ target }: LauncherPanelProps) {
+  const { t } = useTranslation();
+  const { groups, resolved, sshFormOpen, setSshFormOpen } = useLauncherActions(target);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Whether this launcher is the focused pane. A new-tab launcher is always
+  // "active"; a split launcher follows its tab's active leaf, so cycling panes
+  // with ⌘` moves keyboard focus into it.
+  const isActivePane = useTabsStore((s) => {
+    if (resolved.mode !== "replacePane") {
+      return true;
+    }
+    const tab = s.tabs.find((t) => t.id === resolved.tabId);
+    return tab?.activeLeafId === resolved.leafId;
+  });
 
   // All actions in display order, so the arrow keys can walk one flat list
   // across both groups. Index into this for the highlighted row.

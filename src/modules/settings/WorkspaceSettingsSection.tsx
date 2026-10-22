@@ -242,7 +242,7 @@ export function WorkspaceSettingsSection() {
         />
         {t("workspace.autoResumeLabel")}
       </label>
-      <label className="mb-6 ml-6 flex items-center gap-2 text-sm text-fg">
+      <label className="mb-2 ml-6 flex items-center gap-2 text-sm text-fg">
         <input
           type="checkbox"
           checked={resumeWithLauncherFlags}
@@ -251,30 +251,29 @@ export function WorkspaceSettingsSection() {
         />
         {t("workspace.resumeWithFlagsLabel")}
       </label>
-
-      <label className="mb-1 block text-sm font-medium text-fg">
-        {t("workspace.launcherFlagsTitle")}
-      </label>
-      <p className="mb-2 text-xs text-fg-muted">{t("workspace.launcherFlagsDescription")}</p>
-      <div className="mb-6 space-y-2">
+      {/* The flags only take effect while the checkbox above is on, so they
+          sit beneath it and are disabled with it. */}
+      <div className="mb-6 ml-12 space-y-2">
         <label className="flex items-center gap-3 text-sm text-fg">
-          <span className="shrink-0 whitespace-nowrap">{t("workspace.claudeFlagsLabel")}</span>
+          <span className="w-28 shrink-0 whitespace-nowrap">{t("workspace.claudeFlagsLabel")}</span>
           <input
             type="text"
             value={claudeFlags}
+            disabled={!resumeWithLauncherFlags}
             placeholder={t("workspace.claudeFlagsPlaceholder")}
             onChange={(e) => setClaudeFlags(e.target.value)}
-            className="flex-1 rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent"
+            className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent disabled:opacity-50"
           />
         </label>
         <label className="flex items-center gap-3 text-sm text-fg">
-          <span className="shrink-0 whitespace-nowrap">{t("workspace.codexFlagsLabel")}</span>
+          <span className="w-28 shrink-0 whitespace-nowrap">{t("workspace.codexFlagsLabel")}</span>
           <input
             type="text"
             value={codexFlags}
+            disabled={!resumeWithLauncherFlags}
             placeholder={t("workspace.codexFlagsPlaceholder")}
             onChange={(e) => setCodexFlags(e.target.value)}
-            className="flex-1 rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent"
+            className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent disabled:opacity-50"
           />
         </label>
       </div>
