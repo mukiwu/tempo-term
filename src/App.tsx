@@ -632,16 +632,13 @@ function App() {
         useTabsStore.getState().openAllChangesTab();
         return;
       }
-      if (key === "t") {
+      if (key === "t" && !e.shiftKey) {
+        // ⌘T opens a terminal straight away. The launcher has no shortcut; it
+        // is reached from the tab bar's add button.
         e.preventDefault();
-        // ⇧⌘T opens a terminal straight away; ⌘T opens the launcher.
-        if (e.shiftKey) {
-          useTabsStore
-            .getState()
-            .newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
-        } else {
-          useTabsStore.getState().openLauncherTab();
-        }
+        useTabsStore
+          .getState()
+          .newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
       } else if (key === "p" && (!IS_WINDOWS || e.shiftKey)) {
         // Windows moved Find Files to Ctrl+Shift+P so a bare Ctrl+P reaches the
         // shell (readline's previous-history).

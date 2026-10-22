@@ -79,14 +79,18 @@ describe("isAppShortcut", () => {
     }
   });
 
-  it("keeps Ctrl+W/T/D for the app on Windows, Shift variants included", () => {
-    // Their Ctrl+Shift slots are already taken (Close Window, New Terminal Tab,
-    // Split Down), so these three have nowhere to move to yet and the app still
-    // wins. See #313.
-    for (const code of ["KeyW", "KeyT", "KeyD"]) {
+  it("keeps Ctrl+W/D for the app on Windows, Shift variants included", () => {
+    // Their Ctrl+Shift slots are already taken (Close Window, Split Down), so
+    // these have nowhere to move to yet and the app still wins. See #313.
+    for (const code of ["KeyW", "KeyD"]) {
       expect(win({ code, ctrlKey: true })).toBe(true);
       expect(win({ code, ctrlKey: true, shiftKey: true })).toBe(true);
     }
+  });
+
+  it("claims Ctrl+T for New Terminal Tab on Windows but hands Ctrl+Shift+T to the shell", () => {
+    expect(win({ code: "KeyT", ctrlKey: true })).toBe(true);
+    expect(win({ code: "KeyT", ctrlKey: true, shiftKey: true })).toBe(false);
   });
 
   it("hands Ctrl+B/P/N to the shell on Windows and claims the Shift variants", () => {

@@ -112,8 +112,8 @@ export function buildMenus(ctx: MenuContext): MenuDef[] {
       id: "file",
       labelKey: "menuBar.file",
       items: [
-        { id: "new-tab", labelKey: "menuBar.newTab", group: 0, shortcut: { mac: "⌘T", win: "Ctrl+T" }, action: { kind: "event", event: "menu:new-tab" } },
-        { id: "new-terminal-tab", labelKey: "menuBar.newTerminalTab", group: 0, shortcut: { mac: "⇧⌘T", win: "Ctrl+Shift+T" }, action: { kind: "event", event: "menu:new-terminal-tab" } },
+        { id: "new-tab", labelKey: "menuBar.newTab", group: 0, action: { kind: "event", event: "menu:new-tab" } },
+        { id: "new-terminal-tab", labelKey: "menuBar.newTerminalTab", group: 0, shortcut: { mac: "⌘T", win: "Ctrl+T" }, action: { kind: "event", event: "menu:new-terminal-tab" } },
         { id: "new-window", labelKey: "menuBar.newWindow", group: 0, shortcut: { mac: "⌘N", win: "Ctrl+Shift+N" }, action: { kind: "newWindow" } },
         { id: "save", labelKey: "menuBar.save", group: 1, shortcut: { mac: "⌘S", win: "Ctrl+S" }, action: { kind: "event", event: "menu:save" }, disabled: notEditor },
         { id: "close-tab", labelKey: "menuBar.closeTab", group: 2, shortcut: { mac: "⌘W", win: "Ctrl+W" }, action: { kind: "event", event: "menu:close-tab" } },
