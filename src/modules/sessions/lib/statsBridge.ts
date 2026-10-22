@@ -22,20 +22,27 @@ export interface StatsCards {
   messages_per_session: number;
   /** Total assistant output tokens in range (0 when none recorded). */
   output_tokens: number;
+  /** Uncached input tokens in range. */
+  input_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  tool_calls: number;
 }
 
 /** One calendar date with activity. Only dates with at least one message are
- *  present — the backend never emits zero-activity days. Carries all three
- *  metrics so the heatmap can toggle what its intensity encodes. */
+ *  present — the backend never emits zero-activity days. Carries every
+ *  metric so the heatmap can toggle what its intensity encodes. */
 export interface HeatmapDay {
   date: string;
   messages: number;
   sessions: number;
   output_tokens: number;
+  /** Input (uncached + cache read + cache write) plus output tokens. */
+  tokens: number;
 }
 
 /** Which per-day metric the activity heatmap shades by. */
-export type HeatmapMetric = "messages" | "sessions" | "output_tokens";
+export type HeatmapMetric = "messages" | "sessions" | "tokens";
 
 export interface TopSession {
   id: string;
@@ -50,6 +57,20 @@ export interface TopSession {
 export interface ModelTokens {
   model: string;
   output_tokens: number;
+  input_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+}
+
+/** One (date, model) row of the fixed last-7-days window. `model` is `""`
+ *  when the session recorded none. */
+export interface DailyModelTokens extends ModelTokens {
+  date: string;
+}
+
+export interface ToolCount {
+  name: string;
+  calls: number;
 }
 
 export interface WeeklyAgentRow {
@@ -57,12 +78,15 @@ export interface WeeklyAgentRow {
   sessions: number;
   messages: number;
   output_tokens: number;
+  /** Input (uncached + cache read + cache write) plus output tokens. */
+  tokens: number;
   models: ModelTokens[];
 }
 
 export interface SessionsStats {
   cards: StatsCards;
-  /** Ascending by date. */
+  /** Ascending by date. Covers at least the last 365 days regardless of the
+   *  range filter; all-time covers every date. */
   heatmap: HeatmapDay[];
   /** Up to 10, ordered by message count descending. */
   top_by_messages: TopSession[];
@@ -75,8 +99,12 @@ export interface SessionsStats {
    *  cost estimate. Excludes NULL-model tokens (which are still in
    *  `cards.output_tokens`). */
   range_models: ModelTokens[];
-  /** Messages per hour-of-day for today, always length 24 (index 0 = midnight). */
+  /** Messages per hour-of-day over the range, always length 24 (index 0 = midnight). */
   hourly: number[];
+  /** Last 7 local days per (date, model), independent of the range filter. */
+  daily_models: DailyModelTokens[];
+  /** Up to 10 most-invoked tools over the selected range. */
+  top_tools: ToolCount[];
 }
 
 /** Fetches aggregated dashboard stats. `days` narrows cards/heatmap/top

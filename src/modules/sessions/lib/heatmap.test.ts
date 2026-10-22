@@ -7,19 +7,20 @@ const day = (date: string, over: Partial<HeatmapDay> = {}): HeatmapDay => ({
   messages: 0,
   sessions: 0,
   output_tokens: 0,
+  tokens: 0,
   ...over,
 });
 
 describe("heatmapMax / heatmapLevel", () => {
   it("scales intensity to the max of the chosen metric", () => {
     const days = [
-      day("2026-07-01", { messages: 2, output_tokens: 5000 }),
-      day("2026-07-02", { messages: 40, output_tokens: 100 }),
+      day("2026-07-01", { messages: 2, tokens: 5000 }),
+      day("2026-07-02", { messages: 40, tokens: 100 }),
     ];
     expect(heatmapMax(days, "messages")).toBe(40);
-    expect(heatmapMax(days, "output_tokens")).toBe(5000);
+    expect(heatmapMax(days, "tokens")).toBe(5000);
     // Same day is top intensity by tokens but low by messages.
-    expect(heatmapLevel(days[0].output_tokens, 5000)).toBe(4);
+    expect(heatmapLevel(days[0].tokens, 5000)).toBe(4);
     expect(heatmapLevel(days[0].messages, 40)).toBe(1);
   });
 

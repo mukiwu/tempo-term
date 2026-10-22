@@ -21,7 +21,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use super::claude::{epoch_ms, local_bucket};
+use super::claude::{epoch_ms, local_bucket, tool_buckets};
 use super::types::{ActivityBucket, ParsedSession, TranscriptMessage};
 
 /// Tool call argument preview length, matching claude.rs's convention.
@@ -69,6 +69,7 @@ fn get_or_create_bucket(buckets: &mut HashMap<(String, u8), ActivityBucket>, ts:
         messages: 0,
         user_messages: 0,
         output_tokens: 0,
+        ..Default::default()
     })
 }
 
@@ -101,6 +102,10 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
     let mut started_at = i64::MAX;
     let mut ended_at = i64::MIN;
     let mut buckets: HashMap<(String, u8), ActivityBucket> = HashMap::new();
+    let mut tool_counts: HashMap<(String, String), i64> = HashMap::new();
+    // Last cumulative (uncached input, cached input, cache write) totals, so
+    // each token_count event contributes only its delta to the buckets.
+    let mut input_totals: (i64, i64, i64) = (0, 0, 0);
 
     for value in &lines {
         let ts = value.get("timestamp").and_then(Value::as_str).and_then(epoch_ms);
@@ -186,11 +191,34 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
                         // Cumulative counter: keep the last value seen (not a
                         // running sum), but saturate the bucket delta so a
                         // corrupt/decreasing value can't underflow.
-                        if let Some(total) = payload
-                            .get("info")
-                            .and_then(|i| i.get("total_token_usage"))
-                            .and_then(|u| u.get("output_tokens"))
-                            .and_then(Value::as_i64)
+                        let usage = payload.get("info").and_then(|i| i.get("total_token_usage"));
+                        let usage_field =
+                            |key: &str| usage.and_then(|u| u.get(key)).and_then(Value::as_i64).unwrap_or(0);
+                        if usage.is_some() {
+                            // Codex reports cached reads inside `input_tokens`;
+                            // split them out to match Claude's accounting.
+                            let cached = usage_field("cached_input_tokens");
+                            let next = (
+                                usage_field("input_tokens").saturating_sub(cached).max(0),
+                                cached,
+                                usage_field("cache_write_input_tokens"),
+                            );
+                            let delta = (
+                                next.0.saturating_sub(input_totals.0).max(0),
+                                next.1.saturating_sub(input_totals.1).max(0),
+                                next.2.saturating_sub(input_totals.2).max(0),
+                            );
+                            input_totals = next;
+                            if let Some(ts) = ts {
+                                if delta != (0, 0, 0) {
+                                    let bucket = get_or_create_bucket(&mut buckets, ts);
+                                    bucket.input_tokens = bucket.input_tokens.saturating_add(delta.0);
+                                    bucket.cache_read_tokens = bucket.cache_read_tokens.saturating_add(delta.1);
+                                    bucket.cache_write_tokens = bucket.cache_write_tokens.saturating_add(delta.2);
+                                }
+                            }
+                        }
+                        if let Some(total) = usage.and_then(|u| u.get("output_tokens")).and_then(Value::as_i64)
                         {
                             let delta = total.saturating_sub(output_tokens.unwrap_or(0));
                             output_tokens = Some(total);
@@ -233,6 +261,15 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
                 // function_call/custom_tool_call and their *_output records
                 // are tool plumbing, not conversational messages; they don't
                 // affect message_count.
+                if matches!(rtype, "function_call" | "custom_tool_call") {
+                    if let Some(ts) = ts {
+                        let name = payload.get("name").and_then(Value::as_str).unwrap_or("tool");
+                        let bucket = get_or_create_bucket(&mut buckets, ts);
+                        bucket.tool_calls += 1;
+                        let date = bucket.date.clone();
+                        *tool_counts.entry((date, name.to_string())).or_insert(0) += 1;
+                    }
+                }
             }
             _ => {}
         }
@@ -255,6 +292,7 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
 
     let mut activity: Vec<ActivityBucket> = buckets.into_values().collect();
     activity.sort_by(|a, b| (a.date.as_str(), a.hour).cmp(&(b.date.as_str(), b.hour)));
+    let tools = tool_buckets(tool_counts);
 
     Some(ParsedSession {
         id,
@@ -268,6 +306,7 @@ pub fn parse_codex_meta(path: &Path) -> Option<ParsedSession> {
         output_tokens,
         model,
         activity,
+        tools,
     })
 }
 
@@ -416,6 +455,26 @@ mod tests {
         // The injected-only turn has nothing typed to render.
         assert_eq!(roles, vec!["user", "assistant"]);
         assert_eq!(t[0].text, "fix the codex title");
+    }
+
+    #[test]
+    fn token_counts_split_cached_input_and_tool_calls_are_tallied() {
+        let contents = concat!(
+            r#"{"timestamp":"2026-09-01T02:00:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"go"}}"#, "\n",
+            r#"{"timestamp":"2026-09-01T02:00:02.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{}"}}"#, "\n",
+            r#"{"timestamp":"2026-09-01T02:00:03.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","input":""}}"#, "\n",
+            r#"{"timestamp":"2026-09-01T02:00:04.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":60,"output_tokens":5}}}}"#, "\n",
+            r#"{"timestamp":"2026-09-01T02:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":250,"cached_input_tokens":180,"output_tokens":9}}}}"#, "\n",
+        );
+        let meta = parse_codex_meta(&write_fixture("tokens", contents)).unwrap();
+        let sum = |f: fn(&ActivityBucket) -> i64| meta.activity.iter().map(f).sum::<i64>();
+        // Final cumulative: 250 input of which 180 cached -> 70 uncached.
+        assert_eq!(sum(|b| b.input_tokens), 70);
+        assert_eq!(sum(|b| b.cache_read_tokens), 180);
+        assert_eq!(sum(|b| b.output_tokens), 9);
+        assert_eq!(sum(|b| b.tool_calls), 2);
+        let names: Vec<&str> = meta.tools.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec!["apply_patch", "shell"]);
     }
 
     #[test]

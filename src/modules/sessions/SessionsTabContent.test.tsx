@@ -127,6 +127,10 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
       active_days: 0,
       messages_per_session: 0,
       output_tokens: 0,
+      input_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      tool_calls: 0,
     },
     heatmap: [],
     top_by_messages: [],
@@ -134,6 +138,8 @@ function stats(overrides: Partial<SessionsStats> = {}): SessionsStats {
     weekly: [],
     range_models: [],
     hourly: new Array(24).fill(0),
+    daily_models: [],
+    top_tools: [],
     ...overrides,
   };
 }
@@ -170,7 +176,7 @@ describe("SessionsTabContent", () => {
 
     render(<SessionsTabContent />);
 
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 365 }));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("sessions_stats", { days: 30 }));
     expect(screen.getByText("sessions.dashboard.title")).toBeInTheDocument();
   });
 

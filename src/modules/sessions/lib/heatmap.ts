@@ -101,7 +101,7 @@ export function heatmapWeeks(
         week.push(null);
       } else {
         const key = toDateKey(cellDate);
-        week.push(byDate.get(key) ?? { date: key, messages: 0, sessions: 0, output_tokens: 0 });
+        week.push(byDate.get(key) ?? { date: key, messages: 0, sessions: 0, output_tokens: 0, tokens: 0 });
       }
     }
     weeks.push(week);
