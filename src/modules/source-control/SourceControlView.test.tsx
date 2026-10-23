@@ -269,7 +269,8 @@ describe("SourceControlView row interactions", () => {
       rel: "src/deep/b.ts",
       staged: false,
     });
-    expect(screen.getByText("src/a.ts")).toBeInTheDocument();
+    // The working tree list loads on its own; wait for it rather than racing it.
+    expect(await screen.findByText("src/a.ts")).toBeInTheDocument();
   });
 
   it("opens the staged side as a staged diff while a comparison page is in front", async () => {

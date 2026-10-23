@@ -647,8 +647,13 @@ describe("AllChangesTabContent", () => {
     Object.defineProperty(root, "scrollTop", {
       configurable: true,
       get: () => scrollTop,
+      // Only writes that move the page count: a component re-applying the
+      // offset it already has is not a jump, and when it happens depends on
+      // render timing, which made this test flaky on a busy CI runner.
       set: (v: number) => {
-        writes.push(v);
+        if (v !== scrollTop) {
+          writes.push(v);
+        }
         scrollTop = v;
       },
     });
@@ -1185,7 +1190,9 @@ describe("AllChangesTabContent", () => {
     act(() => useWorkspaceStore.setState({ rootPath: "/outside" }));
 
     await waitFor(() => expect(screen.getByText("noRepo")).toBeInTheDocument());
-    expect(useAllChangesLinkStore.getState().listing[PANE]).toBeUndefined();
+    // The linked listing is cleared by its own effect, which can land a tick
+    // after the empty state renders.
+    await waitFor(() => expect(useAllChangesLinkStore.getState().listing[PANE]).toBeUndefined());
     expect(container.querySelectorAll("[data-diff-file]")).toHaveLength(0);
   });
 

@@ -23,11 +23,13 @@ export function withGutterHint<T extends HTMLElement>(
    * whose label changes as it is pressed keeps the same element. */
   label: string | (() => string),
 ): T {
-  let orphanCheck: number | null = null;
+  // Plain setInterval rather than window's: a check still pending when a test
+  // environment is torn down would otherwise throw on a missing window.
+  let orphanCheck: ReturnType<typeof setInterval> | null = null;
   const read = () => (typeof label === "string" ? label : label());
   const hide = () => {
     if (orphanCheck !== null) {
-      window.clearInterval(orphanCheck);
+      clearInterval(orphanCheck);
       orphanCheck = null;
     }
     state.tip?.remove();
@@ -57,7 +59,7 @@ export function withGutterHint<T extends HTMLElement>(
     // rebuild, or in the all-changes view a file scrolls out of the mounted
     // window entirely. A removed element never fires mouseleave, so without
     // this the hint is stranded on the body for the rest of the session.
-    orphanCheck = window.setInterval(() => {
+    orphanCheck = setInterval(() => {
       if (!el.isConnected) {
         hide();
       }
