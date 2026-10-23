@@ -17,6 +17,7 @@
 - 關閉前確認改為從不、執行中時與一律三種模式，原本的開關設定會自動對應 (#487)
 - 設定的快捷鍵頁可自訂 13 個常用指令的快捷鍵，點選後按下新按鍵即可變更，也可還原預設 (#489)
 - 快捷鍵設定新增全域快捷鍵，可在任何 app 中叫出或隱藏 TempoTerm，預設未設定 (#491)
+- 設定新增 SSH 區塊，可查看已信任的主機金鑰與 fingerprint，並移除不再信任的主機 (#493)
 
 ### fix
 
@@ -45,6 +46,7 @@
 - Close confirmation now offers Never, Running programs and Always; the previous on/off setting carries over (#487)
 - Reassign the shortcuts of 13 common commands in Settings > Shortcuts: click one, press the new keys, or restore the default (#489)
 - Add a global hotkey in the shortcut settings that brings TempoTerm to the front from any app, or hides it; off by default (#491)
+- Add an SSH section to Settings that lists trusted host keys with their fingerprints and lets you remove one (#493)
 
 ### fix
 
