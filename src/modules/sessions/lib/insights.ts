@@ -95,7 +95,7 @@ export function dailyUsage(rows: DailyModelTokens[], end: Date): DailyUsage[] {
     const date = dateKey(new Date(end.getFullYear(), end.getMonth(), end.getDate() - 6 + i));
     const day = rows.filter((r) => r.date === date);
     const sum = (pick: (r: DailyModelTokens) => number) => day.reduce((acc, r) => acc + pick(r), 0);
-    const cost = estimateCost(day);
+    const cost = estimateCost(day, date);
     const input = sum((r) => r.input_tokens);
     const cacheRead = sum((r) => r.cache_read_tokens);
     const cacheWrite = sum((r) => r.cache_write_tokens);

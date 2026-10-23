@@ -68,12 +68,12 @@
 //!     (last `gen_metadata` row wins, mirroring Codex's "last
 //!     `turn_context`'s model wins" convention, in case a session switches
 //!     models mid-way).
-//!   - No field anywhere in the sampled blobs carries a labelled
-//!     input/output token count: the numeric fields near the model info are
-//!     unlabelled varints (byte offsets, hashes, latency numbers) with no
-//!     way to confidently tell "output tokens" apart from other counters.
-//!     Per the brief's documented-degradation rule, `output_tokens` ships as
-//!     `None` for this agent.
+//!   - The first spike found no labelled token counts. A second pass
+//!     (2026-10-23) located per-call usage on each step's metadata; see
+//!     `STEP_METADATA_USAGE_FIELD` for the fields and how they were
+//!     verified. Newer builds also moved the model id into the generation
+//!     config (`3.28`) and the assistant text to `20.1`; both old and new
+//!     locations are read.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -96,6 +96,9 @@ const PAYLOAD_FIELD_USER_WRAPPER: u32 = 19;
 const PAYLOAD_FIELD_USER_TEXT: u32 = 2;
 const PAYLOAD_FIELD_ASSISTANT_WRAPPER: u32 = 20;
 const PAYLOAD_FIELD_ASSISTANT_TEXT: u32 = 3;
+/// Newer CLI builds (seen from 2026-09) moved the assistant's visible text to
+/// sub-field 1 of the same wrapper; sub-field 3 no longer appears.
+const PAYLOAD_FIELD_ASSISTANT_TEXT_NEW: u32 = 1;
 /// Real shape: field 5 is a step-metadata wrapper; the actual `Timestamp`
 /// submessage is one level deeper, at this sub-field.
 const TIMESTAMP_WRAPPER_INNER_FIELD: u32 = 1;
@@ -106,6 +109,23 @@ const MAX_TITLE_CHARS: usize = 80;
 /// submessage (see the module doc for how these were identified).
 const GEN_METADATA_INNER_FIELD: u32 = 1;
 const GEN_METADATA_MODEL_NAME_FIELD: u32 = 21;
+/// Newer builds: the generation config at top-level field 3 carries the
+/// model id at sub-field 28, e.g. `"gemini-3.8-flash-medium"`.
+const GEN_METADATA_CONFIG_FIELD: u32 = 3;
+const GEN_METADATA_CONFIG_MODEL_FIELD: u32 = 28;
+
+/// Per-call token usage on a step's metadata (`step_payload` field 5,
+/// sub-field 9). Unlabelled in the protobuf; identified 2026-10-23 against
+/// ~500 local DBs, where on every row output = thinking (9) + visible
+/// reply (10), and the uncached prompt (2) plus cached prompt (5) of one
+/// call matches the previous call's context plus its output. Per-step sums
+/// equal the `gen_metadata` totals for the same DB.
+const STEP_METADATA_USAGE_FIELD: u32 = 9;
+/// How many of the newest `gen_metadata` rows `extract_model` checks.
+const MODEL_SCAN_ROWS: usize = 20;
+const USAGE_INPUT_FIELD: u32 = 2;
+const USAGE_OUTPUT_FIELD: u32 = 3;
+const USAGE_CACHE_READ_FIELD: u32 = 5;
 
 /// Opens a trajectory DB read-only. Any failure (missing file, locked by the
 /// Antigravity CLI process, corrupt SQLite header, ...) yields `None` rather
@@ -135,9 +155,11 @@ fn extract_text(fields: &[(u32, ProtoValue)], is_user: bool) -> Option<String> {
     } else {
         (PAYLOAD_FIELD_ASSISTANT_WRAPPER, PAYLOAD_FIELD_ASSISTANT_TEXT)
     };
-    let real_shape = first_bytes(fields, wrapper_field)
-        .map(parse_fields)
-        .and_then(|inner| first_bytes(&inner, text_subfield).map(<[u8]>::to_vec));
+    let real_shape = first_bytes(fields, wrapper_field).map(parse_fields).and_then(|inner| {
+        first_bytes(&inner, text_subfield)
+            .or_else(|| if is_user { None } else { first_bytes(&inner, PAYLOAD_FIELD_ASSISTANT_TEXT_NEW) })
+            .map(<[u8]>::to_vec)
+    });
     let text_bytes = real_shape.or_else(|| first_bytes(fields, PAYLOAD_FIELD_TEXT_LEGACY).map(<[u8]>::to_vec))?;
     let text = std::str::from_utf8(&text_bytes).ok()?.to_string();
     if text.trim().is_empty() {
@@ -168,32 +190,38 @@ fn extract_timestamp_ms(fields: &[(u32, ProtoValue)]) -> Option<i64> {
 /// any other `step_type`, and steps whose payload can't be decoded or
 /// carries no (non-blank) text, are skipped entirely — they never count
 /// toward message totals or appear in the transcript.
-fn read_steps(conn: &Connection) -> Vec<Step> {
+///
+/// Also returns the token usage of every model call, which any step type can
+/// carry (some calls hang off non-conversational steps), decoded in the same
+/// pass so each payload is parsed once.
+fn read_steps(conn: &Connection) -> (Vec<Step>, Vec<StepUsage>) {
     let mut stmt = match conn.prepare("SELECT step_type, step_payload FROM steps ORDER BY idx") {
         Ok(s) => s,
-        Err(_) => return Vec::new(),
+        Err(_) => return (Vec::new(), Vec::new()),
     };
     let rows = stmt.query_map([], |row| {
         let step_type: i64 = row.get(0)?;
         let payload: Option<Vec<u8>> = row.get(1)?;
         Ok((step_type, payload))
     });
-    let Ok(rows) = rows else { return Vec::new() };
+    let Ok(rows) = rows else { return (Vec::new(), Vec::new()) };
 
     let mut steps = Vec::new();
+    let mut usage = Vec::new();
     for (step_type, payload) in rows.flatten() {
+        let Some(payload) = payload else { continue };
+        let fields = parse_fields(&payload);
+        usage.extend(extract_usage(&fields));
         let is_user = match step_type {
             STEP_TYPE_USER => true,
             STEP_TYPE_ASSISTANT => false,
             _ => continue,
         };
-        let Some(payload) = payload else { continue };
-        let fields = parse_fields(&payload);
         let Some(text) = extract_text(&fields, is_user) else { continue };
         let ts = extract_timestamp_ms(&fields);
         steps.push(Step { is_user, text, timestamp_ms: ts });
     }
-    steps
+    (steps, usage)
 }
 
 /// The DB file's mtime in epoch milliseconds, used as a step's timestamp
@@ -205,25 +233,56 @@ fn file_mtime_ms(path: &Path) -> Option<i64> {
     i64::try_from(since_epoch.as_millis()).ok()
 }
 
-/// Extracts the model display name from the most recent `gen_metadata` row
-/// (last row wins, mirroring Codex's "last `turn_context`'s model wins", in
-/// case a session switches models mid-way). See the module doc for how
-/// field 21 was identified. `None` when there are no `gen_metadata` rows,
-/// the blob can't be decoded, or the field is missing/blank.
+/// The model of the most recent `gen_metadata` row that names one (later
+/// rows win, mirroring Codex's "last `turn_context`'s model wins", in case a
+/// session switches models mid-way). Newer builds name it in the generation
+/// config (`3.28`, e.g. `"gemini-3.8-flash-medium"`), which only some rows
+/// carry; older builds use a display string at `1.21`. Only the newest
+/// `MODEL_SCAN_ROWS` rows are checked, since rows can be ~80KB each. `None`
+/// when none of them names a model.
 fn extract_model(conn: &Connection) -> Option<String> {
-    let data: Vec<u8> = conn
-        .query_row("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 1", [], |row| row.get(0))
+    let mut stmt = conn
+        .prepare(&format!("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT {MODEL_SCAN_ROWS}"))
         .ok()?;
-    let top = parse_fields(&data);
-    let inner_bytes = first_bytes(&top, GEN_METADATA_INNER_FIELD)?;
-    let inner = parse_fields(inner_bytes);
-    let model_bytes = first_bytes(&inner, GEN_METADATA_MODEL_NAME_FIELD)?;
-    let model = std::str::from_utf8(model_bytes).ok()?.trim();
-    if model.is_empty() {
-        None
-    } else {
-        Some(model.to_string())
+    let rows = stmt.query_map([], |row| row.get::<_, Vec<u8>>(0)).ok()?;
+    for data in rows.flatten() {
+        let top = parse_fields(&data);
+        let from_config = first_bytes(&top, GEN_METADATA_CONFIG_FIELD)
+            .map(parse_fields)
+            .and_then(|config| first_bytes(&config, GEN_METADATA_CONFIG_MODEL_FIELD).map(<[u8]>::to_vec));
+        let legacy = || {
+            first_bytes(&top, GEN_METADATA_INNER_FIELD)
+                .map(parse_fields)
+                .and_then(|inner| first_bytes(&inner, GEN_METADATA_MODEL_NAME_FIELD).map(<[u8]>::to_vec))
+        };
+        let Some(bytes) = from_config.or_else(legacy) else { continue };
+        let Ok(model) = std::str::from_utf8(&bytes) else { continue };
+        if !model.trim().is_empty() {
+            return Some(model.trim().to_string());
+        }
     }
+    None
+}
+
+/// One model call's token usage, read off a step's metadata.
+struct StepUsage {
+    timestamp_ms: Option<i64>,
+    input: i64,
+    cache_read: i64,
+    output: i64,
+}
+
+/// A step's model-call usage, from its metadata (field 5, sub-field 9).
+fn extract_usage(fields: &[(u32, ProtoValue)]) -> Option<StepUsage> {
+    let metadata = parse_fields(first_bytes(fields, PAYLOAD_FIELD_TIMESTAMP)?);
+    let counts = parse_fields(first_bytes(&metadata, STEP_METADATA_USAGE_FIELD)?);
+    let count = |field| first_varint(&counts, field).map_or(0, |v| i64::try_from(v).unwrap_or(i64::MAX));
+    Some(StepUsage {
+        timestamp_ms: extract_timestamp_ms(fields),
+        input: count(USAGE_INPUT_FIELD),
+        cache_read: count(USAGE_CACHE_READ_FIELD),
+        output: count(USAGE_OUTPUT_FIELD),
+    })
 }
 
 /// Parse an Antigravity CLI trajectory DB into index metadata, or `None`
@@ -231,7 +290,7 @@ fn extract_model(conn: &Connection) -> Option<String> {
 /// user/assistant steps carrying text.
 pub fn parse_antigravity_meta(path: &Path) -> Option<ParsedSession> {
     let conn = open_read_only(path)?;
-    let steps = read_steps(&conn);
+    let (steps, usage) = read_steps(&conn);
     if steps.is_empty() {
         return None;
     }
@@ -271,6 +330,22 @@ pub fn parse_antigravity_meta(path: &Path) -> Option<ParsedSession> {
         }
     }
 
+    let mut output_tokens: Option<i64> = None;
+    for call in &usage {
+        let total = output_tokens.get_or_insert(0);
+        *total = total.saturating_add(call.output);
+        let Some(ts) = call.timestamp_ms.or(fallback_ts) else { continue };
+        let (date, hour) = local_bucket(ts);
+        let bucket = buckets.entry((date.clone(), hour)).or_insert_with(|| ActivityBucket {
+            date,
+            hour,
+            ..Default::default()
+        });
+        bucket.input_tokens = bucket.input_tokens.saturating_add(call.input);
+        bucket.cache_read_tokens = bucket.cache_read_tokens.saturating_add(call.cache_read);
+        bucket.output_tokens = bucket.output_tokens.saturating_add(call.output);
+    }
+
     if started_at > ended_at {
         started_at = 0;
         ended_at = 0;
@@ -289,7 +364,7 @@ pub fn parse_antigravity_meta(path: &Path) -> Option<ParsedSession> {
         ended_at,
         message_count,
         user_message_count,
-        output_tokens: None, // see module doc: no confidently identifiable field
+        output_tokens,
         model: extract_model(&conn),
         activity,
         tools: Vec::new(),
@@ -301,7 +376,7 @@ pub fn parse_antigravity_meta(path: &Path) -> Option<ParsedSession> {
 /// failure — the viewer just shows nothing rather than panicking.
 pub fn parse_antigravity_transcript(path: &Path) -> Vec<TranscriptMessage> {
     let Some(conn) = open_read_only(path) else { return Vec::new() };
-    let steps = read_steps(&conn);
+    let (steps, _) = read_steps(&conn);
     let fallback_ts = file_mtime_ms(path);
 
     steps
@@ -481,6 +556,7 @@ mod tests {
         assert_eq!(meta.started_at, 1_751_760_000_500);
         assert_eq!(meta.ended_at, 1_751_760_060_000);
         assert_eq!(meta.model.as_deref(), Some("Gemini Test Model"));
+        // The legacy fixture carries no usage records.
         assert_eq!(meta.output_tokens, None);
     }
 
@@ -494,6 +570,74 @@ mod tests {
         assert_eq!(t[1].role, "assistant");
         assert_eq!(t[1].text, "real assistant reply");
         assert_eq!(t[1].timestamp, Some(1_751_760_060_000));
+    }
+
+    /// A step payload in the 2026-09+ encoding: assistant text at field 20
+    /// sub-field 1, and per-call usage at field 5 sub-field 9.
+    fn new_shape_step(is_user: bool, ts_seconds: u64, text: &str, usage: Option<(u64, u64, u64)>) -> Vec<u8> {
+        let mut ts = Vec::new();
+        field_varint(1, ts_seconds, &mut ts);
+        let mut metadata = Vec::new();
+        field_bytes(1, &ts, &mut metadata);
+        if let Some((input, cache_read, output)) = usage {
+            let mut counts = Vec::new();
+            field_varint(1, 1320, &mut counts); // model enum, ignored
+            field_varint(2, input, &mut counts);
+            field_varint(3, output, &mut counts);
+            field_varint(5, cache_read, &mut counts);
+            field_varint(6, 24, &mut counts); // constant, ignored
+            field_bytes(9, &counts, &mut metadata);
+        }
+        let mut content = Vec::new();
+        field_bytes(if is_user { 2 } else { 1 }, text.as_bytes(), &mut content);
+        let mut buf = Vec::new();
+        field_bytes(5, &metadata, &mut buf);
+        field_bytes(if is_user { 19 } else { 20 }, &content, &mut buf);
+        buf
+    }
+
+    #[test]
+    fn newer_shape_reads_assistant_text_usage_and_config_model() {
+        let dir = std::env::temp_dir().join(format!("tt-ag-new-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("new-shape.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE steps(idx INTEGER PRIMARY KEY, step_type INTEGER NOT NULL DEFAULT 0,
+               status INTEGER NOT NULL DEFAULT 0, step_payload BLOB, step_format INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE gen_metadata(idx INTEGER PRIMARY KEY, data BLOB, size INTEGER NOT NULL DEFAULT 0);",
+        ).unwrap();
+        conn.execute("INSERT INTO steps(idx, step_type, step_payload) VALUES(0, 14, ?1)",
+            params![new_shape_step(true, 1_790_000_000, "question", None)]).unwrap();
+        conn.execute("INSERT INTO steps(idx, step_type, step_payload) VALUES(1, 15, ?1)",
+            params![new_shape_step(false, 1_790_000_010, "answer", Some((13_000, 0, 12)))]).unwrap();
+        // A non-conversational step that still carries a model call's usage.
+        conn.execute("INSERT INTO steps(idx, step_type, step_payload) VALUES(2, 23, ?1)",
+            params![new_shape_step(false, 1_790_000_020, "", Some((500, 20_000, 30)))]).unwrap();
+
+        // Newest row has no config; the model comes from the older one.
+        let mut config = Vec::new();
+        field_bytes(28, b"gemini-3.8-flash-medium", &mut config);
+        let mut with_model = Vec::new();
+        field_bytes(3, &config, &mut with_model);
+        conn.execute("INSERT INTO gen_metadata(idx, data) VALUES(0, ?1)", params![with_model]).unwrap();
+        let mut without = Vec::new();
+        field_varint(2, 5, &mut without);
+        conn.execute("INSERT INTO gen_metadata(idx, data) VALUES(1, ?1)", params![without]).unwrap();
+
+        let meta = parse_antigravity_meta(&path).unwrap();
+        assert_eq!(meta.message_count, 2);
+        assert_eq!(meta.user_message_count, 1);
+        assert_eq!(meta.model.as_deref(), Some("gemini-3.8-flash-medium"));
+        assert_eq!(meta.output_tokens, Some(42));
+        let sum = |f: fn(&ActivityBucket) -> i64| meta.activity.iter().map(f).sum::<i64>();
+        assert_eq!(sum(|b| b.input_tokens), 13_500);
+        assert_eq!(sum(|b| b.cache_read_tokens), 20_000);
+        assert_eq!(sum(|b| b.output_tokens), 42);
+
+        let t = parse_antigravity_transcript(&path);
+        assert_eq!(t.iter().map(|m| m.text.as_str()).collect::<Vec<_>>(), vec!["question", "answer"]);
     }
 
     /// Prints one decoded protobuf field for the spike/sanity dumps: field

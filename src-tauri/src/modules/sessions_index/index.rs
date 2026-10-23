@@ -16,7 +16,9 @@ use super::types::{ParsedSession, SessionSummary};
 // "3": input/cache token columns, tool-call counts and the `tool_usage`
 // table; Claude usage is now counted once per API message id instead of once
 // per content-block line, which also corrects inflated output totals.
-pub const SCHEMA_VERSION: &str = "3";
+// "4": Antigravity token usage, its newer model field and assistant text
+// location. Like every bump, this rebuilds the whole index from source files.
+pub const SCHEMA_VERSION: &str = "4";
 
 pub struct Index {
     pub(crate) conn: Connection,

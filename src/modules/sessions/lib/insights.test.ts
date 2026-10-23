@@ -70,7 +70,7 @@ describe("dailyUsage", () => {
       "2026-10-16", "2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22",
     ]);
     expect(days[5].output).toBe(1_000_000);
-    expect(days[5].usd).toBe(15);
+    expect(days[5].usd).toBe(10);
     expect(days[6].total).toBe(0);
   });
 
