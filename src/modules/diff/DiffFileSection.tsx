@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useActiveThemeId } from "@/themes/useActiveThemeId";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { gitFileAtRev } from "@/modules/source-control/lib/gitBridge";
@@ -125,7 +126,7 @@ export function DiffFileSection({
   const viewsRef = useRef<DiffViews | null>(null);
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
-  const themeId = useSettingsStore((s) => s.themeId);
+  const themeId = useActiveThemeId();
   const wordWrap = useSettingsStore((s) => s.wordWrap);
   const unified = useSettingsStore((s) => s.diffUnified);
   const [docs, setDocs] = useState<DiffDocs | null>(null);

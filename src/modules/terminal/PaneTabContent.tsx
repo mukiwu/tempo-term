@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useActiveThemeId } from "@/themes/useActiveThemeId";
 import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import { TerminalView } from "./TerminalView";
@@ -70,7 +71,6 @@ import { useUiStore, selectAnyOverlayOpen } from "@/stores/uiStore";
 import { shouldShowPreview } from "@/modules/preview/lib/previewWebview";
 import { useRemoteExplorerRoot } from "@/modules/ssh/lib/useRemoteExplorerRoot";
 import { useOsc7FallbackHint } from "@/modules/ssh/lib/useOsc7FallbackHint";
-import { useSettingsStore } from "@/stores/settingsStore";
 import { useBackgroundImage } from "@/lib/useBackgroundImage";
 import { terminalThemeWithBackground } from "./lib/backgroundTheme";
 
@@ -95,7 +95,7 @@ const HEADERLESS_KINDS = new Set<PaneContent["kind"]>([
  */
 export function PaneTabContent({ tab }: { tab: Tab }) {
   const { t } = useTranslation();
-  const themeId = useSettingsStore((s) => s.themeId);
+  const themeId = useActiveThemeId();
   const {
     terminalOpacity: terminalBackgroundImageOpacity,
     active: backgroundImageActive,

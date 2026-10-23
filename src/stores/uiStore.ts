@@ -218,6 +218,10 @@ interface UiState {
    *  its accelerators meanwhile, or pressing a chord the menu owns would run
    *  the command instead of recording it. */
   recordingShortcut: boolean;
+  /** A theme shown on the whole window while the pointer rests on it in
+   *  settings; null when nothing is being previewed. */
+  previewThemeId: string | null;
+  setPreviewThemeId: (id: string | null) => void;
   setRecordingShortcut: (recording: boolean) => void;
   /**
    * The worktrees manager, or null when closed. Deliberately not a `PanelId`:
@@ -283,6 +287,7 @@ export const useUiStore = create<UiState>((set) => {
     fileFinderOpen: false,
     commandPaletteOpen: false,
     recordingShortcut: false,
+    previewThemeId: null,
     worktreesModal: null,
     overlayCount: 0,
 
@@ -348,6 +353,7 @@ export const useUiStore = create<UiState>((set) => {
     setFileFinderOpen: (fileFinderOpen) => set({ fileFinderOpen }),
     setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
     setRecordingShortcut: (recordingShortcut) => set({ recordingShortcut }),
+    setPreviewThemeId: (previewThemeId) => set({ previewThemeId }),
 
     openWorktrees: (scope, repoPath = null) =>
       set({ worktreesModal: { scope, repoPath: scope === "global" ? null : repoPath } }),

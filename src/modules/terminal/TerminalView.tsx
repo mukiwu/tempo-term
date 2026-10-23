@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { activeThemeId, useActiveThemeId } from "@/themes/useActiveThemeId";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -243,7 +244,7 @@ export function TerminalView({
 
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
-  const themeId = useSettingsStore((s) => s.themeId);
+  const themeId = useActiveThemeId();
   const {
     terminalOpacity: terminalBackgroundImageOpacity,
     textColor: backgroundImageTextColor,
@@ -370,7 +371,7 @@ export function TerminalView({
       fontFamily: selectTerminalFontFamily(initial),
       fontSize: initial.fontSize,
       theme: terminalThemeWithBackground(
-        settings.themeId,
+        activeThemeId(),
         settings.backgroundImagePath && settings.backgroundImageOpacity > 0
           ? settings.terminalBackgroundImageOpacity
           : 0,
