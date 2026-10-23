@@ -262,5 +262,10 @@
     "slashMenu": "Open block menu",
     "exitCodeBlock": "Exit code block",
     "commandPalette": "Command palette"
+  },
+  "search": {
+    "placeholder": "Search settings",
+    "noResults": "No matching settings",
+    "results": "Search results"
   }
 }
