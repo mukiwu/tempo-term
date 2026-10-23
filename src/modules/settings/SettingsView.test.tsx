@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { SettingsView } from "./SettingsView";
@@ -28,7 +28,11 @@ vi.mock("./FontsSettingsSection", () => ({
   FontsSettingsSection: () => <div data-testid="section-fonts" />,
 }));
 vi.mock("./TerminalSettingsSection", () => ({
-  TerminalSettingsSection: () => <div data-testid="section-terminal" />,
+  TerminalSettingsSection: () => (
+    <div data-testid="section-terminal">
+      <label>Confirm before closing running terminals</label>
+    </div>
+  ),
 }));
 vi.mock("./AiSettingsSection", () => ({
   AiSettingsSection: () => <div data-testid="section-ai" />,
@@ -219,5 +223,48 @@ describe("SettingsView language switch native-menu sync (macOS)", () => {
 
     expect(invokeMock).not.toHaveBeenCalled();
     expect(screen.queryByTestId("language-restart-hint")).not.toBeInTheDocument();
+  });
+});
+
+describe("SettingsView search", () => {
+  it("lists matching settings and jumps to the chosen one", () => {
+    vi.useFakeTimers();
+    try {
+      render(<SettingsView />);
+      fireEvent.change(screen.getByRole("searchbox"), { target: { value: "closing" } });
+      const results = screen.getByRole("list", { name: "Search results" });
+      fireEvent.click(within(results).getByText("Confirm before closing running terminals"));
+
+      expect(screen.getByTestId("section-terminal")).toBeInTheDocument();
+      const label = screen.getByText("Confirm before closing running terminals");
+      expect(label).toHaveClass("settings-search-hit");
+      act(() => vi.advanceTimersByTime(2000));
+      expect(label).not.toHaveClass("settings-search-hit");
+      // The search clears once a result is opened, bringing the sections back.
+      expect(screen.getByRole("searchbox")).toHaveValue("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("finds a setting by its English name in another language", async () => {
+    const { default: i18n } = await import("@/i18n");
+    await i18n.changeLanguage("zh-Hant");
+    try {
+      render(<SettingsView />);
+      fireEvent.change(screen.getByRole("searchbox"), { target: { value: "custom shell" } });
+      expect(screen.getByText("自訂 shell 路徑")).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("en");
+    }
+  });
+
+  it("shows an empty state and clears on Escape before the modal closes", () => {
+    render(<SettingsView />);
+    const box = screen.getByRole("searchbox");
+    fireEvent.change(box, { target: { value: "zzzz" } });
+    expect(screen.getByText("No matching settings")).toBeInTheDocument();
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(box).toHaveValue("");
   });
 });

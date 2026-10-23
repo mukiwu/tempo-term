@@ -672,3 +672,11 @@ textarea:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .git-head-node { animation: none; }
 }
+
+/* A setting found by the settings search, highlighted for a moment. */
+.settings-search-hit {
+  border-radius: 4px;
+  background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  transition: background-color 300ms ease-out, box-shadow 300ms ease-out;
+}
