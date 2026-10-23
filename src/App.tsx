@@ -25,6 +25,8 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { findPaneContent, leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { focusedTerminalOps, openNewTerminalTab } from "@/modules/terminal/lib/terminalBus";
+import { matchKeybinding } from "@/lib/keybindings";
+import { runMenuItem } from "@/components/menuBarMenus";
 import { getPreviewControls, type PreviewControls } from "@/modules/preview/lib/previewControls";
 import { useGraphSearchRequestStore } from "@/modules/git-graph/lib/graphSearchRequestStore";
 import { menuCopy, menuPaste, menuSelectAll } from "@/lib/editActions";
@@ -469,6 +471,18 @@ function App() {
   // Global keyboard shortcuts.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Shortcuts the user reassigned come first: a new chord runs its
+      // command, and a default the user moved away no longer does anything.
+      const custom = matchKeybinding(e, useSettingsStore.getState().keybindings);
+      if (custom.kind === "run") {
+        e.preventDefault();
+        runMenuItem(custom.id);
+        return;
+      }
+      if (custom.kind === "released") {
+        return;
+      }
+
       const digit = digitFromCode(e.code);
       // Tab/sidebar/zoom/pane shortcuts yield while the user is typing in a text
       // field (the terminal is excluded — see isEditableTarget).

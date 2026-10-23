@@ -81,7 +81,12 @@ function editNativePrefix(t: Translate): NativeMenuItem[] {
   ];
 }
 
-function serializeItems(t: Translate, items: MenuItemDef[], ctx: MenuContext): NativeMenuItem[] {
+function serializeItems(
+  t: Translate,
+  items: MenuItemDef[],
+  ctx: MenuContext,
+  accelerators: boolean,
+): NativeMenuItem[] {
   const out: NativeMenuItem[] = [];
   let prevGroup: number | undefined;
   for (const item of items) {
@@ -103,8 +108,8 @@ function serializeItems(t: Translate, items: MenuItemDef[], ctx: MenuContext): N
       kind: "custom",
     };
     if (item.submenu) {
-      serialized.items = serializeItems(t, item.submenu, ctx);
-    } else if (item.shortcut) {
+      serialized.items = serializeItems(t, item.submenu, ctx, accelerators);
+    } else if (item.shortcut && accelerators) {
       const accelerator = macShortcutToAccelerator(item.shortcut.mac);
       if (accelerator) serialized.accelerator = accelerator;
     }
@@ -113,15 +118,21 @@ function serializeItems(t: Translate, items: MenuItemDef[], ctx: MenuContext): N
   return out;
 }
 
-export function serializeNativeMenu(t: Translate, ctx: MenuContext): NativeMenuModel {
+/** `accelerators: false` leaves the shortcuts off, while one is being
+ *  recorded in settings. */
+export function serializeNativeMenu(
+  t: Translate,
+  ctx: MenuContext,
+  accelerators = true,
+): NativeMenuModel {
   return {
     menus: buildMenus(ctx).map((menu) => ({
       id: menu.id,
       label: t(menu.labelKey),
       items:
         menu.id === "edit"
-          ? [...editNativePrefix(t), ...serializeItems(t, menu.items, ctx)]
-          : serializeItems(t, menu.items, ctx),
+          ? [...editNativePrefix(t), ...serializeItems(t, menu.items, ctx, accelerators)]
+          : serializeItems(t, menu.items, ctx, accelerators),
     })),
   };
 }

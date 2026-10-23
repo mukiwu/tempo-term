@@ -8,6 +8,8 @@ import {
   type PaneContent,
 } from "@/modules/terminal/lib/terminalLayout";
 import { useUiStore, type PanelId } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { CUSTOMIZABLE_SHORTCUTS, formatChord } from "@/lib/keybindings";
 import {
   closeWindow,
   emitWindowMenuEvent,
@@ -70,6 +72,29 @@ export function getMenuContext(isMaximized: boolean): MenuContext {
   };
 }
 
+/** Runs the menu item with this id, as if it had been clicked. */
+export function runMenuItem(id: string): void {
+  const find = (items: MenuItemDef[]): MenuItemDef | undefined => {
+    for (const item of items) {
+      if (item.id === id) {
+        return item;
+      }
+      const nested = item.submenu && find(item.submenu);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
+  };
+  const ctx = getMenuContext(false);
+  const item = buildMenus(ctx)
+    .map((menu) => find(menu.items))
+    .find(Boolean);
+  if (item?.action && !(item.disabled?.(ctx) ?? false)) {
+    executeMenuAction(item.action);
+  }
+}
+
 export function executeMenuAction(action: MenuAction): void {
   switch (action.kind) {
     case "event":
@@ -106,7 +131,30 @@ const notTerminal = (ctx: MenuContext) => ctx.paneKind !== "terminal";
 const noPreview = (ctx: MenuContext) => !ctx.hasPreviewPane;
 const singlePane = (ctx: MenuContext) => ctx.leafCount <= 1;
 
+/** Shows the user's reassigned shortcuts in place of the built-in ones, in the
+ *  menu bar, the native macOS menu (as accelerators) and the command palette. */
+function applyKeybindings(menus: MenuDef[]): MenuDef[] {
+  const overrides = useSettingsStore.getState().keybindings;
+  if (Object.keys(overrides).length === 0) {
+    return menus;
+  }
+  const apply = (items: MenuItemDef[]): MenuItemDef[] =>
+    items.map((item) => {
+      const chord = overrides[item.id];
+      if (chord && CUSTOMIZABLE_SHORTCUTS.some((shortcut) => shortcut.id === item.id)) {
+        const label = formatChord(chord);
+        return { ...item, shortcut: { mac: label, win: label } };
+      }
+      return item.submenu ? { ...item, submenu: apply(item.submenu) } : item;
+    });
+  return menus.map((menu) => ({ ...menu, items: apply(menu.items) }));
+}
+
 export function buildMenus(ctx: MenuContext): MenuDef[] {
+  return applyKeybindings(buildDefaultMenus(ctx));
+}
+
+function buildDefaultMenus(ctx: MenuContext): MenuDef[] {
   return [
     {
       id: "file",

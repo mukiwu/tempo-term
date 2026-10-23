@@ -88,6 +88,19 @@ describe("App shell — macOS keyboard shortcuts", () => {
     expect(invokeMock).toHaveBeenCalledWith("open_new_window");
   });
 
+  it("runs a reassigned shortcut and frees the default it replaced", () => {
+    useSettingsStore.setState({ keybindings: { "new-window": "Mod+Shift+KeyJ" } });
+    try {
+      render(<App />);
+      fireEvent.keyDown(window, { code: "KeyN", key: "n", metaKey: true });
+      expect(invokeMock).not.toHaveBeenCalledWith("open_new_window");
+      fireEvent.keyDown(window, { code: "KeyJ", key: "J", metaKey: true, shiftKey: true });
+      expect(invokeMock).toHaveBeenCalledWith("open_new_window");
+    } finally {
+      useSettingsStore.setState({ keybindings: {} });
+    }
+  });
+
   it("does not intercept Cmd+C (owned by the native Edit menu)", () => {
     render(<App />);
     // App mounts several background invoke() calls unrelated to this shortcut

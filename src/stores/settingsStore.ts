@@ -90,6 +90,9 @@ interface SettingsState {
    *  while a terminal is running a job (SSH sessions always count), or
    *  whenever a terminal session is open. */
   closeConfirm: CloseConfirmMode;
+  /** Shortcuts the user reassigned, by menu item id (see lib/keybindings.ts).
+   *  A command missing here keeps its built-in shortcut. */
+  keybindings: Record<string, string>;
   /** Folder that backs global notes; null until the user picks one. */
   notesFolderPath: string | null;
   /** Which info blocks the workspace cards show. */
@@ -179,6 +182,8 @@ interface SettingsState {
   toggleDiffUnified: () => void;
   setRestoreTerminalHistory: (value: boolean) => void;
   setCloseConfirm: (mode: CloseConfirmMode) => void;
+  /** Assign a chord to a command, or pass null to restore its default. */
+  setKeybinding: (id: string, chord: string | null) => void;
   setNotesFolderPath: (path: string | null) => void;
   setWorkspaceCardBlock: (key: keyof WorkspaceCardBlocks, value: boolean) => void;
   setGitGraphRefs: (patch: Partial<GitGraphRefSettings>) => void;
@@ -294,6 +299,7 @@ export const useSettingsStore = create<SettingsState>()(
       diffUnified: false,
       restoreTerminalHistory: true,
       closeConfirm: "running",
+      keybindings: {},
       notesFolderPath: null,
       workspaceCard: DEFAULT_WORKSPACE_CARD,
       gitGraphRefs: DEFAULT_GIT_GRAPH_REFS,
@@ -347,6 +353,16 @@ export const useSettingsStore = create<SettingsState>()(
       toggleDiffUnified: () => set((s) => ({ diffUnified: !s.diffUnified })),
       setRestoreTerminalHistory: (value) => set({ restoreTerminalHistory: value }),
       setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
+      setKeybinding: (id, chord) =>
+        set((state) => {
+          const keybindings = { ...state.keybindings };
+          if (chord === null) {
+            delete keybindings[id];
+          } else {
+            keybindings[id] = chord;
+          }
+          return { keybindings };
+        }),
       setNotesFolderPath: (path) => set({ notesFolderPath: path }),
       setWorkspaceCardBlock: (key, value) =>
         set((state) => ({ workspaceCard: { ...state.workspaceCard, [key]: value } })),
@@ -403,6 +419,14 @@ export const useSettingsStore = create<SettingsState>()(
           gitGraphRefs: normalizeGitGraphRefs(stored.gitGraphRefs),
           newTabCwd: stored.newTabCwd === "current" ? "current" : "workspace",
           closeConfirm: migrateCloseConfirm(stored, current.closeConfirm),
+          keybindings:
+            stored.keybindings && typeof stored.keybindings === "object"
+              ? Object.fromEntries(
+                  Object.entries(stored.keybindings).filter(
+                    (entry): entry is [string, string] => typeof entry[1] === "string",
+                  ),
+                )
+              : current.keybindings,
         };
       },
     },

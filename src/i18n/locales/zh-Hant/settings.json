@@ -244,7 +244,8 @@
       "terminal": "終端機",
       "terminalEdit": "終端機編輯",
       "editor": "編輯器",
-      "notes": "筆記"
+      "notes": "筆記",
+      "customizable": "可自訂"
     },
     "newTerminalTab": "新增終端機分頁",
     "closeTab": "關閉目前分頁",
@@ -274,7 +275,17 @@
     "saveFile": "儲存檔案",
     "slashMenu": "開啟區塊選單",
     "exitCodeBlock": "跳出程式碼區塊",
-    "commandPalette": "指令面板"
+    "commandPalette": "指令面板",
+    "newWindow": "新增視窗",
+    "allChanges": "所有變更",
+    "reloadWorkspace": "重新整理工作區",
+    "conflict": "已用於 {{name}}",
+    "reset": "還原 {{name}} 的預設快捷鍵",
+    "resetHint": "還原為 {{keys}}",
+    "record": "變更 {{name}} 的快捷鍵",
+    "recording": "請按下按鍵…",
+    "customizableHint": "點選快捷鍵後按下新的按鍵組合，按 Esc 取消。",
+    "reserved": "此按鍵組合已保留給內建快捷鍵"
   },
   "search": {
     "placeholder": "搜尋設定",

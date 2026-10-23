@@ -10,6 +10,7 @@ import { findItemById, serializeNativeMenu } from "@/lib/nativeMenu";
 import { isWindowMaximized, onWindowResized } from "@/lib/window";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useUiStore } from "@/stores/uiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 /**
  * macOS only: mirrors the frontend menu tree into the native menu bar.
@@ -36,7 +37,11 @@ export function useMacNativeMenu(): void {
 
     const push = () => {
       if (disposed || !focused) return;
-      const model = serializeNativeMenu(translate, getMenuContext(maximized));
+      const model = serializeNativeMenu(
+        translate,
+        getMenuContext(maximized),
+        !useUiStore.getState().recordingShortcut,
+      );
       const json = JSON.stringify(model);
       if (json === lastPushed) return;
       lastPushed = json;
@@ -59,6 +64,13 @@ export function useMacNativeMenu(): void {
     const cleanups: Array<() => void> = [];
     cleanups.push(useTabsStore.subscribe(schedule));
     cleanups.push(useUiStore.subscribe(schedule));
+    cleanups.push(
+      useSettingsStore.subscribe((state, previous) => {
+        if (state.keybindings !== previous.keybindings) {
+          schedule();
+        }
+      }),
+    );
     i18n.on("languageChanged", schedule);
     cleanups.push(() => i18n.off("languageChanged", schedule));
 
