@@ -214,6 +214,11 @@ interface UiState {
   fileFinderOpen: boolean;
   /** The command palette (⌘P / Ctrl+P): commands, files, sessions and hosts. */
   commandPaletteOpen: boolean;
+  /** A shortcut is being recorded in settings. The native macOS menu drops
+   *  its accelerators meanwhile, or pressing a chord the menu owns would run
+   *  the command instead of recording it. */
+  recordingShortcut: boolean;
+  setRecordingShortcut: (recording: boolean) => void;
   /**
    * The worktrees manager, or null when closed. Deliberately not a `PanelId`:
    * creating and pruning worktrees is occasional housekeeping, so it is a modal
@@ -277,6 +282,7 @@ export const useUiStore = create<UiState>((set) => {
     terminalOpen: true,
     fileFinderOpen: false,
     commandPaletteOpen: false,
+    recordingShortcut: false,
     worktreesModal: null,
     overlayCount: 0,
 
@@ -341,6 +347,7 @@ export const useUiStore = create<UiState>((set) => {
     toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
     setFileFinderOpen: (fileFinderOpen) => set({ fileFinderOpen }),
     setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
+    setRecordingShortcut: (recordingShortcut) => set({ recordingShortcut }),
 
     openWorktrees: (scope, repoPath = null) =>
       set({ worktreesModal: { scope, repoPath: scope === "global" ? null : repoPath } }),

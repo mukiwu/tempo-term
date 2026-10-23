@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { ChevronRight, Ellipsis, Minus, Square, X } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import { useOverlayGuard } from "@/lib/overlayGuard";
@@ -257,6 +258,8 @@ function MenuFlyout({
 
 function WindowMenuBar() {
   const { t } = useTranslation();
+  // Re-render when a shortcut is reassigned, so the menus show the new keys.
+  useSettingsStore((s) => s.keybindings);
   const [openId, setOpenId] = useState<string | null>(null);
   // Anchor for the open dropdown, pinned to the button's bottom-left. Every menu
   // (including […]) sits after the brand with the drag region and window controls

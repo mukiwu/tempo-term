@@ -244,7 +244,8 @@
       "terminal": "Terminal",
       "terminalEdit": "Terminal editing",
       "editor": "Editor",
-      "notes": "Notes"
+      "notes": "Notes",
+      "customizable": "Customizable"
     },
     "newTerminalTab": "New terminal tab",
     "closeTab": "Close current tab",
@@ -274,7 +275,17 @@
     "saveFile": "Save file",
     "slashMenu": "Open block menu",
     "exitCodeBlock": "Exit code block",
-    "commandPalette": "Command palette"
+    "commandPalette": "Command palette",
+    "newWindow": "New window",
+    "allChanges": "All changes",
+    "reloadWorkspace": "Reload workspace",
+    "conflict": "Already used by {{name}}",
+    "reset": "Restore the default shortcut for {{name}}",
+    "resetHint": "Restore {{keys}}",
+    "record": "Change the shortcut for {{name}}",
+    "recording": "Press keys…",
+    "customizableHint": "Click a shortcut, then press the new keys. Escape cancels.",
+    "reserved": "Reserved for a built-in shortcut"
   },
   "search": {
     "placeholder": "Search settings",
