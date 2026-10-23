@@ -45,6 +45,14 @@ describe("estimateCost", () => {
     expect(priceFor("gpt-6.1-sol")?.output).toBe(10);
   });
 
+  it("switches Gemini rates on their scheduled date", () => {
+    const flash = [m("gemini-3.7-flash-medium", { input_tokens: 1_000_000, output_tokens: 1_000_000 })];
+    expect(estimateCost(flash, "2026-12-31").usd).toBeCloseTo(0.75 + 3.75);
+    expect(estimateCost(flash, "2027-01-01").usd).toBeCloseTo(1.5 + 7.5);
+    expect(priceFor("gemini-4-argon-medium", "2026-11-30")?.output).toBe(10);
+    expect(priceFor("gemini-4-argon-medium", "2026-12-01")?.output).toBe(20);
+  });
+
   it("accumulates every token of unknown models as unpriced", () => {
     const result = estimateCost([
       m("claude-sonnet-5-5", { output_tokens: 1_000_000 }),
