@@ -19,6 +19,7 @@
 - 快捷鍵設定新增全域快捷鍵，可在任何 app 中叫出或隱藏 TempoTerm，預設未設定 (#491)
 - 設定新增 SSH 區塊，可查看已信任的主機金鑰與 fingerprint，並移除不再信任的主機 (#493)
 - 外觀設定的主題改為卡片，顯示背景與終端機配色，滑鼠停在卡片上即可預覽整個視窗，點選後才套用 (#495)
+- Git 設定新增 Pull 方式（合併、僅快轉、Rebase）、背景定時 fetch、Git Graph 顯示欄位，以及操作成功時的提示 (#497)
 
 ### fix
 
@@ -49,6 +50,7 @@
 - Add a global hotkey in the shortcut settings that brings TempoTerm to the front from any app, or hides it; off by default (#491)
 - Add an SSH section to Settings that lists trusted host keys with their fingerprints and lets you remove one (#493)
 - Themes in the appearance settings are now cards with their background and terminal colors; resting the pointer on one previews it on the whole window, and a click applies it (#495)
+- Git settings gain a pull mode (merge, fast-forward only, rebase), background fetch, Git Graph column choices and an optional success notice (#497)
 
 ### fix
 
