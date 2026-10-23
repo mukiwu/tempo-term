@@ -29,7 +29,6 @@
 - AI 儀表板依各模型版本的官方價格估算費用，新增 OpenAI 與 Gemini 價格，Gemini 會依調價日期自動切換 (#477)
 - Antigravity 對話可顯示模型、Token 用量與助理回覆 (#477)
 
-### 貢獻者
 
 ## English
 
@@ -61,5 +60,3 @@
 - Stop counting the same Claude reply's usage more than once, and include input and cache tokens in the cost estimate (#471)
 - Estimate AI dashboard costs from each model version's official price, add OpenAI and Gemini prices, and switch Gemini prices on their scheduled dates (#477)
 - Show the model, token usage and assistant replies for Antigravity sessions (#477)
-
-### Contributors
