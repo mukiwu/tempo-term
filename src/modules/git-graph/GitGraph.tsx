@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { Clock, GitBranch, User } from "lucide-react";
 import { Tooltip } from "@/components/Tooltip";
 import type {
@@ -213,6 +214,7 @@ export function GitGraph({
   onWorkspaceContextMenu,
   labels,
 }: GitGraphProps) {
+  const visibleColumns = useSettingsStore((s) => s.gitGraphColumns);
   // All hooks run unconditionally before any early return so the hook order
   // stays stable when `commits` flips between empty and non-empty.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -821,9 +823,11 @@ export function GitGraph({
                   className={`absolute left-0 right-4 flex cursor-pointer items-center justify-between rounded border py-1 pr-3 transition-all ${rowState}`}
                 >
                   <div className="flex items-center space-x-3 overflow-hidden pr-2">
-                    <span className="select-all font-mono text-xs font-semibold text-accent">
-                      <Marked text={commit.hash} query={searchQuery} current={isCurrentMatch} />
-                    </span>
+                    {visibleColumns.hash && (
+                      <span className="select-all font-mono text-xs font-semibold text-accent">
+                        <Marked text={commit.hash} query={searchQuery} current={isCurrentMatch} />
+                      </span>
+                    )}
 
                     <RefChipStrip
                       refs={commit.refs}
@@ -838,16 +842,20 @@ export function GitGraph({
                   </div>
 
                   <div className="flex shrink-0 items-center space-x-4 font-mono text-[13px] text-fg-subtle">
-                    <div className="flex items-center space-x-1">
-                      <User className="h-3 w-3" />
-                      <span className="max-w-[70px] truncate">
-                        <Marked text={commit.author} query={searchQuery} current={isCurrentMatch} />
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Clock className="h-3 w-3" />
-                      <span>{commit.date}</span>
-                    </div>
+                    {visibleColumns.author && (
+                      <div className="flex items-center space-x-1">
+                        <User className="h-3 w-3" />
+                        <span className="max-w-[70px] truncate">
+                          <Marked text={commit.author} query={searchQuery} current={isCurrentMatch} />
+                        </span>
+                      </div>
+                    )}
+                    {visibleColumns.date && (
+                      <div className="flex items-center space-x-1">
+                        <Clock className="h-3 w-3" />
+                        <span>{commit.date}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

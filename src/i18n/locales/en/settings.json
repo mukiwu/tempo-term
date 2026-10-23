@@ -26,7 +26,28 @@
     "hideOriginHeadHint": "A symbolic link to the remote's default branch — the same commit its own branch chip already marks.",
     "collapseLabel": "Collapse extra labels into +N",
     "refLimitLabel": "Labels shown",
-    "collapseHint": "Anything past the limit hides behind a +N chip that lists the rest, so the commit message keeps its room."
+    "collapseHint": "Anything past the limit hides behind a +N chip that lists the rest, so the commit message keeps its room.",
+    "columnsTitle": "Commit row columns",
+    "columnsDescription": "Which details each commit row shows beside its message.",
+    "columns": {
+      "hash": "Hash",
+      "author": "Author",
+      "date": "Date"
+    },
+    "pullTitle": "Pull",
+    "pullDescription": "How Pull brings in the remote branch. Fast-forward only refuses when local commits would need a merge.",
+    "pullModes": {
+      "merge": "Merge",
+      "ff-only": "Fast-forward only",
+      "rebase": "Rebase"
+    },
+    "autoFetchTitle": "Fetch in the background",
+    "autoFetchDescription": "Fetches every remote of the workspace repository at this interval, and removes branches deleted on the remote.",
+    "autoFetchOff": "Off",
+    "autoFetchMinutes_one": "Every {{count}} minute",
+    "autoFetchMinutes_other": "Every {{count}} minutes",
+    "notifyLabel": "Show a notice when an operation succeeds",
+    "notifyHint": "Checkout, pull, merge and other Git Graph operations. Failures are always shown in the graph."
   },
   "workspace": {
     "blocksTitle": "Card details",

@@ -2024,7 +2024,18 @@ pub fn branch_checkout_track(
 }
 
 /// Pull `branch` from `remote` into the current branch (fetch + merge).
-pub fn pull(repo_path: &str, remote: &str, branch: &str) -> Result<(), String> {
+/// The flag a pull mode adds: none merges as git is configured, `ff-only`
+/// refuses anything but a fast-forward, `rebase` replays local commits.
+fn pull_mode_flag(mode: Option<&str>) -> Result<Option<&'static str>, String> {
+    match mode {
+        None | Some("merge") => Ok(None),
+        Some("ff-only") => Ok(Some("--ff-only")),
+        Some("rebase") => Ok(Some("--rebase")),
+        Some(other) => Err(format!("unknown pull mode: {other}")),
+    }
+}
+
+pub fn pull(repo_path: &str, remote: &str, branch: &str, mode: Option<&str>) -> Result<(), String> {
     let remote = remote.trim();
     let branch = branch.trim();
     if remote.is_empty() {
@@ -2035,7 +2046,10 @@ pub fn pull(repo_path: &str, remote: &str, branch: &str) -> Result<(), String> {
     }
     ensure_not_flag(remote)?;
     ensure_not_flag(branch)?;
-    run_git(repo_path, &["pull", remote, branch]).map(|_| ())
+    let mut args = vec!["pull"];
+    args.extend(pull_mode_flag(mode)?);
+    args.extend([remote, branch]);
+    run_git(repo_path, &args).map(|_| ())
 }
 
 /// Delete `branch` on `remote` (git push <remote> --delete <branch>).
@@ -2348,10 +2362,17 @@ pub async fn git_branch_checkout_track(
 }
 
 #[tauri::command]
-pub async fn git_pull(repo_path: String, remote: String, branch: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || pull(&repo_path, &remote, &branch))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn git_pull(
+    repo_path: String,
+    remote: String,
+    branch: String,
+    mode: Option<String>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        pull(&repo_path, &remote, &branch, mode.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -2459,6 +2480,15 @@ pub async fn git_commit_range_file_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pull_modes_map_to_their_flags() {
+        assert_eq!(pull_mode_flag(None), Ok(None));
+        assert_eq!(pull_mode_flag(Some("merge")), Ok(None));
+        assert_eq!(pull_mode_flag(Some("ff-only")), Ok(Some("--ff-only")));
+        assert_eq!(pull_mode_flag(Some("rebase")), Ok(Some("--rebase")));
+        assert!(pull_mode_flag(Some("--exec=x")).is_err());
+    }
 
     #[test]
     fn worktree_info_reports_branch_for_a_plain_repo() {
@@ -3258,7 +3288,7 @@ mod tests {
 
         // Pull main from the remote (already up to date) succeeds.
         run_git(&path, &["checkout", "main"]).unwrap();
-        pull(&path, "origin", "main").unwrap();
+        pull(&path, "origin", "main", None).unwrap();
 
         // Rebasing onto an ancestor (HEAD) is a no-op that still succeeds.
         rebase(&path, "HEAD").unwrap();
@@ -3271,7 +3301,7 @@ mod tests {
 
         // Empty-arg guards surface as errors instead of running git.
         assert!(branch_checkout_track(&path, "  ", "origin/feature").is_err());
-        assert!(pull(&path, "origin", "  ").is_err());
+        assert!(pull(&path, "origin", "  ", None).is_err());
         assert!(push_delete(&path, "  ", "feature").is_err());
         assert!(rebase(&path, "  ").is_err());
 

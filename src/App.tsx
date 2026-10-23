@@ -27,6 +27,7 @@ import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { findPaneContent, leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { focusedTerminalOps, openNewTerminalTab } from "@/modules/terminal/lib/terminalBus";
 import { chordToAccelerator, matchKeybinding } from "@/lib/keybindings";
+import { gitFetch } from "@/modules/git-graph/lib/gitGraphBridge";
 import { runMenuItem } from "@/components/menuBarMenus";
 import { getPreviewControls, type PreviewControls } from "@/modules/preview/lib/previewControls";
 import { useGraphSearchRequestStore } from "@/modules/git-graph/lib/graphSearchRequestStore";
@@ -371,6 +372,21 @@ function App() {
       unlisten?.();
     };
   }, []);
+
+  // Fetch the workspace repository in the background at the chosen interval,
+  // so the Git Graph and branch badges show new remote commits. A folder that
+  // is not a repository just fails quietly.
+  const gitAutoFetchMinutes = useSettingsStore((s) => s.gitAutoFetchMinutes);
+  useEffect(() => {
+    if (!gitAutoFetchMinutes || !canSearchRoot(rootPath)) {
+      return;
+    }
+    const timer = window.setInterval(
+      () => void gitFetch(rootPath).catch(() => {}),
+      gitAutoFetchMinutes * 60_000,
+    );
+    return () => window.clearInterval(timer);
+  }, [gitAutoFetchMinutes, rootPath]);
 
   // Register the system-wide show/hide hotkey, and again whenever it changes.
   useEffect(() => {

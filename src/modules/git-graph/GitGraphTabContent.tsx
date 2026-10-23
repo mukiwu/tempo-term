@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNotifyStore } from "@/stores/notifyStore";
 import { useTranslation } from "react-i18next";
 import { GitCommit } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "@/components/ContextMenu";
@@ -333,13 +334,16 @@ export function GitGraphTabContent({ paneId }: { paneId?: string } = {}) {
           })(),
           MIN_BUSY_MS,
         );
+        if (useSettingsStore.getState().gitNotifySuccess) {
+          useNotifyStore.getState().notify(t("actionDone"));
+        }
       } catch (err: unknown) {
         setError(getErrorMessage(err));
       } finally {
         setBusy(false);
       }
     },
-    [repo, limit, reload, options.branches, options.includeRemotes, options.includeTags, options.includeStashes, options.order],
+    [t, repo, limit, reload, options.branches, options.includeRemotes, options.includeTags, options.includeStashes, options.order],
   );
 
   // Re-read the whole window, one page deeper. Used where the graph has to be

@@ -1,9 +1,54 @@
 import { useTranslation } from "react-i18next";
 import {
+  GIT_AUTO_FETCH_OPTIONS,
   MAX_GIT_GRAPH_REF_LIMIT,
   MIN_GIT_GRAPH_REF_LIMIT,
   useSettingsStore,
 } from "@/stores/settingsStore";
+
+/** A titled row of mutually exclusive options. */
+function ChoiceGroup<T extends string | number>({
+  id,
+  title,
+  description,
+  options,
+  value,
+  onChange,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="mt-6">
+      <span id={id} className="mb-1 block text-sm font-medium text-fg">
+        {title}
+      </span>
+      <p className="mb-2 text-xs text-fg-muted">{description}</p>
+      <div role="radiogroup" aria-labelledby={id} className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <button
+            key={String(option.value)}
+            type="button"
+            role="radio"
+            aria-checked={value === option.value}
+            onClick={() => onChange(option.value)}
+            className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+              value === option.value
+                ? "border-accent bg-bg-elevated text-fg"
+                : "border-border text-fg-muted hover:border-border-strong"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Git Graph display preferences. Every toggle here condenses the ref chips on a
@@ -18,6 +63,14 @@ export function GitGraphSettingsSection() {
   const setUncommittedRow = useSettingsStore((s) => s.setGitGraphUncommittedRow);
   const whenClean = useSettingsStore((s) => s.gitGraphUncommittedWhenClean);
   const setWhenClean = useSettingsStore((s) => s.setGitGraphUncommittedWhenClean);
+  const columns = useSettingsStore((s) => s.gitGraphColumns);
+  const setColumn = useSettingsStore((s) => s.setGitGraphColumn);
+  const pullMode = useSettingsStore((s) => s.gitPullMode);
+  const setPullMode = useSettingsStore((s) => s.setGitPullMode);
+  const autoFetch = useSettingsStore((s) => s.gitAutoFetchMinutes);
+  const setAutoFetch = useSettingsStore((s) => s.setGitAutoFetchMinutes);
+  const notifySuccess = useSettingsStore((s) => s.gitNotifySuccess);
+  const setNotifySuccess = useSettingsStore((s) => s.setGitNotifySuccess);
 
   return (
     <section>
@@ -109,6 +162,57 @@ export function GitGraphSettingsSection() {
         />
       </label>
       <p className="ml-6 text-xs text-fg-muted">{t("gitGraph.collapseHint")}</p>
+
+      <label className="mb-1 mt-6 block text-sm font-medium text-fg">
+        {t("gitGraph.columnsTitle")}
+      </label>
+      <p className="mb-2 text-xs text-fg-muted">{t("gitGraph.columnsDescription")}</p>
+      {(["hash", "author", "date"] as const).map((key) => (
+        <label key={key} className="mb-1 flex items-center gap-2 text-sm text-fg">
+          <input
+            type="checkbox"
+            checked={columns[key]}
+            onChange={(e) => setColumn(key, e.target.checked)}
+            className="h-4 w-4 accent-accent"
+          />
+          {t(`gitGraph.columns.${key}`)}
+        </label>
+      ))}
+
+      <ChoiceGroup
+        id="git-pull-mode"
+        title={t("gitGraph.pullTitle")}
+        description={t("gitGraph.pullDescription")}
+        options={(["merge", "ff-only", "rebase"] as const).map((value) => ({
+          value,
+          label: t(`gitGraph.pullModes.${value}`),
+        }))}
+        value={pullMode}
+        onChange={setPullMode}
+      />
+
+      <ChoiceGroup
+        id="git-auto-fetch"
+        title={t("gitGraph.autoFetchTitle")}
+        description={t("gitGraph.autoFetchDescription")}
+        options={GIT_AUTO_FETCH_OPTIONS.map((minutes) => ({
+          value: minutes,
+          label: minutes === 0 ? t("gitGraph.autoFetchOff") : t("gitGraph.autoFetchMinutes", { count: minutes }),
+        }))}
+        value={autoFetch}
+        onChange={setAutoFetch}
+      />
+
+      <label className="mb-1 mt-6 flex items-center gap-2 text-sm font-medium text-fg">
+        <input
+          type="checkbox"
+          checked={notifySuccess}
+          onChange={(e) => setNotifySuccess(e.target.checked)}
+          className="h-4 w-4 accent-accent"
+        />
+        {t("gitGraph.notifyLabel")}
+      </label>
+      <p className="ml-6 text-xs text-fg-muted">{t("gitGraph.notifyHint")}</p>
     </section>
   );
 }
