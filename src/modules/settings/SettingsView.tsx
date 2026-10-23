@@ -13,6 +13,7 @@ import { TerminalSettingsSection } from "./TerminalSettingsSection";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 import { GitGraphSettingsSection } from "./GitGraphSettingsSection";
+import { SshSettingsSection } from "./SshSettingsSection";
 import { ShortcutsSettingsSection } from "./ShortcutsSettingsSection";
 import { AboutSettingsSection } from "./AboutSettingsSection";
 import { BackgroundImageSettingsSection } from "./BackgroundImageSettingsSection";
@@ -26,6 +27,7 @@ const SECTIONS = [
   "terminal",
   "ai",
   "workspace",
+  "ssh",
   "gitGraph",
   "shortcuts",
   "about",
@@ -361,6 +363,7 @@ export function SettingsView() {
           {section === "terminal" && <TerminalSettingsSection />}
           {section === "ai" && <AiSettingsSection />}
           {section === "workspace" && <WorkspaceSettingsSection />}
+          {section === "ssh" && <SshSettingsSection />}
           {section === "gitGraph" && <GitGraphSettingsSection />}
           {section === "shortcuts" && <ShortcutsSettingsSection />}
           {section === "about" && <AboutSettingsSection />}

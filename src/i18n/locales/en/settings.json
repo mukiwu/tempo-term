@@ -8,7 +8,8 @@
     "workspace": "Groups",
     "gitGraph": "Git Graph",
     "shortcuts": "Shortcuts",
-    "about": "About"
+    "about": "About",
+    "ssh": "SSH"
   },
   "gitGraph": {
     "uncommittedTitle": "Uncommitted changes",
@@ -296,5 +297,15 @@
     "placeholder": "Search settings",
     "noResults": "No matching settings",
     "results": "Search results"
+  },
+  "ssh": {
+    "knownHostsTitle": "Trusted host keys",
+    "knownHostsDescription": "Host keys you trusted when first connecting. Removing one makes the next connection show its fingerprint again, so you can accept a key the server legitimately changed.",
+    "knownHostsEmpty": "No trusted hosts yet. A host's fingerprint is shown the first time you connect.",
+    "removeHost": "Remove {{host}}",
+    "removeTitle": "Remove trusted host",
+    "removeMessage": "Forget the key trusted for {{host}}? The next connection will show its fingerprint and ask again.",
+    "removeConfirm": "Remove",
+    "removeCancel": "Cancel"
   }
 }

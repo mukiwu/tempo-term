@@ -13,7 +13,9 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
-use super::known_hosts::{classify, host_token, known_hosts_line, rewrite_lines, HostKeyStatus};
+use super::known_hosts::{
+    classify, entries, host_token, known_hosts_line, remove_token, rewrite_lines, HostKeyStatus,
+};
 use super::prompt::{PromptKind, PromptRegistry, PromptReply, PromptRequest};
 
 /// Guards concurrent writes to the app-managed known_hosts file.
@@ -194,6 +196,58 @@ fn persist_host_key(
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(path, kept.join("\n") + "\n")
+}
+
+/// One trusted host key, as the settings list shows it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownHost {
+    /// `host` on port 22, `[host]:port` otherwise.
+    pub host: String,
+    pub key_type: String,
+    /// `SHA256:...`, or empty when the stored key cannot be decoded.
+    pub fingerprint: String,
+}
+
+fn read_lines(path: &Path) -> Vec<String> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.to_string())
+        .collect()
+}
+
+/// Every host key the user has trusted, from the app-managed file.
+pub(crate) fn list_known_hosts(path: &Path) -> Vec<KnownHost> {
+    entries(&read_lines(path))
+        .into_iter()
+        .map(|(host, key)| {
+            let key_type = key.split_whitespace().next().unwrap_or("").to_string();
+            let fingerprint = russh::keys::ssh_key::PublicKey::from_openssh(&key)
+                .map(|k| k.fingerprint(russh::keys::HashAlg::Sha256).to_string())
+                .unwrap_or_default();
+            KnownHost { host, key_type, fingerprint }
+        })
+        .collect()
+}
+
+/// Forget a host's trusted key, so the next connection asks again.
+pub(crate) fn remove_known_host(path: &Path, host: &str) -> std::io::Result<()> {
+    let _guard = KNOWN_HOSTS_LOCK.lock().unwrap();
+    // Only a missing file counts as empty: any other read error must surface,
+    // or the list would claim a removal that never happened.
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    let lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+    let kept = remove_token(&lines, host);
+    // Write beside the file and rename over it, so a crash mid-write cannot
+    // leave a truncated store.
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, kept.join("\n") + "\n")?;
+    std::fs::rename(&tmp, path)
 }
 
 /// Inputs needed to open a verified SSH connection.
