@@ -85,7 +85,10 @@
     "tokenNotSet": "No token",
     "tokenPlaceholder": "Paste a GitHub token",
     "tokenSave": "Save",
-    "tokenRemove": "Remove"
+    "tokenRemove": "Remove",
+    "externalEditor": "External editor",
+    "externalEditorHint": "The command the explorer's Open in External Editor runs with the file or folder, such as code or zed. Arguments are separated by spaces. Empty opens it with the system's default app.",
+    "externalEditorPlaceholder": "code"
   },
   "about": {
     "appName": "TempoTerm",

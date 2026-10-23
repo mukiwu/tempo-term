@@ -29,6 +29,8 @@
     "attachToAgent": "Attach to Agent",
     "rename": "Rename",
     "delete": "Delete",
-    "deleteRemoteConfirm": "Permanently delete \"{{name}}\" from the remote host? There is no trash over SFTP — this cannot be undone."
-  }
+    "deleteRemoteConfirm": "Permanently delete \"{{name}}\" from the remote host? There is no trash over SFTP — this cannot be undone.",
+    "openExternal": "Open in External Editor"
+  },
+  "openExternalFailed": "Could not open the external editor: {{error}}"
 }

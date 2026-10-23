@@ -85,7 +85,10 @@
     "tokenNotSet": "尚未設定 token",
     "tokenPlaceholder": "貼上 GitHub token",
     "tokenSave": "儲存",
-    "tokenRemove": "移除"
+    "tokenRemove": "移除",
+    "externalEditor": "外部編輯器",
+    "externalEditorHint": "檔案總管的「以外部編輯器開啟」執行的指令，會帶入檔案或資料夾路徑，例如 code 或 zed。參數以空格分隔；留空則以系統預設的 app 開啟。",
+    "externalEditorPlaceholder": "code"
   },
   "about": {
     "appName": "TempoTerm",

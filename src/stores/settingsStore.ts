@@ -167,6 +167,9 @@ interface SettingsState {
    * users point at pwsh / PowerShell 7, for example.
    */
   customShellPath: string;
+  /** Command that opens files and folders from the explorer, such as `code`
+   *  or `zed`; empty uses the system's default app. */
+  externalEditor: string;
   /** Show the hover action card (ping/curl/extract) over IPs, host:port and archives. */
   actionLinksEnabled: boolean;
   /** Webview zoom factor for the whole UI (1 = 100%); driven by ⌘+ / ⌘-. */
@@ -228,6 +231,7 @@ interface SettingsState {
   setCopyOnSelect: (value: boolean) => void;
   setNewTabCwd: (value: NewTabCwd) => void;
   setCustomShellPath: (path: string) => void;
+  setExternalEditor: (command: string) => void;
   setActionLinksEnabled: (value: boolean) => void;
   zoomIn: () => void;
   zoomOut: () => void;
@@ -350,6 +354,7 @@ export const useSettingsStore = create<SettingsState>()(
       terminalSuggestions: true,
       copyOnSelect: false,
       newTabCwd: "workspace",
+      externalEditor: "",
       customShellPath: "",
       actionLinksEnabled: true,
       uiZoom: DEFAULT_UI_ZOOM,
@@ -422,6 +427,7 @@ export const useSettingsStore = create<SettingsState>()(
       setTerminalSuggestions: (value) => set({ terminalSuggestions: value }),
       setCopyOnSelect: (value) => set({ copyOnSelect: value }),
       setNewTabCwd: (value) => set({ newTabCwd: value }),
+      setExternalEditor: (externalEditor) => set({ externalEditor }),
       setCustomShellPath: (customShellPath) => set({ customShellPath }),
       setActionLinksEnabled: (value) => set({ actionLinksEnabled: value }),
       zoomIn: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom + UI_ZOOM_STEP) })),

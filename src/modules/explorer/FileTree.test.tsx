@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "@testing-library/react";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { FileTree } from "./FileTree";
+import { fsOpenExternal } from "./lib/fsBridge";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useExplorerStore } from "@/stores/explorerStore";
@@ -18,6 +19,7 @@ vi.mock("./lib/fsBridge", () => ({
   fsDelete: vi.fn(),
   fsRename: vi.fn(),
   fsReveal: vi.fn(),
+  fsOpenExternal: vi.fn(() => Promise.resolve()),
 }));
 
 describe("FileTree icons", () => {
@@ -532,5 +534,22 @@ describe("FileTree delete", () => {
       expect(fsDelete).toHaveBeenCalledWith("/p/local.txt", false),
     );
     expect(screen.queryByText("menu.deleteRemoteConfirm")).not.toBeInTheDocument();
+  });
+});
+
+describe("FileTree context menu: external editor", () => {
+  it("opens a local entry with the external editor", () => {
+    const entries = [{ name: "main.ts", path: "/p/main.ts", is_dir: false, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+    fireEvent.contextMenu(screen.getByText("main.ts"));
+    fireEvent.click(screen.getByText("menu.openExternal"));
+    expect(fsOpenExternal).toHaveBeenCalledWith("/p/main.ts");
+  });
+
+  it("does not offer it for a remote entry", () => {
+    const entries = [{ name: "a.ts", path: "ssh://c1/home/a.ts", is_dir: false, size: 0 }];
+    render(<FileTree entries={entries} onReloadRoot={() => {}} />);
+    fireEvent.contextMenu(screen.getByText("a.ts"));
+    expect(screen.queryByText("menu.openExternal")).not.toBeInTheDocument();
   });
 });

@@ -148,9 +148,64 @@ pub fn fs_reveal(path: String) -> Result<(), String> {
     ops::reveal(&path)
 }
 
+/// Split an editor setting such as `code --wait` into the program and its
+/// arguments. Words are separated by whitespace; quoting is not supported.
+fn split_editor_command(command: &str) -> Option<(&str, Vec<&str>)> {
+    let mut words = command.split_whitespace();
+    let program = words.next()?;
+    Some((program, words.collect()))
+}
+
+/// Open `path` with the external editor command from settings (for example
+/// `code` or `zed`), or with the system's default app when the command is
+/// empty. A bare program name is resolved to an absolute path the same way
+/// the setup wizard finds CLIs, which also finds `.cmd` shims on Windows.
+#[tauri::command]
+pub fn fs_open_external(app: tauri::AppHandle, command: String, path: String) -> Result<(), String> {
+    // Only absolute paths, so a path can never start with `-` and be read as
+    // an option by the editor.
+    if !std::path::Path::new(&path).is_absolute() {
+        return Err("path must be absolute".to_string());
+    }
+    let Some((program, args)) = split_editor_command(&command) else {
+        use tauri_plugin_opener::OpenerExt;
+        return app
+            .opener()
+            .open_path(path, None::<&str>)
+            .map_err(|e| e.to_string());
+    };
+    let exe = if std::path::Path::new(program).is_absolute() {
+        std::path::PathBuf::from(program)
+    } else {
+        crate::modules::setup::find_tool(program)
+            .ok_or_else(|| format!("{program} was not found"))?
+    };
+    let mut child = crate::modules::setup::tool_command(&exe)
+        .args(args)
+        .arg(&path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    // Reap the editor when it exits (`--wait` keeps it running), so it never
+    // lingers as a zombie.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn splits_the_editor_command_into_program_and_arguments() {
+        assert_eq!(split_editor_command("code --wait"), Some(("code", vec!["--wait"])));
+        assert_eq!(split_editor_command("  zed  "), Some(("zed", vec![])));
+        assert_eq!(split_editor_command("   "), None);
+    }
 
     fn temp_path(name: &str) -> std::path::PathBuf {
         let mut dir = std::env::temp_dir();

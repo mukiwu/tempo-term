@@ -8,6 +8,7 @@ import {
   File,
   FilePlus,
   FolderOpen,
+  SquareArrowOutUpRight,
   FolderPlus,
   Globe,
   MessageSquarePlus,
@@ -25,6 +26,7 @@ import {
   fsReadDir,
   fsRename,
   fsReveal,
+  fsOpenExternal,
   type DirEntry,
 } from "./lib/fsBridge";
 import { dirname, joinPath, relativePath } from "./lib/paths";
@@ -102,6 +104,7 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
   const [creating, setCreating] = useState<Creating>(null);
   const [renaming, setRenaming] = useState(false);
   const [atCapacity, setAtCapacity] = useState(false);
+  const [externalError, setExternalError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // JS hover: CSS :hover is suppressed inside a draggable subtree (WebKit), so
   // track hover manually to highlight just this row.
@@ -348,6 +351,20 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
       group: 0,
       onSelect: () => void fsReveal(entry.path),
     },
+    ...(isRemoteUri(entry.path)
+      ? []
+      : [
+          {
+            id: "openExternal",
+            label: t("menu.openExternal"),
+            icon: SquareArrowOutUpRight,
+            group: 0,
+            onSelect: () =>
+              void fsOpenExternal(entry.path).catch((error: unknown) =>
+                setExternalError(String(error)),
+              ),
+          } satisfies ContextMenuItem,
+        ]),
     ...(entry.is_dir
       ? [
           {
@@ -529,6 +546,14 @@ function TreeNode({ entry, depth, onReloadParent, collapseSignal, expandSignal }
           message={tCommon("paneCapacityAlert")}
           confirmLabel={tCommon("actions.confirm")}
           onConfirm={() => setAtCapacity(false)}
+        />
+      )}
+      {externalError && (
+        <InfoDialog
+          title={t("menu.openExternal")}
+          message={t("openExternalFailed", { error: externalError })}
+          confirmLabel={tCommon("actions.confirm")}
+          onConfirm={() => setExternalError(null)}
         />
       )}
 
