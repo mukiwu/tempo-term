@@ -22,6 +22,8 @@ export function TerminalSettingsSection() {
   );
   const terminalSuggestions = useSettingsStore((s) => s.terminalSuggestions);
   const setTerminalSuggestions = useSettingsStore((s) => s.setTerminalSuggestions);
+  const newTabCwd = useSettingsStore((s) => s.newTabCwd);
+  const setNewTabCwd = useSettingsStore((s) => s.setNewTabCwd);
   const copyOnSelect = useSettingsStore((s) => s.copyOnSelect);
   const setCopyOnSelect = useSettingsStore((s) => s.setCopyOnSelect);
   const customShellPath = useSettingsStore((s) => s.customShellPath);
@@ -85,6 +87,31 @@ export function TerminalSettingsSection() {
           className="w-full max-w-md rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent"
         />
         <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.customShellHint")}</p>
+      </div>
+
+      <div className="mb-6">
+        <span id="new-tab-cwd-label" className="mb-1 block text-sm font-medium text-fg">
+          {t("terminalSettings.newTabCwd")}
+        </span>
+        <p className="mb-2 text-xs text-fg-muted">{t("terminalSettings.newTabCwdHint")}</p>
+        <div role="radiogroup" aria-labelledby="new-tab-cwd-label" className="flex gap-2">
+          {(["workspace", "current"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={newTabCwd === value}
+              onClick={() => setNewTabCwd(value)}
+              className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+                newTabCwd === value
+                  ? "border-accent bg-bg-elevated text-fg"
+                  : "border-border text-fg-muted hover:border-border-strong"
+              }`}
+            >
+              {t(`terminalSettings.newTabCwdOptions.${value}`)}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="mb-6">

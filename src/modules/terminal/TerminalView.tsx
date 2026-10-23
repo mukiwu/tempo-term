@@ -1117,6 +1117,7 @@ export function TerminalView({
             clear: () => term.clear(),
             openSearch: () => openSearchBox(),
             paste: (text) => term.paste(text),
+            cwd: async () => (isPtySession(session) ? await session.cwd() : null),
           });
         }
         if (autoResumeCommand && isPtySession(session)) {

@@ -80,7 +80,7 @@ async function fireMenuEvent(event: string, payload?: unknown): Promise<void> {
 }
 
 function makeOps(): TerminalOps {
-  return { getSelection: () => "", selectAll: vi.fn(), clear: vi.fn(), openSearch: vi.fn(), paste: vi.fn() };
+  return { getSelection: () => "", selectAll: vi.fn(), clear: vi.fn(), openSearch: vi.fn(), paste: vi.fn(), cwd: vi.fn(() => Promise.resolve(null)) };
 }
 
 describe("App menu event wiring", () => {

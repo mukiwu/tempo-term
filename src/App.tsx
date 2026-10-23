@@ -24,7 +24,7 @@ import { computeLayout } from "@/modules/terminal/lib/terminalLayout";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { findPaneContent, leafIds } from "@/modules/terminal/lib/terminalLayout";
-import { focusedTerminalOps } from "@/modules/terminal/lib/terminalBus";
+import { focusedTerminalOps, openNewTerminalTab } from "@/modules/terminal/lib/terminalBus";
 import { getPreviewControls, type PreviewControls } from "@/modules/preview/lib/previewControls";
 import { useGraphSearchRequestStore } from "@/modules/git-graph/lib/graphSearchRequestStore";
 import { menuCopy, menuPaste, menuSelectAll } from "@/lib/editActions";
@@ -643,9 +643,7 @@ function App() {
         // ⌘T opens a terminal straight away. The launcher has no shortcut; it
         // is reached from the tab bar's add button.
         e.preventDefault();
-        useTabsStore
-          .getState()
-          .newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
+        void openNewTerminalTab();
       } else if (key === "p") {
         // ⌘P (Ctrl+P on Windows) opens the command palette; adding Shift opens
         // Find Files.
@@ -704,7 +702,7 @@ function App() {
         useTabsStore.getState().openLauncherTab();
       }),
       listenWebview("menu:new-terminal-tab", () => {
-        useTabsStore.getState().newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
+        void openNewTerminalTab();
       }),
       listenWebview("menu:save", () => {
         saveFocusedEditor();

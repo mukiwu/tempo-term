@@ -46,3 +46,12 @@ describe("TerminalSettingsSection copy on select", () => {
     expect(useSettingsStore.getState().copyOnSelect).toBe(true);
   });
 });
+
+describe("TerminalSettingsSection new tab directory", () => {
+  it("starts in the workspace folder and switches to the current directory", () => {
+    render(<TerminalSettingsSection />);
+    expect(screen.getByRole("radio", { name: "Workspace folder" })).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("radio", { name: "Current directory" }));
+    expect(useSettingsStore.getState().newTabCwd).toBe("current");
+  });
+});
