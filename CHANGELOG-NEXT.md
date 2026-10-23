@@ -15,6 +15,7 @@
 - 終端機設定新增選取後自動複製，以滑鼠選取文字後即複製到剪貼簿，預設關閉 (#483)
 - 終端機設定新增新分頁的起始資料夾，可選工作區資料夾或目前終端機所在的資料夾 (#485)
 - 關閉前確認改為從不、執行中時與一律三種模式，原本的開關設定會自動對應 (#487)
+- 設定的快捷鍵頁可自訂 13 個常用指令的快捷鍵，點選後按下新按鍵即可變更，也可還原預設 (#489)
 
 ### fix
 
@@ -41,6 +42,7 @@
 - Add Copy on select to the terminal settings: a mouse selection is copied to the clipboard as soon as it ends, off by default (#483)
 - Choose where new terminal tabs start in the terminal settings: the workspace folder or the directory of the terminal in front (#485)
 - Close confirmation now offers Never, Running programs and Always; the previous on/off setting carries over (#487)
+- Reassign the shortcuts of 13 common commands in Settings > Shortcuts: click one, press the new keys, or restore the default (#489)
 
 ### fix
 
