@@ -13,6 +13,7 @@
 - 分頁列右上角新增向右分割、向下分割與開啟指令面板的按鈕 (#479)
 - 設定視窗新增搜尋，可用中文或英文找到設定項，點選後會跳到該項並短暫標示 (#481)
 - 終端機設定新增選取後自動複製，以滑鼠選取文字後即複製到剪貼簿，預設關閉 (#483)
+- 終端機設定新增新分頁的起始資料夾，可選工作區資料夾或目前終端機所在的資料夾 (#485)
 
 ### fix
 
@@ -37,6 +38,7 @@
 - Add Split Right, Split Down and Command Palette buttons to the right of the tab bar (#479)
 - Search settings by name or description, in the interface language or English; choosing a result jumps to the setting and highlights it (#481)
 - Add Copy on select to the terminal settings: a mouse selection is copied to the clipboard as soon as it ends, off by default (#483)
+- Choose where new terminal tabs start in the terminal settings: the workspace folder or the directory of the terminal in front (#485)
 
 ### fix
 
