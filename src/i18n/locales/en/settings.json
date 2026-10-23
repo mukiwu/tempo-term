@@ -260,6 +260,7 @@
     "paste": "Paste",
     "saveFile": "Save file",
     "slashMenu": "Open block menu",
-    "exitCodeBlock": "Exit code block"
+    "exitCodeBlock": "Exit code block",
+    "commandPalette": "Command palette"
   }
 }

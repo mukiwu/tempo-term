@@ -130,13 +130,14 @@ export function buildMenus(ctx: MenuContext): MenuDef[] {
         { id: "paste", labelKey: "menuBar.paste", group: 0, shortcut: { mac: "⌘V", win: "Ctrl+V" }, action: { kind: "event", event: "menu:paste" } },
         { id: "select-all", labelKey: "menuBar.selectAll", group: 0, shortcut: { mac: "⌘A", win: "Ctrl+A" }, action: { kind: "event", event: "menu:select-all" } },
         { id: "find-in-terminal", labelKey: "menuBar.findInTerminal", group: 1, shortcut: { mac: "⌘F", win: "Ctrl+Shift+F" }, action: { kind: "event", event: "menu:find-in-terminal" }, disabled: notTerminal },
-        { id: "find-files", labelKey: "menuBar.findFiles", group: 1, shortcut: { mac: "⌘P", win: "Ctrl+Shift+P" }, action: { kind: "event", event: "menu:find-files" } },
+        { id: "find-files", labelKey: "menuBar.findFiles", group: 1, shortcut: { mac: "⇧⌘P", win: "Ctrl+Shift+P" }, action: { kind: "event", event: "menu:find-files" } },
       ],
     },
     {
       id: "view",
       labelKey: "menuBar.view",
       items: [
+        { id: "command-palette", labelKey: "menuBar.commandPalette", group: 0, shortcut: { mac: "⌘P", win: "Ctrl+P" }, action: { kind: "event", event: "menu:command-palette" } },
         { id: "toggle-sidebar", labelKey: "menuBar.toggleSidebar", group: 0, shortcut: { mac: "⌘B", win: "Ctrl+Shift+B" }, action: { kind: "event", event: "menu:toggle-sidebar" } },
         { id: "toggle-right-sidebar", labelKey: "menuBar.toggleRightSidebar", group: 0, shortcut: { mac: "⌥⌘B", win: "Ctrl+Alt+B" }, action: { kind: "event", event: "menu:toggle-right-sidebar" } },
         {

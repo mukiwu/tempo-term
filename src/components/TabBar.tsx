@@ -17,6 +17,9 @@ import {
   PanelRight,
   Pin,
   Search,
+  Columns2,
+  Rows2,
+  SquareSlash,
   SquareTerminal,
   X,
   type LucideIcon,
@@ -36,7 +39,7 @@ import {
   horizontalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
-import { useTabsStore, type Tab } from "@/stores/tabsStore";
+import { MAX_PANES, useTabsStore, type Tab } from "@/stores/tabsStore";
 import { Tooltip } from "@/components/Tooltip";
 import { useTabCloseRequest } from "./useTabCloseRequest";
 import { useUiStore } from "@/stores/uiStore";
@@ -318,6 +321,13 @@ export function TabBar() {
   const leftVisible = useUiStore((s) => s.visible.left);
   const rightVisible = useUiStore((s) => s.visible.right);
   const openFileFinder = useUiStore((s) => s.openFileFinder);
+  const splitActivePane = useTabsStore((s) => s.splitActivePane);
+  // As with ⌘D: any pane splits, until the tab holds the most panes allowed.
+  const canSplit = useTabsStore((s) => {
+    const tab = s.tabs.find((candidate) => candidate.id === s.activeId);
+    return tab ? tab.paneOrder.length < MAX_PANES : false;
+  });
+  const openCommandPalette = useUiStore((s) => s.openCommandPalette);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const canSearchFiles = canSearchRoot(rootPath);
   const reorderTab = useTabsStore((s) => s.reorderTab);
@@ -550,38 +560,73 @@ export function TabBar() {
           {draggingTab ? <TabOverlay tab={draggingTab} /> : null}
         </DragOverlay>
       </DndContext>
-      <Tooltip
-        label={t("explorer:findFiles")}
-        side="bottom"
-        className="shrink-0"
-      >
-        <button
-          type="button"
-          aria-label={t("explorer:findFiles")}
-          disabled={!canSearchFiles}
-          onClick={openFileFinder}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+      {/* Grouped without the bar's gap so the icons sit close together. */}
+      <div className="flex shrink-0 items-center">
+        <Tooltip label={t("workspace.splitRight")} side="bottom" className="shrink-0">
+          <button
+            type="button"
+            aria-label={t("workspace.splitRight")}
+            disabled={!canSplit}
+            onClick={() => splitActivePane("row")}
+            className="flex h-7 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Columns2 size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip label={t("workspace.splitDown")} side="bottom" className="shrink-0">
+          <button
+            type="button"
+            aria-label={t("workspace.splitDown")}
+            disabled={!canSplit}
+            onClick={() => splitActivePane("col")}
+            className="flex h-7 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Rows2 size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip
+          label={t("explorer:findFiles")}
+          side="bottom"
+          className="shrink-0"
         >
-          <Search size={15} />
-        </button>
-      </Tooltip>
-      <Tooltip
-        label={t("workspace.toggleRightSidebar")}
-        side="bottom"
-        className="shrink-0"
-      >
-        <button
-          type="button"
-          aria-label={t("workspace.toggleRightSidebar")}
-          aria-pressed={rightVisible}
-          onClick={() => toggleSide("right")}
-          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-bg-elevated ${
-            rightVisible ? "text-fg" : "text-fg-subtle hover:text-fg"
-          }`}
+          <button
+            type="button"
+            aria-label={t("explorer:findFiles")}
+            disabled={!canSearchFiles}
+            onClick={openFileFinder}
+            className="flex h-7 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Search size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip label={t("commandPalette.title")} side="bottom" className="shrink-0">
+          <button
+            type="button"
+            aria-label={t("commandPalette.title")}
+            onClick={openCommandPalette}
+            className="flex h-7 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-elevated hover:text-fg"
+          >
+            <SquareSlash size={15} />
+          </button>
+        </Tooltip>
+        <Tooltip
+          label={t("workspace.toggleRightSidebar")}
+          side="bottom"
+          className="shrink-0"
         >
-          <PanelRight size={16} />
-        </button>
-      </Tooltip>
+          <button
+            type="button"
+            aria-label={t("workspace.toggleRightSidebar")}
+            aria-pressed={rightVisible}
+            onClick={() => toggleSide("right")}
+            className={`flex h-7 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-bg-elevated ${
+              rightVisible ? "text-fg" : "text-fg-subtle hover:text-fg"
+            }`}
+          >
+            <PanelRight size={16} />
+          </button>
+        </Tooltip>
+      </div>
     </header>
   );
 }
