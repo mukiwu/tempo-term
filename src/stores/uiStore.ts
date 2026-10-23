@@ -212,6 +212,8 @@ interface UiState {
   setupWizardOpen: boolean;
   terminalOpen: boolean;
   fileFinderOpen: boolean;
+  /** The command palette (⌘P / Ctrl+P): commands, files, sessions and hosts. */
+  commandPaletteOpen: boolean;
   /**
    * The worktrees manager, or null when closed. Deliberately not a `PanelId`:
    * creating and pruning worktrees is occasional housekeeping, so it is a modal
@@ -243,6 +245,7 @@ interface UiState {
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
   setFileFinderOpen: (open: boolean) => void;
+  setCommandPaletteOpen: (open: boolean) => void;
   /** Show the worktrees manager. The entry point picks the scope: the status-bar
    *  badge means "everything", a terminal means "the repo I am in". */
   openWorktrees: (
@@ -255,6 +258,7 @@ interface UiState {
    *  the sidebar — it renders as a top-anchored overlay regardless of which
    *  sidebar panel (if any) is currently showing. */
   openFileFinder: () => void;
+  openCommandPalette: () => void;
   pushOverlay: () => void;
   popOverlay: () => void;
 }
@@ -272,6 +276,7 @@ export const useUiStore = create<UiState>((set) => {
     setupWizardOpen: false,
     terminalOpen: true,
     fileFinderOpen: false,
+    commandPaletteOpen: false,
     worktreesModal: null,
     overlayCount: 0,
 
@@ -335,6 +340,7 @@ export const useUiStore = create<UiState>((set) => {
     setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
     toggleTerminal: () => set((state) => ({ terminalOpen: !state.terminalOpen })),
     setFileFinderOpen: (fileFinderOpen) => set({ fileFinderOpen }),
+    setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
 
     openWorktrees: (scope, repoPath = null) =>
       set({ worktreesModal: { scope, repoPath: scope === "global" ? null : repoPath } }),
@@ -342,6 +348,7 @@ export const useUiStore = create<UiState>((set) => {
     closeWorktrees: () => set({ worktreesModal: null }),
 
     openFileFinder: () => set({ fileFinderOpen: true }),
+    openCommandPalette: () => set({ commandPaletteOpen: true }),
 
     pushOverlay: () => set((state) => ({ overlayCount: state.overlayCount + 1 })),
     popOverlay: () => set((state) => ({ overlayCount: Math.max(0, state.overlayCount - 1) })),

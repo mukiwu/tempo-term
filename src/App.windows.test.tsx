@@ -182,7 +182,9 @@ describe("App shell — Windows keyboard shortcuts", () => {
     fireEvent.keyDown(window, { code: "KeyB", key: "b", ctrlKey: true });
     fireEvent.keyDown(window, { code: "KeyP", key: "p", ctrlKey: true });
     expect(useUiStore.getState().visible.left).toBe(dockBefore);
+    // A bare Ctrl+P opens the command palette, not Find Files.
     expect(useUiStore.getState().fileFinderOpen).toBe(false);
+    expect(useUiStore.getState().commandPaletteOpen).toBe(true);
 
     fireEvent.keyDown(window, { code: "KeyB", key: "B", ctrlKey: true, shiftKey: true });
     fireEvent.keyDown(window, { code: "KeyP", key: "P", ctrlKey: true, shiftKey: true });

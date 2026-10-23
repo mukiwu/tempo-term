@@ -159,7 +159,8 @@
     "keyboardShortcuts": "鍵盤快捷鍵",
     "reportIssue": "回報問題",
     "checkForUpdates": "檢查更新",
-    "about": "關於"
+    "about": "關於",
+    "commandPalette": "指令面板…"
   },
   "actions": {
     "newTab": "新增分頁",
@@ -500,5 +501,22 @@
     "reload": "重新整理工作區",
     "revealLog": "顯示診斷紀錄",
     "reloadFailed": "目前無法安全地重新整理工作區，請先儲存較大的未儲存檔案後再試一次。"
+  },
+  "commandPalette": {
+    "title": "指令面板",
+    "placeholder": "輸入指令…",
+    "categories": {
+      "all": "全部",
+      "commands": "指令",
+      "files": "檔案",
+      "sessions": "對話",
+      "hosts": "主機"
+    },
+    "noResults": "沒有符合的結果",
+    "noFolder": "請先開啟資料夾以搜尋檔案",
+    "navigate": "選擇",
+    "run": "執行",
+    "switchCategory": "切換分類",
+    "close": "關閉"
   }
 }

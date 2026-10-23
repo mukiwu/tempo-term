@@ -260,6 +260,7 @@
     "paste": "貼上",
     "saveFile": "儲存檔案",
     "slashMenu": "開啟區塊選單",
-    "exitCodeBlock": "跳出程式碼區塊"
+    "exitCodeBlock": "跳出程式碼區塊",
+    "commandPalette": "指令面板"
   }
 }

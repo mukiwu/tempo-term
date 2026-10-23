@@ -33,6 +33,7 @@ import { useBackgroundImage } from "@/lib/useBackgroundImage";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BackgroundImageLayer } from "@/components/BackgroundImageLayer";
 import { FileFinder } from "@/modules/explorer/FileFinder";
+import { CommandPalette } from "@/components/CommandPalette";
 import { canSearchRoot } from "@/modules/explorer/lib/fsBridge";
 import { applyTheme, getTheme } from "@/themes/themes";
 import { listen, type Event as TauriEvent } from "@tauri-apps/api/event";
@@ -192,6 +193,8 @@ function App() {
   const setSetupWizardOpen = useUiStore((s) => s.setSetupWizardOpen);
   const fileFinderOpen = useUiStore((s) => s.fileFinderOpen);
   const setFileFinderOpen = useUiStore((s) => s.setFileFinderOpen);
+  const commandPaletteOpen = useUiStore((s) => s.commandPaletteOpen);
+  const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const rootPath = useWorkspaceStore((s) => s.rootPath);
   const [pendingCloseAction, setPendingCloseAction] = useState<(() => void) | null>(null);
   const [pendingBusyClose, setPendingBusyClose] = useState<(() => void) | null>(null);
@@ -643,11 +646,15 @@ function App() {
         useTabsStore
           .getState()
           .newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
-      } else if (key === "p" && (!IS_WINDOWS || e.shiftKey)) {
-        // Windows moved Find Files to Ctrl+Shift+P so a bare Ctrl+P reaches the
-        // shell (readline's previous-history).
+      } else if (key === "p") {
+        // ⌘P (Ctrl+P on Windows) opens the command palette; adding Shift opens
+        // Find Files.
         e.preventDefault();
-        useUiStore.getState().openFileFinder();
+        if (e.shiftKey) {
+          useUiStore.getState().openFileFinder();
+        } else {
+          useUiStore.getState().openCommandPalette();
+        }
       } else if (key === ",") {
         e.preventDefault();
         useUiStore.getState().openSettings();
@@ -713,6 +720,9 @@ function App() {
       }),
       listenWebview("menu:find-in-terminal", () => {
         focusedTerminalOps()?.openSearch();
+      }),
+      listenWebview("menu:command-palette", () => {
+        useUiStore.getState().openCommandPalette();
       }),
       listenWebview("menu:find-files", () => {
         useUiStore.getState().openFileFinder();
@@ -836,6 +846,7 @@ function App() {
         {settingsOpen && <SettingsModal />}
         {worktreesModal && <WorktreesModal state={worktreesModal} />}
         {setupWizardOpen && <SetupWizard />}
+        {commandPaletteOpen && <CommandPalette onClose={() => setCommandPaletteOpen(false)} />}
         {fileFinderOpen && canSearchRoot(rootPath) && (
           <FileFinder root={rootPath} onClose={() => setFileFinderOpen(false)} />
         )}

@@ -159,7 +159,8 @@
     "keyboardShortcuts": "Keyboard Shortcuts",
     "reportIssue": "Report Issue",
     "checkForUpdates": "Check for Updates",
-    "about": "About"
+    "about": "About",
+    "commandPalette": "Command Palette..."
   },
   "actions": {
     "newTab": "New Tab",
@@ -500,5 +501,22 @@
     "reload": "Reload workspace",
     "revealLog": "Reveal diagnostics log",
     "reloadFailed": "The workspace cannot be reloaded safely right now. Save any large unsaved files and try again."
+  },
+  "commandPalette": {
+    "title": "Command palette",
+    "placeholder": "Run a command...",
+    "categories": {
+      "all": "All",
+      "commands": "Commands",
+      "files": "Files",
+      "sessions": "Sessions",
+      "hosts": "Hosts"
+    },
+    "noResults": "No results",
+    "noFolder": "Open a folder to search files",
+    "navigate": "navigate",
+    "run": "run",
+    "switchCategory": "switch",
+    "close": "close"
   }
 }
