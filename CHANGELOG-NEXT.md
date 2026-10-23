@@ -14,6 +14,7 @@
 - 設定視窗新增搜尋，可用中文或英文找到設定項，點選後會跳到該項並短暫標示 (#481)
 - 終端機設定新增選取後自動複製，以滑鼠選取文字後即複製到剪貼簿，預設關閉 (#483)
 - 終端機設定新增新分頁的起始資料夾，可選工作區資料夾或目前終端機所在的資料夾 (#485)
+- 關閉前確認改為從不、執行中時與一律三種模式，原本的開關設定會自動對應 (#487)
 
 ### fix
 
@@ -39,6 +40,7 @@
 - Search settings by name or description, in the interface language or English; choosing a result jumps to the setting and highlights it (#481)
 - Add Copy on select to the terminal settings: a mouse selection is copied to the clipboard as soon as it ends, off by default (#483)
 - Choose where new terminal tabs start in the terminal settings: the workspace folder or the directory of the terminal in front (#485)
+- Close confirmation now offers Never, Running programs and Always; the previous on/off setting carries over (#487)
 
 ### fix
 
