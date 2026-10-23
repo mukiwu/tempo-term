@@ -30,7 +30,7 @@ vi.mock("./FontsSettingsSection", () => ({
 vi.mock("./TerminalSettingsSection", () => ({
   TerminalSettingsSection: () => (
     <div data-testid="section-terminal">
-      <label>Confirm before closing running terminals</label>
+      <label>Confirm before closing</label>
     </div>
   ),
 }));
@@ -233,10 +233,10 @@ describe("SettingsView search", () => {
       render(<SettingsView />);
       fireEvent.change(screen.getByRole("searchbox"), { target: { value: "closing" } });
       const results = screen.getByRole("list", { name: "Search results" });
-      fireEvent.click(within(results).getByText("Confirm before closing running terminals"));
+      fireEvent.click(within(results).getByText("Confirm before closing"));
 
       expect(screen.getByTestId("section-terminal")).toBeInTheDocument();
-      const label = screen.getByText("Confirm before closing running terminals");
+      const label = screen.getByText("Confirm before closing");
       expect(label).toHaveClass("settings-search-hit");
       act(() => vi.advanceTimersByTime(2000));
       expect(label).not.toHaveClass("settings-search-hit");

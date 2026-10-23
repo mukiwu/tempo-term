@@ -17,6 +17,9 @@ use crate::modules::ssh::SshState;
 
 pub struct ExitGuardState {
     enabled: AtomicBool,
+    /// Ask about every live session, idle shells included, rather than only
+    /// the ones running a job.
+    always: AtomicBool,
     prompting: AtomicBool,
     bypass_once: AtomicBool,
     language: Mutex<String>,
@@ -28,6 +31,7 @@ impl ExitGuardState {
             // Opt-out: old installations that have not persisted this setting
             // are protected immediately, even before the frontend is loaded.
             enabled: AtomicBool::new(true),
+            always: AtomicBool::new(false),
             prompting: AtomicBool::new(false),
             bypass_once: AtomicBool::new(false),
             language: Mutex::new("en".to_string()),
@@ -76,16 +80,27 @@ fn decide_window_close(
     }
 }
 
-/// Sessions whose terminal is actually running a job (#366). SSH sessions all
-/// count: a live remote shell's foreground state cannot be probed from here,
-/// and over-asking beats silently dropping a remote connection.
+/// Sessions a quit would ask about: those whose terminal is actually running a
+/// job (#366), or every session when the guard is set to always ask. SSH
+/// sessions all count: a live remote shell's foreground state cannot be probed
+/// from here, and over-asking beats silently dropping a remote connection.
 fn all_busy_count(app: &AppHandle) -> usize {
     let pty = app.state::<PtyState>();
     let ssh = app.state::<SshState>();
-    crate::modules::pty::busy_session_count(&pty) + crate::modules::ssh::session_count(&ssh)
+    let local = if app.state::<ExitGuardState>().always.load(Ordering::Acquire) {
+        crate::modules::pty::session_count(&pty)
+    } else {
+        crate::modules::pty::busy_session_count(&pty)
+    };
+    local + crate::modules::ssh::session_count(&ssh)
 }
 
+/// The window's sessions a close would ask about, by the same rule as
+/// `all_busy_count`.
 fn window_busy_count(app: &AppHandle, owner: &str) -> usize {
+    if app.state::<ExitGuardState>().always.load(Ordering::Acquire) {
+        return window_session_count(app, owner);
+    }
     let pty = app.state::<PtyState>();
     let ssh = app.state::<SshState>();
     crate::modules::pty::busy_owned_session_count(&pty, owner)
@@ -139,9 +154,11 @@ pub fn exit_guard_configure(
     app: AppHandle,
     state: State<'_, ExitGuardState>,
     enabled: bool,
+    always: Option<bool>,
     language: String,
 ) -> Result<(), String> {
     state.enabled.store(enabled, Ordering::Release);
+    state.always.store(always.unwrap_or(false), Ordering::Release);
     *state.language.lock().unwrap() = language.clone();
     crate::modules::menu::refresh_language(&app, &language)
 }
@@ -319,6 +336,8 @@ mod tests {
     fn exit_confirmation_defaults_to_enabled() {
         let state = ExitGuardState::new();
         assert!(state.enabled.load(Ordering::Acquire));
+        // Only busy sessions ask until the frontend chooses otherwise.
+        assert!(!state.always.load(Ordering::Acquire));
         assert!(!state.prompting.load(Ordering::Acquire));
     }
 

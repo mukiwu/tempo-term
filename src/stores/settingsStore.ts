@@ -21,6 +21,10 @@ export type BackgroundImageScope = "workspace" | "window";
 
 export type NewTabCwd = "workspace" | "current";
 
+export type CloseConfirmMode = "never" | "running" | "always";
+
+const CLOSE_CONFIRM_MODES: readonly CloseConfirmMode[] = ["never", "running", "always"];
+
 /** Which info blocks each workspace card shows; all on by default. */
 export interface WorkspaceCardBlocks {
   status: boolean;
@@ -82,8 +86,10 @@ interface SettingsState {
   diffUnified: boolean;
   /** Persist each terminal's scrollback and restore it on next launch. */
   restoreTerminalHistory: boolean;
-  /** Ask before closing a window or app that still owns live PTY/SSH sessions. */
-  confirmCloseWithRunningTerminals: boolean;
+  /** When closing a pane, tab, window or the app asks first: never, only
+   *  while a terminal is running a job (SSH sessions always count), or
+   *  whenever a terminal session is open. */
+  closeConfirm: CloseConfirmMode;
   /** Folder that backs global notes; null until the user picks one. */
   notesFolderPath: string | null;
   /** Which info blocks the workspace cards show. */
@@ -172,7 +178,7 @@ interface SettingsState {
   toggleWordWrap: () => void;
   toggleDiffUnified: () => void;
   setRestoreTerminalHistory: (value: boolean) => void;
-  setConfirmCloseWithRunningTerminals: (value: boolean) => void;
+  setCloseConfirm: (mode: CloseConfirmMode) => void;
   setNotesFolderPath: (path: string | null) => void;
   setWorkspaceCardBlock: (key: keyof WorkspaceCardBlocks, value: boolean) => void;
   setGitGraphRefs: (patch: Partial<GitGraphRefSettings>) => void;
@@ -198,6 +204,25 @@ interface SettingsState {
 }
 
 export const SETTINGS_STORAGE_KEY = "tempoterm-settings";
+
+/**
+ * The stored close confirmation mode. Settings saved before the three modes
+ * hold a boolean instead: off becomes never, on becomes running, which is
+ * what the boolean meant.
+ */
+function migrateCloseConfirm(stored: object, fallback: CloseConfirmMode): CloseConfirmMode {
+  const { closeConfirm, confirmCloseWithRunningTerminals } = stored as {
+    closeConfirm?: unknown;
+    confirmCloseWithRunningTerminals?: unknown;
+  };
+  if (CLOSE_CONFIRM_MODES.includes(closeConfirm as CloseConfirmMode)) {
+    return closeConfirm as CloseConfirmMode;
+  }
+  if (typeof confirmCloseWithRunningTerminals === "boolean") {
+    return confirmCloseWithRunningTerminals ? "running" : "never";
+  }
+  return fallback;
+}
 
 function clampPadding(value: number): number {
   if (Number.isNaN(value)) {
@@ -268,7 +293,7 @@ export const useSettingsStore = create<SettingsState>()(
       wordWrap: false,
       diffUnified: false,
       restoreTerminalHistory: true,
-      confirmCloseWithRunningTerminals: true,
+      closeConfirm: "running",
       notesFolderPath: null,
       workspaceCard: DEFAULT_WORKSPACE_CARD,
       gitGraphRefs: DEFAULT_GIT_GRAPH_REFS,
@@ -321,8 +346,7 @@ export const useSettingsStore = create<SettingsState>()(
       toggleWordWrap: () => set((s) => ({ wordWrap: !s.wordWrap })),
       toggleDiffUnified: () => set((s) => ({ diffUnified: !s.diffUnified })),
       setRestoreTerminalHistory: (value) => set({ restoreTerminalHistory: value }),
-      setConfirmCloseWithRunningTerminals: (value) =>
-        set({ confirmCloseWithRunningTerminals: value }),
+      setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
       setNotesFolderPath: (path) => set({ notesFolderPath: path }),
       setWorkspaceCardBlock: (key, value) =>
         set((state) => ({ workspaceCard: { ...state.workspaceCard, [key]: value } })),
@@ -378,10 +402,7 @@ export const useSettingsStore = create<SettingsState>()(
           ),
           gitGraphRefs: normalizeGitGraphRefs(stored.gitGraphRefs),
           newTabCwd: stored.newTabCwd === "current" ? "current" : "workspace",
-          confirmCloseWithRunningTerminals:
-            typeof stored.confirmCloseWithRunningTerminals === "boolean"
-              ? stored.confirmCloseWithRunningTerminals
-              : current.confirmCloseWithRunningTerminals,
+          closeConfirm: migrateCloseConfirm(stored, current.closeConfirm),
         };
       },
     },

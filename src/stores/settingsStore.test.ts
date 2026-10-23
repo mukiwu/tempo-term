@@ -28,7 +28,7 @@ describe("settingsStore", () => {
       backgroundImageTextColor: null,
       terminalPadding: initialState.terminalPadding,
       wordWrap: initialState.wordWrap,
-      confirmCloseWithRunningTerminals: true,
+      closeConfirm: "running",
       workspaceCard: { status: true, branch: true, cwd: true, pr: true },
       prSource: "auto",
       claudeFlags: initialState.claudeFlags,
@@ -157,6 +157,21 @@ describe("settingsStore", () => {
     useSettingsStore.getState().setGitGraphRefs({ refLimit: 0 });
     expect(useSettingsStore.getState().gitGraphRefs.refLimit).toBe(1);
   });
+
+  it.each([
+    [false, "never"],
+    [true, "running"],
+  ] as const)(
+    "maps the older close confirmation switch %s to %s",
+    async (stored, expected) => {
+      localStorage.setItem(
+        "tempoterm-settings",
+        JSON.stringify({ state: { confirmCloseWithRunningTerminals: stored }, version: 0 }),
+      );
+      await useSettingsStore.persist.rehydrate();
+      expect(useSettingsStore.getState().closeConfirm).toBe(expected);
+    },
+  );
 
   it("fills in the Git Graph ref block a store written by an older build lacks", async () => {
     localStorage.setItem(
@@ -295,12 +310,10 @@ describe("settingsStore", () => {
     expect(useSettingsStore.getState().customShellPath).toBe("/opt/homebrew/bin/pwsh");
   });
 
-  it("defaults terminal close confirmation on and persists an opt-out", () => {
-    expect(useSettingsStore.getState().confirmCloseWithRunningTerminals).toBe(true);
-    useSettingsStore.getState().setConfirmCloseWithRunningTerminals(false);
-    expect(useSettingsStore.getState().confirmCloseWithRunningTerminals).toBe(false);
-    expect(localStorage.getItem("tempoterm-settings")).toContain(
-      '"confirmCloseWithRunningTerminals":false',
-    );
+  it("defaults close confirmation to running programs and persists a change", () => {
+    expect(useSettingsStore.getState().closeConfirm).toBe("running");
+    useSettingsStore.getState().setCloseConfirm("always");
+    expect(useSettingsStore.getState().closeConfirm).toBe("always");
+    expect(localStorage.getItem("tempoterm-settings")).toContain('"closeConfirm":"always"');
   });
 });

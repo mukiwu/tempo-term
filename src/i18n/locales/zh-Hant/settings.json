@@ -182,8 +182,8 @@
     "previewText": "$ tempo --version\nTempoTerm 終端機間距預覽",
     "restoreHistory": "重新啟動時還原終端機歷史",
     "restoreHistoryHint": "重開時把每個終端機的上次輸出以唯讀方式還原,除非該 shell 已結束或分頁已關閉",
-    "confirmClose": "關閉時確認仍在執行的終端機",
-    "confirmCloseHint": "關閉視窗或結束 App 前，若仍有本機終端或 SSH 工作階段，先顯示確認提示（預設開啟）",
+    "confirmClose": "關閉前確認",
+    "confirmCloseHint": "關閉面板、分頁、視窗或 app 會結束其中的終端機。執行中時僅在終端機正在執行指令或有 SSH 連線時詢問，閒置的 shell 會直接關閉。",
     "suggestions": "提示曾經輸入過的指令",
     "suggestionsHint": "輸入時根據 shell 歷史以灰色顯示補完建議，按 → 接受",
     "actionLinks": "滑鼠懸停動作卡片",
@@ -200,6 +200,11 @@
     "newTabCwdOptions": {
       "workspace": "工作區資料夾",
       "current": "目前資料夾"
+    },
+    "confirmCloseOptions": {
+      "never": "從不",
+      "running": "執行中時",
+      "always": "一律"
     }
   },
   "aiModel": {

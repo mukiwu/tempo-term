@@ -376,15 +376,15 @@ function App() {
     const sync = () => {
       const settings = useSettingsStore.getState();
       void invoke("exit_guard_configure", {
-        enabled: settings.confirmCloseWithRunningTerminals,
+        enabled: settings.closeConfirm !== "never",
+        always: settings.closeConfirm === "always",
         language: settings.language,
       }).catch(() => {});
     };
     sync();
     return useSettingsStore.subscribe((state, previous) => {
       if (
-        state.confirmCloseWithRunningTerminals !==
-          previous.confirmCloseWithRunningTerminals ||
+        state.closeConfirm !== previous.closeConfirm ||
         state.language !== previous.language
       ) {
         sync();

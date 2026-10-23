@@ -182,8 +182,8 @@
     "previewText": "$ tempo --version\nTempoTerm terminal padding preview",
     "restoreHistory": "Restore terminal history on relaunch",
     "restoreHistoryHint": "Reopen each terminal with its previous output (read-only), unless its shell was exited or the pane was closed",
-    "confirmClose": "Confirm before closing running terminals",
-    "confirmCloseHint": "Show a confirmation before closing a window or quitting the app while local terminal or SSH sessions are still running (enabled by default)",
+    "confirmClose": "Confirm before closing",
+    "confirmCloseHint": "Closing a pane, tab, window or the app stops its terminals. Running programs asks only when a terminal is running a command or an SSH session is open; idle shells close at once.",
     "suggestions": "Suggest previous commands",
     "suggestionsHint": "Show a dim completion from your shell history as you type; press → to accept",
     "actionLinks": "Hover action cards",
@@ -200,6 +200,11 @@
     "newTabCwdOptions": {
       "workspace": "Workspace folder",
       "current": "Current directory"
+    },
+    "confirmCloseOptions": {
+      "never": "Never",
+      "running": "Running programs",
+      "always": "Always"
     }
   },
   "aiModel": {

@@ -29,17 +29,21 @@ interface PaneLike {
  * cannot be probed), a local terminal counts when the backend reports its
  * shell busy, and everything else — editors, previews, panes whose pty is not
  * open yet — never blocks a close. Honors the same user setting as the
- * window-level confirmation.
+ * window-level confirmation; set to always ask, any terminal pane counts.
  *
  * Synchronous whenever it can decide without the backend, so the common
  * closes (editors, launchers, idle registries) stay one synchronous action —
  * a Promise comes back only when a live local pty actually has to be asked.
  */
 export function panesWouldInterrupt(panes: PaneLike[]): boolean | Promise<boolean> {
-  if (!useSettingsStore.getState().confirmCloseWithRunningTerminals) {
+  const mode = useSettingsStore.getState().closeConfirm;
+  if (mode === "never") {
     return false;
   }
   const terminals = panes.filter((p) => p.content.kind === "terminal");
+  if (mode === "always") {
+    return terminals.length > 0;
+  }
   if (terminals.some((p) => p.content.kind === "terminal" && p.content.ssh)) {
     return true;
   }

@@ -14,12 +14,8 @@ export function TerminalSettingsSection() {
   const setTerminalPadding = useSettingsStore((s) => s.setTerminalPadding);
   const restoreTerminalHistory = useSettingsStore((s) => s.restoreTerminalHistory);
   const setRestoreTerminalHistory = useSettingsStore((s) => s.setRestoreTerminalHistory);
-  const confirmCloseWithRunningTerminals = useSettingsStore(
-    (s) => s.confirmCloseWithRunningTerminals,
-  );
-  const setConfirmCloseWithRunningTerminals = useSettingsStore(
-    (s) => s.setConfirmCloseWithRunningTerminals,
-  );
+  const closeConfirm = useSettingsStore((s) => s.closeConfirm);
+  const setCloseConfirm = useSettingsStore((s) => s.setCloseConfirm);
   const terminalSuggestions = useSettingsStore((s) => s.terminalSuggestions);
   const setTerminalSuggestions = useSettingsStore((s) => s.setTerminalSuggestions);
   const newTabCwd = useSettingsStore((s) => s.newTabCwd);
@@ -115,18 +111,28 @@ export function TerminalSettingsSection() {
       </div>
 
       <div className="mb-6">
-        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
-          <input
-            type="checkbox"
-            checked={confirmCloseWithRunningTerminals}
-            onChange={(e) => setConfirmCloseWithRunningTerminals(e.target.checked)}
-            className="accent-accent"
-          />
+        <span id="close-confirm-label" className="mb-1 block text-sm font-medium text-fg">
           {t("terminalSettings.confirmClose")}
-        </label>
-        <p className="mt-1 text-xs text-fg-muted">
-          {t("terminalSettings.confirmCloseHint")}
-        </p>
+        </span>
+        <p className="mb-2 text-xs text-fg-muted">{t("terminalSettings.confirmCloseHint")}</p>
+        <div role="radiogroup" aria-labelledby="close-confirm-label" className="flex gap-2">
+          {(["never", "running", "always"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={closeConfirm === value}
+              onClick={() => setCloseConfirm(value)}
+              className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+                closeConfirm === value
+                  ? "border-accent bg-bg-elevated text-fg"
+                  : "border-border text-fg-muted hover:border-border-strong"
+              }`}
+            >
+              {t(`terminalSettings.confirmCloseOptions.${value}`)}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="mb-6">

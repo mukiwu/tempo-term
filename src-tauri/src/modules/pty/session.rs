@@ -871,6 +871,11 @@ pub fn sessions_busy(state: &PtyState, ids: &[u32]) -> bool {
         .any(|id| sessions.get(id).map(|s| session_is_busy(s)).unwrap_or(false))
 }
 
+/// Every live session, busy or idle.
+pub fn total_count(state: &PtyState) -> usize {
+    state.sessions.read().unwrap().len()
+}
+
 pub fn owned_count(state: &PtyState, owner_label: &str) -> usize {
     state
         .sessions

@@ -18,16 +18,24 @@ const sshPane = (id: string) => ({
 
 beforeEach(() => {
   invoke.mockReset();
-  useSettingsStore.setState({ confirmCloseWithRunningTerminals: true });
+  useSettingsStore.setState({ closeConfirm: "running" });
   unregisterPaneSession("p1");
   unregisterPaneSession("p2");
 });
 
 describe("panesWouldInterrupt", () => {
   it("never interrupts when the setting is off, and asks nothing", async () => {
-    useSettingsStore.setState({ confirmCloseWithRunningTerminals: false });
+    useSettingsStore.setState({ closeConfirm: "never" });
     registerPaneSession("p1", 7);
     expect(panesWouldInterrupt([term("p1")])).toBe(false);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("asks about any terminal pane when set to always, without the backend", async () => {
+    useSettingsStore.setState({ closeConfirm: "always" });
+    registerPaneSession("p1", 7);
+    expect(panesWouldInterrupt([term("p1")])).toBe(true);
+    expect(panesWouldInterrupt([{ id: "e1", content: { kind: "editor", path: "/a" } }])).toBe(false);
     expect(invoke).not.toHaveBeenCalled();
   });
 
