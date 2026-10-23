@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { TerminalSettingsSection } from "./TerminalSettingsSection";
@@ -26,14 +26,15 @@ describe("TerminalSettingsSection custom shell", () => {
     expect(useSettingsStore.getState().customShellPath).toBe("/opt/homebrew/bin/pwsh");
   });
 
-  it("shows the close warning enabled by default and persists an opt-out", () => {
+  it("asks about running programs by default and saves another mode", () => {
     render(<TerminalSettingsSection />);
-    const checkbox = screen.getByLabelText(
-      "Confirm before closing running terminals",
+    const group = screen.getByRole("radiogroup", { name: "Confirm before closing" });
+    expect(within(group).getByRole("radio", { name: "Running programs" })).toHaveAttribute(
+      "aria-checked",
+      "true",
     );
-    expect(checkbox).toBeChecked();
-    fireEvent.click(checkbox);
-    expect(useSettingsStore.getState().confirmCloseWithRunningTerminals).toBe(false);
+    fireEvent.click(within(group).getByRole("radio", { name: "Never" }));
+    expect(useSettingsStore.getState().closeConfirm).toBe("never");
   });
 });
 
