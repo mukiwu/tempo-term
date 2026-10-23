@@ -21,6 +21,16 @@ export type BackgroundImageScope = "workspace" | "window";
 
 export type NewTabCwd = "workspace" | "current";
 
+export interface GitGraphColumns {
+  hash: boolean;
+  author: boolean;
+  date: boolean;
+}
+
+export type GitPullMode = "merge" | "ff-only" | "rebase";
+
+export const GIT_AUTO_FETCH_OPTIONS = [0, 5, 15, 30] as const;
+
 export type CloseConfirmMode = "never" | "running" | "always";
 
 const CLOSE_CONFIRM_MODES: readonly CloseConfirmMode[] = ["never", "running", "always"];
@@ -113,6 +123,15 @@ interface SettingsState {
    * you commit or touch a file, so this is on by default.
    */
   gitGraphUncommittedWhenClean: boolean;
+  /** Which of a commit row's hash, author and date columns the Git Graph shows. */
+  gitGraphColumns: GitGraphColumns;
+  /** How the Git Graph's Pull integrates the upstream. */
+  gitPullMode: GitPullMode;
+  /** Minutes between background fetches of the workspace repository; 0 is off. */
+  gitAutoFetchMinutes: number;
+  /** Show a short notice when a Git Graph operation succeeds. Failures are
+   *  always shown in the graph. */
+  gitNotifySuccess: boolean;
   /** Where workspace cards source PR data. */
   prSource: WorkspacePrSource;
   /** Default flags appended to the `claude` command when launched from the launcher. */
@@ -192,6 +211,10 @@ interface SettingsState {
   setGitGraphRefs: (patch: Partial<GitGraphRefSettings>) => void;
   setGitGraphUncommittedRow: (value: boolean) => void;
   setGitGraphUncommittedWhenClean: (value: boolean) => void;
+  setGitGraphColumn: (key: keyof GitGraphColumns, value: boolean) => void;
+  setGitPullMode: (mode: GitPullMode) => void;
+  setGitAutoFetchMinutes: (minutes: number) => void;
+  setGitNotifySuccess: (value: boolean) => void;
   setPrSource: (source: WorkspacePrSource) => void;
   setClaudeFlags: (flags: string) => void;
   setCodexFlags: (flags: string) => void;
@@ -309,6 +332,10 @@ export const useSettingsStore = create<SettingsState>()(
       gitGraphRefs: DEFAULT_GIT_GRAPH_REFS,
       gitGraphUncommittedRow: true,
       gitGraphUncommittedWhenClean: true,
+      gitGraphColumns: { hash: true, author: true, date: true },
+      gitPullMode: "merge",
+      gitAutoFetchMinutes: 0,
+      gitNotifySuccess: false,
       prSource: "auto",
       claudeFlags: "",
       codexFlags: "",
@@ -378,6 +405,11 @@ export const useSettingsStore = create<SettingsState>()(
       setGitGraphUncommittedRow: (value) => set({ gitGraphUncommittedRow: value }),
       setGitGraphUncommittedWhenClean: (value) =>
         set({ gitGraphUncommittedWhenClean: value }),
+      setGitGraphColumn: (key, value) =>
+        set((state) => ({ gitGraphColumns: { ...state.gitGraphColumns, [key]: value } })),
+      setGitPullMode: (gitPullMode) => set({ gitPullMode }),
+      setGitAutoFetchMinutes: (gitAutoFetchMinutes) => set({ gitAutoFetchMinutes }),
+      setGitNotifySuccess: (gitNotifySuccess) => set({ gitNotifySuccess }),
       setPrSource: (prSource) => set({ prSource }),
       setClaudeFlags: (claudeFlags) => set({ claudeFlags }),
       setCodexFlags: (codexFlags) => set({ codexFlags }),
@@ -424,6 +456,17 @@ export const useSettingsStore = create<SettingsState>()(
           gitGraphRefs: normalizeGitGraphRefs(stored.gitGraphRefs),
           newTabCwd: stored.newTabCwd === "current" ? "current" : "workspace",
           closeConfirm: migrateCloseConfirm(stored, current.closeConfirm),
+          gitGraphColumns: { ...current.gitGraphColumns, ...(stored.gitGraphColumns ?? {}) },
+          gitPullMode: (["merge", "ff-only", "rebase"] as const).includes(
+            stored.gitPullMode as GitPullMode,
+          )
+            ? (stored.gitPullMode as GitPullMode)
+            : current.gitPullMode,
+          gitAutoFetchMinutes: (GIT_AUTO_FETCH_OPTIONS as readonly number[]).includes(
+            stored.gitAutoFetchMinutes as number,
+          )
+            ? (stored.gitAutoFetchMinutes as number)
+            : current.gitAutoFetchMinutes,
           globalHotkey: typeof stored.globalHotkey === "string" ? stored.globalHotkey : null,
           keybindings:
             stored.keybindings && typeof stored.keybindings === "object"

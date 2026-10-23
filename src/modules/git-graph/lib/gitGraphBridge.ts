@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useSettingsStore } from "@/stores/settingsStore";
 import type { Branch, CommitDetails, CommitFileChange, GraphLog, GraphOptions } from "../types";
 
 /** Read the commit DAG for the graph view, filtered by display options. */
@@ -97,9 +98,11 @@ export function gitBranchCheckoutTrack(
   return invoke("git_branch_checkout_track", { repoPath, local, remoteRef });
 }
 
-/** Pull `branch` from `remote` into the current branch. */
+/** Pull `branch` from `remote` into the current branch, integrating it as
+ *  the Pull setting says (merge, fast-forward only, or rebase). */
 export function gitPull(repoPath: string, remote: string, branch: string): Promise<void> {
-  return invoke("git_pull", { repoPath, remote, branch });
+  const mode = useSettingsStore.getState().gitPullMode;
+  return invoke("git_pull", { repoPath, remote, branch, mode });
 }
 
 /** Delete `branch` on `remote`. */

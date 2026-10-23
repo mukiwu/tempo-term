@@ -119,5 +119,6 @@
     "relativeTo": "相對於 {{hash}}",
     "stagedTitle": "已暫存",
     "unstagedTitle": "未暫存"
-  }
+  },
+  "actionDone": "Git 操作已完成"
 }

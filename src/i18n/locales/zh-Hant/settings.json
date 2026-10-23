@@ -26,7 +26,28 @@
     "hideOriginHeadHint": "它只是遠端預設分支的符號連結，指向的 commit 已經有自己的分支 chip 標著了。",
     "collapseLabel": "超量的標籤收合成 +N",
     "refLimitLabel": "列上顯示幾顆",
-    "collapseHint": "超過上限的收進 +N chip，點開即可列出其餘標籤，commit 訊息因此保有可視空間。"
+    "collapseHint": "超過上限的收進 +N chip，點開即可列出其餘標籤，commit 訊息因此保有可視空間。",
+    "columnsTitle": "提交列欄位",
+    "columnsDescription": "每一列提交在訊息旁顯示的資訊。",
+    "columns": {
+      "hash": "雜湊值",
+      "author": "作者",
+      "date": "日期"
+    },
+    "pullTitle": "Pull",
+    "pullDescription": "Pull 合併遠端分支的方式。僅快轉在本機提交需要合併時會拒絕執行。",
+    "pullModes": {
+      "merge": "合併",
+      "ff-only": "僅快轉",
+      "rebase": "Rebase"
+    },
+    "autoFetchTitle": "背景 fetch",
+    "autoFetchDescription": "依此間隔 fetch 工作區儲存庫的所有遠端，並移除遠端已刪除的分支。",
+    "autoFetchOff": "關閉",
+    "autoFetchMinutes_one": "每 {{count}} 分鐘",
+    "autoFetchMinutes_other": "每 {{count}} 分鐘",
+    "notifyLabel": "操作成功時顯示提示",
+    "notifyHint": "包含 checkout、pull、merge 等 Git Graph 操作。失敗時一律會在 Git Graph 中顯示。"
   },
   "workspace": {
     "blocksTitle": "卡片資訊",

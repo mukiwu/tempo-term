@@ -119,5 +119,6 @@
     "relativeTo": "against {{hash}}",
     "stagedTitle": "Staged",
     "unstagedTitle": "Unstaged"
-  }
+  },
+  "actionDone": "Git operation completed"
 }

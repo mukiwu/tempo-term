@@ -44,3 +44,35 @@ describe("GitGraphSettingsSection", () => {
     expect((screen.getByLabelText(/Labels shown/) as HTMLInputElement).disabled).toBe(true);
   });
 });
+
+describe("GitGraphSettingsSection git behavior", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({
+      gitGraphColumns: { hash: true, author: true, date: true },
+      gitPullMode: "merge",
+      gitAutoFetchMinutes: 0,
+      gitNotifySuccess: false,
+    });
+  });
+
+  it("hides a commit row column", () => {
+    render(<GitGraphSettingsSection />);
+    fireEvent.click(checkbox(/^Author$/));
+    expect(useSettingsStore.getState().gitGraphColumns).toEqual({ hash: true, author: false, date: true });
+  });
+
+  it("chooses the pull mode and the fetch interval", () => {
+    render(<GitGraphSettingsSection />);
+    fireEvent.click(screen.getByRole("radio", { name: "Rebase" }));
+    expect(useSettingsStore.getState().gitPullMode).toBe("rebase");
+    expect(screen.getByRole("radio", { name: "Off" })).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("radio", { name: "Every 15 minutes" }));
+    expect(useSettingsStore.getState().gitAutoFetchMinutes).toBe(15);
+  });
+
+  it("turns on success notices", () => {
+    render(<GitGraphSettingsSection />);
+    fireEvent.click(checkbox(/Show a notice when an operation succeeds/));
+    expect(useSettingsStore.getState().gitNotifySuccess).toBe(true);
+  });
+});

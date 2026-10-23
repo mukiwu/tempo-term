@@ -66,6 +66,10 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { section: "gitGraph", labelKey: "gitGraph.mergeLocalRemoteLabel", hintKey: "gitGraph.mergeLocalRemoteHint" },
   { section: "gitGraph", labelKey: "gitGraph.hideOriginHeadLabel", hintKey: "gitGraph.hideOriginHeadHint" },
   { section: "gitGraph", labelKey: "gitGraph.collapseLabel", hintKey: "gitGraph.collapseHint" },
+  { section: "gitGraph", labelKey: "gitGraph.columnsTitle", hintKey: "gitGraph.columnsDescription" },
+  { section: "gitGraph", labelKey: "gitGraph.pullTitle", hintKey: "gitGraph.pullDescription" },
+  { section: "gitGraph", labelKey: "gitGraph.autoFetchTitle", hintKey: "gitGraph.autoFetchDescription" },
+  { section: "gitGraph", labelKey: "gitGraph.notifyLabel", hintKey: "gitGraph.notifyHint" },
   ...SHORTCUT_LABEL_KEYS.map((key) => ({
     section: "shortcuts" as const,
     labelKey: `shortcutsList.${key}`,
