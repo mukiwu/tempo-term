@@ -12,6 +12,7 @@
 - 新增指令面板（⌘P，Windows 為 Ctrl+P），可搜尋指令、檔案、AI 對話與 SSH 主機，指令也可用英文名稱搜尋；尋找檔案改為 ⌘⇧P（Windows 為 Ctrl+Shift+P）(#479)
 - 分頁列右上角新增向右分割、向下分割與開啟指令面板的按鈕 (#479)
 - 設定視窗新增搜尋，可用中文或英文找到設定項，點選後會跳到該項並短暫標示 (#481)
+- 終端機設定新增選取後自動複製，以滑鼠選取文字後即複製到剪貼簿，預設關閉 (#483)
 
 ### fix
 
@@ -35,6 +36,7 @@
 - Add a command palette (⌘P, Ctrl+P on Windows) that searches commands, files, AI sessions and SSH hosts, with commands also matched by their English names; Find Files moves to ⌘⇧P (Ctrl+Shift+P on Windows) (#479)
 - Add Split Right, Split Down and Command Palette buttons to the right of the tab bar (#479)
 - Search settings by name or description, in the interface language or English; choosing a result jumps to the setting and highlights it (#481)
+- Add Copy on select to the terminal settings: a mouse selection is copied to the clipboard as soon as it ends, off by default (#483)
 
 ### fix
 
