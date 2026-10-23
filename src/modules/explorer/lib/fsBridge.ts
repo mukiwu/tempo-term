@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { buildRemoteUri, isRemoteUri, parseRemoteUri } from "@/modules/ssh/lib/remotePath";
 import { sftpReadDir, sftpReadFile, sftpWriteFile, sftpCreateFile, sftpCreateDir, sftpDelete, sftpRename } from "@/modules/ssh/lib/sftp-bridge";
 import { sftpSessionStore } from "@/modules/ssh/lib/sftpSessionStore";
@@ -132,4 +133,11 @@ export async function fsRename(from: string, to: string): Promise<void> {
 
 export function fsReveal(path: string): Promise<void> {
   return invoke("fs_reveal", { path });
+}
+
+/** Open a local file or folder with the external editor from settings, or
+ *  with the system's default app when none is set. */
+export function fsOpenExternal(path: string): Promise<void> {
+  const command = useSettingsStore.getState().externalEditor;
+  return invoke("fs_open_external", { command, path });
 }

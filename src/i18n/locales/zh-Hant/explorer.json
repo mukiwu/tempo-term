@@ -29,6 +29,8 @@
     "attachToAgent": "附加到 AI 助手",
     "rename": "重新命名",
     "delete": "刪除",
-    "deleteRemoteConfirm": "確定要從遠端主機永久刪除「{{name}}」嗎？SFTP 沒有垃圾桶，刪了救不回來。"
-  }
+    "deleteRemoteConfirm": "確定要從遠端主機永久刪除「{{name}}」嗎？SFTP 沒有垃圾桶，刪了救不回來。",
+    "openExternal": "以外部編輯器開啟"
+  },
+  "openExternalFailed": "無法開啟外部編輯器：{{error}}"
 }

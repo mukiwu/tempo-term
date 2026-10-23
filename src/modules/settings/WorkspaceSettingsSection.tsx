@@ -97,6 +97,8 @@ function TokenRow() {
 
 export function WorkspaceSettingsSection() {
   const { t } = useTranslation("settings");
+  const externalEditor = useSettingsStore((s) => s.externalEditor);
+  const setExternalEditor = useSettingsStore((s) => s.setExternalEditor);
   const card = useSettingsStore((s) => s.workspaceCard);
   const setBlock = useSettingsStore((s) => s.setWorkspaceCardBlock);
   const prSource = useSettingsStore((s) => s.prSource);
@@ -179,6 +181,21 @@ export function WorkspaceSettingsSection() {
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-fg-subtle">
         {t("sections.workspace")}
       </h2>
+
+      <div className="mb-6">
+        <label htmlFor="external-editor" className="mb-1 block text-sm font-medium text-fg">
+          {t("workspace.externalEditor")}
+        </label>
+        <p className="mb-2 text-xs text-fg-muted">{t("workspace.externalEditorHint")}</p>
+        <input
+          id="external-editor"
+          type="text"
+          value={externalEditor}
+          placeholder={t("workspace.externalEditorPlaceholder")}
+          onChange={(e) => setExternalEditor(e.target.value)}
+          className="w-full max-w-md rounded-md border border-border bg-bg px-2 py-1 font-mono text-sm text-fg outline-none focus:border-accent"
+        />
+      </div>
 
       <label className="mb-1 block text-sm font-medium text-fg">{t("workspace.blocksTitle")}</label>
       <p className="mb-2 text-xs text-fg-muted">{t("workspace.blocksDescription")}</p>

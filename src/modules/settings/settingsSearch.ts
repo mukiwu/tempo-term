@@ -53,6 +53,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { section: "ai", labelKey: "aiModel.chatLabel", hintKey: "aiModel.chatDescription" },
   { section: "ai", labelKey: "aiInline.label", hintKey: "aiInline.description" },
   { section: "ai", labelKey: "aiKeys.title", hintKey: "aiKeys.description" },
+  { section: "workspace", labelKey: "workspace.externalEditor", hintKey: "workspace.externalEditorHint" },
   { section: "workspace", labelKey: "workspace.blocksTitle", hintKey: "workspace.blocksDescription" },
   { section: "workspace", labelKey: "workspace.statusTrackingTitle", hintKey: "workspace.statusTrackingDescription" },
   { section: "workspace", labelKey: "workspace.notificationsLabel" },

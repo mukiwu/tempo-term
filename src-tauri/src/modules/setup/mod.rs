@@ -455,7 +455,7 @@ fn command_path(preferred: Option<&Path>) -> std::ffi::OsString {
     })
 }
 
-fn find_tool(stem: &str) -> Option<PathBuf> {
+pub(crate) fn find_tool(stem: &str) -> Option<PathBuf> {
     let windows = cfg!(windows);
     let names = exe_names(stem, windows);
     // Resolution flows through the same absolute-only chokepoint as the child
@@ -469,7 +469,7 @@ fn find_tool(stem: &str) -> Option<PathBuf> {
 /// no console of its own (windows_subsystem = "windows"), so an un-flagged spawn
 /// allocates a fresh console that flashes a window — detection alone spawns one
 /// probe per tool. A no-op on Unix and on debug builds. See git::run_git / pr.
-fn tool_command(exe: &std::path::Path) -> Command {
+pub(crate) fn tool_command(exe: &std::path::Path) -> Command {
     #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = Command::new(exe);
     command.env("PATH", command_path(exe.parent()));
