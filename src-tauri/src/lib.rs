@@ -269,6 +269,8 @@ pub fn run() {
             app_build_info,
             exit_guard_configure,
             modules::global_hotkey::global_hotkey_set,
+            modules::ssh::ssh_known_hosts_list,
+            modules::ssh::ssh_known_hosts_remove,
             runtime_instance_id,
             recovery_sync_editor_snapshot,
             recovery_take_editor_snapshot,

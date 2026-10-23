@@ -148,3 +148,25 @@ pub fn ssh_forward_stop(
 ) -> Result<(), String> {
     session::forward_stop(&state, id, forward_id)
 }
+
+fn known_hosts_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("ssh_known_hosts"))
+}
+
+/// The host keys the user has trusted, for the settings list.
+#[tauri::command]
+pub fn ssh_known_hosts_list(app: AppHandle) -> Result<Vec<client::KnownHost>, String> {
+    Ok(client::list_known_hosts(&known_hosts_path(&app)?))
+}
+
+/// Forget one host's trusted key; its next connection shows the fingerprint
+/// prompt again.
+#[tauri::command]
+pub fn ssh_known_hosts_remove(app: AppHandle, host: String) -> Result<(), String> {
+    client::remove_known_host(&known_hosts_path(&app)?, &host).map_err(|e| e.to_string())
+}

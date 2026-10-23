@@ -70,6 +70,36 @@ pub(crate) fn rewrite_lines(lines: &[String], token: &str, new_line: &str) -> Ve
     kept
 }
 
+/// Every pinned entry as `(host token, "<type> <base64>")`, in file order,
+/// skipping comments, blank lines and lines without a key.
+pub(crate) fn entries(lines: &[String]) -> Vec<(String, String)> {
+    lines
+        .iter()
+        .filter_map(|raw| {
+            let l = raw.trim();
+            if l.is_empty() || l.starts_with('#') {
+                return None;
+            }
+            let mut parts = l.splitn(2, char::is_whitespace);
+            let host = parts.next()?.to_string();
+            let key = parts.next()?.trim().to_string();
+            (!key.is_empty()).then_some((host, key))
+        })
+        .collect()
+}
+
+/// Drop every entry for `token`, keeping comments and blank lines.
+pub(crate) fn remove_token(lines: &[String], token: &str) -> Vec<String> {
+    lines
+        .iter()
+        .filter(|raw| {
+            let l = raw.trim();
+            l.is_empty() || l.starts_with('#') || l.split(char::is_whitespace).next() != Some(token)
+        })
+        .cloned()
+        .collect()
+}
+
 /// The line to append when the user trusts a key.
 pub fn known_hosts_line(host: &str, port: u16, key: &str) -> String {
     format!("{} {}", host_token(host, port), key.trim())
@@ -78,6 +108,23 @@ pub fn known_hosts_line(host: &str, port: u16, key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists_entries_and_removes_one_host() {
+        let lines: Vec<String> = ["# comment", "h ssh-ed25519 AAAA", "", "[h]:2222 ssh-rsa BBBB", "bad"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            entries(&lines),
+            vec![
+                ("h".to_string(), "ssh-ed25519 AAAA".to_string()),
+                ("[h]:2222".to_string(), "ssh-rsa BBBB".to_string()),
+            ]
+        );
+        let kept = remove_token(&lines, "h");
+        assert_eq!(kept, vec!["# comment", "", "[h]:2222 ssh-rsa BBBB", "bad"]);
+    }
 
     fn line(h: &str, k: &str) -> String { format!("{h} ssh-ed25519 {k}") }
 

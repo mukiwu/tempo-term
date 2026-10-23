@@ -6,7 +6,7 @@ import type { TFunction } from "i18next";
  * words that only appear in the description.
  */
 export interface SettingsSearchEntry {
-  section: "appearance" | "terminal" | "ai" | "workspace" | "gitGraph" | "shortcuts" | "about";
+  section: "appearance" | "terminal" | "ai" | "workspace" | "ssh" | "gitGraph" | "shortcuts" | "about";
   labelKey: string;
   hintKey?: string;
 }
@@ -60,6 +60,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { section: "workspace", labelKey: "workspace.claudeFlagsLabel" },
   { section: "workspace", labelKey: "workspace.codexFlagsLabel" },
   { section: "workspace", labelKey: "workspace.prTitle", hintKey: "workspace.prDescription" },
+  { section: "ssh", labelKey: "ssh.knownHostsTitle", hintKey: "ssh.knownHostsDescription" },
   { section: "gitGraph", labelKey: "gitGraph.uncommittedTitle", hintKey: "gitGraph.uncommittedDescription" },
   { section: "gitGraph", labelKey: "gitGraph.refsTitle", hintKey: "gitGraph.refsDescription" },
   { section: "gitGraph", labelKey: "gitGraph.mergeLocalRemoteLabel", hintKey: "gitGraph.mergeLocalRemoteHint" },

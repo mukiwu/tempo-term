@@ -8,7 +8,8 @@
     "workspace": "群組",
     "gitGraph": "Git Graph",
     "shortcuts": "快捷鍵",
-    "about": "關於"
+    "about": "關於",
+    "ssh": "SSH"
   },
   "gitGraph": {
     "uncommittedTitle": "未提交的變更",
@@ -296,5 +297,15 @@
     "placeholder": "搜尋設定",
     "noResults": "沒有符合的設定",
     "results": "搜尋結果"
+  },
+  "ssh": {
+    "knownHostsTitle": "已信任的主機金鑰",
+    "knownHostsDescription": "第一次連線時信任的主機金鑰。移除後，下次連線會再次顯示 fingerprint，可藉此接受伺服器正當更換的金鑰。",
+    "knownHostsEmpty": "尚無已信任的主機。第一次連線時會顯示主機的 fingerprint。",
+    "removeHost": "移除 {{host}}",
+    "removeTitle": "移除已信任的主機",
+    "removeMessage": "要移除 {{host}} 的已信任金鑰嗎？下次連線時將再次顯示 fingerprint 並詢問。",
+    "removeConfirm": "移除",
+    "removeCancel": "取消"
   }
 }
