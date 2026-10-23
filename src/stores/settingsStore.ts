@@ -93,6 +93,8 @@ interface SettingsState {
   /** Shortcuts the user reassigned, by menu item id (see lib/keybindings.ts).
    *  A command missing here keeps its built-in shortcut. */
   keybindings: Record<string, string>;
+  /** The system-wide chord that shows or hides the app, or null for none. */
+  globalHotkey: string | null;
   /** Folder that backs global notes; null until the user picks one. */
   notesFolderPath: string | null;
   /** Which info blocks the workspace cards show. */
@@ -184,6 +186,7 @@ interface SettingsState {
   setCloseConfirm: (mode: CloseConfirmMode) => void;
   /** Assign a chord to a command, or pass null to restore its default. */
   setKeybinding: (id: string, chord: string | null) => void;
+  setGlobalHotkey: (chord: string | null) => void;
   setNotesFolderPath: (path: string | null) => void;
   setWorkspaceCardBlock: (key: keyof WorkspaceCardBlocks, value: boolean) => void;
   setGitGraphRefs: (patch: Partial<GitGraphRefSettings>) => void;
@@ -300,6 +303,7 @@ export const useSettingsStore = create<SettingsState>()(
       restoreTerminalHistory: true,
       closeConfirm: "running",
       keybindings: {},
+      globalHotkey: null,
       notesFolderPath: null,
       workspaceCard: DEFAULT_WORKSPACE_CARD,
       gitGraphRefs: DEFAULT_GIT_GRAPH_REFS,
@@ -353,6 +357,7 @@ export const useSettingsStore = create<SettingsState>()(
       toggleDiffUnified: () => set((s) => ({ diffUnified: !s.diffUnified })),
       setRestoreTerminalHistory: (value) => set({ restoreTerminalHistory: value }),
       setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
+      setGlobalHotkey: (globalHotkey) => set({ globalHotkey }),
       setKeybinding: (id, chord) =>
         set((state) => {
           const keybindings = { ...state.keybindings };
@@ -419,6 +424,7 @@ export const useSettingsStore = create<SettingsState>()(
           gitGraphRefs: normalizeGitGraphRefs(stored.gitGraphRefs),
           newTabCwd: stored.newTabCwd === "current" ? "current" : "workspace",
           closeConfirm: migrateCloseConfirm(stored, current.closeConfirm),
+          globalHotkey: typeof stored.globalHotkey === "string" ? stored.globalHotkey : null,
           keybindings:
             stored.keybindings && typeof stored.keybindings === "object"
               ? Object.fromEntries(

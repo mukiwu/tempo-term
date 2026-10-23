@@ -25,7 +25,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { pruneTerminalHistory } from "@/modules/terminal/lib/terminalHistory";
 import { findPaneContent, leafIds } from "@/modules/terminal/lib/terminalLayout";
 import { focusedTerminalOps, openNewTerminalTab } from "@/modules/terminal/lib/terminalBus";
-import { matchKeybinding } from "@/lib/keybindings";
+import { chordToAccelerator, matchKeybinding } from "@/lib/keybindings";
 import { runMenuItem } from "@/components/menuBarMenus";
 import { getPreviewControls, type PreviewControls } from "@/modules/preview/lib/previewControls";
 import { useGraphSearchRequestStore } from "@/modules/git-graph/lib/graphSearchRequestStore";
@@ -369,6 +369,22 @@ function App() {
       disposed = true;
       unlisten?.();
     };
+  }, []);
+
+  // Register the system-wide show/hide hotkey, and again whenever it changes.
+  useEffect(() => {
+    const sync = (chord: string | null) => {
+      void invoke("global_hotkey_set", {
+        accelerator: chord ? chordToAccelerator(chord) : null,
+        // Another app may own the keys; nothing else depends on this.
+      }).catch((error: unknown) => console.warn("global_hotkey_set failed", error));
+    };
+    sync(useSettingsStore.getState().globalHotkey);
+    return useSettingsStore.subscribe((state, previous) => {
+      if (state.globalHotkey !== previous.globalHotkey) {
+        sync(state.globalHotkey);
+      }
+    });
   }, []);
 
   // Mirror the persisted opt-out and language into Rust. Rust owns app-level

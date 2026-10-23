@@ -12,7 +12,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 
 beforeEach(() => {
-  useSettingsStore.setState({ keybindings: {} });
+  useSettingsStore.setState({ keybindings: {}, globalHotkey: null });
   useUiStore.setState({ recordingShortcut: false });
 });
 
@@ -49,5 +49,34 @@ describe("ShortcutsSettingsSection recording", () => {
 
     fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
     expect(recordButton()).toHaveTextContent("⌘T");
+  });
+});
+
+describe("ShortcutsSettingsSection global hotkey", () => {
+  it("is off until a chord is recorded, and can be turned off again", () => {
+    render(<ShortcutsSettingsSection />);
+    const button = () =>
+      screen.getByRole("button", { name: "Change the shortcut for Show or hide TempoTerm" });
+    expect(button()).toHaveTextContent("Off");
+
+    fireEvent.click(button());
+    fireEvent.keyDown(window, { code: "Space", key: " ", metaKey: true, shiftKey: true });
+    expect(useSettingsStore.getState().globalHotkey).toBe("Mod+Shift+Space");
+    expect(button()).toHaveTextContent("⇧⌘Space");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Restore the default shortcut for Show or hide TempoTerm" }),
+    );
+    expect(useSettingsStore.getState().globalHotkey).toBeNull();
+  });
+
+  it("refuses a chord a command already uses", () => {
+    render(<ShortcutsSettingsSection />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change the shortcut for Show or hide TempoTerm" }),
+    );
+    fireEvent.keyDown(window, { code: "KeyT", key: "t", metaKey: true });
+    expect(screen.getByText(/Already used by/)).toBeInTheDocument();
+    expect(useSettingsStore.getState().globalHotkey).toBeNull();
   });
 });

@@ -161,6 +161,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // Persist and restore window size and position across launches. Only
         // SIZE | POSITION so it never forces the window visible early — the
         // frontend reveals it on first paint (see visible: false).
@@ -267,6 +268,7 @@ pub fn run() {
             pty_close_all,
             app_build_info,
             exit_guard_configure,
+            modules::global_hotkey::global_hotkey_set,
             runtime_instance_id,
             recovery_sync_editor_snapshot,
             recovery_take_editor_snapshot,

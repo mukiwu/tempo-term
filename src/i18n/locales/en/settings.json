@@ -245,7 +245,8 @@
       "terminalEdit": "Terminal editing",
       "editor": "Editor",
       "notes": "Notes",
-      "customizable": "Customizable"
+      "customizable": "Customizable",
+      "global": "Global"
     },
     "newTerminalTab": "New terminal tab",
     "closeTab": "Close current tab",
@@ -285,7 +286,11 @@
     "record": "Change the shortcut for {{name}}",
     "recording": "Press keys…",
     "customizableHint": "Click a shortcut, then press the new keys. Escape cancels.",
-    "reserved": "Reserved for a built-in shortcut"
+    "reserved": "Reserved for a built-in shortcut",
+    "globalHotkey": "Show or hide TempoTerm",
+    "globalHotkeyOff": "Off",
+    "globalHotkeyClear": "Turn the hotkey off",
+    "globalHotkeyHint": "Works from any app: brings TempoTerm to the front, or hides it when it is in front."
   },
   "search": {
     "placeholder": "Search settings",
