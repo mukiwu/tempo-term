@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AgentsSettingsBlock } from "./AgentsSettingsBlock";
 import { useTranslation } from "react-i18next";
 import { Check, KeyRound } from "lucide-react";
 import {
@@ -303,6 +304,8 @@ export function AiSettingsSection() {
           />
         ))}
       </div>
+
+      <AgentsSettingsBlock />
     </section>
   );
 }

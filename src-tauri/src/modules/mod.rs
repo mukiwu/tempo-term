@@ -12,6 +12,7 @@ pub mod fs;
 pub mod git;
 pub mod global_hotkey;
 pub mod locale;
+pub mod mcp_servers;
 pub mod menu;
 pub mod notes;
 pub mod ports;
