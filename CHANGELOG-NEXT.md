@@ -16,6 +16,7 @@
 - 終端機設定新增新分頁的起始資料夾，可選工作區資料夾或目前終端機所在的資料夾 (#485)
 - 關閉前確認改為從不、執行中時與一律三種模式，原本的開關設定會自動對應 (#487)
 - 設定的快捷鍵頁可自訂 13 個常用指令的快捷鍵，點選後按下新按鍵即可變更，也可還原預設 (#489)
+- 快捷鍵設定新增全域快捷鍵，可在任何 app 中叫出或隱藏 TempoTerm，預設未設定 (#491)
 
 ### fix
 
@@ -43,6 +44,7 @@
 - Choose where new terminal tabs start in the terminal settings: the workspace folder or the directory of the terminal in front (#485)
 - Close confirmation now offers Never, Running programs and Always; the previous on/off setting carries over (#487)
 - Reassign the shortcuts of 13 common commands in Settings > Shortcuts: click one, press the new keys, or restore the default (#489)
+- Add a global hotkey in the shortcut settings that brings TempoTerm to the front from any app, or hides it; off by default (#491)
 
 ### fix
 
