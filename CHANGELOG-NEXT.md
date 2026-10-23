@@ -9,6 +9,8 @@
 - 啟動器移除 Claude Code、Codex 與開啟檔案；Claude Code 與 Codex 參數移到設定中的接續對話選項下方 (#473)
 - 移除 ⇧⌘T（Windows 為 Ctrl+Shift+T）快捷鍵，啟動器改由分頁列的 + 開啟 (#474)
 - 分頁右鍵選單新增顏色、釘選、左右移動、關閉其他分頁與關閉右側分頁；釘選的分頁固定在最左側且不會被關閉 (#475)
+- 新增指令面板（⌘P，Windows 為 Ctrl+P），可搜尋指令、檔案、AI 對話與 SSH 主機，指令也可用英文名稱搜尋；尋找檔案改為 ⌘⇧P（Windows 為 Ctrl+Shift+P）(#479)
+- 分頁列右上角新增向右分割、向下分割與開啟指令面板的按鈕 (#479)
 
 ### fix
 
@@ -29,6 +31,8 @@
 - Remove Claude Code, Codex and Open File from the launcher; the Claude Code and Codex flags move under the resume option in Settings (#473)
 - Remove the ⇧⌘T (Ctrl+Shift+T on Windows) shortcut; open the launcher from the + in the tab bar (#474)
 - Add color, pin, move left or right, close other tabs and close tabs to the right to the tab context menu; pinned tabs stay leftmost and cannot be closed (#475)
+- Add a command palette (⌘P, Ctrl+P on Windows) that searches commands, files, AI sessions and SSH hosts, with commands also matched by their English names; Find Files moves to ⌘⇧P (Ctrl+Shift+P on Windows) (#479)
+- Add Split Right, Split Down and Command Palette buttons to the right of the tab bar (#479)
 
 ### fix
 
