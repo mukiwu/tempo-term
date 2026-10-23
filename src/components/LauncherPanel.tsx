@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useTabsStore } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { openNewTerminalTab } from "@/modules/terminal/lib/terminalBus";
 import { useUiStore } from "@/stores/uiStore";
 import { useNotesStore } from "@/stores/notesStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -61,7 +62,6 @@ export interface LauncherGroup {
 export function useLauncherActions(target?: LauncherTarget) {
   const { t } = useTranslation();
   const [sshFormOpen, setSshFormOpen] = useState(false);
-  const newTerminalTab = useTabsStore((s) => s.newTerminalTab);
   const openEditorTab = useTabsStore((s) => s.openEditorTab);
   const openNoteTab = useTabsStore((s) => s.openNoteTab);
   const openPreviewTab = useTabsStore((s) => s.openPreviewTab);
@@ -83,7 +83,7 @@ export function useLauncherActions(target?: LauncherTarget) {
     }
     switch (content.kind) {
       case "terminal":
-        newTerminalTab(useWorkspaceStore.getState().rootPath ?? undefined);
+        void openNewTerminalTab();
         break;
       case "editor":
         openEditorTab(content.path);

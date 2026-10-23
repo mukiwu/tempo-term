@@ -43,6 +43,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { section: "appearance", labelKey: "fonts.iconFont", hintKey: "fonts.iconFontHint" },
   { section: "terminal", labelKey: "terminalSettings.padding" },
   { section: "terminal", labelKey: "terminalSettings.customShell", hintKey: "terminalSettings.customShellHint" },
+  { section: "terminal", labelKey: "terminalSettings.newTabCwd", hintKey: "terminalSettings.newTabCwdHint" },
   { section: "terminal", labelKey: "terminalSettings.confirmClose", hintKey: "terminalSettings.confirmCloseHint" },
   { section: "terminal", labelKey: "terminalSettings.suggestions", hintKey: "terminalSettings.suggestionsHint" },
   { section: "terminal", labelKey: "terminalSettings.copyOnSelect", hintKey: "terminalSettings.copyOnSelectHint" },

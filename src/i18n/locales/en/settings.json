@@ -194,7 +194,13 @@
     "clearHistory": "Clear saved history",
     "historyCleared": "Cleared",
     "copyOnSelect": "Copy on select",
-    "copyOnSelectHint": "Finishing a mouse selection in a terminal copies it to the clipboard."
+    "copyOnSelectHint": "Finishing a mouse selection in a terminal copies it to the clipboard.",
+    "newTabCwd": "New tabs start in",
+    "newTabCwdHint": "Where the new terminal shortcut, the menu and the launcher open a new terminal tab. Current directory uses the terminal in front, and the workspace folder when there is none.",
+    "newTabCwdOptions": {
+      "workspace": "Workspace folder",
+      "current": "Current directory"
+    }
   },
   "aiModel": {
     "quickLabel": "Quick AI features",

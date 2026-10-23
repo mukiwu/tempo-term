@@ -1,5 +1,6 @@
 import { useTabsStore } from "@/stores/tabsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { formatPathsForTerminal } from "./terminalClipboard";
 import { findPaneContent } from "./terminalLayout";
 
@@ -19,6 +20,9 @@ export interface TerminalOps {
   clear: () => void;
   openSearch: () => void;
   paste: (text: string) => void;
+  /** The shell's current directory, or null when it cannot be read (an SSH
+   *  pane, or a shell that has exited). */
+  cwd: () => Promise<string | null>;
 }
 
 const opsRegistry = new Map<string, TerminalOps>();
@@ -52,6 +56,27 @@ export function focusedTerminalOps(): TerminalOps | null {
     return null;
   }
   return opsRegistry.get(tab.activeLeafId) ?? null;
+}
+
+/**
+ * Where a new terminal tab starts: the workspace folder, or, when the setting
+ * asks for it, the directory of the terminal in front, falling back to the
+ * workspace folder when there is none.
+ */
+export async function newTerminalTabCwd(): Promise<string | undefined> {
+  const root = useWorkspaceStore.getState().rootPath ?? undefined;
+  if (useSettingsStore.getState().newTabCwd !== "current") {
+    return root;
+  }
+  const ops = focusedTerminalOps();
+  const cwd = ops ? await ops.cwd().catch(() => null) : null;
+  return cwd ?? root;
+}
+
+/** Opens a terminal tab in the directory `newTerminalTabCwd` picks. */
+export async function openNewTerminalTab(): Promise<string> {
+  const cwd = await newTerminalTabCwd();
+  return useTabsStore.getState().newTerminalTab(cwd);
 }
 
 /** A terminal pane registers how to write to its shell, keyed by its leaf id. */

@@ -194,7 +194,13 @@
     "clearHistory": "清除已儲存的歷史",
     "historyCleared": "已清除",
     "copyOnSelect": "選取後自動複製",
-    "copyOnSelectHint": "在終端機中以滑鼠選取文字後，自動將內容複製到剪貼簿。"
+    "copyOnSelectHint": "在終端機中以滑鼠選取文字後，自動將內容複製到剪貼簿。",
+    "newTabCwd": "新分頁的起始資料夾",
+    "newTabCwdHint": "以新增終端機快捷鍵、選單或啟動器開啟的新終端機分頁從何處開始。目前資料夾使用前景終端機所在的資料夾，若無終端機則使用工作區資料夾。",
+    "newTabCwdOptions": {
+      "workspace": "工作區資料夾",
+      "current": "目前資料夾"
+    }
   },
   "aiModel": {
     "quickLabel": "快速 AI 功能",

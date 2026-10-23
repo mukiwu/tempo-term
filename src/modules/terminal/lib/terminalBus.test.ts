@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   focusedTerminalOps,
+  newTerminalTabCwd,
   pasteIntoActiveTerminal,
   readTerminalBuffer,
   registerTerminal,
@@ -12,6 +13,8 @@ import {
   type TerminalOps,
 } from "./terminalBus";
 import { useTabsStore } from "@/stores/tabsStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { leaf, splitLeaf } from "./terminalLayout";
 
 describe("terminal buffer readers", () => {
@@ -39,6 +42,7 @@ function makeOps(): TerminalOps {
     clear: vi.fn(),
     openSearch: vi.fn(),
     paste: vi.fn(),
+    cwd: vi.fn(() => Promise.resolve("/live/dir")),
   };
 }
 
@@ -156,5 +160,46 @@ describe("pasteIntoActiveTerminal", () => {
     const state = useTabsStore.getState();
     expect(state.tabs).toHaveLength(1);
     expect(state.tabs[0].kind).toBe("terminal");
+  });
+});
+
+describe("newTerminalTabCwd", () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({ rootPath: "/workspace" });
+    useTabsStore.setState({
+      spaces: [{ id: "s1", name: "Space 1" }],
+      activeSpaceId: "s1",
+      tabs: [
+        {
+          id: "a",
+          spaceId: "s1",
+          title: "a",
+          kind: "terminal",
+          paneTree: leaf("leaf-1", { kind: "terminal" }),
+          activeLeafId: "leaf-1",
+          paneOrder: ["leaf-1"],
+        },
+      ],
+      activeId: "a",
+    });
+    registerTerminalOps("leaf-1", makeOps());
+  });
+
+  it("starts in the workspace folder by default", async () => {
+    useSettingsStore.setState({ newTabCwd: "workspace" });
+    expect(await newTerminalTabCwd()).toBe("/workspace");
+  });
+
+  it("starts in the focused terminal's directory when asked", async () => {
+    useSettingsStore.setState({ newTabCwd: "current" });
+    expect(await newTerminalTabCwd()).toBe("/live/dir");
+  });
+
+  it("falls back to the workspace folder when the directory is unknown", async () => {
+    useSettingsStore.setState({ newTabCwd: "current" });
+    registerTerminalOps("leaf-1", { ...makeOps(), cwd: vi.fn(() => Promise.resolve(null)) });
+    expect(await newTerminalTabCwd()).toBe("/workspace");
+    unregisterTerminalOps("leaf-1");
+    expect(await newTerminalTabCwd()).toBe("/workspace");
   });
 });

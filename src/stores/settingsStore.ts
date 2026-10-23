@@ -19,6 +19,8 @@ export const DEFAULT_TERMINAL_BACKGROUND_IMAGE_OPACITY = 35;
 
 export type BackgroundImageScope = "workspace" | "window";
 
+export type NewTabCwd = "workspace" | "current";
+
 /** Which info blocks each workspace card shows; all on by default. */
 export interface WorkspaceCardBlocks {
   status: boolean;
@@ -126,6 +128,9 @@ interface SettingsState {
   terminalSuggestions: boolean;
   /** Finishing a mouse selection in a terminal copies it to the clipboard. */
   copyOnSelect: boolean;
+  /** Where a new terminal tab starts: the workspace folder, or the directory
+   *  of the terminal in front. */
+  newTabCwd: NewTabCwd;
   /**
    * Custom shell executable to spawn instead of the auto-detected one (`$SHELL`,
    * or the per-platform default). Empty string keeps the default. Lets Windows
@@ -184,6 +189,7 @@ interface SettingsState {
   setAiTerminalContext: (value: boolean) => void;
   setTerminalSuggestions: (value: boolean) => void;
   setCopyOnSelect: (value: boolean) => void;
+  setNewTabCwd: (value: NewTabCwd) => void;
   setCustomShellPath: (path: string) => void;
   setActionLinksEnabled: (value: boolean) => void;
   zoomIn: () => void;
@@ -281,6 +287,7 @@ export const useSettingsStore = create<SettingsState>()(
       aiTerminalContext: true,
       terminalSuggestions: true,
       copyOnSelect: false,
+      newTabCwd: "workspace",
       customShellPath: "",
       actionLinksEnabled: true,
       uiZoom: DEFAULT_UI_ZOOM,
@@ -337,6 +344,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAiTerminalContext: (value) => set({ aiTerminalContext: value }),
       setTerminalSuggestions: (value) => set({ terminalSuggestions: value }),
       setCopyOnSelect: (value) => set({ copyOnSelect: value }),
+      setNewTabCwd: (value) => set({ newTabCwd: value }),
       setCustomShellPath: (customShellPath) => set({ customShellPath }),
       setActionLinksEnabled: (value) => set({ actionLinksEnabled: value }),
       zoomIn: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom + UI_ZOOM_STEP) })),
@@ -369,6 +377,7 @@ export const useSettingsStore = create<SettingsState>()(
             stored.backgroundImageTextColor,
           ),
           gitGraphRefs: normalizeGitGraphRefs(stored.gitGraphRefs),
+          newTabCwd: stored.newTabCwd === "current" ? "current" : "workspace",
           confirmCloseWithRunningTerminals:
             typeof stored.confirmCloseWithRunningTerminals === "boolean"
               ? stored.confirmCloseWithRunningTerminals
