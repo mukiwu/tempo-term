@@ -1156,8 +1156,11 @@ mod tests {
         let hub = Arc::new(OutputHub::new(failed_data, failed_exit, true));
         let output_hub = hub.clone();
         let exit_hub = hub.clone();
-        let mut cmd = CommandBuilder::new("/bin/echo");
-        cmd.arg("pty-recovery-tail");
+        // Linger briefly after printing: macOS can discard PTY output still
+        // unread when the child exits at once, which made a bare `echo` lose
+        // the very tail this test replays.
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.args(["-c", "echo pty-recovery-tail; sleep 0.2"]);
 
         spawn_with_sinks(
             &state,
@@ -1165,7 +1168,7 @@ mod tests {
             80,
             24,
             cmd,
-            "echo".to_string(),
+            "sh".to_string(),
             Some("main".to_string()),
             Some(hub.clone()),
             move |bytes| {
@@ -1178,7 +1181,7 @@ mod tests {
 
         // The exit watcher and the output reader are separate threads, so the
         // exit can land before the reader has published the echoed text. Wait
-        // for both, or a slow CI runner attaches before the tail is buffered.
+        // for both before attaching.
         for _ in 0..250 {
             let inner = hub.0.lock().unwrap();
             let tail = inner.backlog.iter().copied().collect::<Vec<u8>>();
