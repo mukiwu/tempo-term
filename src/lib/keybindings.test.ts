@@ -4,6 +4,7 @@ vi.mock("@/lib/platform", () => ({ IS_MAC: true, IS_WINDOWS: false }));
 
 const {
   chordFromEvent,
+  chordToAccelerator,
   findChordOwner,
   formatChord,
   isReservedChord,
@@ -68,5 +69,12 @@ describe("isReservedChord", () => {
   it("refuses arrows and Enter, which the native menu cannot show", () => {
     expect(chordFromEvent(key("ArrowUp", { metaKey: true }))).toBeNull();
     expect(chordFromEvent(key("Enter", { metaKey: true }))).toBeNull();
+  });
+});
+
+describe("chordToAccelerator", () => {
+  it("spells the primary modifier out for the global shortcut plugin", () => {
+    expect(chordToAccelerator("Mod+Shift+Space")).toBe("Cmd+Shift+Space");
+    expect(chordToAccelerator("Ctrl+Alt+KeyT")).toBe("Ctrl+Alt+KeyT");
   });
 });

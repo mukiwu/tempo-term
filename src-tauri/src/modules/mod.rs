@@ -10,6 +10,7 @@ pub mod exit_guard;
 pub mod fonts;
 pub mod fs;
 pub mod git;
+pub mod global_hotkey;
 pub mod locale;
 pub mod menu;
 pub mod notes;

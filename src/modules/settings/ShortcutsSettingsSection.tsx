@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RotateCcw } from "lucide-react";
 import {
@@ -9,6 +9,7 @@ import {
   findChordOwner,
   formatChord,
   isReservedChord,
+  type Chord,
   type CustomizableShortcut,
 } from "@/lib/keybindings";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -78,19 +79,35 @@ const GROUPS: ShortcutGroup[] = [
   },
 ];
 
+interface ChordRecorderRowProps {
+  label: string;
+  /** What the key shows while not recording. */
+  display: string;
+  /** Whether a reset button appears, restoring `resetTitle`'s value. */
+  changed: boolean;
+  resetTitle: string;
+  onReset: () => void;
+  /** Why a chord cannot be used, or null to accept it. */
+  validate: (chord: Chord) => string | null;
+  onChord: (chord: Chord) => void;
+}
+
 /**
- * One command whose shortcut can be changed. Clicking the key records the
- * next chord pressed; Escape cancels, and a chord another command already
- * uses is refused with its name.
+ * A row whose key can be re-recorded. Clicking the key records the next chord
+ * pressed; Escape cancels, and a chord `validate` refuses shows its reason.
  */
-function ShortcutRecorderRow({ shortcut }: { shortcut: CustomizableShortcut }) {
+function ChordRecorderRow({
+  label,
+  display,
+  changed,
+  resetTitle,
+  onReset,
+  validate,
+  onChord,
+}: ChordRecorderRowProps) {
   const { t } = useTranslation("settings");
-  const overrides = useSettingsStore((s) => s.keybindings);
-  const setKeybinding = useSettingsStore((s) => s.setKeybinding);
   const [recording, setRecording] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
-  const chord = effectiveChord(shortcut, overrides);
-  const changed = shortcut.id in overrides;
 
   // Listen on the window in the capture phase so the chord being recorded
   // never reaches the app's own shortcuts or the terminal.
@@ -110,16 +127,12 @@ function ShortcutRecorderRow({ shortcut }: { shortcut: CustomizableShortcut }) {
       if (!next) {
         return;
       }
-      if (isReservedChord(next)) {
-        setConflict(t("shortcutsList.reserved"));
+      const problem = validate(next);
+      if (problem) {
+        setConflict(problem);
         return;
       }
-      const owner = findChordOwner(next, overrides, shortcut.id);
-      if (owner) {
-        setConflict(t("shortcutsList.conflict", { name: t(owner.labelKey) }));
-        return;
-      }
-      setKeybinding(shortcut.id, next === defaultChord(shortcut) ? null : next);
+      onChord(next);
       setConflict(null);
       setRecording(false);
     }
@@ -128,19 +141,19 @@ function ShortcutRecorderRow({ shortcut }: { shortcut: CustomizableShortcut }) {
       window.removeEventListener("keydown", onKeyDown, true);
       useUiStore.getState().setRecordingShortcut(false);
     };
-  }, [recording, overrides, shortcut, setKeybinding, t]);
+  }, [recording, validate, onChord]);
 
   return (
     <li className="py-2 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-fg-muted">{t(shortcut.labelKey)}</span>
+        <span className="text-fg-muted">{label}</span>
         <span className="flex shrink-0 items-center gap-1">
           {changed && !recording && (
             <button
               type="button"
-              aria-label={t("shortcutsList.reset", { name: t(shortcut.labelKey) })}
-              title={t("shortcutsList.resetHint", { keys: formatChord(defaultChord(shortcut)) })}
-              onClick={() => setKeybinding(shortcut.id, null)}
+              aria-label={t("shortcutsList.reset", { name: label })}
+              title={resetTitle}
+              onClick={onReset}
               className="rounded p-1 text-fg-subtle transition-colors hover:bg-bg-elevated hover:text-fg"
             >
               <RotateCcw size={12} />
@@ -148,7 +161,7 @@ function ShortcutRecorderRow({ shortcut }: { shortcut: CustomizableShortcut }) {
           )}
           <button
             type="button"
-            aria-label={t("shortcutsList.record", { name: t(shortcut.labelKey) })}
+            aria-label={t("shortcutsList.record", { name: label })}
             aria-pressed={recording}
             onClick={() => {
               setConflict(null);
@@ -163,12 +176,77 @@ function ShortcutRecorderRow({ shortcut }: { shortcut: CustomizableShortcut }) {
                   : "border-border-strong bg-bg-inset text-fg hover:border-accent/60"
             }`}
           >
-            {recording ? t("shortcutsList.recording") : formatChord(chord)}
+            {recording ? t("shortcutsList.recording") : display}
           </button>
         </span>
       </div>
       {conflict && recording && <p className="mt-1 text-xs text-danger">{conflict}</p>}
     </li>
+  );
+}
+
+/** A menu command whose shortcut the user can reassign. */
+function ShortcutRecorderRow({ shortcut }: { shortcut: CustomizableShortcut }) {
+  const { t } = useTranslation("settings");
+  const overrides = useSettingsStore((s) => s.keybindings);
+  const setKeybinding = useSettingsStore((s) => s.setKeybinding);
+  const globalHotkey = useSettingsStore((s) => s.globalHotkey);
+  const validate = useCallback(
+    (chord: Chord) => {
+      if (isReservedChord(chord)) {
+        return t("shortcutsList.reserved");
+      }
+      if (chord === globalHotkey) {
+        return t("shortcutsList.conflict", { name: t("shortcutsList.globalHotkey") });
+      }
+      const owner = findChordOwner(chord, overrides, shortcut.id);
+      return owner ? t("shortcutsList.conflict", { name: t(owner.labelKey) }) : null;
+    },
+    [overrides, shortcut.id, globalHotkey, t],
+  );
+  const onChord = useCallback(
+    (chord: Chord) => setKeybinding(shortcut.id, chord === defaultChord(shortcut) ? null : chord),
+    [setKeybinding, shortcut],
+  );
+  return (
+    <ChordRecorderRow
+      label={t(shortcut.labelKey)}
+      display={formatChord(effectiveChord(shortcut, overrides))}
+      changed={shortcut.id in overrides}
+      resetTitle={t("shortcutsList.resetHint", { keys: formatChord(defaultChord(shortcut)) })}
+      onReset={() => setKeybinding(shortcut.id, null)}
+      validate={validate}
+      onChord={onChord}
+    />
+  );
+}
+
+/** The system-wide show/hide hotkey, off until the user records one. */
+function GlobalHotkeyRow() {
+  const { t } = useTranslation("settings");
+  const globalHotkey = useSettingsStore((s) => s.globalHotkey);
+  const setGlobalHotkey = useSettingsStore((s) => s.setGlobalHotkey);
+  const overrides = useSettingsStore((s) => s.keybindings);
+  const validate = useCallback(
+    (chord: Chord) => {
+      if (isReservedChord(chord)) {
+        return t("shortcutsList.reserved");
+      }
+      const owner = findChordOwner(chord, overrides);
+      return owner ? t("shortcutsList.conflict", { name: t(owner.labelKey) }) : null;
+    },
+    [overrides, t],
+  );
+  return (
+    <ChordRecorderRow
+      label={t("shortcutsList.globalHotkey")}
+      display={globalHotkey ? formatChord(globalHotkey) : t("shortcutsList.globalHotkeyOff")}
+      changed={globalHotkey !== null}
+      resetTitle={t("shortcutsList.globalHotkeyClear")}
+      onReset={() => setGlobalHotkey(null)}
+      validate={validate}
+      onChord={setGlobalHotkey}
+    />
   );
 }
 
@@ -191,6 +269,15 @@ export function ShortcutsSettingsSection() {
             {CUSTOMIZABLE_SHORTCUTS.map((shortcut) => (
               <ShortcutRecorderRow key={shortcut.id} shortcut={shortcut} />
             ))}
+          </ul>
+        </div>
+        <div className="mb-6 break-inside-avoid">
+          <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-fg-subtle">
+            {t("shortcutsList.groups.global")}
+          </h3>
+          <p className="mb-1 text-xs text-fg-subtle">{t("shortcutsList.globalHotkeyHint")}</p>
+          <ul className="divide-y divide-border">
+            <GlobalHotkeyRow />
           </ul>
         </div>
         {GROUPS.map((group) => (

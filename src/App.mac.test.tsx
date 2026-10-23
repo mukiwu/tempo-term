@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The native macOS menu is reduced to App + Edit (see menu.rs): it carries no
@@ -98,6 +98,20 @@ describe("App shell — macOS keyboard shortcuts", () => {
       expect(invokeMock).toHaveBeenCalledWith("open_new_window");
     } finally {
       useSettingsStore.setState({ keybindings: {} });
+    }
+  });
+
+  it("registers the global hotkey with Rust and follows changes", () => {
+    useSettingsStore.setState({ globalHotkey: "Mod+Shift+Space" });
+    try {
+      render(<App />);
+      expect(invokeMock).toHaveBeenCalledWith("global_hotkey_set", {
+        accelerator: "Cmd+Shift+Space",
+      });
+      act(() => useSettingsStore.setState({ globalHotkey: null }));
+      expect(invokeMock).toHaveBeenCalledWith("global_hotkey_set", { accelerator: null });
+    } finally {
+      useSettingsStore.setState({ globalHotkey: null });
     }
   });
 

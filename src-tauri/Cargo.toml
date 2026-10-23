@@ -40,6 +40,9 @@ tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-window-state = "2"
+# The show/hide hotkey. Held on 2.3: 2.4 requires a newer tauri than the one
+# this app is on, and would pull a tauri upgrade along with it.
+tauri-plugin-global-shortcut = "~2.3"
 trash = "5"
 notify = "6"
 toml_edit = "0.22"

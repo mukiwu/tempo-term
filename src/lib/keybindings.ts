@@ -198,3 +198,14 @@ export function matchKeybinding(
   );
   return released ? { kind: "released" } : { kind: "none" };
 }
+
+/**
+ * A chord in the accelerator form the global shortcut plugin parses, such as
+ * `Cmd+Shift+Space`. `Mod` becomes Cmd on macOS and Ctrl elsewhere.
+ */
+export function chordToAccelerator(chord: Chord): string {
+  return chord
+    .split("+")
+    .map((part) => (part === "Mod" ? (IS_WINDOWS ? "Ctrl" : "Cmd") : part))
+    .join("+");
+}
