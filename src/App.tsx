@@ -650,9 +650,12 @@ function App() {
         // ⌘P (Ctrl+P on Windows) opens the command palette; adding Shift opens
         // Find Files.
         e.preventDefault();
+        // The two overlays replace each other rather than stack.
         if (e.shiftKey) {
+          useUiStore.getState().setCommandPaletteOpen(false);
           useUiStore.getState().openFileFinder();
         } else {
+          useUiStore.getState().setFileFinderOpen(false);
           useUiStore.getState().openCommandPalette();
         }
       } else if (key === ",") {

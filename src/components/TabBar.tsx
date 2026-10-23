@@ -39,8 +39,7 @@ import {
   horizontalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
-import { useTabsStore, type Tab } from "@/stores/tabsStore";
-import { findPaneContent } from "@/modules/terminal/lib/terminalLayout";
+import { MAX_PANES, useTabsStore, type Tab } from "@/stores/tabsStore";
 import { Tooltip } from "@/components/Tooltip";
 import { useTabCloseRequest } from "./useTabCloseRequest";
 import { useUiStore } from "@/stores/uiStore";
@@ -323,10 +322,10 @@ export function TabBar() {
   const rightVisible = useUiStore((s) => s.visible.right);
   const openFileFinder = useUiStore((s) => s.openFileFinder);
   const splitActivePane = useTabsStore((s) => s.splitActivePane);
-  // Splitting only applies to a terminal pane, as with ⌘D.
+  // As with ⌘D: any pane splits, until the tab holds the most panes allowed.
   const canSplit = useTabsStore((s) => {
     const tab = s.tabs.find((candidate) => candidate.id === s.activeId);
-    return tab ? findPaneContent(tab.paneTree, tab.activeLeafId)?.kind === "terminal" : false;
+    return tab ? tab.paneOrder.length < MAX_PANES : false;
   });
   const openCommandPalette = useUiStore((s) => s.openCommandPalette);
   const rootPath = useWorkspaceStore((s) => s.rootPath);

@@ -27,8 +27,9 @@ export type PaletteCategory = "all" | "commands" | "files" | "sessions" | "hosts
 const CATEGORIES: PaletteCategory[] = ["all", "commands", "files", "sessions", "hosts"];
 
 /** Clipboard items act on whatever had focus before the palette took it, so
- *  running them from here would act on the palette's own input instead. */
-const EXCLUDED_MENU_ITEMS = new Set(["copy", "paste", "select-all"]);
+ *  running them from here would act on the palette's own input instead; the
+ *  palette's own entry would only reopen it. */
+const EXCLUDED_MENU_ITEMS = new Set(["copy", "paste", "select-all", "command-palette"]);
 
 /** i18n keys of the launcher actions, so their English labels stay
  *  searchable when the interface is in another language. */

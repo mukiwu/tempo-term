@@ -52,6 +52,8 @@ describe("CommandPalette", () => {
     expect(screen.getByRole("option", { name: /Split Right/ })).toBeInTheDocument();
     // Clipboard items act on the previously focused element, so they are left out.
     expect(screen.queryByRole("option", { name: /^Copy/ })).not.toBeInTheDocument();
+    // Its own entry would only close and reopen the palette.
+    expect(screen.queryByRole("option", { name: /Command Palette/ })).not.toBeInTheDocument();
   });
 
   it("finds files, sessions and hosts from the All tab", async () => {
