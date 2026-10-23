@@ -671,6 +671,15 @@ export function TerminalView({
     };
     document.addEventListener("paste", onPasteCapture, true);
 
+    // Copy on select: releasing the mouse after a selection puts it on the
+    // clipboard. Read on each release so the setting applies without a reload.
+    const onSelectMouseUp = () => {
+      if (useSettingsStore.getState().copyOnSelect && term.hasSelection()) {
+        void navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+      }
+    };
+    container.addEventListener("mouseup", onSelectMouseUp);
+
     // Open the in-terminal search bar, refocusing it when it is already open
     // (just unfocused) so the trigger is never a no-op. Shared by the Cmd/Ctrl+F
     // keydown below and the terminal ops registered for the Edit menu's
@@ -1237,6 +1246,7 @@ export function TerminalView({
       pushPtySizeRef.current = null;
       document.removeEventListener("keydown", onKeyDownCapture, true);
       document.removeEventListener("paste", onPasteCapture, true);
+      container.removeEventListener("mouseup", onSelectMouseUp);
       statusOscHandler.dispose();
       statusEventDisposed = true;
       statusEventUnlisten?.();

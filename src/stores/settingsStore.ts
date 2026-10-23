@@ -124,6 +124,8 @@ interface SettingsState {
   aiTerminalContext: boolean;
   /** Suggest previously-run commands as ghost text in the terminal. */
   terminalSuggestions: boolean;
+  /** Finishing a mouse selection in a terminal copies it to the clipboard. */
+  copyOnSelect: boolean;
   /**
    * Custom shell executable to spawn instead of the auto-detected one (`$SHELL`,
    * or the per-platform default). Empty string keeps the default. Lets Windows
@@ -181,6 +183,7 @@ interface SettingsState {
   setAiInlineCompletion: (value: boolean) => void;
   setAiTerminalContext: (value: boolean) => void;
   setTerminalSuggestions: (value: boolean) => void;
+  setCopyOnSelect: (value: boolean) => void;
   setCustomShellPath: (path: string) => void;
   setActionLinksEnabled: (value: boolean) => void;
   zoomIn: () => void;
@@ -277,6 +280,7 @@ export const useSettingsStore = create<SettingsState>()(
       aiInlineCompletion: false,
       aiTerminalContext: true,
       terminalSuggestions: true,
+      copyOnSelect: false,
       customShellPath: "",
       actionLinksEnabled: true,
       uiZoom: DEFAULT_UI_ZOOM,
@@ -332,6 +336,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAiInlineCompletion: (value) => set({ aiInlineCompletion: value }),
       setAiTerminalContext: (value) => set({ aiTerminalContext: value }),
       setTerminalSuggestions: (value) => set({ terminalSuggestions: value }),
+      setCopyOnSelect: (value) => set({ copyOnSelect: value }),
       setCustomShellPath: (customShellPath) => set({ customShellPath }),
       setActionLinksEnabled: (value) => set({ actionLinksEnabled: value }),
       zoomIn: () => set((s) => ({ uiZoom: clampZoom(s.uiZoom + UI_ZOOM_STEP) })),
