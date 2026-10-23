@@ -86,7 +86,12 @@ function AppearanceSection() {
   const themeId = useSettingsStore((s) => s.themeId);
   const setThemeId = useSettingsStore((s) => s.setThemeId);
 
-  const previewTheme = getTheme(themeId);
+  const previewThemeId = useUiStore((s) => s.previewThemeId);
+  const setPreviewThemeId = useUiStore((s) => s.setPreviewThemeId);
+  const previewTheme = getTheme(previewThemeId ?? themeId);
+
+  // A preview never outlives the settings page.
+  useEffect(() => () => setPreviewThemeId(null), [setPreviewThemeId]);
   const themeGroups = [
     { key: "light", themes: THEMES.filter((theme) => theme.appearance === "light") },
     { key: "dark", themes: THEMES.filter((theme) => theme.appearance === "dark") },
@@ -143,38 +148,53 @@ function AppearanceSection() {
             <h4 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-fg-subtle">
               {t(`theme.${group.key}`)}
             </h4>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+            <div
+              className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"
+              // Leaving the grid ends the preview; moving between cards just
+              // switches it.
+              onMouseLeave={() => setPreviewThemeId(null)}
+            >
               {group.themes.map((theme) => {
                 const active = theme.id === themeId;
+                const k = theme.terminal;
                 return (
                   <button
                     key={theme.id}
                     type="button"
                     aria-pressed={active}
-                    onClick={() => setThemeId(theme.id)}
-                    className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors ${
-                      active
-                        ? "border-accent bg-bg-elevated"
-                        : "border-border hover:border-border-strong"
+                    onClick={() => {
+                      setThemeId(theme.id);
+                      setPreviewThemeId(null);
+                    }}
+                    onMouseEnter={() => setPreviewThemeId(theme.id)}
+                    onFocus={() => setPreviewThemeId(theme.id)}
+                    onBlur={() => setPreviewThemeId(null)}
+                    className={`overflow-hidden rounded-lg border text-left transition-colors ${
+                      active ? "border-accent" : "border-border hover:border-border-strong"
                     }`}
                   >
                     <span
-                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded border"
-                      style={{
-                        backgroundColor: theme.colors.bg,
-                        borderColor: theme.colors.border,
-                      }}
+                      className="flex flex-col gap-1.5 px-2.5 py-2"
+                      style={{ backgroundColor: k.background, color: k.foreground }}
                     >
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: theme.colors.accent }}
+                      <span className="text-xs font-medium">Aa</span>
+                      <span className="flex gap-1" aria-hidden="true">
+                        {[k.red, k.green, k.yellow, k.blue, k.magenta, k.cyan].map((color, i) => (
+                          <span
+                            key={i}
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1 bg-bg-elevated px-2.5 py-1.5">
+                      <span className="min-w-0 flex-1 truncate text-xs text-fg">{theme.name}</span>
+                      <Check
+                        size={13}
+                        className={`shrink-0 text-accent ${active ? "" : "invisible"}`}
                       />
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-xs text-fg">{theme.name}</span>
-                    <Check
-                      size={13}
-                      className={`shrink-0 text-accent ${active ? "" : "invisible"}`}
-                    />
                   </button>
                 );
               })}

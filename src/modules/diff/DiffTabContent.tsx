@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useActiveThemeId } from "@/themes/useActiveThemeId";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -57,7 +58,7 @@ export function DiffTabContent({ path, staged, showClose = false, onClose }: Dif
   const viewsRef = useRef<DiffViews | null>(null);
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
-  const themeId = useSettingsStore((s) => s.themeId);
+  const themeId = useActiveThemeId();
   // Shares the editor's word-wrap setting so both surfaces toggle together.
   const wordWrap = useSettingsStore((s) => s.wordWrap);
   const toggleWordWrap = useSettingsStore((s) => s.toggleWordWrap);

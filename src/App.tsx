@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useActiveThemeId } from "@/themes/useActiveThemeId";
 import { useTranslation } from "react-i18next";
 import { TabBar } from "@/components/TabBar";
 import { TitleBar } from "@/components/TitleBar";
@@ -180,7 +181,7 @@ function listenWebview<T = unknown>(event: string, handler: (event: TauriEvent<T
 
 function App() {
   const { t } = useTranslation();
-  const themeId = useSettingsStore((s) => s.themeId);
+  const themeId = useActiveThemeId();
   const uiZoom = useSettingsStore((s) => s.uiZoom);
   const {
     path: backgroundImagePath,

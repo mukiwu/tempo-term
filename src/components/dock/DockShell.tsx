@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useActiveThemeId } from "@/themes/useActiveThemeId";
 import {
   DndContext,
   DragOverlay,
@@ -14,7 +15,6 @@ import { BackgroundImageLayer } from "@/components/BackgroundImageLayer";
 import { Resizer } from "@/components/Resizer";
 import { backgroundSurfaceStyle } from "@/lib/backgroundAppearance";
 import { useBackgroundImage } from "@/lib/useBackgroundImage";
-import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore, type DockSide, type PanelId } from "@/stores/uiStore";
 import { PANEL_REGISTRY } from "./panelRegistry";
 import { DockColumn } from "./DockColumn";
@@ -43,7 +43,7 @@ export function DockShell() {
     textColor: backgroundImageTextColor,
     active: workspaceBackgroundActive,
   } = useBackgroundImage("workspace");
-  const themeId = useSettingsStore((s) => s.themeId);
+  const themeId = useActiveThemeId();
 
   const sensors = useSensors(useSensor(PointerSensor, POINTER_SENSOR_OPTIONS));
   const [draggingId, setDraggingId] = useState<PanelId | null>(null);

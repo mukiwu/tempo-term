@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useActiveThemeId } from "@/themes/useActiveThemeId";
 import { useTranslation } from "react-i18next";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView as CMView } from "@codemirror/view";
@@ -74,7 +75,7 @@ export function EditorTabContent({
 
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
-  const themeId = useSettingsStore((s) => s.themeId);
+  const themeId = useActiveThemeId();
   const wordWrap = useSettingsStore((s) => s.wordWrap);
   const toggleWordWrap = useSettingsStore((s) => s.toggleWordWrap);
   const aiInlineCompletionEnabled = useSettingsStore((s) => s.aiInlineCompletion);

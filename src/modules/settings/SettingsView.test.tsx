@@ -268,3 +268,25 @@ describe("SettingsView search", () => {
     expect(box).toHaveValue("");
   });
 });
+
+describe("SettingsView theme preview", () => {
+  it("previews a theme on hover, ends it on leave, and keeps it on click", () => {
+    useSettingsStore.setState({ themeId: "vitesse-dark" });
+    render(<SettingsView />);
+    const card = screen.getAllByRole("button", { pressed: false }).find((b) =>
+      b.textContent?.includes("GitHub Dark"),
+    )!;
+
+    fireEvent.mouseEnter(card);
+    expect(useUiStore.getState().previewThemeId).toBe("github-dark");
+    expect(useSettingsStore.getState().themeId).toBe("vitesse-dark");
+
+    fireEvent.mouseLeave(card.parentElement!);
+    expect(useUiStore.getState().previewThemeId).toBeNull();
+
+    fireEvent.mouseEnter(card);
+    fireEvent.click(card);
+    expect(useSettingsStore.getState().themeId).toBe("github-dark");
+    expect(useUiStore.getState().previewThemeId).toBeNull();
+  });
+});

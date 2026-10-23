@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useActiveThemeId } from "@/themes/useActiveThemeId";
 import { useTranslation } from "react-i18next";
 import {
   MAX_TERMINAL_PADDING,
@@ -26,7 +27,7 @@ export function TerminalSettingsSection() {
   const setCustomShellPath = useSettingsStore((s) => s.setCustomShellPath);
   const actionLinksEnabled = useSettingsStore((s) => s.actionLinksEnabled);
   const setActionLinksEnabled = useSettingsStore((s) => s.setActionLinksEnabled);
-  const themeId = useSettingsStore((s) => s.themeId);
+  const themeId = useActiveThemeId();
   const terminal = getTheme(themeId).terminal;
   const [cleared, setCleared] = useState(false);
 
