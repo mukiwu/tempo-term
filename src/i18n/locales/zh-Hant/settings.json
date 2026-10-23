@@ -331,5 +331,16 @@
     "removeMessage": "要移除 {{host}} 的已信任金鑰嗎？下次連線時將再次顯示 fingerprint 並詢問。",
     "removeConfirm": "移除",
     "removeCancel": "取消"
+  },
+  "agents": {
+    "title": "程式開發 Agent",
+    "description": "此電腦上找到的 agent CLI 及其版本。",
+    "refresh": "重新檢查",
+    "checking": "檢查中…",
+    "installed": "已安裝",
+    "notInstalled": "未安裝",
+    "mcpTitle": "MCP 伺服器",
+    "mcpDescription": "Claude Code（~/.claude.json 中的使用者範圍）與 Codex（~/.codex/config.toml）設定的伺服器。請在這些檔案或各 agent 的 mcp 指令中修改；不會顯示環境變數。",
+    "mcpEmpty": "尚未設定任何 MCP 伺服器。"
   }
 }

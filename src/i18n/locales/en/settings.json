@@ -331,5 +331,16 @@
     "removeMessage": "Forget the key trusted for {{host}}? The next connection will show its fingerprint and ask again.",
     "removeConfirm": "Remove",
     "removeCancel": "Cancel"
+  },
+  "agents": {
+    "title": "Coding agents",
+    "description": "The agent CLIs found on this machine and their versions.",
+    "refresh": "Check again",
+    "checking": "Checking…",
+    "installed": "Installed",
+    "notInstalled": "Not installed",
+    "mcpTitle": "MCP servers",
+    "mcpDescription": "Servers configured for Claude Code (user scope in ~/.claude.json) and Codex (~/.codex/config.toml). Change them in those files or with each agent's mcp command; environment variables are not shown.",
+    "mcpEmpty": "No MCP servers configured."
   }
 }

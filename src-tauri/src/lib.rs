@@ -272,6 +272,7 @@ pub fn run() {
             modules::ssh::ssh_known_hosts_list,
             modules::ssh::ssh_known_hosts_remove,
             modules::fs::fs_open_external,
+            modules::mcp_servers::mcp_servers_list,
             runtime_instance_id,
             recovery_sync_editor_snapshot,
             recovery_take_editor_snapshot,
