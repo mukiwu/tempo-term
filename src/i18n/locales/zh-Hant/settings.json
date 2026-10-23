@@ -192,7 +192,9 @@
     "customShellHint": "要啟動的 shell 執行檔路徑，取代自動偵測的預設值；留空就用系統的 $SHELL，Windows 上可以指向 pwsh 或 PowerShell 7",
     "customShellPlaceholder": "/opt/homebrew/bin/pwsh",
     "clearHistory": "清除已儲存的歷史",
-    "historyCleared": "已清除"
+    "historyCleared": "已清除",
+    "copyOnSelect": "選取後自動複製",
+    "copyOnSelectHint": "在終端機中以滑鼠選取文字後，自動將內容複製到剪貼簿。"
   },
   "aiModel": {
     "quickLabel": "快速 AI 功能",

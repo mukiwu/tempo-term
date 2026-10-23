@@ -1,4 +1,5 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { act, useLayoutEffect } from "react";
 import { TerminalView } from "./TerminalView";
@@ -356,5 +357,39 @@ describe("TerminalView menu paste clipboard fallback", () => {
       expect(fakeTerminal.current!.term.paste).toHaveBeenCalledWith("/tmp/report.txt "),
     );
     expect(readTextMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("TerminalView copy on select", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function releaseMouseOverTerminal() {
+    const container = fakeTerminal.current!.term.open.mock.calls[0][0] as HTMLElement;
+    fireEvent.mouseUp(container);
+  }
+
+  it("copies the selection when the mouse is released and the setting is on", () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    useSettingsStore.setState({ copyOnSelect: true });
+    renderTerminal();
+    fakeTerminal.current!.term.hasSelection.mockReturnValue(true);
+    fakeTerminal.current!.term.getSelection.mockReturnValue("hello");
+
+    releaseMouseOverTerminal();
+
+    expect(writeText).toHaveBeenCalledWith("hello");
+  });
+
+  it("leaves the clipboard alone when the setting is off", () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    useSettingsStore.setState({ copyOnSelect: false });
+    renderTerminal();
+    fakeTerminal.current!.term.hasSelection.mockReturnValue(true);
+
+    releaseMouseOverTerminal();
+
+    expect(writeText).not.toHaveBeenCalled();
   });
 });

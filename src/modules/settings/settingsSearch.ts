@@ -45,6 +45,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { section: "terminal", labelKey: "terminalSettings.customShell", hintKey: "terminalSettings.customShellHint" },
   { section: "terminal", labelKey: "terminalSettings.confirmClose", hintKey: "terminalSettings.confirmCloseHint" },
   { section: "terminal", labelKey: "terminalSettings.suggestions", hintKey: "terminalSettings.suggestionsHint" },
+  { section: "terminal", labelKey: "terminalSettings.copyOnSelect", hintKey: "terminalSettings.copyOnSelectHint" },
   { section: "terminal", labelKey: "terminalSettings.actionLinks", hintKey: "terminalSettings.actionLinksHint" },
   { section: "terminal", labelKey: "terminalSettings.restoreHistory", hintKey: "terminalSettings.restoreHistoryHint" },
   { section: "ai", labelKey: "aiModel.quickLabel", hintKey: "aiModel.quickDescription" },

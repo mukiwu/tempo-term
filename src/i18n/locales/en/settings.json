@@ -192,7 +192,9 @@
     "customShellHint": "Shell executable to spawn instead of the auto-detected default; leave empty for your system $SHELL, or point at pwsh / PowerShell 7 on Windows",
     "customShellPlaceholder": "/opt/homebrew/bin/pwsh",
     "clearHistory": "Clear saved history",
-    "historyCleared": "Cleared"
+    "historyCleared": "Cleared",
+    "copyOnSelect": "Copy on select",
+    "copyOnSelectHint": "Finishing a mouse selection in a terminal copies it to the clipboard."
   },
   "aiModel": {
     "quickLabel": "Quick AI features",

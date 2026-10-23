@@ -36,3 +36,13 @@ describe("TerminalSettingsSection custom shell", () => {
     expect(useSettingsStore.getState().confirmCloseWithRunningTerminals).toBe(false);
   });
 });
+
+describe("TerminalSettingsSection copy on select", () => {
+  it("is off by default and saves the opt-in", () => {
+    render(<TerminalSettingsSection />);
+    const checkbox = screen.getByLabelText("Copy on select");
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(checkbox);
+    expect(useSettingsStore.getState().copyOnSelect).toBe(true);
+  });
+});

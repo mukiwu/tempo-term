@@ -22,6 +22,8 @@ export function TerminalSettingsSection() {
   );
   const terminalSuggestions = useSettingsStore((s) => s.terminalSuggestions);
   const setTerminalSuggestions = useSettingsStore((s) => s.setTerminalSuggestions);
+  const copyOnSelect = useSettingsStore((s) => s.copyOnSelect);
+  const setCopyOnSelect = useSettingsStore((s) => s.setCopyOnSelect);
   const customShellPath = useSettingsStore((s) => s.customShellPath);
   const setCustomShellPath = useSettingsStore((s) => s.setCustomShellPath);
   const actionLinksEnabled = useSettingsStore((s) => s.actionLinksEnabled);
@@ -111,6 +113,19 @@ export function TerminalSettingsSection() {
           {t("terminalSettings.suggestions")}
         </label>
         <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.suggestionsHint")}</p>
+      </div>
+
+      <div className="mb-6">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-fg">
+          <input
+            type="checkbox"
+            checked={copyOnSelect}
+            onChange={(e) => setCopyOnSelect(e.target.checked)}
+            className="accent-accent"
+          />
+          {t("terminalSettings.copyOnSelect")}
+        </label>
+        <p className="mt-1 text-xs text-fg-muted">{t("terminalSettings.copyOnSelectHint")}</p>
       </div>
 
       <div className="mb-6">
