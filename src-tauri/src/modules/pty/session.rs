@@ -1176,10 +1176,18 @@ mod tests {
         )
         .expect("spawn should succeed");
 
-        for _ in 0..100 {
-            if hub.0.lock().unwrap().exit_code.is_some() {
+        // The exit watcher and the output reader are separate threads, so the
+        // exit can land before the reader has published the echoed text. Wait
+        // for both, or a slow CI runner attaches before the tail is buffered.
+        for _ in 0..250 {
+            let inner = hub.0.lock().unwrap();
+            let tail = inner.backlog.iter().copied().collect::<Vec<u8>>();
+            if inner.exit_code.is_some()
+                && String::from_utf8_lossy(&tail).contains("pty-recovery-tail")
+            {
                 break;
             }
+            drop(inner);
             std::thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(hub.0.lock().unwrap().exit_code, Some(0));
