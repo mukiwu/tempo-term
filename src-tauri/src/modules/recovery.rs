@@ -19,9 +19,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
 use tauri::Emitter;
-use tauri::{AppHandle, Manager, State, WebviewWindow};
+#[cfg(not(target_os = "macos"))]
+use tauri::Webview;
+use tauri::{AppHandle, Manager, State, Window};
 #[cfg(target_os = "macos")]
-use tauri::{RunEvent, WebviewWindowBuilder, Window};
+use tauri::{RunEvent, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
@@ -474,7 +476,7 @@ pub fn runtime_instance_id(state: State<'_, RecoveryState>) -> String {
 
 #[tauri::command]
 pub fn recovery_sync_editor_snapshot(
-    window: WebviewWindow,
+    window: Window,
     state: State<'_, RecoveryState>,
     snapshot: EditorSnapshot,
 ) -> Result<(), String> {
@@ -489,7 +491,7 @@ pub fn recovery_sync_editor_snapshot(
 
 #[tauri::command]
 pub fn recovery_take_editor_snapshot(
-    window: WebviewWindow,
+    window: Window,
     state: State<'_, RecoveryState>,
 ) -> Option<EditorSnapshot> {
     state.snapshots.lock().unwrap().remove(window.label())
@@ -497,7 +499,7 @@ pub fn recovery_take_editor_snapshot(
 
 #[tauri::command]
 pub fn recovery_take_notice(
-    window: WebviewWindow,
+    window: Window,
     state: State<'_, RecoveryState>,
     pty_state: State<'_, crate::modules::pty::PtyState>,
     ssh_state: State<'_, crate::modules::ssh::SshState>,
@@ -517,7 +519,7 @@ pub fn recovery_take_notice(
 }
 
 #[tauri::command]
-pub fn recovery_dismiss_notice(window: WebviewWindow, state: State<'_, RecoveryState>) {
+pub fn recovery_dismiss_notice(window: Window, state: State<'_, RecoveryState>) {
     state.notices.lock().unwrap().remove(window.label());
 }
 
@@ -545,11 +547,11 @@ fn reload_after_preview_cleanup<E>(
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn reload_workspace(window: &WebviewWindow) -> Result<(), String> {
-    let app = window.app_handle();
+pub fn reload_workspace(webview: &Webview) -> Result<(), String> {
+    let app = webview.app_handle();
     reload_after_preview_cleanup(
-        || close_owned_previews(app, window.label()),
-        || window.reload().map_err(|error| error.to_string()),
+        || close_owned_previews(app, webview.label()),
+        || webview.reload().map_err(|error| error.to_string()),
     )
 }
 
@@ -630,9 +632,12 @@ fn rebuild_webview(app: &AppHandle, window_label: &str) -> Result<(), String> {
     // an empty NSWindow even though add_child returned Ok. Rebuild the paired
     // WebviewWindow instead; destroy() emits no CloseRequested event, so the
     // Rust-owned PTY/SSH sessions are deliberately left untouched.
+    // Look the window up with get_window: while a preview child is attached,
+    // Tauri no longer treats it as a WebviewWindow and get_webview_window
+    // returns None, which made every rebuild fail before it started (#508).
     let window = app
-        .get_webview_window(window_label)
-        .ok_or_else(|| format!("webview window {window_label} not found"))?;
+        .get_window(window_label)
+        .ok_or_else(|| format!("window {window_label} not found"))?;
     let scale = window.scale_factor().map_err(|error| error.to_string())?;
     let position = window
         .outer_position()
@@ -802,10 +807,10 @@ pub fn schedule_rebuild(
     _reason: &'static str,
     _automatic: bool,
 ) -> Result<(), String> {
-    let window = app
-        .get_webview_window(&window_label)
-        .ok_or_else(|| format!("webview window {window_label} not found"))?;
-    reload_workspace(&window)
+    let webview = app
+        .get_webview(&window_label)
+        .ok_or_else(|| format!("webview {window_label} not found"))?;
+    reload_workspace(&webview)
 }
 
 #[cfg(target_os = "macos")]
@@ -856,8 +861,8 @@ pub fn start_renderer_watchdog(app: AppHandle) {
 pub fn start_renderer_watchdog(_app: AppHandle) {}
 
 #[tauri::command]
-pub fn recovery_renderer_heartbeat(
-    window: WebviewWindow,
+pub fn recovery_renderer_heartbeat<R: tauri::Runtime>(
+    window: Window<R>,
     state: State<'_, RecoveryState>,
     visible: bool,
     generation: u64,
@@ -867,7 +872,7 @@ pub fn recovery_renderer_heartbeat(
 
 #[tauri::command]
 pub fn recovery_renderer_ready(
-    window: WebviewWindow,
+    window: Window,
     state: State<'_, RecoveryState>,
     generation: u64,
 ) -> u64 {
@@ -876,7 +881,7 @@ pub fn recovery_renderer_ready(
 
 #[tauri::command]
 pub fn recovery_rebuild_webview(
-    window: WebviewWindow,
+    window: Window,
     app: AppHandle,
     reason: String,
 ) -> Result<(), String> {
@@ -888,7 +893,7 @@ pub fn recovery_rebuild_webview(
 }
 
 #[tauri::command]
-pub fn recovery_reload_window(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
+pub fn recovery_reload_window(window: Window, app: AppHandle) -> Result<(), String> {
     schedule_rebuild(app, window.label().to_string(), "manual-reload", false)
 }
 
@@ -1096,5 +1101,82 @@ mod tests {
     fn post_destroy_rebuild_failure_restarts_instead_of_staying_headless() {
         assert_eq!(rebuild_failure_action(false), RebuildFailureAction::Restart);
         assert_eq!(rebuild_failure_action(true), RebuildFailureAction::Prompt);
+    }
+}
+
+#[cfg(test)]
+mod preview_child_tests {
+    use super::*;
+    use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
+    use tauri::webview::InvokeRequest;
+    use tauri::{LogicalPosition, LogicalSize, WebviewBuilder, WebviewUrl, WebviewWindowBuilder};
+
+    // Regression for #508: attaching a preview child makes Tauri stop treating
+    // the main window as a WebviewWindow. Window-scoped commands and the
+    // rebuild lookup must keep resolving the window while a preview is open.
+    #[test]
+    fn heartbeat_and_window_lookup_survive_an_attached_preview() {
+        let app = mock_builder()
+            .manage(RecoveryState::new())
+            .invoke_handler(tauri::generate_handler![recovery_renderer_heartbeat])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let main = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
+            .build()
+            .unwrap();
+        main.as_ref()
+            .window()
+            .add_child(
+                WebviewBuilder::new("preview-main-leaf1", WebviewUrl::default()),
+                LogicalPosition::new(0.0, 0.0),
+                LogicalSize::new(100.0, 100.0),
+            )
+            .unwrap();
+
+        assert!(app.get_webview_window("main").is_none());
+        assert!(app.get_window("main").is_some());
+
+        let response = get_ipc_response(
+            &main,
+            InvokeRequest {
+                cmd: "recovery_renderer_heartbeat".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "tauri://localhost".parse().unwrap(),
+                body: serde_json::json!({ "visible": true, "generation": 0 }).into(),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_string(),
+            },
+        );
+        assert!(response.is_ok(), "heartbeat rejected: {response:?}");
+    }
+
+    // Accepting `Window` instead of `WebviewWindow` means a preview child would
+    // resolve to its parent window. That is only safe because Tauri rejects
+    // custom commands from remote origins such as a previewed dev server.
+    #[test]
+    fn remote_preview_origin_cannot_invoke_app_commands() {
+        let app = mock_builder()
+            .manage(RecoveryState::new())
+            .invoke_handler(tauri::generate_handler![recovery_renderer_heartbeat])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let main = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
+            .build()
+            .unwrap();
+
+        let response = get_ipc_response(
+            &main,
+            InvokeRequest {
+                cmd: "recovery_renderer_heartbeat".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://localhost:8765/".parse().unwrap(),
+                body: serde_json::json!({ "visible": true, "generation": 0 }).into(),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_string(),
+            },
+        );
+        assert!(response.is_err(), "remote origin reached an app command");
     }
 }

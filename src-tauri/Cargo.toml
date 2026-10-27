@@ -74,6 +74,10 @@ rusqlite = "0.32"
 fm-rs = "0.3"
 keyring = { version = "3", features = ["apple-native"] }
 
+[dev-dependencies]
+# Mock runtime for IPC regression tests; test builds only, not shipped.
+tauri = { version = "2", features = ["test"] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
 # Synchronous Win32 clipboard access (text + copied-file list) for terminal

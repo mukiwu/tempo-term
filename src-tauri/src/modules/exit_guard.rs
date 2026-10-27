@@ -189,7 +189,7 @@ pub fn handle_run_event(app: &AppHandle, event: &RunEvent) {
                 // then explicitly destroy the window.
                 api.prevent_close();
                 close_window_sessions(app, label);
-                if let Some(window) = app.get_webview_window(label) {
+                if let Some(window) = app.get_window(label) {
                     let _ = window.destroy();
                 }
                 return;
@@ -226,7 +226,7 @@ pub fn handle_run_event(app: &AppHandle, event: &RunEvent) {
             guard.finish_prompt();
             if confirmed {
                 close_window_sessions(&app, &label);
-                if let Some(window) = app.get_webview_window(&label) {
+                if let Some(window) = app.get_window(&label) {
                     let _ = window.destroy();
                 }
             }
@@ -316,9 +316,9 @@ fn show_confirmation(
             cancel.to_string(),
         ));
     let parent = parent_label
-        .and_then(|label| app.get_webview_window(label))
+        .and_then(|label| app.get_window(label))
         .or_else(|| {
-            app.webview_windows()
+            app.windows()
                 .into_values()
                 .find(|window| window.is_focused().unwrap_or(false))
         });
