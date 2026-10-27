@@ -162,7 +162,8 @@ export function PreviewTabContent({
               </button>
             </Tooltip>
             {/* Hands the current page to the system browser; the preview tab
-                stays open. Local-file previews have no web URL to hand over. */}
+                stays open. Local-file previews have no web URL to hand over.
+                ml-1 matches the 8px gap to the pane close button on its right. */}
             {isWebUrl(url) && (
               <Tooltip label={t("openInBrowser")}>
                 <a
@@ -172,7 +173,7 @@ export function PreviewTabContent({
                     e.preventDefault();
                     void openUrl(url);
                   }}
-                  className="rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+                  className="ml-1 inline-flex rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
                 >
                   <ExternalLink size={14} />
                 </a>
