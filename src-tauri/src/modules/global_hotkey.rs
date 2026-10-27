@@ -7,7 +7,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 /// Hide every window when one of them has focus, otherwise show them all and
 /// focus the first.
 fn toggle(app: &AppHandle) {
-    let windows: Vec<_> = app.webview_windows().into_values().collect();
+    let windows: Vec<_> = app.windows().into_values().collect();
     let focused = windows.iter().any(|w| w.is_focused().unwrap_or(false));
     if focused {
         // macOS hides the app as a whole (like ⌘H), so it comes back with the

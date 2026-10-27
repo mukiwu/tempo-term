@@ -62,7 +62,7 @@ pub struct SshOpenRequest {
 #[tauri::command]
 pub fn ssh_open(
     app: AppHandle,
-    window: tauri::WebviewWindow,
+    window: tauri::Window,
     state: State<'_, SshState>,
     req: SshOpenRequest,
     on_data: Channel<Response>,
@@ -77,7 +77,7 @@ pub fn ssh_open(
 
 #[tauri::command]
 pub fn ssh_attach(
-    window: tauri::WebviewWindow,
+    window: tauri::Window,
     state: State<'_, SshState>,
     id: u32,
     active: bool,
@@ -89,7 +89,7 @@ pub fn ssh_attach(
 
 #[tauri::command]
 pub fn ssh_set_session_active(
-    window: tauri::WebviewWindow,
+    window: tauri::Window,
     state: State<'_, SshState>,
     id: u32,
     active: bool,
@@ -98,11 +98,7 @@ pub fn ssh_set_session_active(
 }
 
 #[tauri::command]
-pub fn ssh_set_window_active(
-    window: tauri::WebviewWindow,
-    state: State<'_, SshState>,
-    active: bool,
-) {
+pub fn ssh_set_window_active(window: tauri::Window, state: State<'_, SshState>, active: bool) {
     session::set_window_active(&state, window.label(), active);
 }
 

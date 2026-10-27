@@ -192,7 +192,7 @@ pub fn run() {
             // position) and restores it bypassing the configured minimums. Clamp
             // anything below the minimums back to the default, centered, so the
             // window can never shrink to nothing or get lost off-screen.
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_window("main") {
                 if let (Ok(size), Ok(scale)) = (window.inner_size(), window.scale_factor()) {
                     let logical = size.to_logical::<f64>(scale);
                     if logical.width < 720.0 || logical.height < 480.0 {

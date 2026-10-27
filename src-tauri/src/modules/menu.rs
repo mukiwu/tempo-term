@@ -180,7 +180,7 @@ pub fn init(app: &mut App) -> tauri::Result<()> {
             if let Some(win) = app.get_focused_window() {
                 let id = event.id().0.clone();
                 if id == RECOVERY_MENU_ID {
-                    if let Some(webview_window) = app.get_webview_window(win.label()) {
+                    if let Some(webview_window) = app.get_webview(win.label()) {
                         // Give a responsive renderer a brief chance to force its
                         // dirty-buffer snapshot. If it is wedged, the native
                         // path still proceeds using the latest 250 ms snapshot.
@@ -397,7 +397,7 @@ pub fn create_new_window(app: &AppHandle) -> tauri::Result<()> {
 /// First `win-{n}` label not currently in use, so freed labels get reused and
 /// the set stays small.
 fn next_window_label(app: &AppHandle) -> String {
-    let existing = app.webview_windows();
+    let existing = app.windows();
     let mut i = 1;
     loop {
         let label = format!("win-{i}");

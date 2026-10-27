@@ -18,7 +18,7 @@ use tauri::State;
 #[allow(clippy::too_many_arguments)]
 pub fn pty_open(
     app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
+    window: tauri::Window,
     state: State<'_, PtyState>,
     cols: u16,
     rows: u16,
@@ -46,7 +46,7 @@ pub fn pty_open(
 
 #[tauri::command]
 pub fn pty_attach(
-    window: tauri::WebviewWindow,
+    window: tauri::Window,
     state: State<'_, PtyState>,
     id: u32,
     active: bool,
@@ -58,7 +58,7 @@ pub fn pty_attach(
 
 #[tauri::command]
 pub fn pty_set_session_active(
-    window: tauri::WebviewWindow,
+    window: tauri::Window,
     state: State<'_, PtyState>,
     id: u32,
     active: bool,
@@ -67,11 +67,7 @@ pub fn pty_set_session_active(
 }
 
 #[tauri::command]
-pub fn pty_set_window_active(
-    window: tauri::WebviewWindow,
-    state: State<'_, PtyState>,
-    active: bool,
-) {
+pub fn pty_set_window_active(window: tauri::Window, state: State<'_, PtyState>, active: bool) {
     session::set_window_active(&state, window.label(), active);
 }
 
