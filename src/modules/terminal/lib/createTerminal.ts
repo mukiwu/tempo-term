@@ -5,8 +5,8 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { buildTerminalFontFamily } from "@/modules/fonts/lib/fontChain";
-import { isLocalUrl, isWebUrl } from "@/lib/url";
-import { IS_MAC, IS_WINDOWS, matchesOpenModifier } from "@/lib/platform";
+import { isWebUrl } from "@/lib/url";
+import { IS_MAC, IS_WINDOWS, matchesOpenModifier, webLinkTarget } from "@/lib/platform";
 import { hideLinkTooltip, showLinkTooltip } from "./linkTooltip";
 import "@xterm/xterm/css/xterm.css";
 
@@ -61,14 +61,15 @@ export interface CreateTerminalOptions {
   fontFamily?: string;
   fontSize?: number;
   theme?: ITheme;
-  /** Hover hint shown over web links (e.g. "Cmd / Ctrl-click to open"). */
+  /** Hover hint shown over OSC 8 file links (e.g. "Alt / Cmd-click to open"). */
   linkHint?: string;
+  /** Hover hint shown over web links, describing both open gestures. */
+  webLinkHint?: string;
   /**
-   * Open a localhost/IP web URL in the in-app preview. When provided, local
-   * URLs route here on modifier-click instead of opening the system browser;
-   * external URLs always go to the browser.
+   * Open a web URL in the in-app preview on Alt-click. Without it, Alt-click
+   * falls back to the system browser.
    */
-  onOpenLocalUrl?: (url: string) => void;
+  onOpenPreviewUrl?: (url: string) => void;
   /**
    * Fired when an OSC 8 file link (e.g., file:///...) is modifier-clicked.
    */
@@ -76,6 +77,18 @@ export interface CreateTerminalOptions {
 }
 
 export function createTerminal(options: CreateTerminalOptions = {}): TerminalHandle {
+  // Alt-click opens the in-app preview, Cmd/Ctrl-click the system browser.
+  const openWebLink = (event: MouseEvent, uri: string) => {
+    const target = webLinkTarget(event, IS_MAC);
+    if (!target) {
+      return;
+    }
+    if (target === "preview" && options.onOpenPreviewUrl) {
+      options.onOpenPreviewUrl(uri);
+    } else {
+      void openUrl(uri);
+    }
+  };
   const term = new Terminal({
     fontFamily: options.fontFamily ?? DEFAULT_TERMINAL_FONT_FAMILY,
     fontSize: options.fontSize ?? 13,
@@ -99,16 +112,9 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
       // modifier-click, and file links open read-only in the editor pane.
       allowNonHttpProtocols: true,
       activate: (event, uri) => {
-        if (!matchesOpenModifier(event, IS_MAC)) {
-          return;
-        }
         if (isWebUrl(uri)) {
-          if (options.onOpenLocalUrl && isLocalUrl(uri)) {
-            options.onOpenLocalUrl(uri);
-          } else {
-            void openUrl(uri);
-          }
-        } else if (/^file:/i.test(uri) && options.onOpenFileUrl) {
+          openWebLink(event, uri);
+        } else if (/^file:/i.test(uri) && options.onOpenFileUrl && matchesOpenModifier(event, IS_MAC)) {
           const path = fileUriToPath(uri);
           if (path) {
             options.onOpenFileUrl(path);
@@ -118,9 +124,11 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
       hover: (event, uri) => {
         // OSC 8 display text can lie about its target, so always surface the
         // real one (the resolved path for file links) alongside the hint.
-        const target = /^file:/i.test(uri) ? fileUriToPath(uri) || uri : uri;
+        const isFile = /^file:/i.test(uri);
+        const target = isFile ? fileUriToPath(uri) || uri : uri;
+        const hint = isFile ? options.linkHint : options.webLinkHint;
         showLinkTooltip(
-          options.linkHint ? `${target} (${options.linkHint})` : target,
+          hint ? `${target} (${hint})` : target,
           event.clientX,
           event.clientY,
         );
@@ -134,26 +142,20 @@ export function createTerminal(options: CreateTerminalOptions = {}): TerminalHan
 
   const search = new SearchAddon();
   term.loadAddon(search);
-  // Open web links on a modifier-click, matching the file-link gesture (Alt/Cmd)
-  // plus Ctrl for non-mac. A plain click is left for text selection. Local
-  // (localhost/IP) URLs go to the in-app preview when a handler is wired;
-  // everything else opens in the system browser. Hover shows a hint.
+  // Open web links on a modifier-click: Alt opens the in-app preview, Cmd
+  // (mac) or Ctrl (elsewhere) the system browser. A plain click is left for
+  // text selection. Hover shows a hint.
   term.loadAddon(
     new WebLinksAddon(
       (event, uri) => {
-        if (!matchesOpenModifier(event, IS_MAC) || !isWebUrl(uri)) {
-          return;
-        }
-        if (options.onOpenLocalUrl && isLocalUrl(uri)) {
-          options.onOpenLocalUrl(uri);
-        } else {
-          void openUrl(uri);
+        if (isWebUrl(uri)) {
+          openWebLink(event, uri);
         }
       },
       {
         hover: (event) => {
-          if (options.linkHint) {
-            showLinkTooltip(options.linkHint, event.clientX, event.clientY);
+          if (options.webLinkHint) {
+            showLinkTooltip(options.webLinkHint, event.clientX, event.clientY);
           }
         },
         leave: () => hideLinkTooltip(),

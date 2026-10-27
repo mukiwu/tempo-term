@@ -45,6 +45,29 @@ export function openModifierLabel(isMac: boolean = IS_MAC): string {
   return isMac ? "Alt / Cmd" : "Alt / Ctrl";
 }
 
+/** Where a modifier-clicked web link opens. */
+export type WebLinkTarget = "preview" | "browser";
+
+/**
+ * Split the open gesture for web links: Cmd (mac) or Ctrl (elsewhere) opens
+ * the system browser, Alt opens the in-app preview. The browser key wins when
+ * both are held. Returns null for a click without either modifier.
+ */
+export function webLinkTarget(
+  event: ModifierEvent,
+  isMac: boolean = IS_MAC,
+): WebLinkTarget | null {
+  if (isMac ? event.metaKey : event.ctrlKey) {
+    return "browser";
+  }
+  return event.altKey ? "preview" : null;
+}
+
+/** Label of the modifier that opens a web link in the system browser. */
+export function browserModifierLabel(isMac: boolean = IS_MAC): string {
+  return isMac ? "Cmd" : "Ctrl";
+}
+
 /**
  * Whether a click (or Enter) asks for a new tab instead of the sidebar's
  * default, which is to split the active tab.

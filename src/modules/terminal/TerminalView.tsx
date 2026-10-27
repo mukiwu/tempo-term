@@ -99,7 +99,7 @@ import {
 import { resumeFlagsFor } from "@/modules/sessions/lib/resumeCommand";
 import type { AiSessionBinding } from "./lib/terminalLayout";
 
-import { IS_MAC, IS_WINDOWS, openModifierLabel } from "@/lib/platform";
+import { IS_MAC, IS_WINDOWS, browserModifierLabel, openModifierLabel } from "@/lib/platform";
 import {
   listenToNativeDragDrop,
   nativePointInElement,
@@ -160,7 +160,7 @@ interface TerminalViewProps {
   onBackendChange?: (binding: BackendSessionBinding | null) => void;
   /** Alt+click on a file path in the output opens it (with the resolved abs path). */
   onOpenFile?: (absolutePath: string) => void;
-  /** Open a localhost/IP URL from a terminal action card in the in-app preview. */
+  /** Open a URL in the in-app preview (Alt-click on a link, or an action card). */
   onOpenPreview?: (url: string) => void;
 }
 
@@ -241,6 +241,8 @@ export function TerminalView({
   const { t } = useTranslation();
   const linkHintRef = useRef(t("openLinkHint", { mods: openModifierLabel(IS_MAC) }));
   linkHintRef.current = t("openLinkHint", { mods: openModifierLabel(IS_MAC) });
+  const webLinkHintRef = useRef(t("openWebLinkHint", { browser: browserModifierLabel(IS_MAC) }));
+  webLinkHintRef.current = t("openWebLinkHint", { browser: browserModifierLabel(IS_MAC) });
 
   const fontFamily = useFontStore(selectTerminalFontFamily);
   const fontSize = useFontStore((s) => s.fontSize);
@@ -379,7 +381,8 @@ export function TerminalView({
         true,
       ),
       linkHint: linkHintRef.current,
-      onOpenLocalUrl: (url) => onOpenPreviewRef.current?.(url),
+      webLinkHint: webLinkHintRef.current,
+      onOpenPreviewUrl: (url) => onOpenPreviewRef.current?.(url),
       onOpenFileUrl: (url) => {
         void openFromTerminal(url);
       },

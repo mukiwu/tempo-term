@@ -29,6 +29,9 @@ vi.mock("./hooks/useNativePreviewWebview", () => ({
   useNativePreviewWebview: () => ({ hostRef: { current: null }, reload, back, forward }),
 }));
 
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { PreviewTabContent } from "./PreviewTabContent";
 
 afterEach(() => {
@@ -117,5 +120,25 @@ describe("PreviewTabContent pane close", () => {
       <PreviewTabContent url="http://localhost:3000" leafId="pane-1" visible />,
     );
     expect(queryByRole("button", { name: "Close pane" })).toBeNull();
+  });
+});
+
+describe("PreviewTabContent open in browser", () => {
+  it("hands the current url to the system browser and keeps the preview", () => {
+    vi.mocked(openUrl).mockClear();
+    const onClose = vi.fn();
+    const { getByRole } = render(
+      <PreviewTabContent url="http://localhost:3000" leafId="pane-1" visible onClose={onClose} />,
+    );
+    fireEvent.click(getByRole("link", { name: "Open in Browser" }));
+    expect(openUrl).toHaveBeenCalledWith("http://localhost:3000");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("hides the link for a local-file preview", () => {
+    const { queryByRole } = render(
+      <PreviewTabContent url="/Users/dev/site/index.html" leafId="pane-1" visible />,
+    );
+    expect(queryByRole("link", { name: "Open in Browser" })).toBeNull();
   });
 });

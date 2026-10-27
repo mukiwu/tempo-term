@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowRight, RotateCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from "lucide-react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { PaneHeader } from "@/components/PaneHeader";
 import { Tooltip } from "@/components/Tooltip";
 import { onEditorFileChanged } from "@/modules/editor/lib/editorWatch";
-import { normalizeAddressInput } from "@/lib/url";
+import { isWebUrl, normalizeAddressInput } from "@/lib/url";
 import { previewLocalPath } from "./lib/htmlPreviewTarget";
 import { registerPreviewControls } from "./lib/previewControls";
 import { useNativePreviewWebview } from "./hooks/useNativePreviewWebview";
@@ -160,6 +161,24 @@ export function PreviewTabContent({
                 <RotateCw size={14} />
               </button>
             </Tooltip>
+            {/* Hands the current page to the system browser; the preview tab
+                stays open. Local-file previews have no web URL to hand over.
+                ml-1 matches the 8px gap to the pane close button on its right. */}
+            {isWebUrl(url) && (
+              <Tooltip label={t("openInBrowser")}>
+                <a
+                  href={url}
+                  aria-label={t("openInBrowser")}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void openUrl(url);
+                  }}
+                  className="ml-1 inline-flex rounded p-1 text-fg-muted hover:bg-bg-elevated hover:text-fg"
+                >
+                  <ExternalLink size={14} />
+                </a>
+              </Tooltip>
+            )}
           </form>
         }
         showClose={showClose}
