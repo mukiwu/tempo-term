@@ -17,19 +17,6 @@ function isLocalHostname(hostname: string): boolean {
 }
 
 /**
- * True when `href` is an http(s) URL pointing at the local machine (localhost,
- * loopback, or any IPv4 host). These are the URLs worth opening in the in-app
- * preview rather than the system browser, and which allow being framed.
- */
-export function isLocalUrl(href: string): boolean {
-  try {
-    return isLocalHostname(new URL(href.trim()).hostname);
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Normalize an address-bar entry into a url the preview can load. A bare host
  * like "google.com.tw" or "localhost:3000" has no scheme, so the webview treats
  * it as a relative path and shows a blank page; add the scheme the host implies

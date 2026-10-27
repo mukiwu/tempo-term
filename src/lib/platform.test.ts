@@ -3,6 +3,7 @@ import {
   matchesNewTabModifier,
   matchesOpenModifier,
   openModifierLabel,
+  webLinkTarget,
 } from "./platform";
 
 type Mods = { altKey?: boolean; metaKey?: boolean; ctrlKey?: boolean };
@@ -29,6 +30,33 @@ describe("matchesOpenModifier", () => {
   });
   it("non-mac: Cmd alone does not match", () => {
     expect(matchesOpenModifier(ev({ metaKey: true }), false)).toBe(false);
+  });
+});
+
+describe("webLinkTarget", () => {
+  it("mac: Cmd opens the browser", () => {
+    expect(webLinkTarget(ev({ metaKey: true }), true)).toBe("browser");
+  });
+  it("mac: Alt opens the preview", () => {
+    expect(webLinkTarget(ev({ altKey: true }), true)).toBe("preview");
+  });
+  it("mac: Cmd wins over Alt", () => {
+    expect(webLinkTarget(ev({ altKey: true, metaKey: true }), true)).toBe("browser");
+  });
+  it("mac: Ctrl alone does nothing", () => {
+    expect(webLinkTarget(ev({ ctrlKey: true }), true)).toBeNull();
+  });
+  it("non-mac: Ctrl opens the browser", () => {
+    expect(webLinkTarget(ev({ ctrlKey: true }), false)).toBe("browser");
+  });
+  it("non-mac: Alt opens the preview", () => {
+    expect(webLinkTarget(ev({ altKey: true }), false)).toBe("preview");
+  });
+  it("non-mac: Cmd alone does nothing", () => {
+    expect(webLinkTarget(ev({ metaKey: true }), false)).toBeNull();
+  });
+  it("no modifier does nothing", () => {
+    expect(webLinkTarget(ev({}), true)).toBeNull();
   });
 });
 

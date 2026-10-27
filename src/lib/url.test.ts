@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLocalUrl, isWebUrl, normalizeAddressInput } from "./url";
+import { isWebUrl, normalizeAddressInput } from "./url";
 
 describe("isWebUrl", () => {
   it("treats an https URL as a web URL", () => {
@@ -18,25 +18,6 @@ describe("isWebUrl", () => {
     expect(isWebUrl("notes/a.md")).toBe(false);
     expect(isWebUrl("file:///Users/me/a.txt")).toBe(false);
     expect(isWebUrl("")).toBe(false);
-  });
-});
-
-describe("isLocalUrl", () => {
-  it("treats localhost and loopback/IP URLs as local (keeping the path)", () => {
-    expect(isLocalUrl("http://localhost:3030/gomoku/scene-1")).toBe(true);
-    expect(isLocalUrl("http://127.0.0.1:8080")).toBe(true);
-    expect(isLocalUrl("http://192.168.1.5/admin")).toBe(true);
-    expect(isLocalUrl("https://localhost")).toBe(true);
-  });
-
-  it("treats public hosts as not local", () => {
-    expect(isLocalUrl("https://example.com")).toBe(false);
-    expect(isLocalUrl("https://github.com/foo")).toBe(false);
-  });
-
-  it("returns false for non-URLs", () => {
-    expect(isLocalUrl("not a url")).toBe(false);
-    expect(isLocalUrl("")).toBe(false);
   });
 });
 
