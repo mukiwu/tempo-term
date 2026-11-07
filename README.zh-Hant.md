@@ -28,7 +28,7 @@ TempoTerm 是一個用 Tauri 2 加 Rust 與 React 19 打造的桌面 app，把�
 - **並行 worktree**：同一個 repo 開多個 worktree 並行，各自的目錄跑各自的 agent
 - **AI 對話瀏覽**：集中瀏覽 Claude Code、Codex 與 Antigravity 的所有歷史對話，附活動儀表板與成本估算
 - **單一視窗工作區**：終端機、編輯器、檔案總管、版本控制、筆記、SSH／SFTP、網頁預覽與圖片／PDF 預覽，全部可自由分割並排
-- **自帶金鑰的 AI 助手**：OpenAI、Anthropic、Google Gemini、Groq、DeepSeek、Ollama 與任何相容 OpenAI 的端點，金鑰加密並綁定本機
+- **自帶金鑰的 AI 助手**：OpenAI、Anthropic、Google Gemini、Groq、DeepSeek、Ollama、OpenLLM 與任何相容 OpenAI 的端點，金鑰加密並綁定本機
 - **正體中文一等公民**：完整中文介面，加上讓全形字元對齊的終端機字體設定
 
 ## 功能

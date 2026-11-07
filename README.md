@@ -27,7 +27,7 @@ TempoTerm is a desktop app built on Tauri 2 + Rust and React 19. It pairs a nati
 - **Parallel worktrees**: run several worktrees of one repo side by side, each in its own directory with its own agent
 - **AI Sessions**: browse every past Claude Code, Codex and Antigravity conversation in one place, with an activity dashboard and estimated cost
 - **A one-window workspace**: terminal, code editor, file explorer, source control, notes, SSH/SFTP, web preview and image/PDF preview, all freely splittable side by side
-- **Bring-your-own-key AI assistant**: OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, Ollama and any OpenAI-compatible endpoint, with keys encrypted and bound to your machine
+- **Bring-your-own-key AI assistant**: OpenAI, Anthropic, Google Gemini, Groq, DeepSeek, Ollama, OpenLLM and any OpenAI-compatible endpoint, with keys encrypted and bound to your machine
 - **First-class Traditional Chinese**: a fully translated UI and terminal font settings that keep full-width CJK glyphs aligned
 
 ## Features
