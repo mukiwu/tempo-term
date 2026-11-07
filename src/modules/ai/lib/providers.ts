@@ -87,6 +87,19 @@ export const PROVIDERS: ProviderPreset[] = [
     needsKey: false,
   },
   {
+    id: "openllm",
+    label: "OpenLLM (local)",
+    kind: "openai",
+    // The OpenLLM daemon listens on loopback and answers with the account the
+    // user signed in with (`openllm login`), so no key is stored here. The
+    // tier aliases are the same on every install; a user whose daemon is on
+    // another port, or who wants the cloud endpoint, can use the custom
+    // provider instead.
+    baseUrl: "http://127.0.0.1:8787/v1",
+    models: ["ultra", "plus", "lite"],
+    needsKey: false,
+  },
+  {
     id: "apple",
     label: "Apple Intelligence",
     kind: "apple",

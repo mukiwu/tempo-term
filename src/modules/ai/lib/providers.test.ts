@@ -16,6 +16,16 @@ describe("PROVIDERS", () => {
     expect(lm?.needsKey).toBe(false);
   });
 
+  it("ships a keyless OpenLLM preset on the daemon's loopback port", () => {
+    const openllm = PROVIDERS.find((p) => p.id === "openllm");
+    expect(openllm).toBeDefined();
+    expect(openllm?.kind).toBe("openai");
+    expect(openllm?.baseUrl).toBe("http://127.0.0.1:8787/v1");
+    expect(openllm?.needsKey).toBe(false);
+    expect(openllm?.models).toEqual(["ultra", "plus", "lite"]);
+    expect(CHAT_PROVIDERS.some((p) => p.id === "openllm")).toBe(true);
+  });
+
   it("ships a generic OpenAI-compatible custom provider", () => {
     const custom = PROVIDERS.find((p) => p.id === CUSTOM_PROVIDER_ID);
     expect(custom).toBeDefined();
